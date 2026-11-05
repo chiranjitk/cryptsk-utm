@@ -1,0 +1,1563 @@
+     1→     1→# Cryptsk UTM/NGFW — Optimized Specification (2026)
+     2→     2→# Small Enterprise Focus | Open-Source First | Phased Delivery
+     3→     3→
+     4→     4→---
+     5→     5→
+     6→     6→## PRODUCT OVERVIEW
+     7→     7→
+     8→     8→- **Product Name**: Cryptsk UTM / NGFW
+     9→     9→- **Category**: Unified Threat Management + Next-Gen Firewall
+    10→    10→- **Target Market**: Small enterprises (10–500 users), branch offices, MSPs, hospitality
+    11→    11→- **Target Throughput**: 1–10 Gbps (single appliance)
+    12→    12→- **Differentiation vs Fortinet/Sophos**: No per-user licensing, modern UI, API-first, WireGuard-native, open-source transparency
+    13→    13→- **Honest Limitation**: URL filtering depth, AV engine quality, and sandbox sophistication will trail commercial vendors — compensated by AI over time
+    14→    14→
+    15→    15→---
+    16→    16→
+    17→    17→## OS SELECTION — DETAILED ANALYSIS & RECOMMENDATION
+    18→    18→
+    19→    19→### Comparison Matrix
+    20→    20→
+    21→    21→| Criterion | **Debian 13 (Trixie)** | Ubuntu 24.04 LTS | Rocky Linux 9 | FreeBSD 14 | Alpine Linux |
+    22→    22→|---|---|---|---|---|---|
+    23→    23→| **Kernel Version** | 6.8+ LTS | 6.8 LTS | 5.14 (RHEL) | N/A (FreeBSD kernel) | 6.6 LTS |
+    24→    24→| **eBPF/XDP Support** | Excellent | Excellent | Good (limited XDP) | **Broken / Incomplete** | Good |
+    25→    25→| **nftables** | Default firewall | Default firewall | iptables default (nftables available) | **Not available** (uses pf) | iptables/nftables |
+    26→    26→| **Suricata Performance** | Excellent (AF_PACKET + eBPF) | Excellent | Excellent | **Limited** (no AF_XDP) | Good |
+    27→    27→| **WireGuard** | Kernel native | Kernel native | Kernel native | Native (since 13.0) | Kernel native |
+    28→    28→| **StrongSwan** | Excellent | Excellent | Excellent | Good | Limited packages |
+    29→    29→| **nDPI** | Excellent | Excellent | Excellent | Good | Good |
+    30→    30→| **FRR (BGP/OSPF)** | Excellent | Excellent | Excellent | **No FRR port** (use Quagga fork) | Good |
+    31→    31→| **Docker/Containers** | Excellent | Excellent | Good (Podman) | **No native Docker** (jails only) | Excellent |
+    32→    32→| **Package Freshness** | Good | Excellent | Conservative | Good | Very fresh |
+    33→    33→| **Release Cycle** | ~2 years | 2 years (LTS: 5yr support) | ~3 years | ~1 year | 6 months |
+    34→    34→| **Long Term Support** | ~5 years | 5 years (LTS) | 10 years (RHEL compat) | N/A (rolling) | 2 years per release |
+    35→    35→| **Security Posture** | Excellent (minimal, audited) | Good (more attack surface) | Excellent (SELinux) | **Best** (jails, Capsicum) | Good (musl) |
+    36→    36→| **Community / Docs** | Massive | Massive | Growing | Niche | Small |
+    37→    37→| **Hardware Compatibility** | Very good | **Best** (newest drivers) | Good (enterprise HW) | Limited (NIC support) | Limited |
+    38→    38→| **Disk Footprint** | ~2 GB base | ~4 GB base | ~3 GB base | ~1 GB base | ~150 MB |
+    39→    39→| **Memory Overhead** | Low | Medium | Medium | Low | Very low |
+    40→    40→
+    41→    41→### Why NOT These OSes
+    42→    42→
+    43→    43→#### FreeBSD — DISQUALIFIED
+    44→    44→- **No nftables** — relies on pf (Packet Filter), a completely different firewall paradigm
+    45→    45→- **No eBPF/XDP** — the entire modern data-plane acceleration strategy fails
+    46→    46→- **Suricata runs in AF_PACKET mode only** — no AF_XDP, significantly lower throughput
+    47→    47→- **FRR (FRRouting) has no official FreeBSD port** — BGP/OSPF requires old Quagga forks
+    48→    48→- **Docker does not run natively** — service isolation requires FreeBSD jails (different paradigm, less ecosystem)
+    49→    49→- **WireGuard support is newer and less battle-tested** than on Linux
+    50→    50→- **nDPI, StrongSwan, Kea, and many security tools** have second-class FreeBSD support
+    51→    51→- **Verdict**: FreeBSD is excellent for OPNsense/pfSense (which use pf), but **fundamentally incompatible** with a Linux-native eBPF + nftables + Suricata + FRR architecture
+    52→    52→
+    53→    53→#### Rocky Linux — NOT RECOMMENDED
+    54→    54→- **Default firewall is iptables/firewalld**, not nftables-first
+    55→    55→- **SELinux adds complexity** for UTM (Suricata, eBPF programs, and custom services require extensive SELinux policy tuning)
+    56→    56→- **Kernel is older** (5.14 based, backported) vs Debian/Ubuntu 6.8+
+    57→    57→- **eBPF/XDP features lag** behind mainline kernel by 1-2 years
+    58→    58→- **RPM ecosystem** — most open-source security tools document Debian/Ubuntu first
+    59→    59→- **Good for**: Traditional enterprise servers, not cutting-edge network appliances
+    60→    60→
+    61→    61→#### Alpine Linux — NOT RECOMMENDED
+    62→    62→- **musl libc** — some security tools (Suricata with certain features, Python ML libraries) assume glibc
+    63→    63→- **Small community** — less troubleshooting resources for complex UTM issues
+    64→    64→- **Limited package selection** — you'd be building many packages from source
+    65→    65→- **Good for**: Containers, routers, minimal appliances — not a full UTM platform
+    66→    66→
+    67→    67→#### Ubuntu 24.04 LTS — CLOSE SECOND
+    68→    68→- **Advantages over Debian**: Newer kernel out-of-box, better hardware compatibility, larger community, Snap packages (controversial but useful for some services), cloud-init for deployment
+    69→    69→- **Disadvantages**: Heavier base (~4 GB vs ~2 GB), more attack surface (more default services), Snap dependency (some consider it a negative for appliances), slightly faster release cadence can introduce instability
+    70→    70→- **Verdict**: Perfectly viable. If your team is more familiar with Ubuntu, use it.
+    71→    71→
+    72→    72→### RECOMMENDATION: Debian 13 (Trixie)
+    73→    73→
+    74→    74→**Primary choice: Debian 13 (Trixie)** with Debian 12 (Bookworm) as fallback.
+    75→    75→
+    76→    76→**Why Debian 13 wins for a UTM appliance:**
+    77→    77→1. **nftables is the default** — no iptables legacy baggage
+    78→    78→2. **Kernel 6.8+ LTS** — full eBPF/XDP, modern NIC driver support, WireGuard, all current
+    79→    79→3. **Smallest attack surface** — minimal default installation, no Snap, no cloud bloat
+    80→    80→4. **Predictable** — slow release cycle = fewer surprise breakages in production appliances
+    81→    81→5. **Every major open-source security tool tests on Debian first** — Suricata, StrongSwan, FRR, nDPI, Kea, Unbound all have official Debian packages
+    82→    82→6. **glibc** — full compatibility with all Python ML libraries (PyTorch, TensorFlow, ONNX Runtime)
+    83→    83→7. **Docker/Podman** — first-class support for service isolation
+    84→    84→8. **Proven in production** — pfSense CE was Debian-based, OPNsense is the only major FreeBSD holdout
+    85→    85→9. **Pure FOSS** — no proprietary components, no telemetry, no licensing games
+    86→    86→10. **Long-term stability** — Debian releases are the gold standard for "set it and forget it" servers
+    87→    87→
+    88→    88→**Kernel Requirements (must backport if not in default kernel):**
+    89→    89→```
+    90→    90→- eBPF (BPF_PROG_TYPE_XDP, BPF_PROG_TYPE_CGROUP_SKB)
+    91→    91→- XDP (native, redirect, pass, drop actions)
+    92→    92→- nftables with all extensions (conntrack, tproxy, hash, limits)
+    93→    93→- WireGuard (kernel module or built-in)
+    94→    94→- AF_XDP (for future 10G+ optimization)
+    95→    95→- Netfilter conntrack enhancements (max, timeout tuning)
+    96→    96→- tc (traffic control) with FQ_CoDel, CAKE, HTB qdiscs
+    97→    97→```
+    98→    98→
+    99→    99→**If Debian 13 is not yet stable at your build time, use Debian 12 (Bookworm) + backports kernel (6.8+).**
+   100→   100→
+   101→   101→---
+   102→   102→
+   103→   103→## OPTIMIZED TECH STACK
+   104→   104→
+   105→   105→### Core Platform
+   106→   106→| Component | Package | Version | License | Notes |
+   107→   107→|-----------|---------|---------|---------|-------|
+   108→   108→| OS | Debian 13 (Trixie) | 13.x | FOSS | Minimal install, no desktop |
+   109→   109→| Kernel | Linux LTS | 6.8+ | GPL | Custom tuned for UTM |
+   110→   110→| Container Runtime | Docker | 27+ | Apache 2.0 | Per-service isolation |
+   111→   111→
+   112→   112→### Data Plane
+   113→   113→| Component | Package | License | Throughput | Notes |
+   114→   114→|-----------|---------|---------|-----------|-------|
+   115→   115→| Packet Engine | nftables + eBPF/XDP | GPL | 10 Gbps | Kernel-native, hardware-accelerated |
+   116→   116→| DPI Engine | nDPI | LGPL 3.0 | 5+ Gbps | ~300 protocol signatures |
+   117→   117→| IPS Engine | Suricata | GPL 2.0 | 5+ Gbps | Emerging Threats (free) rules |
+   118→   118→| Connection Tracking | conntrack (kernel) | GPL | 10+ Gbps | Kernel-native, tuneable |
+   119→   119→
+   120→   120→### Routing & VPN
+   121→   121→| Component | Package | License | Notes |
+   122→   122→|-----------|---------|---------|-------|
+   123→   123→| Dynamic Routing | FRR (FRRouting) | GPL 2.0 | BGP, OSPFv2/v3 |
+   124→   124→| IPSec VPN | StrongSwan | GPL 2.0 | IKEv2, site-to-site, remote access |
+   125→   125→| WireGuard VPN | WireGuard | GPL 2.0 | Kernel-native, fastest VPN |
+   126→   126→| SSL VPN | OpenVPN | GPL 2.0 | Proven, widely compatible |
+   127→   127→
+   128→   128→### Network Services
+   129→   129→| Component | Package | License | Notes |
+   130→   130→|-----------|---------|---------|-------|
+   131→   131→| DNS Resolver | Unbound | BSD | Recursive + caching, DoH/DoT server |
+   132→   132→| DNS Filtering | Rpzmate / Unbound RPZ | BSD | RPZ-based blocking |
+   133→   133→| DHCP Server | Kea (ISC) | MPL 2.0 | Modern DHCPv4/v6, HA-ready |
+   134→   134→| Web Proxy | Squid | GPL 2.0 | Explicit + transparent proxy |
+   135→   135→| RADIUS | FreeRADIUS | GPL 2.0 | 802.1X, MAB, CoA, VLAN assignment |
+   136→   136→
+   137→   137→### Security
+   138→   138→| Component | Package | License | Notes |
+   139→   139→|-----------|---------|---------|-------|
+   140→   140→| WAF Engine | Coraza | Apache 2.0 | OWASP CRS compatible, ModSecurity syntax |
+   141→   141→| Reverse Proxy | Caddy / Nginx | Apache 2.0 | Auto-TLS, modern HTTP/2/3 |
+   142→   142→| Spam / Email | Rspamd | Apache 2.0 | DKIM/SPF/DMARC + Bayesian |
+   143→   143→| Certificate Authority | Step-CA | Apache 2.0 | Internal PKI for SSL inspection |
+   144→   144→| Malware Scanning | ClamAV | GPL 2.0 | Basic AV (60-70% detection) |
+   145→   145→| YARA Rules | YARA | BSD | Custom malware pattern matching |
+   146→   146→
+   147→   147→### Data & Messaging
+   148→   148→| Component | Package | License | Notes |
+   149→   149→|-----------|---------|---------|-------|
+   150→   150→| Database | PostgreSQL | PostgreSQL | Primary config + log DB |
+   151→   151→| Cache / Queue | Redis | BSD | Caching, session store, pub/sub |
+   152→   152→| Log Storage | ClickHouse | Apache 2.0 | High-performance log analytics (optional, v2) |
+   153→   153→| Search (v2) | Meilisearch | MIT | Full-text log search (v2) |
+   154→   154→
+   155→   155→### Monitoring
+   156→   156→| Component | Package | License | Notes |
+   157→   157→|-----------|---------|---------|-------|
+   158→   158→| Metrics | Prometheus | Apache 2.0 | Time-series metrics collection |
+   159→   159→| Visualization | Grafana | AGPL v3 / Apache 2.0 | Dashboards, alerting |
+   160→   160→| Health | Netdata | GPL 3.0 | Real-time system health (optional, can use Prometheus node_exporter) |
+   161→   161→
+   162→   162→### API & UI
+   163→   163→| Component | Package | License | Notes |
+   164→   164→|-----------|---------|---------|-------|
+   165→   165→| Backend API | Go (Gin/Fiber) | BSD | Fast, single-binary, low memory |
+   166→   166→| Frontend UI | Next.js | MIT | Modern dashboard, React |
+   167→   167→| API Docs | Swagger/OpenAPI | — | Auto-generated from Go structs |
+   168→   168→
+   169→   169→### AI/ML
+   170→   170→| Component | Package | License | Notes |
+   171→   171→|-----------|---------|---------|-------|
+   172→   172→| Inference Runtime | ONNX Runtime | MIT | Fast, supports most model formats |
+   173→   173→| Training (offline) | PyTorch | BSD | For offline model training only |
+   174→   174→| Feature Extraction | Python + scikit-learn | BSD | Feature engineering pipeline |
+   175→   175→
+   176→   176→### What Changed From Original Spec
+   177→   177→| Original | Optimized | Why |
+   178→   178→|----------|-----------|-----|
+   179→   179→| Java Spring Boot API | **Go (Gin/Fiber)** | Single binary, 10x less memory, faster, simpler deployment for appliance |
+   180→   180→| Apache Kafka | **Redis Streams** | Kafka is overkill for single appliance. Redis already needed for caching |
+   181→   181→| TensorFlow + PyTorch (both) | **ONNX Runtime** (inference) + PyTorch (offline training) | One lightweight inference runtime. Train with PyTorch, export to ONNX |
+   182→   182→| Netdata + Prometheus | **Prometheus + node_exporter** | One metrics system. Add Grafana. Netdata is redundant |
+   183→   183→| Target 10-100 Gbps | **1-10 Gbps** | Small enterprise realistic throughput |
+   184→   184→
+   185→   185→---
+   186→   186→
+   187→   187→## ARCHITECTURE
+   188→   188→
+   189→   189→### Data Plane (Packet Processing Pipeline)
+   190→   190→```
+   191→   191→NIC → XDP (early drop/rate-limit) → eBPF (flow export, metadata)
+   192→   192→  → nftables (L3/L4 firewall + NAT)
+   193→   193→  → conntrack (state tracking)
+   194→   194→  → TPROXY/SQUID (if proxy or SSL inspection enabled for this flow)
+   195→   195→  → nDPI (application classification)
+   196→   196→  → Suricata IPS (inline mode, if policy attached)
+   197→   197→  → tc/QoS (traffic shaping)
+   198→   198→  → Output NIC
+   199→   199→```
+   200→   200→
+   201→   201→**Key Design Decisions:**
+   202→   202→- XDP handles **syn-flood protection, basic L3/L4 ACLs, and rate-limiting** at line rate before kernel
+   203→   203→- nftables handles **all stateful firewall + NAT** rules
+   204→   204→- TPROXY redirects selected traffic to Squid/Coraza for proxy/WAF
+   205→   205→- nDPI runs as **a helper** to Suricata or standalone for app classification
+   206→   206→- Suricata runs in **inline mode** with AF_PACKET (or AF_XDP in future)
+   207→   207→- tc handles **all QoS/shaping** at egress
+   208→   208→
+   209→   209→### Control Plane
+   210→   210→```
+   211→   211→Next.js UI ←→ Go REST API ←→ PostgreSQL (config store)
+   212→   212→                                 ←→ Redis (cache, sessions, pub/sub)
+   213→   213→                                 ←→ System Services (via systemd / Docker)
+   214→   214→```
+   215→   215→
+   216→   216→**Key Design Decisions:**
+   217→   217→- All configuration is **database-driven** (PostgreSQL)
+   218→   218→- Changes are deployed to system services via **configuration generators** (Go templates → service config files)
+   219→   219→- Real-time UI updates via **WebSocket** (Redis pub/sub → Go → WebSocket)
+   220→   220→- API-first: **every UI action calls the same REST API**
+   221→   221→
+   222→   222→### AI Layer (Simplified)
+   223→   223→```
+   224→   224→Log/Flow Data → Redis Queue → Python Feature Extractor
+   225→   225→  → ONNX Runtime Inference → Risk Score → Action (alert/block/quarantine)
+   226→   226→  → PostgreSQL (inference log) → Feedback Loop
+   227→   227→```
+   228→   228→
+   229→   229→---
+   230→   230→
+   231→   231→## PHASED FEATURE ROADMAP
+   232→   232→
+   233→   233→---
+   234→   234→
+   235→   235→## PHASE 1 — MVP (Months 1–6)
+   236→   236→### "Deployable UTM with core firewall, VPN, IPS, DNS security"
+   237→   237→
+   238→   238→---
+   239→   239→
+   240→   240→### 1.1 Dashboard
+   241→   241→
+   242→   242→| Feature | Open Source Package | Status |
+   243→   243→|---------|-------------------|--------|
+   244→   244→| Live traffic graph (throughput per interface) | Prometheus + Grafana | ✅ Ready |
+   245→   245→| Active sessions count | conntrack + API | ✅ Ready |
+   246→   246→| Top 10 applications (nDPI classified) | nDPI + Prometheus | ✅ Ready |
+   247→   247→| Top 10 talkers (users/IPs) | NetFlow from eBPF | ✅ Ready |
+   248→   248→| System health (CPU, RAM, disk, temp) | node_exporter | ✅ Ready |
+   249→   249→| Threat alert summary (last 24h) | Suricata logs + API | ✅ Ready |
+   250→   250→| VPN tunnel status | StrongSwan/WireGuard status | ✅ Ready |
+   251→   251→| WAN link status | ICMP probes | ✅ Ready |
+   252→   252→| Quick action buttons (restart service, backup) | System API | ✅ Ready |
+   253→   253→
+   254→   254→**Phase 1 Dashboard does NOT include:** AI risk score (Phase 3), threat heatmap (Phase 2), security posture score (Phase 3)
+   255→   255→
+   256→   256→---
+   257→   257→
+   258→   258→### 1.2 Network — Interfaces
+   259→   259→
+   260→   260→| Feature | Open Source Package | Status |
+   261→   261→|---------|-------------------|--------|
+   262→   262→| Physical interface management | iproute2 / netplan | ✅ Ready |
+   263→   263→| WAN (Static / DHCP / PPPoE Client) | ifupdown2 / NetworkManager | ✅ Ready |
+   264→   264→| LAN interface | iproute2 | ✅ Ready |
+   265→   265→| VLAN (802.1Q) | iproute2 / bridge | ✅ Ready |
+   266→   266→| Bridge (L2) | bridge-utils | ✅ Ready |
+   267→   267→| Bond / LACP | ifenslave / iproute2 | ✅ Ready |
+   268→   268→| MTU / MSS clamp per interface | iproute2 | ✅ Ready |
+   269→   269→| Interface L2/L3 mode toggle | iproute2 | ✅ Ready |
+   270→   270→| Loopback interface | Kernel | ✅ Ready |
+   271→   271→| GRE / IPIP tunnels | iproute2 | ✅ Ready |
+   272→   272→| LLDP neighbor discovery | lldpd | ✅ Ready |
+   273→   273→| STP/RSTP (on bridges) | bridge-utils / mstpd | ✅ Ready |
+   274→   274→| IGMP snooping | bridge-utils + mcproxy | ✅ Ready |
+   275→   275→| MAC table management | bridge + fdb | ✅ Ready |
+   276→   276→| Port mirroring / SPAN | tc + mirred | ✅ Ready |
+   277→   277→| Interface diagnostics (link speed, errors, drops) | ethtool / ip -s link | ✅ Ready |
+   278→   278→
+   279→   279→**Cut from original:** VRF (Phase 2), VXLAN (Phase 2), MACVLAN/IPVLAN (Phase 2), MACsec (dropped — needs hardware), QinQ (dropped — ISP feature), PPPoE Server (Phase 2), Cellular/LTE/5G (Phase 2), Satellite (dropped), DPDK/AF_XDP (Phase 3+), ERPS (dropped — ISP), Ring redundancy (dropped — ISP), Bond rate/fallback tuning (Phase 2), IPv6 dual-stack (Phase 2 — do IPv4 first, add IPv6 thoroughly)
+   280→   280→
+   281→   281→---
+   282→   282→
+   283→   283→### 1.3 Network — Routing
+   284→   284→
+   285→   285→| Feature | Open Source Package | Status |
+   286→   286→|---------|-------------------|--------|
+   287→   287→| Static routes | iproute2 / FRR | ✅ Ready |
+   288→   288→| Policy-based routing (source/dest based) | FRR + nftables | ✅ Ready |
+   289→   289→| Default route management | iproute2 | ✅ Ready |
+   290→   290→| Route monitoring / reachability | FRR + BFD | ✅ Ready |
+   291→   291→| Multi-WAN failover (priority + probe) | Custom (health probes + iproute2) | 🟡 Custom engineering |
+   292→   292→| Multi-WAN load balance (weighted, per-connection) | Custom (nftables + hash + probes) | 🟡 Custom engineering |
+   293→   293→| WAN health probes (ICMP/TCP/DNS/HTTP) | Custom (Go service) | 🟡 Custom engineering |
+   294→   294→| Floating static routes | FRR | ✅ Ready |
+   295→   295→| Blackhole routes | iproute2 | ✅ Ready |
+   296→   296→
+   297→   297→**Cut from original:** BGP/OSPF (Phase 2), RIP/RIPng (dropped — dead protocol), IS-IS (dropped), Route maps/prefix lists/community lists (Phase 2 with BGP), Route leaking (Phase 2 with VRF), Graceful restart (Phase 2)
+   298→   298→
+   299→   299→---
+   300→   300→
+   301→   301→### 1.4 Firewall (NGFW)
+   302→   302→
+   303→   303→| Feature | Open Source Package | Status |
+   304→   304→|---------|-------------------|--------|
+   305→   305→| Zone-based firewall (define zones, inter-zone policies) | nftables | 🟡 Custom engineering |
+   306→   306→| L3/L4 rules (source/dest/port/protocol) | nftables | ✅ Ready |
+   307→   307→| Address Objects / Groups (IP, range, subnet, FQDN) | Custom (DB + nftables sets) | 🟡 Custom engineering |
+   308→   308→| Service Objects / Groups (TCP/UDP port, ICMP type) | Custom (DB + nftables) | 🟡 Custom engineering |
+   309→   309→| Schedule Objects (time-based, recurring) | Custom (cron + nftables) | 🟡 Custom engineering |
+   310→   310→| Rule groups / categories | DB | ✅ Ready |
+   311→   311→| Rule enable/disable without delete | DB + nftables | ✅ Ready |
+   312→   312→| Rule comments / descriptions | DB | ✅ Ready |
+   313→   313→| Rule hit counters (per-rule, resettable) | nftables counters | ✅ Ready |
+   314→   314→| Actions: Allow / Deny / Drop / Reject | nftables | ✅ Ready |
+   315→   315→| Connection limit per rule (max concurrent) | nftables ct count | ✅ Ready |
+   316→   316→| Rate-limiting rules (connections/sec per source) | nftables limit | ✅ Ready |
+   317→   317→| SYN flood protection (SYN cookies, per-rule threshold) | nftables + sysctl | ✅ Ready |
+   318→   318→| Port forwarding (DNAT) | nftables dnat | ✅ Ready |
+   319→   319→| Logging: None / Summary / Detail | nftables log | ✅ Ready |
+   320→   320→| Implicit deny logging | nftables | ✅ Ready |
+   321→   321→| Rule validation engine (shadow rules, conflicts, orphans) | Custom (Go) | 🟡 Custom engineering |
+   322→   322→| GeoIP filtering | nftables + MaxMind GeoLite2 | ✅ Ready |
+   323→   323→| FQDN-based rules (resolve and update) | Custom (DNS resolve + nftables sets) | 🟡 Custom engineering |
+   324→   324→| App-aware rules (allow/block by nDPI app) | Custom (nDPI + nftables) | 🟡 Custom engineering |
+   325→   325→| User-based rules (map IP to user via RADIUS) | Custom (FreeRADIUS + nftables) | 🟡 Custom engineering |
+   326→   326→| DNS security rules (block/allow DNS queries) | Unbound + nftables | 🟡 Custom engineering |
+   327→   327→| ICMP type/code filtering | nftables | ✅ Ready |
+   328→   328→| Rule import / export (CSV, JSON) | API | ✅ Ready |
+   329→   329→| MAC filtering rules | nftables ether | ✅ Ready |
+   330→   330→
+   331→   331→**Cut from original:** TLS fingerprint (JA3/JA4) filtering (Phase 2), Blackhole/Mirror actions (Phase 2), PCAP-on-match logging (Phase 2), Rule versioning/change tracking (Phase 2), Rule simulation/dry-run (Phase 2), Asymmetric routing handling (Phase 2), Fragment handling policy (Phase 2), Rule count limits per tenant (Phase 2)
+   332→   332→
+   333→   333→---
+   334→   334→
+   335→   335→### 1.5 NAT
+   336→   336→
+   337→   337→| Feature | Open Source Package | Status |
+   338→   338→|---------|-------------------|--------|
+   339→   339→| SNAT (source NAT / masquerade) | nftables snat/masquerade | ✅ Ready |
+   340→   340→| DNAT (destination NAT) | nftables dnat | ✅ Ready |
+   341→   341→| 1:1 NAT (static NAT) | nftables dnat + snat | ✅ Ready |
+   342→   342→| Hairpin NAT | nftables | ✅ Ready |
+   343→   343→| NAT exemption (no-NAT / identity NAT) | nftables (no NAT rule) | ✅ Ready |
+   344→   344→| NAT pool management (range, overload) | nftables | ✅ Ready |
+   345→   345→| NAT logging (who got what translation) | nftables log | ✅ Ready |
+   346→   346→| Port forwarding (DNAT with port translation) | nftables dnat | ✅ Ready |
+   347→   347→| Destination NAT port ranges | nftables | ✅ Ready |
+   348→   348→
+   349→   349→**Cut from original:** Twice-NAT/Dual-NAT (Phase 2), Deterministic NAT/CGNAT (dropped — ISP feature), NAT with route-map (Phase 2), NAT44/NAT66/NPTv6 (Phase 2 with IPv6), NAT session timeouts per rule (Phase 2)
+   350→   350→
+   351→   351→---
+   352→   352→
+   353→   353→### 1.6 IPS / IDS
+   354→   354→
+   355→   355→| Feature | Open Source Package | Status |
+   356→   356→|---------|-------------------|--------|
+   357→   357→| Suricata inline mode | Suricata | ✅ Ready |
+   358→   358→| Emerging Threats (free) rule set | Emerging Threats | ✅ Ready |
+   359→   359→| Signature-based detection | Suricata | ✅ Ready |
+   360→   360→| Anomaly detection (preprocessors) | Suricata | ✅ Ready |
+   361→   361→| Auto rule updates | suricata-update | ✅ Ready |
+   362→   362→| IPS Policy Profiles (conservative/balanced/aggressive) | Custom (rule category toggles) | 🟡 Custom engineering |
+   363→   363→| IPS exception rules (disable specific SID for traffic) | Suricata threshold.config | ✅ Ready |
+   364→   364→| IPS bypass rules (skip IPS for source/dest) | Suricata bypass | ✅ Ready |
+   365→   365→| Custom IPS rules (user-defined Suricata rules) | Suricata | ✅ Ready |
+   366→   366→| Rule category enable/disable | Suricata + suricata-update | ✅ Ready |
+   367→   367→| IPS performance modes (inline-tap, inline-drop, passive) | Suricata | ✅ Ready |
+   368→   368→| IPS threshold tuning (per-rule, per-source) | Suricata threshold.config | ✅ Ready |
+   369→   369→| IPS event suppression (rate-limit alerts) | Suricata | ✅ Ready |
+   370→   370→| Threat intelligence correlation (block known bad IPs from feeds) | Suricata + custom feed sync | 🟡 Custom engineering |
+   371→   371→
+   372→   372→**Cut from original:** File extraction for sandbox (Phase 3 with ATP), Stream reassembly settings UI (Phase 2), Protocol decoding options UI (Phase 2)
+   373→   373→
+   374→   374→---
+   375→   375→
+   376→   376→### 1.7 VPN
+   377→   377→
+   378→   378→| Feature | Open Source Package | Status |
+   379→   379→|---------|-------------------|--------|
+   380→   380→| **WireGuard** (site-to-site + remote access) | WireGuard | ✅ Ready |
+   381→   381→| **IPSec (IKEv2)** — site-to-site | StrongSwan | ✅ Ready |
+   382→   382→| **IPSec (IKEv2)** — remote access (EAP-MSCHAPv2, EAP-TLS) | StrongSwan + FreeRADIUS | ✅ Ready |
+   383→   383→| **SSL VPN (OpenVPN)** — remote access | OpenVPN | ✅ Ready |
+   384→   384→| VPN split tunneling (include/exclude networks) | StrongSwan / WireGuard / OpenVPN | ✅ Ready |
+   385→   385→| VPN DNS assignment (push DNS to clients) | All VPN packages | ✅ Ready |
+   386→   386→| VPN dead peer detection (DPD) | StrongSwan | ✅ Ready |
+   387→   387→| VPN tunnel monitoring (probes, status) | Custom (health checks) | 🟡 Custom engineering |
+   388→   388→| VPN PFS (Perfect Forward Secrecy) | StrongSwan | ✅ Ready |
+   389→   389→| VPN user groups (different policies per group) | FreeRADIUS + StrongSwan | 🟡 Custom engineering |
+   390→   390→| VPN address pools (per-group) | StrongSwan / iproute2 | ✅ Ready |
+   391→   391→| VPN session limits (per-user, per-group) | Custom (session tracker) | 🟡 Custom engineering |
+   392→   392→| VPN session timeout (idle, max) | All VPN packages | ✅ Ready |
+   393→   393→| VPN IPsec anti-replay window | StrongSwan | ✅ Ready |
+   394→   394→| VPN client provisioning (.conf bundles) | Custom (template generator) | 🟡 Custom engineering |
+   395→   395→| VPN keepalive settings | WireGuard persistent-keepalive, StrongSwan dpd | ✅ Ready |
+   396→   396→
+   397→   397→**Cut from original:** IKEv1 (dropped — insecure legacy), L2TP over IPSec (Phase 2), SSTP VPN (dropped — niche), VPN load balancing (Phase 2), Post-connect scripts/hooks (Phase 2)
+   398→   398→
+   399→   399→---
+   400→   400→
+   401→   401→### 1.8 DNS Security
+   402→   402→
+   403→   403→| Feature | Open Source Package | Status |
+   404→   404→|---------|-------------------|--------|
+   405→   405→| DNS resolver (recursive + caching) | Unbound | ✅ Ready |
+   406→   406→| DNS filtering (block/allow lists) | Unbound RPZ / Rpzmate | ✅ Ready |
+   407→   407→| Custom DNS records (A, AAAA, CNAME, MX, TXT, SRV, PTR) | Unbound local-data | ✅ Ready |
+   408→   408→| Conditional forwarding (per-domain to specific server) | Unbound forward-zone | ✅ Ready |
+   409→   409→| DNS query logging | Unbound log | ✅ Ready |
+   410→   410→| DNS sinkhole | Unbound (return NXDOMAIN/0.0.0.0) | ✅ Ready |
+   411→   411→| Malware domain blocking | Unbound + aggregated free blocklists | 🟡 Custom engineering |
+   412→   412→| DNS response rate limiting (RRL) | Unbound (ratelimit config) | ✅ Ready |
+   413→   413→| DNS-over-TLS (DoT) server | Unbound | ✅ Ready |
+   414→   414→| DNS-over-HTTPS (DoH) server | dnsproxy / DoH proxy | 🟡 Custom engineering |
+   415→   415→
+   416→   416→**Cut from original:** DNSSEC validation (Phase 2), DNS tunneling detection (Phase 3 with AI), DGA detection (Phase 3 with AI), DNS failover/load balancing (Phase 2), DNS rewriting (Phase 2)
+   417→   417→
+   418→   418→---
+   419→   419→
+   420→   420→### 1.9 DHCP
+   421→   421→
+   422→   422→| Feature | Open Source Package | Status |
+   423→   423→|---------|-------------------|--------|
+   424→   424→| DHCPv4 server | Kea | ✅ Ready |
+   425→   425→| IP address pools (ranges) | Kea | ✅ Ready |
+   426→   426→| Static MAC-IP binding | Kea reservations | ✅ Ready |
+   427→   427→| Lease tracking / viewing | Kea + API | ✅ Ready |
+   428→   428→| DHCP relay (ip-helper) | Kea / dhcrelay | ✅ Ready |
+   429→   429→| DHCP option sets (custom options) | Kea (option-data) | ✅ Ready |
+   430→   430→| Per-subnet DHCP options override | Kea (subnet-level options) | ✅ Ready |
+   431→   431→| DHCP lease conflict detection | Kea | ✅ Ready |
+   432→   432→| DHCPv6 (basic) | Kea | ✅ Ready |
+   433→   433→
+   434→   434→**Cut from original:** DHCP failover (Phase 2), DHCP client classification (Phase 2)
+   435→   435→
+   436→   436→---
+   437→   437→
+   438→   438→### 1.10 Identity & Access
+   439→   439→
+   440→   440→| Feature | Open Source Package | Status |
+   441→   441→|---------|-------------------|--------|
+   442→   442→| Local user database (not just AD/LDAP) | PostgreSQL + bcrypt | ✅ Ready |
+   443→   443→| Local user groups | PostgreSQL | ✅ Ready |
+   444→   444→| Active Directory / LDAP sync | FreeRADIUS + LDAP | ✅ Ready |
+   445→   445→| RADIUS authentication | FreeRADIUS | ✅ Ready |
+   446→   446→| Captive portal (click-through, credentials, voucher) | Custom (Go + nftables + Unbound) | 🟡 Custom engineering |
+   447→   447→| Guest user management (self-registration, time-limited) | Custom (Go + PostgreSQL) | 🟡 Custom engineering |
+   448→   448→| Password policy (length, complexity, expiry) | Custom (Go) | ✅ Ready |
+   449→   449→| Account lockout policy | Custom (Go) | ✅ Ready |
+   450→   450→| MFA (TOTP) | Custom (Go + TOTP library) | 🟡 Custom engineering |
+   451→   451→| User identity mapping (IP-to-user via RADIUS) | FreeRADIUS + custom | 🟡 Custom engineering |
+   452→   452→| Concurrent session limits | Custom (session tracker) | 🟡 Custom engineering |
+   453→   453→
+   454→   454→**Cut from original:** SSO/Kerberos/NTLM (Phase 2), SAML 2.0 (Phase 2), OIDC (Phase 2), Kerberos Constrained Delegation (Phase 2), RADIUS CoA (Phase 2), RADIUS Dynamic VLAN (Phase 2), User activity timeline (Phase 2)
+   455→   455→
+   456→   456→---
+   457→   457→
+   458→   458→### 1.11 QoS
+   459→   459→
+   460→   460→| Feature | Open Source Package | Status |
+   461→   461→|---------|-------------------|--------|
+   462→   462→| HTB (Hierarchical Token Bucket) shaping | tc + HTB qdisc | ✅ Ready |
+   463→   463→| FQ_CoDel queuing | tc + fq_codel | ✅ Ready |
+   464→   464→| Per-interface bandwidth limits | tc + tbf/htb | ✅ Ready |
+   465→   465→| Per-user bandwidth limits | Custom (nftables + tc) | 🟡 Custom engineering |
+   466→   466→| Per-application bandwidth limits | Custom (nDPI + tc) | 🟡 Custom engineering |
+   467→   467→| Priority queues | tc + prio qdisc | ✅ Ready |
+   468→   468→| DSCP marking | nftables + tc | ✅ Ready |
+   469→   469→| DSCP-to-queue mapping | tc | ✅ Ready |
+   470→   470→| QoS templates (VoIP, Video, Gaming, Bulk) | Custom (predefined tc configs) | 🟡 Custom engineering |
+   471→   471→| QoS per-WAN shaper | tc + ifb | ✅ Ready |
+   472→   472→
+   473→   473→**Cut from original:** CAKE qdisc (Phase 2), Reverse path QoS / ingress shaping (Phase 2), Hierarchical QoS (parent-child classes) (Phase 2), Per-class monitoring dashboard (Phase 2), QoS burst allowance (Phase 2)
+   474→   474→
+   475→   475→---
+   476→   476→
+   477→   477→### 1.12 Logging & Reporting
+   478→   478→
+   479→   479→| Feature | Open Source Package | Status |
+   480→   480→|---------|-------------------|--------|
+   481→   481→| Central log storage | PostgreSQL | ✅ Ready |
+   482→   482→| Log severity levels | Syslog + PostgreSQL | ✅ Ready |
+   483→   483→| Log search / filter (field-based, time-range) | PostgreSQL queries via API | ✅ Ready |
+   484→   484→| Raw log viewer (real-time tail, pause) | API (WebSocket) | ✅ Ready |
+   485→   485→| Syslog forwarding | rsyslog | ✅ Ready |
+   486→   486→| NetFlow/IPFIX export | nfdump / softflowd | ✅ Ready |
+   487→   487→| Log forwarding reliability (buffer on disconnect) | rsyslog queue | ✅ Ready |
+   488→   488→| Log storage management (retention, auto-rollover, disk quota) | Custom (cron + PostgreSQL) | 🟡 Custom engineering |
+   489→   489→| Scheduled reports (daily/weekly/monthly) | Custom (Go + template engine) | 🟡 Custom engineering |
+   490→   490→| Report formats (PDF, HTML, CSV, JSON) | Custom (Go template + wkhtmltopdf) | 🟡 Custom engineering |
+   491→   491→| Basic traffic reports (top apps, users, threats) | SQL + Grafana | ✅ Ready |
+   492→   492→
+   493→   493→**Cut from original:** Full-text search (Phase 2 — add ClickHouse or Meilisearch), Compliance report templates (Phase 2), Executive summary reports (Phase 2), Log integrity (hash chain) (Phase 2), Log anonymization (Phase 2), Custom report builder (Phase 3), CEF/LEEF format (Phase 2)
+   494→   494→
+   495→   495→---
+   496→   496→
+   497→   497→### 1.13 High Availability
+   498→   498→
+   499→   499→| Feature | Open Source Package | Status |
+   500→   500→|---------|-------------------|--------|
+   501→   501→| Active/Passive failover | Keepalived (VRRP) | ✅ Ready |
+   502→   502→| Virtual IP (VIP) management | Keepalived | ✅ Ready |
+   503→   503→| Configuration sync (bidirectional) | Custom (rsync + PostgreSQL replication) | 🟡 Custom engineering |
+   504→   504→| HA link monitoring | Keepalived (track interfaces) | ✅ Ready |
+   505→   505→| HA split-brain prevention | Keepalived (priority + track) | ✅ Ready |
+   506→   506→| HA graceful failback (with hold-down) | Keepalived | ✅ Ready |
+   507→   507→| Firewall session sync (conntrack replication) | conntrackd | ✅ Ready |
+   508→   508→| VPN tunnel failover | StrongSwan + Keepalived | ✅ Ready |
+   509→   509→| HA cluster health dashboard | Custom (API) | ✅ Ready |
+   510→   510→
+   511→   511→**Cut from original:** Active/Active mode (Phase 3), IPS state sync (Phase 3)
+   512→   512→
+   513→   513→---
+   514→   514→
+   515→   515→### 1.14 System
+   516→   516→
+   517→   517→| Feature | Open Source Package | Status |
+   518→   518→|---------|-------------------|--------|
+   519→   519→| Backup / restore (full config + DB) | pg_dump + tar | ✅ Ready |
+   520→   520→| Firmware upgrade | Custom (apt + systemd) | 🟡 Custom engineering |
+   521→   521→| Firmware rollback (previous version) | Custom (versioned backups) | 🟡 Custom engineering |
+   522→   522→| Configuration versioning (before/after) | PostgreSQL + audit log | ✅ Ready |
+   523→   523→| Configuration diff viewer | Custom (Go) | ✅ Ready |
+   524→   524→| CLI (management) | Custom (Go CLI or just SSH + API) | 🟡 Custom engineering |
+   525→   525→| REST API | Go (Gin/Fiber) | ✅ Ready |
+   526→   526→| WebSocket (real-time updates) | Go (gorilla/websocket) | ✅ Ready |
+   527→   527→| JWT authentication | Go (jwt-go) | ✅ Ready |
+   528→   528→| RBAC (role-based access) | Custom (Go + PostgreSQL) | 🟡 Custom engineering |
+   529→   529→| Audit trail (who changed what, when) | PostgreSQL + middleware | ✅ Ready |
+   530→   530→| Admin MFA (TOTP) | Custom (Go) | 🟡 Custom engineering |
+   531→   531→| NTP configuration | chrony / systemd-timesyncd | ✅ Ready |
+   532→   532→| SNMP v2c/v3 | net-snmp | ✅ Ready |
+   533→   533→| SSH key management | Custom (authorized_keys) | ✅ Ready |
+   534→   534→| First-time setup wizard | Next.js UI | 🟡 Custom engineering |
+   535→   535→| Default policy templates (per vertical) | Custom (predefined configs) | 🟡 Custom engineering |
+   536→   536→| System hardening toggle | Custom (systemd service manager) | 🟡 Custom engineering |
+   537→   537→| Health check endpoints | Go HTTP | ✅ Ready |
+   538→   538→| Resource alerts (CPU, RAM, disk, temp) | Prometheus alerting | ✅ Ready |
+   539→   539→
+   540→   540→**Cut from original:** Secure Boot (dropped — hardware/firmware level), Disk encryption LUKS (Phase 2), Service isolation via containers (can use systemd first), Secrets management Vault (Phase 2), Change approval workflow (Phase 2), License management (Phase 2 — need business model first)
+   541→   541→
+   542→   542→---
+   543→   543→
+   544→   544→### 1.15 API
+   545→   545→
+   546→   546→| Feature | Open Source Package | Status |
+   547→   547→|---------|-------------------|--------|
+   548→   548→| REST API (all features) | Go (Gin/Fiber) | ✅ Ready |
+   549→   549→| API versioning (/api/v1/) | Go router | ✅ Ready |
+   550→   550→| OpenAPI/Swagger docs | swaggo | ✅ Ready |
+   551→   551→| API key management (create, revoke, scope) | Custom (Go + PostgreSQL) | 🟡 Custom engineering |
+   552→   552→| API rate limiting | Go middleware | ✅ Ready |
+   553→   553→| API pagination (cursor-based) | Go + PostgreSQL | ✅ Ready |
+   554→   554→| API batch operations | Go + PostgreSQL | ✅ Ready |
+   555→   555→| API request/response logging (audit) | Go middleware | ✅ Ready |
+   556→   556→| Webhook support (event callbacks) | Custom (Go) | 🟡 Custom engineering |
+   557→   557→| API change notifications (WebSocket push) | Go WebSocket | 🟡 Custom engineering |
+   558→   558→
+   559→   559→**Cut from original:** GraphQL (dropped — overkill), API sandbox/test console (Phase 2), API idempotency keys (Phase 2)
+   560→   560→
+   561→   561→---
+   562→   562→
+   563→   563→---
+   564→   564→
+   565→   565→## PHASE 2 — GROWTH (Months 7–12)
+   566→   566→### "Enterprise features: SSL inspection, WAF, SD-WAN, IPv6, routing"
+   567→   567→
+   568→   568→---
+   569→   569→
+   570→   570→### 2.1 SSL/TLS Inspection
+   571→   571→
+   572→   572→| Feature | Open Source Package | Status |
+   573→   573→|---------|-------------------|--------|
+   574→   574→| MITM proxy (intercept TLS traffic) | Squid + mitmproxy / sslsplit | 🟡 Custom engineering |
+   575→   575→| TLS 1.2 + 1.3 decryption | OpenSSL / BoringSSL | ✅ Ready |
+   576→   576→| Selective bypass (per-destination, per-user) | Custom (policy engine) | 🟡 Custom engineering |
+   577→   577→| Certificate pinning bypass handling | Custom (detect + block or bypass) | 🟡 Custom engineering |
+   578→   578→| HSTS bypass handling | Custom | 🟡 Custom engineering |
+   579→   579→| SSL error handling policy (block/allow/intercept on error) | Custom | 🟡 Custom engineering |
+   580→   580→| Certificate expiry monitoring & alerts | Custom (Go + certificates DB) | ✅ Ready |
+   581→   581→| Root CA export for endpoint deployment | Step-CA | ✅ Ready |
+   582→   582→| Certificate revocation checking (CRL + OCSP) | OpenSSL | ✅ Ready |
+   583→   583→| Decryption failure logging | Custom | ✅ Ready |
+   584→   584→
+   585→   585→**Open-Source Gap**: Internal PKI management. **Step-CA** (smallstep) is excellent and free — it provides root CA, subordinate CAs, ACME protocol, OCSP stapling. This is genuinely good.
+   586→   586→
+   587→   587→**Cut from original:** Client certificate authentication / mutual TLS (Phase 3), Per-tenant CA trust store (Phase 3), Unsupported cipher/block handling UI (Phase 3)
+   588→   588→
+   589→   589→---
+   590→   590→
+   591→   591→### 2.2 Application Control (Enhanced)
+   592→   592→
+   593→   593→| Feature | Open Source Package | Status |
+   594→   594→|---------|-------------------|--------|
+   595→   595→| nDPI classification (~300 protocols) | nDPI | ✅ Ready |
+   596→   596→| Block/allow applications | Custom (nDPI + nftables) | 🟡 Custom engineering |
+   597→   597→| Per-application bandwidth limits | Custom (nDPI + tc) | 🟡 Custom engineering |
+   598→   598→| Unknown application handling (allow/block/alert) | Custom | ✅ Ready |
+   599→   599→| Application QoS mapping | Custom (nDPI + tc) | 🟡 Custom engineering |
+   600→   600→| SaaS application detection | nDPI (partial) | 🟡 Limited — nDPI covers major SaaS but not granularly |
+   601→   601→| Custom application signatures | nDPI custom rules | 🟡 Advanced custom engineering |
+   602→   602→
+   603→   603→**Open-Source Gap**: nDPI covers ~300 protocols vs Fortinet's ~7000+ apps. For small enterprises, the top 50-100 apps (YouTube, Netflix, Facebook, BitTorrent, Zoom, Teams, etc.) are well-covered. Granular control ("block Facebook Chat but allow Facebook Video") is NOT possible with nDPI.
+   604→   604→
+   605→   605→---
+   606→   606→
+   607→   607→### 2.3 Web Security (URL Filtering)
+   608→   608→
+   609→   609→| Feature | Open Source Package | Status |
+   610→   610→|---------|-------------------|--------|
+   611→   611→| Explicit proxy mode (with auth) | Squid | ✅ Ready |
+   612→   612→| Transparent proxy mode (intercept) | Squid + nftables TPROXY | 🟡 Custom engineering |
+   613→   613→| URL category blocking | Squid + aggregated free lists | 🟡 Custom engineering |
+   614→   614→| Custom URL block/allow lists | Squid + DB | ✅ Ready |
+   615→   615→| Safe search enforcement (Google, Bing, YouTube) | Squid rewrite rules | ✅ Ready |
+   616→   616→| HTTP file type blocking | Squid | ✅ Ready |
+   617→   617→| HTTP header manipulation | Squid | ✅ Ready |
+   618→   618→| Web authentication (NTLMSSP for AD proxy) | Squid + FreeRADIUS | 🟡 Custom engineering |
+   619→   619→| HTTP bandwidth limits | Squid + delay pools | ✅ Ready |
+   620→   620→| HTTPS inspection | Squid + SSL bump | 🟡 Custom engineering |
+   621→   621→
+   622→   622→**Open-Source Gap — URL Categorization Database**: This is the **biggest quality gap**. Your options:
+   623→   623→1. **Aggregate free blocklists**: StevenBlack hosts, OISD, Blklist, hagezi, UT1 (dead but forks exist) — covers ~5-10M domains vs FortiGuard's 300M+
+   624→   624→2. **Pi-hole + dnscrypt-proxy lists**: Good for ad/malware blocking, not full web categorization
+   625→   625→3. **Shalla's Blacklists**: Was the go-to free option, now defunct
+   626→   626→4. **Build your own**: Crawl + classify — months of engineering, still inferior
+   627→   627→5. **Paid option**: Webshrinker ($$$) or similar for commercial-grade DB
+   628→   628→
+   629→   629→**Realistic approach**: Aggregate 5-8 free blocklists, categorize them (ads, malware, phishing, adult, social media, gambling, etc.), let admins manage custom lists. Accept ~60-70% coverage vs commercial. This is **good enough for small enterprises** who mainly want to block adult content, malware, and ads.
+   630→   630→
+   631→   631→---
+   632→   632→
+   633→   633→### 2.4 WAF (Web Application Firewall)
+   634→   634→
+   635→   635→| Feature | Open Source Package | Status |
+   636→   636→|---------|-------------------|--------|
+   637→   637→| Reverse proxy | Caddy / Nginx | ✅ Ready |
+   638→   638→| OWASP Core Rule Set (CRS) | Coraza + OWASP CRS | ✅ Ready |
+   639→   639→| WAF virtual hosts / policies (per-domain) | Coraza + Caddy | 🟡 Custom engineering |
+   640→   640→| WAF anomaly scoring (threshold-based blocking) | Coraza (paranoia levels) | ✅ Ready |
+   641→   641→| WAF false positive management | Coraza (rule exclusions) | ✅ Ready |
+   642→   642→| WAF custom rules | Coraza | ✅ Ready |
+   643→   643→| WAF rate limiting (per-URL, per-IP) | Caddy / Coraza | ✅ Ready |
+   644→   644→| WAF logging levels | Coraza | ✅ Ready |
+   645→   645→| WAF geo-blocking per vhost | Coraza + GeoIP | ✅ Ready |
+   646→   646→| WAF API protection (basic) | Coraza | 🟡 Custom engineering |
+   647→   647→| WAF learning mode (observe-only) | Custom (log-only mode) | ✅ Ready |
+   648→   648→
+   649→   649→**Cut from original:** Bot management (Phase 3), API schema validation (Phase 3), Virtual patching (Phase 3)
+   650→   650→
+   651→   651→---
+   652→   652→
+   653→   653→### 2.5 SD-WAN (Basic)
+   654→   654→
+   655→   655→| Feature | Open Source Package | Status |
+   656→   656→|---------|-------------------|--------|
+   657→   657→| Multi-WAN SLA monitoring (latency, jitter, loss) | Custom (Go + probes) | 🟡 Custom engineering |
+   658→   658→| SLA threshold configuration | Custom (DB) | ✅ Ready |
+   659→   659→| Application-aware path selection | Custom (nDPI + policy engine + routing) | 🟡 Heavy custom engineering |
+   660→   660→| Path quality score algorithm | Custom (weighted composite) | 🟡 Custom engineering |
+   661→   661→| Hub & Spoke topology | WireGuard/StrongSwan + FRR | 🟡 Custom engineering |
+   662→   662→| Per-path traffic statistics | Custom (eBPF flow export) | 🟡 Custom engineering |
+   663→   663→| SD-WAN QoS integration (per-path queues) | tc + ifb | 🟡 Custom engineering |
+   664→   664→| Brownout / degraded link handling | Custom (policy engine) | 🟡 Custom engineering |
+   665→   665→| Overlay encryption | WireGuard | ✅ Ready |
+   666→   666→
+   667→   667→**Open-Source Gap**: SD-WAN is **entirely custom engineering**. No open-source SD-WAN controller exists that matches VeloCloud/Viptela. You build this from FRR + custom path monitoring + policy engine. It's doable but is the **hardest feature** in Phase 2.
+   668→   668→
+   669→   669→---
+   670→   670→
+   671→   671→### 2.6 Dynamic Routing
+   672→   672→
+   673→   673→| Feature | Open Source Package | Status |
+   674→   674→|---------|-------------------|--------|
+   675→   675→| BGP (IPv4 + IPv6) | FRR | ✅ Ready |
+   676→   676→| OSPFv2 / OSPFv3 | FRR | ✅ Ready |
+   677→   677→| Route maps | FRR | ✅ Ready |
+   678→   678→| Prefix lists | FRR | ✅ Ready |
+   679→   679→| BFD (fast convergence) | FRR | ✅ Ready |
+   680→   680→| Graceful restart | FRR | ✅ Ready |
+   681→   681→
+   682→   682→---
+   683→   683→
+   684→   684→### 2.7 IPv6 Dual-Stack
+   685→   685→
+   686→   686→| Feature | Open Source Package | Status |
+   687→   687→|---------|-------------------|--------|
+   688→   688→| IPv6 firewall rules | nftables | ✅ Ready |
+   689→   689→| IPv6 NAT (NPTv6) | nftables | ✅ Ready |
+   690→   690→| IPv6 routing | FRR / iproute2 | ✅ Ready |
+   691→   691→| DHCPv6 | Kea | ✅ Ready |
+   692→   692→| IPv6 VPN (WireGuard, IPSec) | All VPN packages | ✅ Ready |
+   693→   693→| IPv6 QoS | tc | ✅ Ready |
+   694→   694→| IPv6 SLAAC | Kernel (radvd) | ✅ Ready |
+   695→   695→
+   696→   696→---
+   697→   697→
+   698→   698→### 2.8 Email Security (Basic)
+   699→   699→
+   700→   700→| Feature | Open Source Package | Status |
+   701→   701→|---------|-------------------|--------|
+   702→   702→| SMTP proxy (receive and relay) | Postfix + Rspamd | ✅ Ready |
+   703→   703→| Anti-spam | Rspamd | ✅ Ready |
+   704→   704→| Anti-phishing | Rspamd | ✅ Ready |
+   705→   705→| DKIM verification + signing | Rspamd + OpenDKIM | ✅ Ready |
+   706→   706→| SPF verification | Rspamd | ✅ Ready |
+   707→   707→| DMARC verification + reporting | Rspamd + OpenDMARC | ✅ Ready |
+   708→   708→| Email routing rules | Postfix + Rspamd | 🟡 Custom engineering |
+   709→   709→| Blocked file extensions | Rspamd + ClamAV | ✅ Ready |
+   710→   710→| Attachment scanning (ClamAV) | ClamAV | ✅ Ready |
+   711→   711→
+   712→   712→**Open-Source Gap**: Rspamd is genuinely excellent — probably the best open-source email security solution. The gap vs commercial (Sophos Email, Mimecast) is in:
+   713→   713→- Sandstorm-style attachment sandbox (ClamAV is signature-only)
+   714→   714→- URL rewriting in emails (click-time protection)
+   715→   715→- Email archiving/continuity
+   716→   716→
+   717→   717→---
+   718→   718→
+   719→   719→### 2.9 Advanced Identity
+   720→   720→
+   721→   721→| Feature | Open Source Package | Status |
+   722→   722→|---------|-------------------|--------|
+   723→   723→| SAML 2.0 federation | Custom (Go + SAML library) | 🟡 Custom engineering |
+   724→   724→| OIDC (OpenID Connect) | Custom (Go + OIDC library) | 🟡 Custom engineering |
+   725→   725→| RADIUS CoA (Change of Authorization) | FreeRADIUS | ✅ Ready |
+   726→   726→| RADIUS Dynamic VLAN Assignment | FreeRADIUS | ✅ Ready |
+   727→   727→| Kerberos/NTLM authentication (for web proxy) | Custom (Heimdal + Squid) | 🟡 Advanced custom engineering |
+   728→   728→| User activity timeline | Custom (log aggregation) | 🟡 Custom engineering |
+   729→   729→
+   730→   730→---
+   731→   731→
+   732→   732→### 2.10 NAC (Basic)
+   733→   733→
+   734→   734→| Feature | Open Source Package | Status |
+   735→   735→|---------|-------------------|--------|
+   736→   736→| 802.1X authentication | FreeRADIUS | ✅ Ready |
+   737→   737→| MAC Authentication Bypass (MAB) | FreeRADIUS | ✅ Ready |
+   738→   738→| Dynamic VLAN assignment | FreeRADIUS | ✅ Ready |
+   739→   739→| Device profiling (fingerprint → type/OS/vendor) | Custom (DHCP + ARP + OUI lookup) | 🟡 Custom engineering |
+   740→   740→| Rogue device detection | Custom (ARP monitoring + MAC table) | 🟡 Custom engineering |
+   741→   741→| BYOD onboarding (captive portal + certificate) | Custom (captive portal + Step-CA) | 🟡 Heavy custom engineering |
+   742→   742→
+   743→   743→---
+   744→   744→
+   745→   745→### 2.11 Threat Intelligence
+   746→   746→
+   747→   747→| Feature | Open Source Package | Status |
+   748→   748→|---------|-------------------|--------|
+   749→   749→| Free feed ingestion (Abuse.ch, AlienVault OTX, Spamhaus) | Custom (Go + API clients) | 🟡 Custom engineering |
+   750→   750→| IOC management (IP, domain, hash, URL) | Custom (PostgreSQL + API) | 🟡 Custom engineering |
+   751→   751→| Reputation scoring (aggregate from multiple feeds) | Custom (scoring algorithm) | 🟡 Custom engineering |
+   752→   752→| Auto-block malicious IPs (feed → firewall) | Custom (feed sync → nftables) | 🟡 Custom engineering |
+   753→   753→| STIX/TAXII feed support | Custom (Go + STIX library) | 🟡 Custom engineering |
+   754→   754→
+   755→   755→---
+   756→   756→
+   757→   757→### 2.12 PKI / Certificate Management
+   758→   758→
+   759→   759→| Feature | Open Source Package | Status |
+   760→   760→|---------|-------------------|--------|
+   761→   761→| Internal CA (root + subordinate) | Step-CA | ✅ Ready |
+   762→   762→| Certificate lifecycle (issue, renew, revoke) | Step-CA (ACME protocol) | ✅ Ready |
+   763→   763→| OCSP / CRL | Step-CA | ✅ Ready |
+   764→   764→| Auto-renewal | Step-CA + cert-manager | ✅ Ready |
+   765→   765→| Certificate export (PEM, PKCS12) | Step-CA | ✅ Ready |
+   766→   766→
+   767→   767→---
+   768→   768→
+   769→   769→### 2.13 Enhanced Logging
+   770→   770→
+   771→   771→| Feature | Open Source Package | Status |
+   772→   772→|---------|-------------------|--------|
+   773→   773→| Full-text log search | ClickHouse / Meilisearch | 🟡 Custom engineering |
+   774→   774→| CEF / LEEF format for SIEM integration | Custom (Go) | 🟡 Custom engineering |
+   775→   775→| Compliance report templates (PCI-DSS, HIPAA, GDPR) | Custom (Go + templates) | 🟡 Custom engineering |
+   776→   776→| Log anonymization (mask PII) | Custom (Go) | 🟡 Custom engineering |
+   777→   777→| Report scheduling (email delivery) | Custom (Go) | 🟡 Custom engineering |
+   778→   778→| Executive summary reports | Custom (Go + Grafana) | 🟡 Custom engineering |
+   779→   779→
+   780→   780→---
+   781→   781→
+   782→   782→---
+   783→   783→
+   784→   784→## PHASE 3 — INTELLIGENCE (Months 13–18)
+   785→   785→### "AI/ML capabilities, ATP sandbox, advanced threat detection"
+   786→   786→
+   787→   787→---
+   788→   788→
+   789→   789→### 3.1 AI/ML Engine (Simplified — 3 Models, Not 13)
+   790→   790→
+   791→   791→**Start with these 3 models only. Add more after you have real traffic data.**
+   792→   792→
+   793→   793→| Model | Purpose | Open Source Tools | Training Data | Feasibility |
+   794→   794→|-------|---------|------------------|---------------|------------|
+   795→   795→| **DGA Detection** | Detect algorithmically generated domains | PyTorch → ONNX | Public DGA datasets (Bambenek, Intel 471) | ✅ **High** — public datasets available, well-researched |
+   796→   796→| **Network Anomaly (UEBA-lite)** | Detect unusual user/network behavior patterns | PyTorch → ONNX | Your own flow data (need 4-8 weeks of baseline) | 🟡 **Medium** — need deployed base first |
+   797→   797→| **Encrypted Traffic Classification** | Classify apps inside TLS (using JA3/JA4 + flow features) | PyTorch → ONNX | Public ISCX/UNSW datasets + your traffic | 🟡 **Medium** — research papers exist, but needs fine-tuning |
+   798→   798→
+   799→   799→**Deferred to Phase 4+ (add when you have training data):**
+   800→   800→- C2 beaconing detection
+   801→   801→- Lateral movement detection (graph-based)
+   802→   802→- Phishing detection (NLP)
+   803→   803→- Malware classification (sandbox results)
+   804→   804→- IPS false positive reduction
+   805→   805→- DLP NLP
+   806→   806→- Config anomaly detection
+   807→   807→- Capacity prediction
+   808→   808→
+   809→   809→**AI Infrastructure:**
+   810→   810→| Component | Package | Notes |
+   811→   811→|-----------|---------|-------|
+   812→   812→| Feature extraction | Python + scikit-learn | Flow features, timing, volume, protocol ratios |
+   813→   813→| Model training | PyTorch (offline) | Train on separate dev machine, export ONNX |
+   814→   814→| Model inference | ONNX Runtime | Lightweight, fast, no GPU needed for these models |
+   815→   815→| Model serving | Custom Go + ONNX Runtime | HTTP/gRPC inference endpoint |
+   816→   816→| Model registry | PostgreSQL + filesystem | Track version, metrics, deployment status |
+   817→   817→| Confidence thresholds | Configurable per model | High confidence = auto-block, low = alert only |
+   818→   818→| Human-in-the-loop | Admin feedback UI | FP/FN marking → retraining trigger |
+   819→   819→| Model drift detection | Statistical monitoring | Alert when accuracy degrades |
+   820→   820→
+   821→   821→---
+   822→   822→
+   823→   823→### 3.2 ATP (Advanced Threat Protection) — Sandbox
+   824→   824→
+   825→   825→| Feature | Open Source Package | Status |
+   826→   826→|---------|-------------------|--------|
+   827→   827→| Malware detonation sandbox | Cuckoo Sandbox | 🟡 Custom engineering |
+   828→   828→| YARA rule scanning | YARA | ✅ Ready |
+   829→   829→| File extraction from network streams | Suricata file extraction | ✅ Ready |
+   830→   830→| Auto-quarantine malicious files | Custom | ✅ Ready |
+   831→   831→| Sandbox report generation | Cuckoo | ✅ Ready |
+   832→   832→
+   833→   833→**Open-Source Gap — Sandbox Quality**:
+   834→   834→- Cuckoo Sandbox is **functional but slow** (minutes per file) and **easily evaded** by modern malware
+   835→   835→- FortiSandbox/Sophos Sandstorm use custom hypervisors with anti-evasion techniques
+   836→   836→- **Your approach**: Cuckoo + YARA + AI classification (Phase 3 model) = ~50-60% of commercial sandbox quality
+   837→   837→- **Mitigation**: Rely more on behavioral IPS (Suricata) + AI anomaly detection than file detonation
+   838→   838→
+   839→   839→---
+   840→   840→
+   841→   841→### 3.3 DLP (Data Loss Prevention)
+   842→   842→
+   843→   843→| Feature | Open Source Package | Status |
+   844→   844→|---------|-------------------|--------|
+   845→   845→| Regex pattern matching (credit card, SSN, email, phone, IBAN) | Custom (Go regex) | ✅ Ready |
+   846→   846→| Keyword matching | Custom (Go + Aho-Corasick) | ✅ Ready |
+   847→   847→| File type control (block/allow by extension) | Custom | ✅ Ready |
+   848→   848→| Protocol-aware scanning (HTTP, SMTP, FTP) | Custom (proxy integration) | 🟡 Custom engineering |
+   849→   849→| DLP incident workflow (alert → review → resolve) | Custom (Go + PostgreSQL) | 🟡 Custom engineering |
+   850→   850→| DLP user notification (block page, warning) | Custom (Go HTTP server) | 🟡 Custom engineering |
+   851→   851→| DLP severity levels (low/medium/high/critical) | DB | ✅ Ready |
+   852→   852→| DLP file type granularity (PDF, DOCX, XLSX, etc.) | Custom (file parsers) | 🟡 Heavy custom engineering |
+   853→   853→
+   854→   854→**Open-Source Gap**:
+   855→   855→- **Exact Data Matching (EDM)** and **Indexed Document Matching (IDM)**: No open-source solution. These require hashing entire databases/documents — commercial only (Symantec DLP, Forcepoint).
+   856→   856→- **OCR-based DLP**: Tesseract (open source) exists but integrating it into real-time traffic inspection is impractical for a UTM.
+   857→   857→- **NLP-based DLP**: Possible with open-source NLP (spaCy, HuggingFace) but needs training data and significant engineering.
+   858→   858→
+   859→   859→---
+   860→   860→
+   861→   861→### 3.4 DNS Tunneling Detection
+   862→   862→
+   863→   863→| Feature | Open Source Package | Status |
+   864→   864→|---------|-------------------|--------|
+   865→   865→| Entropy-based detection | Custom (Go) | 🟡 Custom engineering |
+   866→   866→| Volume/frequency analysis | Custom (Go + Redis) | 🟡 Custom engineering |
+   867→   867→| DGA detection (AI model) | ONNX Runtime | 🟡 Custom engineering |
+   868→   868→
+   869→   869→---
+   870→   870→
+   871→   871→### 3.5 Incident Response (Basic)
+   872→   872→
+   873→   873→| Feature | Open Source Package | Status |
+   874→   874→|---------|-------------------|--------|
+   875→   875→| Incident creation (from alerts) | Custom (Go + PostgreSQL) | 🟡 Custom engineering |
+   876→   876→| Incident workflow (new → investigating → resolved) | Custom (Go) | 🟡 Custom engineering |
+   877→   877→| Incident timeline (all actions on an incident) | PostgreSQL | ✅ Ready |
+   878→   878→| Manual block/quarantine actions | API → nftables | ✅ Ready |
+   879→   879→| Incident assignment | Custom (Go) | ✅ Ready |
+   880→   880→
+   881→   881→**Cut from original:** Playbooks/SOAR (Phase 4), Threat hunting interface (Phase 4)
+   882→   882→
+   883→   883→---
+   884→   884→
+   885→   885→### 3.6 IoT Device Management
+   886→   886→
+   887→   887→| Feature | Open Source Package | Status |
+   888→   888→|---------|-------------------|--------|
+   889→   889→| Device fingerprinting (MAC OUI + DHCP + nDPI) | Custom (OUI DB + nDPI) | 🟡 Custom engineering |
+   890→   890→| IoT device inventory | PostgreSQL | ✅ Ready |
+   891→   891→| Rogue device detection | Custom (ARP + MAC table monitoring) | 🟡 Custom engineering |
+   892→   892→| Device quarantine | nftables | ✅ Ready |
+   893→   893→| Device risk scoring | Custom (AI model, Phase 3+) | 🟡 Custom engineering |
+   894→   894→
+   895→   895→---
+   896→   896→
+   897→   897→---
+   898→   898→
+   899→   899→## PHASE 4 — PLATFORM (Months 18–24+)
+   900→   900→### "Scale, multi-site, SASE basics, advanced automation"
+   901→   901→
+   902→   902→---
+   903→   903→
+   904→   904→### 4.1 Multi-Site Management (Central Manager)
+   905→   905→
+   906→   906→| Feature | Approach |
+   907→   907→|---------|--------|
+   908→   908→| Central dashboard for multiple UTM instances | Custom web UI |
+   909→   909→| Central policy deployment (push to remote sites) | API + WebSocket |
+   910→   910→| Central logging aggregation | ClickHouse cluster |
+   911→   911→| Central firmware management | API |
+   912→   912→| Site templates (deploy new site from template) | Custom |
+   913→   913→| Per-site resource limits | DB |
+   914→   914→
+   915→   915→---
+   916→   916→
+   917→   917→### 4.2 SASE Basics
+   918→   918→
+   919→   919→| Feature | Approach |
+   920→   920→|---------|--------|
+   921→   921→| Cloud firewall node (deploy in AWS/Azure/GCP) | Custom (Debian + same codebase in cloud VM) |
+   922→   922→| Central controller (manage on-prem + cloud nodes) | Custom web UI + API |
+   923→   923→| Edge-to-cloud tunnel (WireGuard mesh) | WireGuard |
+   924→   924→| Identity-aware routing (user → nearest node) | Custom |
+   925→   925→
+   926→   926→**Note**: Full SASE (like Zscaler, Netskope) is a multi-year, multi-million dollar effort. This is a **basic starting point**.
+   927→   927→
+   928→   928→---
+   929→   929→
+   930→   930→### 4.3 CASB (Basic)
+   931→   931→
+   932→   932→| Feature | Approach |
+   933→   933→|---------|--------|
+   934→   934→| SaaS visibility (detect SaaS usage via nDPI) | nDPI + logs |
+   935→   935→| Shadow IT detection | Custom (analyze traffic for unknown SaaS) |
+   936→   936→| Basic API-based controls (Google Workspace, O365) | Custom (vendor APIs) |
+   937→   937→
+   938→   938→**Note**: Full CASB requires 50+ SaaS API integrations. Start with top 5-10 (Google, Microsoft, Salesforce, Dropbox, Slack) based on customer demand.
+   939→   939→
+   940→   940→---
+   941→   941→
+   942→   942→### 4.4 ZTNA (Basic)
+   943→   943→
+   944→   944→| Feature | Approach |
+   945→   945→|---------|--------|
+   946→   946→| Identity-based access (user-to-resource) | Custom (RADIUS + policy engine) |
+   947→   947→| Device posture check (basic: OS, AV, disk encrypt) | Custom (endpoint agent or WMI/SSH probe) |
+   948→   948→| Continuous validation | Custom (periodic re-check) |
+   949→   949→
+   950→   950→---
+   951→   951→
+   952→   952→### 4.5 Advanced AI (Add After Deployed Base Exists)
+   953→   953→
+   954→   954→| Model | Purpose | Prerequisite |
+   955→   955→|-------|---------|-------------|
+   956→   956→| C2 beaconing detection | Detect command-and-control communication | 6+ months of network flow data |
+   957→   957→| Lateral movement detection | Detect lateral movement patterns | Graph-based, needs NetFlow + auth logs |
+   958→   958→| Phishing detection (NLP) | Detect phishing in email content | Labeled email dataset (can use public: PhishTank, Nazario) |
+   959→   959→| IPS false positive reduction | Reduce Suricata alert noise | 3+ months of IPS alert + admin feedback data |
+   960→   960→| DLP NLP | Detect sensitive data in text | Labeled DLP dataset (hard to get publicly) |
+   961→   961→| Config anomaly | Detect firewall misconfigurations | Rule-based initially, ML later |
+   962→   962→
+   963→   963→---
+   964→   964→
+   965→   965→### 4.6 SOAR Integration (Basic)
+   966→   966→
+   967→   967→| Feature | Approach |
+   968→   968→|---------|--------|
+   969→   969→| Webhook triggers to external SOAR | Webhook (Phase 1 API) |
+   970→   970→| API integration with external SOAR (Cortex XSOAR, Splunk SOAR) | REST API |
+   971→   971→| Basic automated response playbooks | Custom (Go + DB) |
+   972→   972→
+   973→   973→---
+   974→   974→
+   975→   975→---
+   976→   976→
+   977→   977→## OPEN-SOURCE GAP SUMMARY — HONEST ASSESSMENT
+   978→   978→
+   979→   979→### Gaps You Must Accept (No Open-Source Solution Exists)
+   980→   980→
+   981→   981→| Feature | Commercial Equivalent | Gap Severity | Mitigation Strategy |
+   982→   982→|---------|---------------------|---------------|-------------------|
+   983→   983→| **URL Categorization Database** | FortiGuard Web, Sophos Web | 🔴 **Critical** | Aggregate 5-8 free blocklists. Accept 60-70% coverage. Add AI-based uncategorized URL classification (Phase 3). |
+   984→   984→| **Anti-Virus Engine Quality** | Fortinet AV, Sophos LiveProtect | 🔴 **Critical** | Rely on Suricata IPS + behavioral detection + sandbox (Phase 3). Don't compete on file-scanning AV. ClamAV for basic coverage only. |
+   985→   985→| **Sandbox Sophistication** | FortiSandbox, Sophos Sandstorm | 🟡 **Medium** | Cuckoo + YARA + AI classification. Accept 50-60% zero-day catch rate. |
+   986→   986→| **Application Control Granularity** | Fortinet App Control (7000+ apps) | 🟡 **Medium** | nDPI covers top 300 protocols. Good enough for 90% of small enterprise use cases. |
+   987→   987→| **IPS Signature Coverage** | ET Pro (paid), Fortinet IPS | 🟡 **Medium** | Emerging Threats (free) + AI false positive reduction (Phase 3) + custom rules. |
+   988→   988→| **EDM/IDM for DLP** | Symantec DLP, Forcepoint | 🟡 **Medium** | Regex + keyword matching only. No fingerprint-based matching. |
+   989→   989→| **Threat Intelligence Depth** | Recorded Future, Mandiant | 🟡 **Medium** | Free feeds (Abuse.ch, OTX, Spamhaus) are sufficient for small enterprises. |
+   990→   990→| **Browser Isolation (RBI)** | Menlo Security, Globo | 🔴 **N/A** | Dropped. Not feasible with open source. |
+   991→   991→| **Endpoint Agent / Integration** | FortiClient, Sophos Endpoint | 🔴 **N/A** | Dropped. Separate product. Use FDE/AV from existing endpoint solutions. |
+   992→   992→| **Cold-Start AI Training Data** | Fortinet (billions of daily flows) | 🟡 **Medium** | Start rule-based. Add ML after 3-6 months of deployed traffic data. Use public datasets for DGA/phishing models. |
+   993→   993→
+   994→   994→### Gaps That Don't Matter for Small Enterprise
+   995→   995→
+   996→   996→| Feature | Why It Doesn't Matter |
+   997→   997→|---------|---------------------|
+   998→   998→| 40-100 Gbps throughput | Small enterprises run 1-5 Gbps. eBPF + nftables handles 10 Gbps easily on commodity hardware. |
+   999→   999→| 7000+ application signatures | Small enterprises care about blocking YouTube, Facebook, Netflix, BitTorrent, gaming — all covered by nDPI. |
+  1000→  1000→| Zero-day sandbox catch rate > 90% | Small enterprises are not APT targets. Suricata + good firewall rules + DNS security covers 95% of threats they face. |
+  1001→  1001→| 24/7 SOC-backed threat research | Your product is self-managed. Admins get alerts and respond. AI assists with triage. |
+  1002→  1002→
+  1003→  1003→---
+  1004→  1004→
+  1005→  1005→## SIMPLIFIED DATABASE SCHEMA
+  1006→  1006→
+  1007→  1007→### Core Tables (Phase 1)
+  1008→  1008→
+  1009→  1009→```sql
+  1010→  1010→-- Tenancy
+  1011→  1011→CREATE TABLE tenants (
+  1012→  1012→    id              SERIAL PRIMARY KEY,
+  1013→  1013→    name            VARCHAR(128) NOT NULL UNIQUE,
+  1014→  1014→    company         VARCHAR(256),
+  1015→  1015→    contact_email   VARCHAR(256),
+  1016→  1016→    status          VARCHAR(20) DEFAULT 'active',
+  1017→  1017→    created_at      TIMESTAMPTZ DEFAULT NOW()
+  1018→  1018→);
+  1019→  1019→
+  1020→  1020→-- Users & Roles
+  1021→  1021→CREATE TABLE users (
+  1022→  1022→    id              SERIAL PRIMARY KEY,
+  1023→  1023→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1024→  1024→    username        VARCHAR(128) NOT NULL,
+  1025→  1025→    password_hash   VARCHAR(256) NOT NULL,
+  1026→  1026→    role            VARCHAR(32) NOT NULL DEFAULT 'viewer',
+  1027→  1027→    -- super_admin, tenant_admin, security_admin, network_admin,
+  1028→  1028→    -- soc_analyst, helpdesk, auditor, api_service
+  1029→  1029→    email           VARCHAR(256),
+  1030→  1030→    totp_secret     VARCHAR(256),
+  1031→  1031→    is_active       BOOLEAN DEFAULT true,
+  1032→  1032→    last_login_at   TIMESTAMPTZ,
+  1033→  1033→    created_at      TIMESTAMPTZ DEFAULT NOW(),
+  1034→  1034→    UNIQUE(tenant_id, username)
+  1035→  1035→);
+  1036→  1036→
+  1037→  1037→-- Network Objects
+  1038→  1038→CREATE TABLE zones (
+  1039→  1039→    id              SERIAL PRIMARY KEY,
+  1040→  1040→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1041→  1041→    name            VARCHAR(64) NOT NULL,
+  1042→  1042→    type            VARCHAR(20) NOT NULL, -- L3, L2, VPN
+  1043→  1043→    interface_names TEXT[] NOT NULL,
+  1044→  1044→    description     TEXT,
+  1045→  1045→    UNIQUE(tenant_id, name)
+  1046→  1046→);
+  1047→  1047→
+  1048→  1048→CREATE TABLE address_objects (
+  1049→  1049→    id              SERIAL PRIMARY KEY,
+  1050→  1050→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1051→  1051→    name            VARCHAR(128) NOT NULL,
+  1052→  1052→    type            VARCHAR(20) NOT NULL, -- ip, range, subnet, fqdn, geo, wildcard
+  1053→  1053→    value           TEXT NOT NULL,
+  1054→  1054→    description     TEXT,
+  1055→  1055→    UNIQUE(tenant_id, name)
+  1056→  1056→);
+  1057→  1057→
+  1058→  1058→CREATE TABLE address_groups (
+  1059→  1059→    id              SERIAL PRIMARY KEY,
+  1060→  1060→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1061→  1061→    name            VARCHAR(128) NOT NULL,
+  1062→  1062→    member_ids      INTEGER[] NOT NULL,
+  1063→  1063→    description     TEXT,
+  1064→  1064→    UNIQUE(tenant_id, name)
+  1065→  1065→);
+  1066→  1066→
+  1067→  1067→CREATE TABLE service_objects (
+  1068→  1068→    id              SERIAL PRIMARY KEY,
+  1069→  1069→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1070→  1070→    name            VARCHAR(128) NOT NULL,
+  1071→  1071→    protocol        VARCHAR(10) NOT NULL, -- tcp, udp, icmp, any
+  1072→  1072→    src_port        VARCHAR(64),
+  1073→  1073→    dst_port        VARCHAR(64),
+  1074→  1074→    icmp_type       SMALLINT,
+  1075→  1075→    description     TEXT,
+  1076→  1076→    UNIQUE(tenant_id, name)
+  1077→  1077→);
+  1078→  1078→
+  1079→  1079→CREATE TABLE service_groups (
+  1080→  1080→    id              SERIAL PRIMARY KEY,
+  1081→  1081→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1082→  1082→    name            VARCHAR(128) NOT NULL,
+  1083→  1083→    member_ids      INTEGER[] NOT NULL,
+  1084→  1084→    description     TEXT,
+  1085→  1085→    UNIQUE(tenant_id, name)
+  1086→  1086→);
+  1087→  1087→
+  1088→  1088→CREATE TABLE schedule_objects (
+  1089→  1089→    id              SERIAL PRIMARY KEY,
+  1090→  1090→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1091→  1091→    name            VARCHAR(128) NOT NULL,
+  1092→  1092→    type            VARCHAR(20) NOT NULL, -- always, recurring, onetime
+  1093→  1093→    recurrence      JSONB, -- {days:[1,2,3,4,5], start:"09:00", end:"17:00"}
+  1094→  1094→    date_range      DATERANGE,
+  1095→  1095→    timezone        VARCHAR(64) DEFAULT 'UTC',
+  1096→  1096→    UNIQUE(tenant_id, name)
+  1097→  1097→);
+  1098→  1098→
+  1099→  1099→-- Firewall Rules
+  1100→  1100→CREATE TABLE firewall_rules (
+  1101→  1101→    id              SERIAL PRIMARY KEY,
+  1102→  1102→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1103→  1103→    name            VARCHAR(128) NOT NULL,
+  1104→  1104→    description     TEXT,
+  1105→  1105→    enabled         BOOLEAN DEFAULT true,
+  1106→  1106→    position        INTEGER NOT NULL,
+  1107→  1107→    source_zone_ids INTEGER[],
+  1108→  1108→    dest_zone_ids   INTEGER[],
+  1109→  1109→    source_addr_ids INTEGER[],
+  1110→  1110→    dest_addr_ids   INTEGER[],
+  1111→  1111→    service_ids     INTEGER[],
+  1112→  1112→    application_ids INTEGER[], -- nDPI app IDs
+  1113→  1113→    user_ids        INTEGER[],
+  1114→  1114→    schedule_id     INTEGER REFERENCES schedule_objects(id),
+  1115→  1115→    action          VARCHAR(20) NOT NULL DEFAULT 'deny', -- allow,deny,drop,reject
+  1116→  1116→    logging         VARCHAR(20) DEFAULT 'none', -- none,summary,detail
+  1117→  1117→    conn_limit      INTEGER,
+  1118→  1118→    rate_limit      INTEGER,
+  1119→  1119→    syn_protection  BOOLEAN DEFAULT false,
+  1120→  1120→    syn_threshold   INTEGER,
+  1121→  1121→    ips_policy      VARCHAR(64), -- attach IPS profile name
+  1122→  1122→    qos_policy_id   INTEGER,
+  1123→  1123→    nat_type        VARCHAR(20), -- snat,dnat,hairpin,null
+  1124→  1124→    nat_target      INET,
+  1125→  1125→    nat_port        INTEGER,
+  1126→  1126→    comment         TEXT,
+  1127→  1127→    tags            VARCHAR(256)[],
+  1128→  1128→    hit_count       BIGINT DEFAULT 0,
+  1129→  1129→    last_hit_at     TIMESTAMPTZ,
+  1130→  1130→    created_at      TIMESTAMPTZ DEFAULT NOW(),
+  1131→  1131→    updated_at      TIMESTAMPTZ DEFAULT NOW()
+  1132→  1132→);
+  1133→  1133→
+  1134→  1134→-- NAT Rules
+  1135→  1135→CREATE TABLE nat_rules (
+  1136→  1136→    id              SERIAL PRIMARY KEY,
+  1137→  1137→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1138→  1138→    name            VARCHAR(128),
+  1139→  1139→    position        INTEGER NOT NULL,
+  1140→  1140→    type            VARCHAR(20) NOT NULL, -- snat,dnat,hairpin,exempt
+  1141→  1141→    enabled         BOOLEAN DEFAULT true,
+  1142→  1142→    source_addr_ids INTEGER[],
+  1143→  1143→    dest_addr_ids   INTEGER[],
+  1144→  1144→    service_ids     INTEGER[],
+  1145→  1145→    outgoing_iface  VARCHAR(64),
+  1146→  1146→    translated_src  INET,
+  1147→  1147→    translated_dst  INET,
+  1148→  1148→    translated_port INTEGER,
+  1149→  1149→    comment         TEXT,
+  1150→  1150→    hit_count       BIGINT DEFAULT 0,
+  1151→  1151→    created_at      TIMESTAMPTZ DEFAULT NOW()
+  1152→  1152→);
+  1153→  1153→
+  1154→  1154→-- Interfaces
+  1155→  1155→CREATE TABLE interfaces (
+  1156→  1156→    id              SERIAL PRIMARY KEY,
+  1157→  1157→    tenant_id       INTEGER REFERENCES tenants(id),
+  1158→  1158→    name            VARCHAR(64) NOT NULL,
+  1159→  1159→    type            VARCHAR(20) NOT NULL, -- physical,vlan,bridge,bond,loopback,gre
+  1160→  1160→    parent_name     VARCHAR(64),
+  1161→  1161→    vlan_id         SMALLINT,
+  1162→  1162→    mtu             INTEGER DEFAULT 1500,
+  1163→  1163→    mss_clamp       INTEGER,
+  1164→  1164→    zone_id         INTEGER REFERENCES zones(id),
+  1165→  1165→    enabled         BOOLEAN DEFAULT true,
+  1166→  1166→    config          JSONB NOT NULL DEFAULT '{}',
+  1167→  1167→    -- physical: {mac, speed, duplex}
+  1168→  1168→    -- vlan: {parent, vlan_id}
+  1169→  1169→    -- bond: {mode, members}
+  1170→  1170→    -- bridge: {stp, members}
+  1171→  1171→    -- wan: {type:static|dhcp|pppoe, ip, gateway}
+  1172→  1172→    description     TEXT,
+  1173→  1173→    UNIQUE(tenant_id, name)
+  1174→  1174→);
+  1175→  1175→
+  1176→  1176→-- VPN
+  1177→  1177→CREATE TABLE vpn_configs (
+  1178→  1178→    id              SERIAL PRIMARY KEY,
+  1179→  1179→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1180→  1180→    name            VARCHAR(128) NOT NULL,
+  1181→  1181→    type            VARCHAR(20) NOT NULL, -- ipsec_site, ipsec_remote, wireguard, openvpn
+  1182→  1182→    enabled         BOOLEAN DEFAULT true,
+  1183→  1183→    config          JSONB NOT NULL DEFAULT '{}',
+  1184→  1184→    -- IPSec: {local_ip, remote_ip, local_subnet, remote_subnet, psk, ikev2, dpd, pfs}
+  1185→  1185→    -- WireGuard: {private_key, port, peers:[{public_key, allowed_ips, endpoint}]}
+  1186→  1186→    -- OpenVPN: {proto, port, cipher, auth}
+  1187→  1187→    status          VARCHAR(20) DEFAULT 'down',
+  1188→  1188→    status_message  TEXT,
+  1189→  1189→    created_at      TIMESTAMPTZ DEFAULT NOW(),
+  1190→  1190→    UNIQUE(tenant_id, name)
+  1191→  1191→);
+  1192→  1192→
+  1193→  1193→CREATE TABLE vpn_sessions (
+  1194→  1194→    id              BIGSERIAL PRIMARY KEY,
+  1195→  1195→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1196→  1196→    vpn_id          INTEGER NOT NULL REFERENCES vpn_configs(id),
+  1197→  1197→    user_id         INTEGER REFERENCES users(id),
+  1198→  1198→    username        VARCHAR(256),
+  1199→  1199→    source_ip       INET NOT NULL,
+  1200→  1200→    assigned_ip     INET,
+  1201→  1201→    bytes_in        BIGINT DEFAULT 0,
+  1202→  1202→    bytes_out       BIGINT DEFAULT 0,
+  1203→  1203→    connected_at    TIMESTAMPTZ NOT NULL,
+  1204→  1204→    last_activity   TIMESTAMPTZ DEFAULT NOW(),
+  1205→  1205→    status          VARCHAR(20) DEFAULT 'active'
+  1206→  1206→);
+  1207→  1207→
+  1208→  1208→-- IPS
+  1209→  1209→CREATE TABLE ips_policies (
+  1210→  1210→    id              SERIAL PRIMARY KEY,
+  1211→  1211→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1212→  1212→    name            VARCHAR(128) NOT NULL,
+  1213→  1213→    mode            VARCHAR(20) DEFAULT 'inline_drop', -- inline_drop, inline_tap, passive
+  1214→  1214→    enabled         BOOLEAN DEFAULT true,
+  1215→  1215→    rule_categories JSONB DEFAULT '{}', -- {"trojan":true, "web_attack":false, ...}
+  1216→  1216→    custom_rules    TEXT[], -- Suricata rule text
+  1217→  1217→    exceptions      JSONB DEFAULT '[]', -- [{sid, source, dest, comment}]
+  1218→  1218→    thresholds      JSONB DEFAULT '[]', -- [{sid, track, count, seconds}]
+  1219→  1219→    UNIQUE(tenant_id, name)
+  1220→  1220→);
+  1221→  1221→
+  1222→  1222→-- DNS
+  1223→  1223→CREATE TABLE dns_policies (
+  1224→  1224→    id              SERIAL PRIMARY KEY,
+  1225→  1225→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1226→  1226→    name            VARCHAR(128) NOT NULL,
+  1227→  1227→    enabled         BOOLEAN DEFAULT true,
+  1228→  1228→    block_categories TEXT[], -- ads, malware, phishing, adult, social, gambling
+  1229→  1229→    custom_block    TEXT[],
+  1230→  1230→    custom_allow    TEXT[],
+  1231→  1231→    sinkhole_ip     INET DEFAULT '0.0.0.0',
+  1232→  1232→    UNIQUE(tenant_id, name)
+  1233→  1233→);
+  1234→  1234→
+  1235→  1235→CREATE TABLE dns_records (
+  1236→  1236→    id              SERIAL PRIMARY KEY,
+  1237→  1237→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1238→  1238→    zone            VARCHAR(256) NOT NULL,
+  1239→  1239→    name            VARCHAR(256) NOT NULL,
+  1240→  1240→    type            VARCHAR(10) NOT NULL, -- A, AAAA, CNAME, MX, TXT, SRV, PTR
+  1241→  1241→    value           TEXT NOT NULL,
+  1242→  1242→    ttl             INTEGER DEFAULT 3600,
+  1243→  1243→    priority        INTEGER,
+  1244→  1244→    enabled         BOOLEAN DEFAULT true
+  1245→  1245→);
+  1246→  1246→
+  1247→  1247→-- QoS
+  1248→  1248→CREATE TABLE qos_policies (
+  1249→  1249→    id              SERIAL PRIMARY KEY,
+  1250→  1250→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1251→  1251→    name            VARCHAR(128) NOT NULL,
+  1252→  1252→    enabled         BOOLEAN DEFAULT true,
+  1253→  1253→    template        VARCHAR(64), -- voip, video, gaming, bulk, custom
+  1254→  1254→    bandwidth_kbps  INTEGER NOT NULL,
+  1255→  1255→    UNIQUE(tenant_id, name)
+  1256→  1256→);
+  1257→  1257→
+  1258→  1258→CREATE TABLE qos_rules (
+  1259→  1259→    id              SERIAL PRIMARY KEY,
+  1260→  1260→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1261→  1261→    policy_id       INTEGER NOT NULL REFERENCES qos_policies(id),
+  1262→  1262→    name            VARCHAR(128) NOT NULL,
+  1263→  1263→    priority        SMALLINT NOT NULL, -- 0=highest, 7=lowest
+  1264→  1264→    guaranteed_kbps INTEGER,
+  1265→  1265→    max_kbps        INTEGER,
+  1266→  1266→    dscp_mark       SMALLINT,
+  1267→  1267→    match_apps      INTEGER[], -- nDPI app IDs
+  1268→  1268→    match_users     INTEGER[],
+  1269→  1269→    match_addresses INTEGER[]
+  1270→  1270→);
+  1271→  1271→
+  1272→  1272→-- DHCP
+  1273→  1273→CREATE TABLE dhcp_subnets (
+  1274→  1274→    id              SERIAL PRIMARY KEY,
+  1275→  1275→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1276→  1276→    interface_name  VARCHAR(64) NOT NULL,
+  1277→  1277→    subnet          CIDR NOT NULL,
+  1278→  1278→    range_start     INET NOT NULL,
+  1279→  1279→    range_end       INET NOT NULL,
+  1280→  1280→    gateway         INET,
+  1281→  1281→    dns_servers     INET[],
+  1282→  1282→    lease_time      INTEGER DEFAULT 86400,
+  1283→  1283→    options         JSONB DEFAULT '{}', -- custom DHCP options
+  1284→  1284→    enabled         BOOLEAN DEFAULT true
+  1285→  1285→);
+  1286→  1286→
+  1287→  1287→CREATE TABLE dhcp_reservations (
+  1288→  1288→    id              SERIAL PRIMARY KEY,
+  1289→  1289→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1290→  1290→    subnet_id       INTEGER NOT NULL REFERENCES dhcp_subnets(id),
+  1291→  1291→    mac_address     MACADDR NOT NULL,
+  1292→  1292→    ip_address      INET NOT NULL,
+  1293→  1293→    hostname        VARCHAR(256),
+  1294→  1294→    UNIQUE(mac_address)
+  1295→  1295→);
+  1296→  1296→
+  1297→  1297→-- Logs
+  1298→  1298→CREATE TABLE firewall_logs (
+  1299→  1299→    id              BIGSERIAL PRIMARY KEY,
+  1300→  1300→    tenant_id       INTEGER NOT NULL,
+  1301→  1301→    timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  1302→  1302→    src_ip          INET,
+  1303→  1303→    dst_ip          INET,
+  1304→  1304→    src_port        INTEGER,
+  1305→  1305→    dst_port        INTEGER,
+  1306→  1306→    protocol        VARCHAR(10),
+  1307→  1307→    action          VARCHAR(20),
+  1308→  1308→    rule_name       VARCHAR(128),
+  1309→  1309→    app_name        VARCHAR(64), -- nDPI classified
+  1310→  1310→    bytes           BIGINT DEFAULT 0,
+  1311→  1311→    packets         BIGINT DEFAULT 0,
+  1312→  1312→    user_name       VARCHAR(128)
+  1313→  1313→);
+  1314→  1314→CREATE INDEX idx_fw_logs_tenant_ts ON firewall_logs(tenant_id, timestamp);
+  1315→  1315→CREATE INDEX idx_fw_logs_src ON firewall_logs(src_ip);
+  1316→  1316→CREATE INDEX idx_fw_logs_dst ON firewall_logs(dst_ip);
+  1317→  1317→
+  1318→  1318→CREATE TABLE ips_logs (
+  1319→  1319→    id              BIGSERIAL PRIMARY KEY,
+  1320→  1320→    tenant_id       INTEGER NOT NULL,
+  1321→  1321→    timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  1322→  1322→    src_ip          INET,
+  1323→  1323→    dst_ip          INET,
+  1324→  1324→    src_port        INTEGER,
+  1325→  1325→    dst_port        INTEGER,
+  1326→  1326→    action          VARCHAR(20),
+  1327→  1327→    sid             VARCHAR(32), -- Suricata rule ID
+  1328→  1328→    severity        VARCHAR(10),
+  1329→  1329→    category        VARCHAR(64),
+  1330→  1330→    rev             INTEGER
+  1331→  1331→);
+  1332→  1332→CREATE INDEX idx_ips_logs_tenant_ts ON ips_logs(tenant_id, timestamp);
+  1333→  1333→
+  1334→  1334→-- System
+  1335→  1335→CREATE TABLE audit_log (
+  1336→  1336→    id              BIGSERIAL PRIMARY KEY,
+  1337→  1337→    tenant_id       INTEGER,
+  1338→  1338→    user_id         INTEGER REFERENCES users(id),
+  1339→  1339→    username        VARCHAR(256),
+  1340→  1340→    source_ip       INET,
+  1341→  1341→    action          VARCHAR(128) NOT NULL,
+  1342→  1342→    object_type     VARCHAR(64) NOT NULL,
+  1343→  1343→    object_id       INTEGER,
+  1344→  1344→    object_name     VARCHAR(256),
+  1345→  1345→    before_state    JSONB,
+  1346→  1346→    after_state     JSONB,
+  1347→  1347→    result          VARCHAR(20) DEFAULT 'success',
+  1348→  1348→    created_at      TIMESTAMPTZ DEFAULT NOW()
+  1349→  1349→);
+  1350→  1350→
+  1351→  1351→CREATE TABLE config_versions (
+  1352→  1352→    id              BIGSERIAL PRIMARY KEY,
+  1353→  1353→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1354→  1354→    version         INTEGER NOT NULL,
+  1355→  1355→    config_snapshot JSONB NOT NULL,
+  1356→  1356→    change_summary  TEXT,
+  1357→  1357→    created_by      INTEGER REFERENCES users(id),
+  1358→  1358→    created_at      TIMESTAMPTZ DEFAULT NOW()
+  1359→  1359→);
+  1360→  1360→
+  1361→  1361→CREATE TABLE system_settings (
+  1362→  1362→    id              SERIAL PRIMARY KEY,
+  1363→  1363→    tenant_id       INTEGER REFERENCES tenants(id),
+  1364→  1364→    category        VARCHAR(64) NOT NULL,
+  1365→  1365→    key             VARCHAR(128) NOT NULL,
+  1366→  1366→    value           JSONB NOT NULL,
+  1367→  1367→    updated_at      TIMESTAMPTZ DEFAULT NOW(),
+  1368→  1368→    UNIQUE(tenant_id, category, key)
+  1369→  1369→);
+  1370→  1370→
+  1371→  1371→-- Notifications
+  1372→  1372→CREATE TABLE notifications (
+  1373→  1373→    id              BIGSERIAL PRIMARY KEY,
+  1374→  1374→    tenant_id       INTEGER NOT NULL REFERENCES tenants(id),
+  1375→  1375→    user_id         INTEGER REFERENCES users(id),
+  1376→  1376→    type            VARCHAR(32) NOT NULL, -- threat, system, vpn, ha
+  1377→  1377→    severity        VARCHAR(10) NOT NULL, -- info, warning, critical
+  1378→  1378→    title           VARCHAR(512) NOT NULL,
+  1379→  1379→    message         TEXT,
+  1380→  1380→    source_module   VARCHAR(32),
+  1381→  1381→    is_read         BOOLEAN DEFAULT false,
+  1382→  1382→    created_at      TIMESTAMPTZ DEFAULT NOW()
+  1383→  1383→);
+  1384→  1384→```
+  1385→  1385→
+  1386→  1386→### Phase 2+ Tables (add when needed)
+  1387→  1387→```sql
+  1388→  1388→-- SSL Inspection (Phase 2)
+  1389→  1389→-- ssl_policies, ssl_bypass_rules, certificate_authorities, certificates
+  1390→  1390→
+  1391→  1391→-- URL Filtering (Phase 2)
+  1392→  1392→-- url_categories, url_filter_policies
+  1393→  1393→
+  1394→  1394→-- App Control (Phase 2)
+  1395→  1395→-- app_control_policies
+  1396→  1396→
+  1397→  1397→-- WAF (Phase 2)
+  1398→  1398→-- waf_virtual_hosts, waf_policies, waf_custom_rules, waf_events
+  1399→  1399→
+  1400→  1400→-- Email Security (Phase 2)
+  1401→  1401→-- email_policies
+  1402→  1402→
+  1403→  1403→-- NAC / IoT (Phase 2)
+  1404→  1404→-- nac_policies, iot_devices
+  1405→  1405→
+  1406→  1406→-- Captive Portal (Phase 1, but add when UI ready)
+  1407→  1407→-- captive_portal_profiles, captive_portal_sessions, captive_portal_vouchers
+  1408→  1408→
+  1409→  1409→-- Threat Intelligence (Phase 2)
+  1410→  1410→-- threat_feeds, iocs, ioc_reputations
+  1411→  1411→
+  1412→  1412→-- DLP (Phase 3)
+  1413→  1413→-- dlp_patterns, dlp_policies, dlp_incidents
+  1414→  1414→
+  1415→  1415→-- SD-WAN (Phase 2)
+  1416→  1416→-- sdwan_policies, sdwan_slas, sdwan_path_stats
+  1417→  1417→
+  1418→  1418→-- HA (Phase 1, but add when HA ready)
+  1419→  1419→-- ha_config, ha_status
+  1420→  1420→
+  1421→  1421→-- AI (Phase 3)
+  1422→  1422→-- ai_model_registry, ai_inference_log, ai_feedback, ai_drift_reports
+  1423→  1423→
+  1424→  1424→-- Incident Response (Phase 3)
+  1425→  1425→-- incidents, incident_timeline
+  1426→  1426→
+  1427→  1427→-- Compliance Reports (Phase 2)
+  1428→  1428→-- compliance_report_templates, generated_reports
+  1429→  1429→
+  1430→  1430→-- API Keys & Webhooks (Phase 1)
+  1431→  1431→-- api_keys, webhooks
+  1432→  1432→
+  1433→  1433→-- Syslog / NetFlow Targets (Phase 1)
+  1434→  1434→-- syslog_targets, netflow_targets
+  1435→  1435→
+  1436→  1436→-- VPN Pools & Groups (Phase 1)
+  1437→  1437→-- vpn_pools, vpn_user_groups
+  1438→  1438→
+  1439→  1439→-- Tenant Limits (Phase 2)
+  1440→  1440→-- tenant_limits
+  1441→  1441→
+  1442→  1442→-- Licenses (Phase 2)
+  1443→  1443→-- licenses
+  1444→  1444→```
+  1445→  1445→
+  1446→  1446→---
+  1447→  1447→
+  1448→  1448→## COMPETITIVE POSITIONING
+  1449→  1449→
+  1450→  1450→### Where You WIN vs Fortinet/Sophos for Small Enterprise
+  1451→  1451→
+  1452→  1452→| Advantage | Details |
+  1453→  1453→|-----------|--------|
+  1454→  1454→| **Price** | No per-user, per-feature, per-GBPS licensing. Free + support contract. |
+  1455→  1455→| **WireGuard** | Native WireGuard is faster and simpler than any commercial VPN. |
+  1456→  1456→| **Modern UI** | Next.js dashboard looks and feels better than FortiOS/Sophos UI. |
+  1457→  1457→| **API-First** | Full REST API + webhooks. Automate everything. Commercial vendors charge extra for this. |
+  1458→  1458→| **Transparency** | Customers can audit the code. No backdoors, no telemetry, no data harvesting. |
+  1459→  1459→| **No Vendor Lock-in** | Standard protocols (nftables, StrongSwan, WireGuard, FRR). Export configs anytime. |
+  1460→  1460→| **Flexibility** | Run on any x86_64 hardware. No proprietary ASIC required. |
+  1461→  1461→| **Rapid Feature Delivery** | Open-source velocity vs 6-12 month commercial release cycles. |
+  1462→  1462→| **Multi-tenant from Day 1** | MSPs can manage multiple customers from one appliance. |
+  1463→  1463→
+  1464→  1464→### Where You LOSE (Be Honest With Customers)
+  1465→  1465→
+  1466→  1466→| Weakness | Mitigation |
+  1467→  1467→|----------|-----------|
+  1468→  1468→| URL filtering covers ~60-70% of commercial DB | Aggregate multiple free lists + custom lists + AI categorization (Phase 3) |
+  1469→  1469→| No proprietary AV engine (ClamAV is 60-70% effective) | Rely on Suricata IPS + behavioral detection + sandbox. Recommend endpoint AV separately. |
+  1470→  1470→| Sandbox zero-day catch ~50-60% | Good enough for small enterprise threat profile. APTs target large enterprises. |
+  1471→  1471→| No 24/7 SOC team behind threat intel | AI-assisted detection + free feeds (Abuse.ch, OTX, Spamhaus) covers common threats. |
+  1472→  1472→| Smaller application signature database (300 vs 7000) | Top 50-100 apps well-covered. Most small enterprises need <20 app control rules. |
+  1473→  1473→| No dedicated endpoint agent | Partner with existing endpoint solutions (CrowdStrike, SentinelOne, even Windows Defender). |
+  1474→  1474→
+  1475→  1475→### Pricing Strategy Suggestion
+  1476→  1476→
+  1477→  1477→| Model | Description |
+  1478→  1478→|-------|-------------|
+  1479→  1479→| **Community Edition** | Free, all Phase 1 features, no SLA, community support |
+  1480→  1480→| **Professional Edition** | $99-199/appliance/month — Phase 1 + Phase 2 features, email support, updates |
+  1481→  1481→| **Enterprise Edition** | $299-499/appliance/month — All features, priority support, SLA, training |
+  1482→  1482→| **MSP Edition** | Per-tenant pricing, central management, white-label |
+  1483→  1483→| **Hardware Appliance** | Sell pre-built appliances (Supermicro, Intel NUC) with Cryptsk pre-installed |
+  1484→  1484→
+  1485→  1485→---
+  1486→  1486→
+  1487→  1487→## REQUIRED PACKAGES (apt install list)
+  1488→  1488→
+  1489→  1489→```
+  1490→  1490→# Core
+  1491→  1491→nftables conntrack iproute2 ethtool tcpdump iputils-ping traceroute
+  1492→  1492→
+  1493→  1493→# Data Plane
+  1494→  1494→suricata ndpi libndpi
+  1495→  1495→
+  1496→  1496→# Routing
+  1497→  1497→frr
+  1498→  1498→
+  1499→  1499→# VPN
+  1500→  1500→strongswan wireguard-tools openvpn
+  1501→  1501→
+  1502→  1502→# Network Services
+  1503→  1503→unbound kea-kea-dhcp4-server kea-kea-dhcp6-server squid
+  1504→  1504→
+  1505→  1505→# Authentication
+  1506→  1506→freeradius
+  1507→  1507→
+  1508→  1508→# DNS Filtering
+  1509→  1509→dnscrypt-proxy  # or dnsproxy for DoH
+  1510→  1510→
+  1511→  1511→# WAF (Phase 2)
+  1512→  1512→caddy coraza
+  1513→  1513→
+  1514→  1514→# Email (Phase 2)
+  1515→  1515→postfix rspamd clamav clamav-daemon
+  1516→  1516→
+  1517→  1517→# Certificate Management (Phase 2)
+  1518→  1518→step-ca
+  1519→  1519→
+  1520→  1520→# Database
+  1521→  1521→postgresql-17 redis-server
+  1522→  1522→
+  1523→  1523→# Monitoring
+  1524→  1524→prometheus node-exporter grafana-server
+  1525→  1525→
+  1526→  1526→# AI/ML (Phase 3)
+  1527→  1527→onnxruntime python3-scikit-learn python3-pytorch
+  1528→  1528→
+  1529→  1529→# System
+  1530→  1530→cron logrotate rsyslog chrony snmpd
+  1531→  1531→```
+  1532→  1532→
+  1533→  1533→---
+  1534→  1534→
+  1535→  1535→## HARDWARE RECOMMENDATIONS (Small Enterprise)
+  1536→  1536→
+  1537→  1537→| Tier | Users | Throughput | CPU | RAM | Storage | NIC | Approx Cost |
+  1538→  1538→|------|-------|-----------|-----|-----|---------|-----|-------------|
+  1539→  1539→| **Starter** | 10-50 | 500 Mbps | Intel i3 / AMD Ryzen 3 (4C/8T) | 8 GB | 128 GB SSD + 500 GB HDD (logs) | 2x 1GbE | $300-500 |
+  1540→  1540→| **Standard** | 50-200 | 2 Gbps | Intel i5 / AMD Ryzen 5 (6C/12T) | 16 GB | 256 GB SSD + 1 TB HDD (logs) | 4x 1GbE | $600-1000 |
+  1541→  1541→| **Performance** | 200-500 | 5-10 Gbps | Intel Xeon E / AMD Ryzen 7 (8C/16T) | 32 GB | 512 GB NVMe + 2 TB HDD (logs) | 2x 10GbE + 4x 1GbE | $1500-3000 |
+  1542→  1542→
+  1543→  1543→**NIC Considerations:**
+  1544→  1544→- Intel i225 (1GbE) and Intel X710 (10GbE) have best Linux support
+  1545→  1545→- Avoid Realtek NICs for production (driver issues under load)
+  1546→  1546→- For 10 Gbps: Intel X710 or Mellanox ConnectX-4/5 (excellent eBPF/XDP support)
+  1547→  1547→
+  1548→  1548→---
+  1549→  1549→
+  1550→  1550→## FINAL NOTES
+  1551→  1551→
+  1552→  1552→1. **This is a 24-month roadmap, not a 6-month one.** The original MD tried to build a Fortinet-killer in one shot. That's not realistic for a startup. Phase 1 alone (6 months) gives you a deployable product.
+  1553→  1553→
+  1554→  1554→2. **Open source is your advantage, not your weakness.** Fortinet and Sophos spend millions on proprietary engines that you get for free. Your job is to integrate them well, build a great UI, and sell on price + transparency.
+  1555→  1555→
+  1556→  1556→3. **AI is a marathon, not a sprint.** Don't build 13 AI models on day one. Build rule-based + statistical detection first. Add ML when you have real traffic data from deployed units.
+  1557→  1557→
+  1558→  1558→4. **The URL filtering gap is your biggest vulnerability.** Invest early in aggregating free lists and building a simple categorization system. Consider a hybrid model: free lists + optional paid Webshrinker API for customers who need better coverage.
+  1559→  1559→
+  1560→  1560→5. **Go, not Java.** For an appliance, a single-binary Go backend is dramatically simpler to deploy, update, and debug than a Java Spring Boot application.
+  1561→  1561→
+  1562→  1562→6. **Compete on UX, not on security depth.** A Next.js dashboard that's 10x easier to use than FortiOS is a genuine competitive advantage. Small enterprise admins are not security experts — they want something that works out of the box with sensible defaults.
+  1563→  1563→
