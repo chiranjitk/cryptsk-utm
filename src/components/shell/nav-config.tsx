@@ -36,13 +36,13 @@ export const VIEWS: ViewDef[] = [
   { path: "/logs/audit", title: "Audit Log", icon: "History" },
   { path: "/logs/live", title: "Live Tail", icon: "Activity" },
   { path: "/logs/reports", title: "Reports", icon: "BarChart3" },
-  { path: "/ha", title: "High Availability", icon: "ServerCog", placeholder: "M10" },
-  { path: "/system/settings", title: "System Settings", icon: "Settings", placeholder: "M10" },
-  { path: "/system/backups", title: "Backups", icon: "DatabaseBackup", placeholder: "M10" },
+  { path: "/ha", title: "High Availability", icon: "ServerCog" },
+  { path: "/system/settings", title: "System Settings", icon: "Settings" },
+  { path: "/system/backups", title: "Backups", icon: "DatabaseBackup" },
   { path: "/system/api-keys", title: "API Platform", icon: "KeyRound" },
 ];
 
-export const SETUP_VIEW: ViewDef = { path: "/setup", title: "Setup Wizard", icon: "Sparkles", placeholder: "M10" };
+export const SETUP_VIEW: ViewDef = { path: "/setup", title: "Setup Wizard", icon: "Sparkles" };
 
 export const NAV_GROUPS: Array<{ label: string; paths: string[] }> = [
   { label: "Overview", paths: ["/dashboard"] },

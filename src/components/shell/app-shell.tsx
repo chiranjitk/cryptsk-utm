@@ -42,6 +42,11 @@ import { AuditView } from "@/components/views/logs/audit-view";
 import { LiveTailView } from "@/components/views/logs/live-tail-view";
 import { ReportsView } from "@/components/views/logs/reports-view";
 import { ApiKeysView } from "@/components/views/system/api-keys-view";
+import { HaView } from "@/components/views/ha/ha-view";
+import { SystemView } from "@/components/views/system/system-view";
+import { BackupsView } from "@/components/views/system/backups-view";
+import { NotificationCenter } from "@/components/views/system/notification-center";
+import { SetupWizard, useSetupCompleted } from "@/components/views/setup/setup-wizard";
 import { fetchApi, useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
@@ -111,6 +116,7 @@ export function AppShell() {
   const queryClient = useQueryClient();
   const { resolvedTheme, setTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const setupGate = useSetupCompleted();
 
   const meQuery = useQuery<Me>({
     queryKey: ["auth", "me"],
@@ -143,6 +149,12 @@ export function AppShell() {
 
   if (meQuery.isError || !meQuery.data) {
     return <LoginView onLoggedIn={() => void meQuery.refetch()} />;
+  }
+
+  // first-time-setup gate (view 29): renders instead of the shell while setup
+  // is incomplete — same gate pattern as AuthGate (M10 §4)
+  if (!setupGate.isLoading && !setupGate.completed) {
+    return <SetupWizard onFinished={() => void queryClient.invalidateQueries()} />;
   }
 
   const me = meQuery.data;
@@ -206,10 +218,7 @@ export function AppShell() {
               >
                 {resolvedTheme === "dark" ? <Icons.Sun className="h-4.5 w-4.5" /> : <Icons.Moon className="h-4.5 w-4.5" />}
               </Button>
-              <Button variant="ghost" size="icon" aria-label="Notifications" className="relative">
-                <Icons.Bell className="h-4.5 w-4.5" />
-                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500" />
-              </Button>
+              <NotificationCenter />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="gap-2 px-2">
@@ -283,6 +292,12 @@ export function AppShell() {
               <ReportsView />
             ) : view.path === "/system/api-keys" ? (
               <ApiKeysView />
+            ) : view.path === "/ha" ? (
+              <HaView />
+            ) : view.path === "/system/settings" ? (
+              <SystemView />
+            ) : view.path === "/system/backups" ? (
+              <BackupsView />
             ) : (
               <PlaceholderView view={view} />
             )}

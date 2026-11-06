@@ -9,7 +9,7 @@
 import { db } from "@/lib/db";
 import { emitEvent, eventsSince, currentCursor, type FirewallLogEntry, type IpsEventEntry, type MetricsTick } from "./events";
 import { getProfile, type TrafficProfile } from "./profiles";
-import { MetricsGenerator, type IfaceMeta } from "./generators/metrics";
+import { MetricsGenerator, clamp, type IfaceMeta } from "./generators/metrics";
 import {
   FirewallLogGenerator,
   type HostPoolEntry,
@@ -153,6 +153,15 @@ class MockEngine {
   private sessionDiffsBacklog: Array<{ id: number; userName: string | null; status?: string; bytesIn?: number; bytesOut?: number; lastActivity?: string }> = [];
   private lastAlertTick = -100;
 
+  // ── M10: resource-threshold watcher state (edge-triggered, one open
+  // notification per metric until it recovers — M10-SYSTEM.md §5.5) ──
+  private diskPct = 58; // slow drift (metrics generator emits cpu/mem only)
+  private tempC = 44; // correlates with cpu
+  private thresholds = { cpuPct: 90, memPct: 90, diskPct: 85, tempC: 80 }; // DATA_LIFECYCLE §2.5 seed
+  private lastThresholdLoad = 0;
+  private openAlerts = new Map<string, { crossedAtTick: number; notifiedCritical: boolean }>();
+  private lastNtpCheckTick = 0;
+
   get uptimeSec(): number {
     return 983412 + Math.floor(process.uptime());
   }
@@ -161,6 +170,121 @@ class MockEngine {
   }
   get wanStates(): Array<{ iface: string; state: string }> {
     return [...this.wanProbes.values()].map((p) => ({ iface: p.iface, state: p.enabled ? p.state : "down" }));
+  }
+
+  /** M10: appliance vitals for /system/status + the health strip. */
+  systemVitals(): { cpuPct: number; memPct: number; diskPct: number; tempC: number } {
+    const latest = this.metricsRing[this.metricsRing.length - 1];
+    return {
+      cpuPct: latest?.cpuPct ?? 0,
+      memPct: latest?.memPct ?? 0,
+      diskPct: Math.round(this.diskPct * 10) / 10,
+      tempC: Math.round(this.tempC * 10) / 10,
+    };
+  }
+
+  /** Threshold settings read is throttled to ~30 s (cheap SQLite row). */
+  private async loadThresholds(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastThresholdLoad < 30_000) return;
+    this.lastThresholdLoad = now;
+    try {
+      const row = await db.systemSetting.findUnique({
+        where: { tenantId_category_key: { tenantId: 1, category: "notifications", key: "thresholds" } },
+      });
+      if (row) {
+        const parsed = JSON.parse(row.value) as Partial<{ cpuPct: number; memPct: number; diskPct: number; tempC: number }>;
+        this.thresholds = {
+          cpuPct: parsed.cpuPct ?? 90,
+          memPct: parsed.memPct ?? 90,
+          diskPct: parsed.diskPct ?? 85,
+          tempC: parsed.tempC ?? 80,
+        };
+      }
+    } catch {
+      // keep defaults on any read failure
+    }
+  }
+
+  /** Persist + broadcast one system notification (same path as IPS alerts). */
+  private async emitSystemNotification(severity: string, title: string, message: string): Promise<void> {
+    const notification = await db.notification
+      .create({ data: { tenantId: 1, type: "system", severity, title, message, sourceModule: "system" } })
+      .catch(() => null);
+    if (!notification) return;
+    emitEvent({
+      type: "alerts:new",
+      payload: {
+        notification: {
+          id: notification.id,
+          type: notification.type,
+          severity: notification.severity,
+          title: notification.title,
+          message: notification.message,
+          sourceModule: notification.sourceModule,
+          createdAt: notification.createdAt.toISOString(),
+          isRead: notification.isRead,
+        },
+      },
+    });
+  }
+
+  /**
+   * M10 §5.5 — NTP sync simulation + resource-threshold watcher.
+   * Edge-triggered: warning on first crossing; critical beyond +10 pp or
+   * sustained ~5 min (150 ticks); info recovery row on re-entering normal.
+   */
+  private async systemWatchStep(tick: MetricsTick): Promise<void> {
+    await this.loadThresholds();
+
+    // NTP: flip synced=true + lastSyncAt after the first tick following an enabled save
+    if (this.tickNo - this.lastNtpCheckTick >= 5) {
+      this.lastNtpCheckTick = this.tickNo;
+      try {
+        const row = await db.systemSetting.findUnique({
+          where: { tenantId_category_key: { tenantId: 1, category: "general", key: "ntp" } },
+        });
+        const ntp = row ? (JSON.parse(row.value) as { enabled?: boolean; synced?: boolean; servers?: unknown; lastSyncAt?: string | null }) : null;
+        if (ntp?.enabled && !ntp.synced) {
+          await db.systemSetting.update({
+            where: { tenantId_category_key: { tenantId: 1, category: "general", key: "ntp" } },
+            data: { value: JSON.stringify({ ...ntp, synced: true, lastSyncAt: new Date().toISOString() }) },
+          });
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+
+    // vitals drift (deterministic PRNG — same series feeds /system/status)
+    this.diskPct = clamp(this.diskPct + (this.rand() - 0.5) * 0.15, 50, 78);
+    this.tempC = clamp(38 + tick.cpuPct * 0.22 + (this.rand() - 0.5) * 1.2, 34, 92);
+
+    const checks: Array<{ key: string; label: string; value: number; unit: string; warnAt: number }> = [
+      { key: "cpu", label: "CPU", value: tick.cpuPct, unit: "%", warnAt: this.thresholds.cpuPct },
+      { key: "mem", label: "Memory", value: tick.memPct, unit: "%", warnAt: this.thresholds.memPct },
+      { key: "disk", label: "Disk", value: this.diskPct, unit: "%", warnAt: this.thresholds.diskPct },
+      { key: "temp", label: "Temperature", value: this.tempC, unit: "°C", warnAt: this.thresholds.tempC },
+    ];
+    for (const m of checks) {
+      const open = this.openAlerts.get(m.key);
+      const above = m.value >= m.warnAt;
+      const critical = above && (m.value >= m.warnAt + 10 || (open !== undefined && this.tickNo - open.crossedAtTick >= 150));
+      if (!above) {
+        if (open) {
+          this.openAlerts.delete(m.key);
+          await this.emitSystemNotification("info", `${m.label} back to normal`, `${m.label} recovered to ${m.value.toFixed(1)}${m.unit} (threshold ${m.warnAt}${m.unit}).`);
+        }
+        continue;
+      }
+      if (!open) {
+        this.openAlerts.set(m.key, { crossedAtTick: this.tickNo, notifiedCritical: false });
+        await this.emitSystemNotification("warning", `${m.label} above threshold`, `${m.label} at ${m.value.toFixed(1)}${m.unit} (threshold ${m.warnAt}${m.unit}).`);
+      } else if (critical && !open.notifiedCritical) {
+        open.notifiedCritical = true;
+        await this.emitSystemNotification("critical", `${m.label} critical`, `${m.label} at ${m.value.toFixed(1)}${m.unit} — sustained beyond the ${m.warnAt}${m.unit} threshold.`);
+      }
+    }
   }
 
   /**
@@ -587,6 +711,9 @@ class MockEngine {
       this.metricsRing.push(tick);
       if (this.metricsRing.length > METRICS_RING_CAP) this.metricsRing.shift();
       emitEvent({ type: "metrics:tick", payload: tick });
+
+      // 1b) M10: NTP sync flip + resource-threshold watcher (§5.5)
+      await this.systemWatchStep(tick);
 
       // 2) wan probes
       for (const p of this.wanProbes.values()) {
