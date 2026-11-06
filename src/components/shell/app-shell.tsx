@@ -32,6 +32,9 @@ import { ConfigsView } from "@/components/views/vpn/configs-view";
 import { SessionsView } from "@/components/views/vpn/sessions-view";
 import { DnsView } from "@/components/views/dns-dhcp/dns-view";
 import { DhcpView } from "@/components/views/dns-dhcp/dhcp-view";
+import { UsersView } from "@/components/views/identity/users-view";
+import { IdentitySessionsView } from "@/components/views/identity/sessions-view";
+import { PortalView } from "@/components/views/identity/portal-view";
 import { fetchApi, useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
@@ -253,6 +256,12 @@ export function AppShell() {
               <DnsView />
             ) : view.path === "/dns-dhcp/dhcp" ? (
               <DhcpView />
+            ) : view.path === "/identity/users" ? (
+              <UsersView />
+            ) : view.path === "/identity/sessions" ? (
+              <IdentitySessionsView />
+            ) : view.path === "/identity/portal" ? (
+              <PortalView />
             ) : (
               <PlaceholderView view={view} />
             )}

@@ -22,16 +22,16 @@
 
 ## 2. Current Status Snapshot
 
-| Item | Status (2026-11-05) |
+| Item | Status (2026-11-06) |
 |---|---|
 | Product spec read & digested | DONE |
 | Documentation suite (`docs/`) | DONE (this suite) |
-| Spec coverage audit (zero-feature-loss) | IN PROGRESS — REVIEW-4A (Phase 1 features in module docs) + REVIEW-4B (Phase 2–4 features + §2–§9 product facts), 2026-11-05; ROADMAP §5 console-deferral row RESTORED to Phase 1 |
-| Application code | **NOT STARTED** |
-| Database schema (Prisma) | DEFINED in `docs/03-DATABASE/SCHEMA.md`, not yet pushed |
-| Realtime mini-service | NOT STARTED (`mini-services/realtime-service/`, port 3003) |
-| Build milestone | **M0: Project bootstrap** — see ROADMAP.md §Build Order |
-| Current module in progress | none (docs phase just completed) |
+| Spec coverage audit (zero-feature-loss) | DONE — REVIEW-4A + REVIEW-4B closed 2026-11-05; ROADMAP §5 console-deferral row RESTORED to Phase 1 |
+| Application code | **LIVE — M01→M07 pushed to GitHub** (dashboard, network, firewall & NAT, IPS, VPN, DNS & DHCP, identity) |
+| Database schema (Prisma) | LIVE — pushed + seeded (`db/cryptsk.db`) |
+| Realtime mini-service | LIVE (`mini-services/realtime-service/`, port 3003) |
+| Build milestone | **M7: Identity complete** — next M08 QoS (ROADMAP.md §Build Order / ADR-014) |
+| Current module in progress | none (M07 just completed) |
 
 ---
 
@@ -586,6 +586,64 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 ---
 
 ## 15. SESSION LOG (append-only — newest on top)
+
+### 2026-11-06 — M07 Identity & Access module LIVE (users · groups · auth policy · RADIUS · directory sources · captive portal + vouchers · identity sessions)
+- **M07 shipped vertically (ADR-014 order …M06→M07…):** API surface — `users`
+  (GET `?q=&role=&groupId=` + POST), `users/[id]` (PUT incl. optional `password`
+  policy-checked + `totpEnroll` one-time secret + `groupIds` replace-all; DELETE with
+  self-delete + last-enabled-admin 409 guardrails), `user-groups` (+`[id]`,
+  memberIds replace-all tx), `auth-settings` (GET merges canonical `auth/settings`
+  SystemSetting w/ seed's granular keys; PUT writes canonical + re-syncs granular),
+  `radius-profiles` (+`[id]`, masked `sharedSecret`), `[id]/test` (simulated 5–40 ms;
+  documentation-range IPs dead), `[id]/reveal` (super_admin/tenant_admin ONLY — narrower
+  than identity.write matrix, audited + sourceIp), `directory-sources` (+`[id]`,
+  masked bindPassword, NO reveal) + `[id]/test` (userCount for enabled), `captive-portal`
+  (GET/PUT singleton upsert), `captive-portal/vouchers` (GET masked `…last4`; POST
+  {count 1–500, ttlHours?, bandwidthKbps?} → FULL codes exactly once) + `[id]` DELETE
+  revoke, `identity/sessions` (`?method=&state=&q=`) + `[id]/expire` (audited +
+  emits `sessions:update {kind:"identity"}`). All routes `area: "identity"`, section
+  `identity` → audit + config_versions + `config:updated`.
+- **Masking (ADR-011, STRICT):** `MASK = "••••••••"` fixed literal; server masks
+  sharedSecret/bindPassword on every read; totpSecret/passwordHash never serialized;
+  password never audited (after = DTO only); omit-or-masked-secret on PUT keeps stored.
+- **Engine:** `generators/identity-sessions.ts` (pure planner: timeout expiry per
+  method, simulated logins — voucher-gated captive_portal / credentials self-register /
+  local+radius from enabled users / vpn roster, concurrent-cap expires oldest) +
+  `lib/identity/vouchers.ts` (globalThis store — volatile by design, SCHEMA §6;
+  Crockford base32 `cks-XXXX-XXXX`; sweep→expired; consumeVoucher gate) wired as tick
+  step 6d (`identityChurnStep`): lastSeen bump every 5 ticks, @@unique(tenantId,sourceIp)
+  replace-on-login, diffs emitted with the 5-tick `sessions:update` cadence;
+  `reloadIdentityState()` 15 s throttle (portal profile + authSettings cap + users).
+- **Views:** `views/identity/{users,sessions,portal}-view.tsx` + `identity-panels.tsx`
+  (RADIUS | Directory | Auth Settings tabs), `identity-api.ts` (envelope unwrap w/ zod
+  details), `identity-ui.tsx` (RoleBadge/MethodBadge/SessionStateBadge/VoucherStateBadge/
+  DirectoryTypeChip/TestResultPill + section invalidation). Users view = 2-col xl grid
+  (users table + groups card) + secondary tabs; TOTP enroll dialog shows otpauth URI +
+  secret once; RADIUS reveal = second click, 15 s auto-hide; role descriptions table
+  inline in the user editor; voucher gen → one-time reveal (Copy all / CSV) then masked
+  list w/ state chips + revoke + masked CSV export; sessions view = method filter chips,
+  ticking lastSeen (5 s interval), `sessions:update` in-place merge, useSyncExternalStore
+  socket-status banner ("Live updates paused"), expire ConfirmDialog.
+- **React hooks gotcha (§13 material):** `react-hooks/set-state-in-effect` forbids
+  setState-in-effect dialog resets — dialogs now split wrapper + inner form mounted
+  inside `<DialogContent>` (Radix unmounts content when closed → fresh state per open,
+  `useState(() => …)` initializers).
+- **Tailwind gotcha (§13 material):** `grid` without an explicit `grid-cols-1` creates
+  implicit auto tracks that don't clamp at mobile (page horizontal scroll) — every
+  responsive grid needs `grid-cols-1 … md:grid-cols-N`; table wrappers
+  `max-h-96 overflow-x-auto overflow-y-auto`; card-header action rows `flex-wrap`.
+- **agent-browser quirks (testing, not app bugs):** untrusted synthetic `.click()` works
+  for React handlers; Playwright semantic clicks need Radix's full pointer sequence
+  (mousedown/mouseup) on tabs; hash-only `open` on the same doc does NOT reload — use
+  `reload`; socket.io only connects via the Caddy gateway path (XTransformPort) —
+  testing must go through `:81`, not `:3000` directly.
+- Verified: lint 0/0; curl E2E — policy-reject weak password (fieldErrors), create,
+  TOTP enroll/disenroll, self-delete 409, group replace-all, reveal 403 for
+  security_admin, masked reads, vouchers generate→masked, expire; browser E2E via
+  gateway — users table live, Add User dialog created eve.tester, vouchers 5× reveal +
+  masked list, session expire flips row (5→4) without reload, auth settings form seeds,
+  socket connected (no pause banner); mobile 390 px (no h-scroll) + desktop 1440 px
+  sticky footer. HARD RULE §11.16: push after this commit (remote SHA verified).
 
 ### 2026-11-06 — M06 DNS & DHCP module LIVE (resolver · policies · records · query log · subnets · reservations · leases · relay)
 - **M06 shipped vertically (ADR-014 order …M05→M06…):** API surface — `dns/settings`

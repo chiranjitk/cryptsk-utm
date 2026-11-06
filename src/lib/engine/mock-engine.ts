@@ -33,6 +33,12 @@ import { DnsQueryGenerator, type DnsPolicyRuntime, type DnsQueryLogEntry } from 
 import { loadDnsRuntime } from "@/lib/dns/service";
 import { DhcpLeaseMachine, type DhcpRuntime } from "./generators/dhcp-leases";
 import { loadDhcpRuntime } from "@/lib/dhcp/service";
+import {
+  IdentitySessionMachine,
+  type IdentityChurnConfig,
+  type IdentitySessionRuntime,
+} from "./generators/identity-sessions";
+import { consumeVoucher } from "@/lib/identity/vouchers";
 
 export interface VpnSessionState {
   id: number;
@@ -128,6 +134,17 @@ class MockEngine {
   private lastDnsLoad = 0;
   private dhcpRuntime: DhcpRuntime = { subnets: [], reservations: [], leases: [] };
   private lastDhcpLoad = 0;
+  private identityMachine = new IdentitySessionMachine(this.rand);
+  private identitySessions: IdentitySessionRuntime[] = [];
+  private identityBacklog: Array<{ id: number; userName?: string | null; status?: string; lastActivity?: string }> = [];
+  private lastIdentityLoad = 0;
+  private identityCfg: IdentityChurnConfig = {
+    portalEnabled: false,
+    portalMode: "clickthrough",
+    portalTimeoutMin: 240,
+    maxConcurrentPerUser: 4,
+    userNames: [],
+  };
   private sessionDiffsBacklog: Array<{ id: number; userName: string | null; status?: string; bytesIn?: number; bytesOut?: number; lastActivity?: string }> = [];
   private lastAlertTick = -100;
 
@@ -493,6 +510,32 @@ class MockEngine {
     }
   }
 
+  /**
+   * M07: captive portal profile + auth session caps + enabled users arm the
+   * identity churn machine. 15 s throttle — slower-moving config.
+   */
+  async reloadIdentityState(force = false): Promise<void> {
+    const now = Date.now();
+    if (!force && now - this.lastIdentityLoad < 15_000) return;
+    this.lastIdentityLoad = now;
+    try {
+      const [portal, authSettings, users] = await Promise.all([
+        db.captivePortalProfile.findFirst({ where: { tenantId: 1 }, orderBy: { id: "asc" } }),
+        import("@/lib/identity/service").then((m) => m.getAuthSettings()),
+        db.user.findMany({ where: { tenantId: 1, isActive: true }, select: { username: true } }),
+      ]);
+      this.identityCfg = {
+        portalEnabled: portal?.enabled ?? false,
+        portalMode: portal?.mode ?? "clickthrough",
+        portalTimeoutMin: portal?.sessionTimeoutMin ?? 240,
+        maxConcurrentPerUser: authSettings.sessionLimits.maxConcurrentPerUser,
+        userNames: users.map((u) => u.username),
+      };
+    } catch (err) {
+      console.error("[mock-engine] reloadIdentityState failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
   private async tick(): Promise<void> {
     try {
       this.tickNo += 1;
@@ -646,6 +689,10 @@ class MockEngine {
       // 6c) dhcp lease churn — planner plans, engine executes DB I/O (M06 §5.4)
       await this.dhcpChurnStep();
 
+      // 6d) identity session churn — M07 §5.5 (portal logins, voucher
+      // consumption, concurrent cap, lastSeen bumps, sessions:update diffs)
+      await this.identityChurnStep();
+
       // 7) periodic persistence
       if (this.tickNo % PERSIST_EVERY === 0) await this.persist();
 
@@ -753,6 +800,84 @@ class MockEngine {
         },
       })
       .catch(() => {});
+  }
+
+  /** M07 §5.5 identity churn: apply the planner's expire/cap/login plan. */
+  private async identityChurnStep(): Promise<void> {
+    await this.reloadIdentityState();
+    const rows = await db.identitySession
+      .findMany({
+        where: { tenantId: 1 },
+        select: { id: true, userName: true, sourceIp: true, method: true, state: true, lastSeen: true },
+      })
+      .catch(() => []);
+    this.identitySessions = rows.map((r) => ({
+      id: r.id,
+      userName: r.userName,
+      sourceIp: r.sourceIp,
+      method: r.method,
+      state: r.state,
+      lastSeenMs: r.lastSeen.getTime(),
+    }));
+
+    const plan = this.identityMachine.step(this.identitySessions, this.identityCfg);
+
+    // voucher-mode portal logins consume a live voucher first (M07 §5.4);
+    // without an unused voucher the login is refused (dropped from the plan)
+    if (this.identityCfg.portalEnabled && this.identityCfg.portalMode === "voucher") {
+      for (const _ of plan.logins.filter((l) => l.method === "captive_portal")) {
+        if (!consumeVoucher()) {
+          const idx = plan.logins.findIndex((l) => l.method === "captive_portal");
+          if (idx >= 0) plan.logins.splice(idx, 1);
+        }
+      }
+    }
+
+    const now = new Date();
+    // lastSeen bump — light cadence, aligned with the emit cadence
+    if (plan.bumpAll && this.tickNo % 5 === 0) {
+      await db.identitySession
+        .updateMany({ where: { tenantId: 1, state: "active" }, data: { lastSeen: now } })
+        .catch(() => {});
+    }
+    const gone = new Set<number>([...plan.expireIds, ...plan.capExpiredIds]);
+    if (gone.size > 0) {
+      await db.identitySession
+        .updateMany({ where: { id: { in: [...gone] } }, data: { state: "expired", lastSeen: now } })
+        .catch(() => {});
+      for (const id of gone) this.identityBacklog.push({ id, status: "expired" });
+    }
+    for (const login of plan.logins) {
+      // @@unique([tenantId, sourceIp]) — a login from the same IP replaces
+      // the prior session (M07 §5.5)
+      const prior = await db.identitySession
+        .findFirst({ where: { tenantId: 1, sourceIp: login.sourceIp } })
+        .catch(() => null);
+      const data = {
+        userName: login.userName,
+        method: login.method,
+        deviceMac: login.deviceMac,
+        startedAt: now,
+        lastSeen: now,
+        state: "active",
+      };
+      const row = prior
+        ? await db.identitySession.update({ where: { id: prior.id }, data }).catch(() => null)
+        : await db.identitySession.create({ data: { tenantId: 1, ...data } }).catch(() => null);
+      if (row) {
+        this.identityBacklog.push({
+          id: row.id,
+          userName: row.userName,
+          status: row.state,
+          lastActivity: row.lastSeen.toISOString(),
+        });
+      }
+    }
+
+    if (this.tickNo % SESSIONS_EMIT_EVERY === 0 && this.identityBacklog.length > 0) {
+      emitEvent({ type: "sessions:update", payload: { kind: "identity", diff: this.identityBacklog.slice(0, 50) } });
+      this.identityBacklog = [];
+    }
   }
 
   /** M06 §5.4 lease churn: apply the planner's renew/release/expire/create plan. */
