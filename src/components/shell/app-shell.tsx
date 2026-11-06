@@ -41,6 +41,7 @@ import { IpsLogsView } from "@/components/views/logs/ips-logs-view";
 import { AuditView } from "@/components/views/logs/audit-view";
 import { LiveTailView } from "@/components/views/logs/live-tail-view";
 import { ReportsView } from "@/components/views/logs/reports-view";
+import { ApiKeysView } from "@/components/views/system/api-keys-view";
 import { fetchApi, useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
@@ -280,6 +281,8 @@ export function AppShell() {
               <LiveTailView />
             ) : view.path === "/logs/reports" ? (
               <ReportsView />
+            ) : view.path === "/system/api-keys" ? (
+              <ApiKeysView />
             ) : (
               <PlaceholderView view={view} />
             )}

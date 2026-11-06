@@ -39,7 +39,7 @@ export const VIEWS: ViewDef[] = [
   { path: "/ha", title: "High Availability", icon: "ServerCog", placeholder: "M10" },
   { path: "/system/settings", title: "System Settings", icon: "Settings", placeholder: "M10" },
   { path: "/system/backups", title: "Backups", icon: "DatabaseBackup", placeholder: "M10" },
-  { path: "/system/api-keys", title: "API Platform", icon: "KeyRound", placeholder: "M11" },
+  { path: "/system/api-keys", title: "API Platform", icon: "KeyRound" },
 ];
 
 export const SETUP_VIEW: ViewDef = { path: "/setup", title: "Setup Wizard", icon: "Sparkles", placeholder: "M10" };
