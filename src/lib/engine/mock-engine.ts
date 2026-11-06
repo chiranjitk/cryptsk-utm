@@ -33,6 +33,8 @@ import { DnsQueryGenerator, type DnsPolicyRuntime, type DnsQueryLogEntry } from 
 import { loadDnsRuntime } from "@/lib/dns/service";
 import { DhcpLeaseMachine, type DhcpRuntime } from "./generators/dhcp-leases";
 import { loadDhcpRuntime } from "@/lib/dhcp/service";
+import { loadQosRuntime, type QosRuntime } from "@/lib/qos/runtime";
+import type { QosShaper } from "./generators/metrics";
 import {
   IdentitySessionMachine,
   type IdentityChurnConfig,
@@ -134,6 +136,9 @@ class MockEngine {
   private lastDnsLoad = 0;
   private dhcpRuntime: DhcpRuntime = { subnets: [], reservations: [], leases: [] };
   private lastDhcpLoad = 0;
+  // M08: enabled shaper policies feed the metrics generator budget clamp
+  private qosRuntime: QosRuntime = { policies: [] };
+  private lastQosLoad = 0;
   private identityMachine = new IdentitySessionMachine(this.rand);
   private identitySessions: IdentitySessionRuntime[] = [];
   private identityBacklog: Array<{ id: number; userName?: string | null; status?: string; lastActivity?: string }> = [];
@@ -193,7 +198,7 @@ class MockEngine {
         db.wanPolicy.findMany({ where: { tenantId: 1 }, include: { interface: { select: { enabled: true } } } }),
       ]);
       this.ifaces = ifaces.map((i) => ({ name: i.name, role: i.role, enabled: i.enabled }));
-      await Promise.all([this.reloadPolicy(true), this.reloadIpsPolicies(true), this.reloadDnsState(true), this.reloadDhcpState(true)]);
+      await Promise.all([this.reloadPolicy(true), this.reloadIpsPolicies(true), this.reloadDnsState(true), this.reloadDhcpState(true), this.reloadQosState(true)]);
       this.policySeq = currentCursor();
       for (const w of wans) {
         this.wanProbes.set(w.interfaceName, {
@@ -288,6 +293,7 @@ class MockEngine {
     let vpn = false;
     let dns = false;
     let dhcp = false;
+    let qos = false;
     for (const e of events) {
       if (e.type !== "config:updated") continue;
       const s = e.payload.section;
@@ -296,12 +302,14 @@ class MockEngine {
       else if (s === "vpn") vpn = true; // M05: tunnels + sessions re-sync
       else if (s === "dns") dns = true; // M06: policies + resolver settings
       else if (s === "dhcp") dhcp = true; // M06: subnets/reservations churn
+      else if (s === "qos") qos = true; // M08: shaper budgets re-arm the clamp
     }
     if (fw) void this.reloadPolicy(true);
     if (ips) void this.reloadIpsPolicies(true);
     if (vpn) void this.reloadVpnState(true);
     if (dns) void this.reloadDnsState(true);
     if (dhcp) void this.reloadDhcpState(true);
+    if (qos) void this.reloadQosState(true);
   }
 
   /**
@@ -511,6 +519,32 @@ class MockEngine {
   }
 
   /**
+   * M08 §5.4: enabled shaper policies arm the metrics-generator budget clamp.
+   * 3 s throttle, same as the other loaders; policy disable/enable and rule
+   * edits arrive via `config:updated {section: qos}`.
+   */
+  async reloadQosState(force = false): Promise<void> {
+    const now = Date.now();
+    if (!force && now - this.lastQosLoad < 3000) return;
+    this.lastQosLoad = now;
+    try {
+      this.qosRuntime = await loadQosRuntime(1);
+    } catch (err) {
+      console.error("[mock-engine] reloadQosState failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  /** QosShaper list for the metrics tick — guaranteed share of the first
+   *  (highest-priority) guaranteed rule is reserved before clamping. */
+  private qosShapers(): QosShaper[] {
+    return this.qosRuntime.policies.map((p) => ({
+      ifaceName: p.ifaceName,
+      bandwidthKbps: p.bandwidthKbps,
+      guaranteedFloorKbps: p.rules.find((r) => r.guaranteedKbps != null)?.guaranteedKbps ?? 0,
+    }));
+  }
+
+  /**
    * M07: captive portal profile + auth session caps + enabled users arm the
    * identity churn machine. 15 s throttle — slower-moving config.
    */
@@ -548,8 +582,8 @@ class MockEngine {
       // (API routes emit in another bundle; the global ring bridges them)
       this.watchPolicyChanges();
 
-      // 1) metrics
-      const tick = this.metricsGen.tick(this.ifaces, this.tickNo, this.profile.baselines);
+      // 1) metrics (QoS shaper budgets clamp the series — M08 §5.4)
+      const tick = this.metricsGen.tick(this.ifaces, this.tickNo, this.profile.baselines, this.qosShapers());
       this.metricsRing.push(tick);
       if (this.metricsRing.length > METRICS_RING_CAP) this.metricsRing.shift();
       emitEvent({ type: "metrics:tick", payload: tick });

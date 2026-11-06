@@ -35,6 +35,7 @@ import { DhcpView } from "@/components/views/dns-dhcp/dhcp-view";
 import { UsersView } from "@/components/views/identity/users-view";
 import { IdentitySessionsView } from "@/components/views/identity/sessions-view";
 import { PortalView } from "@/components/views/identity/portal-view";
+import { QosView } from "@/components/views/qos/qos-view";
 import { fetchApi, useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
@@ -262,6 +263,8 @@ export function AppShell() {
               <IdentitySessionsView />
             ) : view.path === "/identity/portal" ? (
               <PortalView />
+            ) : view.path === "/qos/policies" ? (
+              <QosView />
             ) : (
               <PlaceholderView view={view} />
             )}

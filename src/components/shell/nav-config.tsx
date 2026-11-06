@@ -30,7 +30,7 @@ export const VIEWS: ViewDef[] = [
   { path: "/identity/users", title: "Users & Groups", icon: "UserCog" },
   { path: "/identity/sessions", title: "Identity Sessions", icon: "Fingerprint" },
   { path: "/identity/portal", title: "Captive Portal", icon: "Wifi" },
-  { path: "/qos/policies", title: "QoS Policies", icon: "Gauge", placeholder: "M08" },
+  { path: "/qos/policies", title: "QoS Policies", icon: "Gauge" },
   { path: "/logs/firewall", title: "Firewall Logs", icon: "ScrollText", placeholder: "M09" },
   { path: "/logs/ips", title: "IPS Logs", icon: "FileWarning", placeholder: "M09" },
   { path: "/logs/audit", title: "Audit Log", icon: "History", placeholder: "M09" },
