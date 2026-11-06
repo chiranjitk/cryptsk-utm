@@ -45,7 +45,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
       <div className="mb-6 flex flex-col items-center gap-2">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/20">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-600/25">
           <ShieldCheck className="h-7 w-7" />
         </div>
         <h1 className="text-xl font-semibold">Cryptsk Console</h1>
@@ -87,7 +87,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
                 {error}
               </p>
             ) : null}
-            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={busy}>
+            <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={busy}>
               {busy ? "Signing in…" : "Sign in"}
             </Button>
           </form>

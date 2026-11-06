@@ -65,7 +65,7 @@ function SidebarNav({ current, onNavigate }: { current: string; onNavigate?: () 
                     className={cn(
                       "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
                       active
-                        ? "bg-emerald-500/10 font-medium text-emerald-600 dark:text-emerald-400"
+                        ? "bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
                         : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/60",
                     )}
                   >
@@ -111,7 +111,7 @@ export function AppShell() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
-          <Icons.ShieldCheck className="h-10 w-10 animate-pulse text-emerald-500" />
+          <Icons.ShieldCheck className="h-10 w-10 animate-pulse text-blue-600" />
           <p className="text-sm text-zinc-500">Loading console…</p>
         </div>
       </div>
@@ -128,7 +128,7 @@ export function AppShell() {
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-4 dark:border-zinc-800">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-white">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
           <Icons.ShieldCheck className="h-5 w-5" />
         </div>
         <div>
@@ -170,7 +170,7 @@ export function AppShell() {
             </Sheet>
 
             <h1 className="truncate text-sm font-semibold">{view.title}</h1>
-            <Badge variant="outline" className="hidden border-emerald-500/40 bg-emerald-500/10 text-emerald-600 sm:inline-flex dark:text-emerald-400">
+            <Badge variant="outline" className="hidden border-blue-500/40 bg-blue-500/10 text-blue-600 sm:inline-flex dark:text-blue-400">
               Simulated
             </Badge>
 

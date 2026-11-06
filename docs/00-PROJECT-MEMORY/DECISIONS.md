@@ -245,3 +245,21 @@
 - **Consequences:** ROADMAP §5 restoration row + REVIEW-4A/4B reports are the evidence;
   build order (ADR-014) unchanged; the larger Phase-1 surface raises build effort —
   accepted by the owner. Any future deviation from SPEC.md requires a new ADR.
+
+## ADR-019 — Enterprise white & blue theme (owner request; supersedes ADR-013 palette)
+
+- **Status:** ACCEPTED (2026-11-06, owner-directed)
+- **Context:** The owner found the emerald/teal look frustrating and directed an
+  "enterprise white and blue" theme. ADR-013 had locked emerald as brand primary and
+  forbidden blue entirely.
+- **Decision:** (1) Brand primary = **blue-600** (light) / **blue-500** (dark); light is
+  the default theme (`defaultTheme="light"`). (2) Chart palette LOCKED to
+  blue → sky → amber → rose → orange → violet → slate (throughput rx = blue, tx = sky);
+  `components/charts/palette.tsx PALETTE` is the implementation. (3) **Emerald/teal are
+  forbidden as brand/UI-chrome colors** — reserved exclusively for health semantics
+  (up/online/healthy badges + dots, UI_DESIGN_SYSTEM §2.4). (4) Tokens updated in
+  `globals.css` (primary, ring, sidebar tint, chart vars); UI_DESIGN_SYSTEM.md §2 is the
+  canonical color law going forward.
+- **Consequences:** All existing and future views must follow UI_DESIGN_SYSTEM §2 (blue
+  chrome, emerald health-only). M03+ module views authored after this ADR use blue for
+  `allow` action badges. Dark mode remains fully supported.

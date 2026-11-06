@@ -1,11 +1,12 @@
 # UI Design System — Cryptsk Console
 
-> **TL;DR:** A dark-first, dense-but-breathable security-operations console built from the
-> existing shadcn/ui set in `src/components/ui`. Colors are LOCKED: neutrals are **zinc**,
-> brand primary is **emerald**, and **indigo/blue are forbidden everywhere** (components,
-> charts, docs examples). All state is communicated through one canonical `StatusBadge`
-> plus semantic Tailwind tokens; all charts use the ordered palette
-> emerald → teal → amber → rose → orange → violet → zinc. No custom color names — only
+> **TL;DR:** An enterprise, light-first, dense-but-breathable security-operations console
+> built from the existing shadcn/ui set in `src/components/ui`. Colors are LOCKED: neutrals
+> are **zinc**, brand primary is **blue-600** (white surfaces + blue chrome — ADR-019,
+> owner-directed 2026-11-06), and **emerald/teal are forbidden as brand/UI-chrome colors**
+> (buttons, active nav, badges, charts). Emerald remains reserved ONLY for true health
+> semantics (up/online/healthy dots + badges). All charts use the ordered palette
+> blue → sky → amber → rose → orange → violet → slate. No custom color names — only
 > shadcn semantic variables and the small registry of shared components defined in §5.
 
 Related: [PROJECT_MEMORY §8–9 (view map + tokens, LOCKED)](../00-PROJECT-MEMORY/PROJECT_MEMORY.md) ·
@@ -20,38 +21,41 @@ Related: [PROJECT_MEMORY §8–9 (view map + tokens, LOCKED)](../00-PROJECT-MEMO
 
 - **Product character:** security-operations console for a UTM/NGFW appliance. The UI must
   read as calm, precise, high-signal — the operator scans it many times a day under stress.
-- **Theme:** dark is the default (`next-themes`, `defaultTheme="dark"`, `class` strategy on
-  `<html>`); light theme is fully supported and must never break contrast. Every custom
-  style is written as a dark class + light override pair.
+- **Theme:** light is the default (`next-themes`, `defaultTheme="light"`, `class` strategy on
+  `<html>` — enterprise white surfaces per ADR-019); dark theme is fully supported and must
+  never break contrast. Every custom style is written with dark-mode variants where needed.
 - **Density:** dense but breathable — data tables and log views are compact
   (`text-sm`, row height ~36–40px), while page scaffolds keep generous section rhythm
   (`space-y-4`/`space-y-6`). Never cram two data tables side by side below `lg`.
 - **Icons:** lucide-react only (bundled with shadcn). One glyph size language: `size-4`
   inline, `size-5` in buttons/nav. Never mix other icon sets.
 - **Logo:** text wordmark "CRYPTSK" (`font-semibold tracking-widest`) + `ShieldCheck`
-  lucide glyph in emerald. No image assets.
+  lucide glyph in blue-600 on a white/blue rounded tile. No image assets.
 - **Voice:** short, factual labels ("Block", "Suppress 24h", "Force probe"). Sentence case
   everywhere; no exclamation marks; toasts state what happened, not enthusiasm.
 
-## 2. Color System (LOCKED — from PROJECT_MEMORY §9)
+## 2. Color System (LOCKED — ADR-019, supersedes the ADR-013 palette)
 
-**Hard rule: NO indigo, NO blue — any `indigo-*` or `blue-*` class, hex, or chart color is
-a bug.** This applies to components, charts, illustrations, and documentation examples.
+**Hard rule: NO emerald/teal as brand or UI-chrome color — any `emerald-*`/`teal-*` class
+used for buttons, active nav, badges, charts, or decorative accents is a bug.** Emerald is
+reserved exclusively for health semantics (§2.4 up/healthy rows). Blue is the brand color
+(ADR-019 owner request, 2026-11-06).
 
 ### 2.1 Base palette roles
 
 | Role | Token / class | Notes |
 |---|---|---|
-| Neutrals (bg, surfaces, borders, text) | `zinc-50…zinc-950` | dark base `zinc-950`, cards `zinc-900`, borders `zinc-800` |
-| Brand primary | emerald (`emerald-500` dark / `emerald-600` light) | primary buttons, active nav, focus ring, logo glyph |
-| Accent (charts secondary, selected-but-not-active) | teal | never used as a "blue substitute" |
+| Neutrals (bg, surfaces, borders, text) | `zinc-50…zinc-950` | light base white, sidebar `zinc-50` w/ faint blue tint (`--sidebar` token), dark cards `zinc-900` |
+| Brand primary | blue (`blue-600` light / `blue-500` dark) | primary buttons, active nav, focus ring, logo glyph, links |
+| Accent (charts secondary, selected-but-not-active) | sky | secondary series, info-adjacent highlights |
 | Destructive | rose-600 | delete confirms, destructive buttons (`--destructive`) |
 
 ### 2.2 Semantic meanings → tokens (canonical mapping)
 
 | Meaning | Color | Typical surface |
 |---|---|---|
-| Allow rule, UP/healthy/active state, success | emerald-500 | soft badge, green dot, chart series 1 |
+| Allow rule, success toast, permitted | blue-600 | soft badge, shield glyph, chart series 1 |
+| UP/online/healthy state (true health only) | emerald-600 | soft badge, green dot — the ONLY allowed emerald usage |
 | Degraded / warning / "needs attention" | amber-500 | soft badge, gauge >80% |
 | Secondary warning (distinct from amber when both shown) | orange-500 | reject action, medium severity |
 | Block / deny / critical / failure | rose-600 | solid badge, destructive button, gauge >95% |
@@ -60,9 +64,9 @@ a bug.** This applies to components, charts, illustrations, and documentation ex
 
 ### 2.3 Rule-action matrix (canonical — used by StatusBadge)
 
-| `firewall_rules.action` | Variant | Class recipe (dark) | Icon |
+| `firewall_rules.action` | Variant | Class recipe | Icon |
 |---|---|---|---|
-| `allow` | emerald soft | `border-emerald-500/40 bg-emerald-500/10 text-emerald-500` | `ShieldCheck` |
+| `allow` | blue soft | `border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400` | `ShieldCheck` |
 | `deny` | rose solid | `border-transparent bg-rose-600 text-white` | `Ban` |
 | `drop` | rose outline | `border-rose-600/60 bg-transparent text-rose-500` | `CircleX` |
 | `reject` | orange soft | `border-orange-500/40 bg-orange-500/10 text-orange-500` | `CircleMinus` |
@@ -74,7 +78,7 @@ The same four variants serve `ips_events.action` (`alert`=amber soft, `drop`=ros
 
 | Value | Variant | Icon | Used by |
 |---|---|---|---|
-| `up` / `active` / `healthy` / `success` | emerald soft | `CircleCheck` | interfaces, WAN, VPN, leases, HA role, audit result |
+| `up` / `active` / `healthy` / `success` | emerald soft (health-only) | `CircleCheck` | interfaces, WAN, VPN, leases, HA role, audit result |
 | `degraded` / `warn` / `expired` / `standby` | amber soft | `CircleAlert` | WAN probes, gauges >80%, DHCP leases, HA standby |
 | `connecting` | amber soft + pulsing dot | `LoaderCircle` | VPN tunnels |
 | `down` (WAN, interface link) | rose solid | `CircleX` | WAN strip, interface table |
@@ -97,19 +101,20 @@ badge pairs a glyph + text label (see §9).
 Defined once as CSS variables in `globals.css` (`--chart-1`…`--chart-7`), consumed by
 `ChartContainer` config as `var(--chart-N)`. Never hardcode chart hexes in components.
 
-| Slot | Color | Hex (both themes) |
+| Slot | Color | Hex (light) |
 |---|---|---|
-| `--chart-1` | emerald-500 | `#10b981` |
-| `--chart-2` | teal-500 | `#14b8a6` |
+| `--chart-1` | blue-600 | `#2563eb` |
+| `--chart-2` | sky-500 | `#0ea5e9` |
 | `--chart-3` | amber-500 | `#f59e0b` |
 | `--chart-4` | rose-600 | `#e11d48` |
 | `--chart-5` | orange-500 | `#f97316` |
 | `--chart-6` | violet-500 | `#8b5cf6` |
-| `--chart-7` | zinc-500 | `#71717a` |
+| `--chart-7` | slate-500 | `#64748b` |
 
-Series pick slots strictly in order (1st series = emerald, 2nd = teal, …). Named series
-keep a fixed slot everywhere (throughput rx = emerald, tx = teal) for cross-view muscle
-memory.
+Series pick slots strictly in order (1st series = blue, 2nd = sky, …). Named series
+keep a fixed slot everywhere (throughput rx = blue, tx = sky) for cross-view muscle
+memory. The concrete implementation lives in `src/components/charts/palette.tsx`
+(`PALETTE` — mirrors this table; dark mode uses the `.dark` `--chart-*` variables).
 
 ## 3. Theme Tokens (Tailwind 4 + shadcn variables)
 
