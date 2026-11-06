@@ -19,6 +19,10 @@ import { NAV_GROUPS, VIEWS, viewFor, type ViewDef } from "./nav-config";
 import { LoginView } from "@/components/views/login/login-view";
 import { DashboardView } from "@/components/views/dashboard/dashboard-view";
 import { PlaceholderView } from "@/components/views/placeholder/placeholder-view";
+import { RulesView } from "@/components/views/firewall/rules-view";
+import { NatView } from "@/components/views/firewall/nat-view";
+import { ObjectsView } from "@/components/views/firewall/objects-view";
+import { ZonesView } from "@/components/views/firewall/zones-view";
 import { fetchApi, useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
@@ -214,6 +218,14 @@ export function AppShell() {
           <main className="flex-1 p-4 md:p-6">
             {view.path === "/dashboard" ? (
               <DashboardView />
+            ) : view.path === "/firewall/rules" ? (
+              <RulesView />
+            ) : view.path === "/firewall/nat" ? (
+              <NatView />
+            ) : view.path === "/firewall/objects" ? (
+              <ObjectsView />
+            ) : view.path === "/firewall/zones" ? (
+              <ZonesView />
             ) : (
               <PlaceholderView view={view} />
             )}

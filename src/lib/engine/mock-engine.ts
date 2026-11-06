@@ -7,10 +7,17 @@
  */
 
 import { db } from "@/lib/db";
-import { emitEvent, type FirewallLogEntry, type IpsEventEntry, type MetricsTick } from "./events";
+import { emitEvent, eventsSince, currentCursor, type FirewallLogEntry, type IpsEventEntry, type MetricsTick } from "./events";
 import { getProfile, type TrafficProfile } from "./profiles";
 import { MetricsGenerator, type IfaceMeta } from "./generators/metrics";
-import { FirewallLogGenerator, type RuleMeta } from "./generators/firewall-logs";
+import {
+  FirewallLogGenerator,
+  type HostPoolEntry,
+  type NatEvalRule,
+} from "./generators/firewall-logs";
+import { loadEvalRules, loadExpansionContext } from "@/lib/firewall/rule-loader";
+import { parseIds } from "@/lib/firewall/refs";
+import type { EvalRule } from "@/lib/firewall/rule-match";
 import { IpsEventGenerator } from "./generators/ips-events";
 import {
   SessionChurnMachine,
@@ -44,10 +51,7 @@ const PERSIST_EVERY = 10; // ticks (20 s)
 const SESSIONS_EMIT_EVERY = 5; // ticks
 const RETENTION_EVERY = 250; // ticks
 
-const LAN_HOSTS = Array.from({ length: 24 }, (_, i) => `192.168.10.${10 + i * 10}`).concat(
-  Array.from({ length: 8 }, (_, i) => `192.168.20.${100 + i * 2}`),
-  Array.from({ length: 6 }, (_, i) => `10.99.1.${10 + i}`),
-);
+
 
 function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -72,14 +76,20 @@ class MockEngine {
   readonly logsRing: LogRingEntry[] = [];
 
   private ifaces: IfaceMeta[] = [];
-  private rules: RuleMeta[] = [];
+  private rules: EvalRule[] = [];
+  private ruleNameToId = new Map<string, number>();
+  private hostPools: HostPoolEntry[] = [];
+  private userNames: string[] = [];
+  private policySeq = 0; // last event seq seen by the policy watcher
+  private lastPolicyLoad = 0;
   private wanProbes = new Map<string, WanProbeState>();
   private tunnels: VpnTunnelState[] = [];
   private vpnSessions: VpnSessionState[] = [];
   private hitDeltas = new Map<number, number>();
+  private natHitDeltas = new Map<number, number>();
 
   private metricsGen = new MetricsGenerator(this.rand);
-  private fwGen = new FirewallLogGenerator(this.rand, [], this.profile);
+  private fwGen = new FirewallLogGenerator(this.rand, [], []);
   private ipsGen = new IpsEventGenerator(this.rand, this.profile);
   private wanMachine = new WanProbeMachine(this.rand, this.profile.wanFlapRate);
   private vpnMachine = new VpnStateMachine(this.rand);
@@ -115,15 +125,14 @@ class MockEngine {
 
   private async bootstrap(): Promise<void> {
     try {
-      const [ifaces, rules, wans, vpns] = await Promise.all([
+      const [ifaces, wans, vpns] = await Promise.all([
         db.networkInterface.findMany({ where: { tenantId: 1 }, select: { name: true, role: true, enabled: true } }),
-        db.firewallRule.findMany({ where: { tenantId: 1 }, select: { id: true, name: true, action: true, enabled: true } }),
         db.wanPolicy.findMany({ where: { tenantId: 1 }, include: { interface: { select: { enabled: true } } } }),
         db.vpnConfig.findMany({ where: { tenantId: 1 }, select: { id: true, name: true, type: true, enabled: true, status: true } }),
       ]);
       this.ifaces = ifaces.map((i) => ({ name: i.name, role: i.role, enabled: i.enabled }));
-      this.rules = rules.map((r) => ({ id: r.id, name: r.name, action: r.action, enabled: r.enabled }));
-      this.fwGen.setRules(this.rules);
+      await this.reloadPolicy(true);
+      this.policySeq = currentCursor();
       for (const w of wans) {
         this.wanProbes.set(w.interfaceName, {
           iface: w.interfaceName,
@@ -167,6 +176,76 @@ class MockEngine {
 
   private logSeq = 0;
 
+  /**
+   * (Re)load the policy the generator enforces: enabled firewall rules with
+   * fully expanded matchers (M03 §5), NAT rules for hit counters, zone pools
+   * and the user roster. Called on bootstrap and whenever a `config:updated`
+   * event for section firewall|nat is observed (throttled to 3 s).
+   */
+  async reloadPolicy(force = false): Promise<void> {
+    const now = Date.now();
+    if (!force && now - this.lastPolicyLoad < 3000) return;
+    this.lastPolicyLoad = now;
+    try {
+      const [{ rules }, ctx, zones, natRows] = await Promise.all([
+        loadEvalRules(1),
+        loadExpansionContext(1),
+        db.zone.findMany({ where: { tenantId: 1 }, select: { id: true, name: true } }),
+        db.natRule.findMany({ where: { tenantId: 1 }, orderBy: { position: "asc" } }),
+      ]);
+      this.rules = rules;
+      this.ruleNameToId = new Map(rules.map((r) => [r.name, r.id]));
+      this.fwGen.setRules(rules);
+
+      const natRules: NatEvalRule[] = natRows.map((n) => ({
+        id: n.id,
+        name: n.name,
+        type: n.type as NatEvalRule["type"],
+        enabled: n.enabled,
+        position: n.position,
+        srcAddrs: ctx.expandAddr(parseIds(n.srcAddrIds)),
+        dstAddrs: ctx.expandAddr(parseIds(n.dstAddrIds)),
+        services: ctx.expandSvc(parseIds(n.serviceIds)),
+        outgoingIface: n.outgoingIface,
+      }));
+      this.fwGen.setNatRules(natRules);
+
+      const byName = (n: string) => zones.find((z) => z.name === n)?.id ?? 0;
+      this.fwGen.setZoneIds({
+        wan: byName("WAN"),
+        lan: byName("LAN"),
+        dmz: byName("DMZ"),
+        vpn: byName("VPN"),
+      });
+
+      // per-zone host pools for flow generation (deterministic, seed-style)
+      const lanHosts = Array.from({ length: 24 }, (_, i) => `192.168.10.${10 + i * 10}`)
+        .concat(Array.from({ length: 8 }, (_, i) => `192.168.20.${100 + i * 2}`))
+        .map((ip) => ({ ip, zoneId: byName("LAN") }));
+      const dmzHosts = Array.from({ length: 6 }, (_, i) => `172.16.20.${10 + i}`)
+        .map((ip) => ({ ip, zoneId: byName("DMZ") }));
+      const vpnHosts = Array.from({ length: 6 }, (_, i) => `10.99.1.${10 + i}`)
+        .map((ip) => ({ ip, zoneId: byName("VPN") }));
+      this.hostPools = [...lanHosts, ...dmzHosts, ...vpnHosts];
+
+      const users = await db.user.findMany({ where: { tenantId: 1 }, select: { username: true } });
+      this.userNames = users.map((u) => u.username);
+    } catch (err) {
+      console.error("[mock-engine] reloadPolicy failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  private watchPolicyChanges(): void {
+    const { events, cursor } = eventsSince(this.policySeq);
+    this.policySeq = cursor;
+    for (const e of events) {
+      if (e.type === "config:updated" && (e.payload.section === "firewall" || e.payload.section === "nat")) {
+        void this.reloadPolicy(true);
+        break;
+      }
+    }
+  }
+
   private async tick(): Promise<void> {
     try {
       this.tickNo += 1;
@@ -200,7 +279,7 @@ class MockEngine {
 
       // 4) firewall logs (+ rule hit counters)
       const apps = this.profile.appMix.map(([a]) => a);
-      const fwLogs = this.fwGen.generate(LAN_HOSTS, apps);
+      const fwLogs = this.fwGen.generate(this.hostPools, apps, this.userNames);
       for (const log of fwLogs) {
         const rule = this.rules.find((r) => r.name === log.ruleName);
         if (rule) this.hitDeltas.set(rule.id, (this.hitDeltas.get(rule.id) ?? 0) + 1);

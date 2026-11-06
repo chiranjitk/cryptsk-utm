@@ -553,6 +553,12 @@ for envelope shape. Do not add console.log spam; remove temp logs after.
   check `.env` points at `file:/home/z/my-project/db/cryptsk.db` (NOT the scaffold-era
   `db/custom.db`), then run `bun run db:setup` (push + seed). Symptom of a stale env:
   login 401 for valid seeds + empty `users` table.
+- NEVER concatenate two Prisma JSON-string columns before `JSON.parse` (`"[1] [5]"` is
+  invalid JSON → parse silently returns []). This shipped as a real bug in M03 delete
+  protection (refs.ts, fixed 2026-11-06): parse each column separately and merge the
+  parsed arrays. General rule: JSON columns are parsed per column, always.
+- Deleting referenced seed rows during E2E tests breaks id-based JSON references
+  (groups' memberIds, rule arrays). Restore with EXPLICIT ids (raw insert), not upsert.
 
 ---
 
@@ -564,6 +570,42 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 ---
 
 ## 15. SESSION LOG (append-only — newest on top)
+
+### 2026-11-06 — Enterprise blue theme (ADR-019) + M03 Firewall & NAT module LIVE
+- **Theme (owner request):** emerald/teal look replaced with enterprise white & blue —
+  ADR-019 records the decision (supersedes ADR-013 palette). Brand = blue-600 light /
+  blue-500 dark; light is now the DEFAULT theme; chart palette LOCKED
+  blue→sky→amber→rose→orange→violet→slate (rx=blue, tx=sky); emerald/teal forbidden as UI
+  chrome, reserved for health semantics only (WAN up pill). Updated: globals.css tokens,
+  charts/palette.tsx, shell/login/dashboard, UI_DESIGN_SYSTEM §2, providers defaultTheme.
+- **M03 module shipped vertically (per ADR-014 order M01→M03→M02→…):** full API surface —
+  zones, address-objects/groups, service-objects/groups, schedule-objects,
+  firewall-rules (CRUD + toggle + reorder + validate shadow/conflict + hits + reset +
+  import/export json|csv), nat-rules (CRUD + toggle + reorder + 1:1 helper + port
+  forward), network/app-catalog, users list. Service layer `src/lib/firewall/*`
+  (~2,000 lines: rule-match first-match-wins evaluator, refs integrity, positions,
+  shapers). Views `src/components/views/firewall/*` (~4,900 lines): rules table +
+  dnd-kit drag reorder + RuleEditor (zones/objects incl. mixed group ids/apps/users/
+  MACs/schedule/protections/validate), NAT view (type-gated editor, masquerade/pool/
+  ranges, 1:1 pair chip), Objects (5 tabs + transfer lists + 409 conflict dialogs),
+  Zones (protected WAN/LAN, iface chips). nav-config placeholders removed for the 4
+  views; app-shell wired.
+- **Simulation loop closed:** firewall-log generator now enforces the REAL ruleset
+  (evaluateRules first-match-wins, zone/address/service/app/user/MAC/schedule matchers,
+  implicit-deny rows) and increments hitCount/lastHitAt per matched rule; NAT hit
+  counters live. Policy reload triggered by config:updated (3 s throttle).
+- **CRITICAL BUG FIXED (agent-era):** `refs.ts scanRuleArrays` concatenated two JSON id
+  columns into `"[1] [5]"` → invalid JSON → parseIds [] → delete-protection NEVER fired;
+  referenced objects/zones were silently deletable. Fixed by parsing each column
+  separately (see Gotchas §13). Seed objects LAN_NET(id 1)/MGMT_NET(id 5) + rule
+  implicit-deny-final restored with EXACT ids after browser E2E delete-test collateral
+  (id integrity preserved for TRUSTED membership + rule refs).
+- **Verified (agent-browser + curl):** theme light/dark; rules render 12 ordered +
+  create/toggle/delete/kebab; hit counters increment per rule (6k-25k range); NAT 4
+  seeded rows with live hits + translation summaries ("→ masquerade"); objects 5 tabs +
+  referenced-by counts; 409 on LAN_NET/MGMT_NET/WAN-zone deletes w/ referencedBy list;
+  zones cards w/ lock icons; CSV+JSON export; validate ok:true; lint clean; zero
+  tick errors in dev.log.
 
 ### 2026-11-06 — Sandbox-reset recovery: login restored (root cause + hardening)
 - **Incident:** sandbox reset lost runtime state; login returned 401 for valid seeds.
