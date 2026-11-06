@@ -549,6 +549,10 @@ for envelope shape. Do not add console.log spam; remove temp logs after.
   use IANA timezone strings (`Asia/Calcutta` etc.).
 - Never render raw JSON blobs in UI without a `JsonFieldViewer` (monospace, collapsible).
 - Rate: logs tables must paginate server-side; loading 5k rows into a client table will jank.
+- `.env` DATABASE_URL silently **overrides** `schema.prisma` url. After a sandbox reset,
+  check `.env` points at `file:/home/z/my-project/db/cryptsk.db` (NOT the scaffold-era
+  `db/custom.db`), then run `bun run db:setup` (push + seed). Symptom of a stale env:
+  login 401 for valid seeds + empty `users` table.
 
 ---
 
@@ -560,6 +564,24 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 ---
 
 ## 15. SESSION LOG (append-only — newest on top)
+
+### 2026-11-06 — Sandbox-reset recovery: login restored (root cause + hardening)
+- **Incident:** sandbox reset lost runtime state; login returned 401 for valid seeds.
+- **Root cause (two-layer):** (1) stale `.env` override `DATABASE_URL=file:.../db/custom.db`
+  (scaffold-era file) beat the correct `schema.prisma` url `file:../db/cryptsk.db` — the
+  custom.db file was gone, so the runtime talked to a phantom DB; (2) `db/cryptsk.db`
+  existed with all 44 tables but **0 rows in users** (seed data lost with the reset).
+- **Fix:** `.env` now points at the real DB (absolute path); re-ran idempotent
+  `bun prisma/seed.ts` (8 users / 5,221 fw logs / 356 IPS events / 25 leases / 10 vpn
+  sessions). Verified end-to-end with agent-browser: login admin/admin123 → live
+  dashboard → Sign out → back to login; wrong password → 401; secops role login OK.
+- **Hardening:** new `bun run db:setup` = `prisma db push` + seed in one command — the
+  canonical recovery step after any sandbox reset. `.env` must always point at
+  `file:/home/z/my-project/db/cryptsk.db` (Gotchas §13).
+- **Repo hygiene:** removed accidentally-tracked sandbox dumps (`tool-results/*`, `docs/=229`)
+  from git; `.gitignore` extended. Working tree clean; pushed to GitHub.
+- **Note:** logout "stuck on dashboard" during verification was a snapshot-timing
+  artifact (reload in flight) — no code change needed; auth cycle is correct.
 
 ### 2026-11-06 — M0 foundation BUILT & browser-verified (Task D-1 + fixes)
 - **Shipped:** prisma/schema.prisma (all models, SQLite/ADR-005 adaptation) + seed
@@ -579,7 +601,6 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
   backfilled chart); placeholder views route correctly; mobile 390px responsive; lint
   clean; no runtime errors in dev.log.
 
-### 2026-11-05 — SPEC moved into docs + zero-feature-loss audit (4A/4B) — CLEARED FOR BUILD
 ### 2026-11-05 — SPEC moved into docs + zero-feature-loss audit (4A/4B) — CLEARED FOR BUILD
 - **Master feature sheet moved:** `upload/Cryptsk_UTM_Optimized_Spec (1).md` → **`docs/SPEC.md`**
   (git rename; all cross-references updated; `upload/` now git-ignored). SPEC.md is ground

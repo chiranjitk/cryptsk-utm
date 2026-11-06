@@ -58,3 +58,9 @@ db/
 download/
 agent-ctx/
 upload/
+
+# sandbox artifacts
+tool-results/
+=229
+dev.pid
+dev.log
