@@ -10,16 +10,16 @@ Related: [PROJECT_MEMORY](../00-PROJECT-MEMORY/PROJECT_MEMORY.md) (§6 enums, §
 
 M04 gives the security admin detection control and visibility: IPS policies decide **how** traffic is inspected (inline blocking vs. detect-only) and **which** Emerging Threats-style categories are enabled; the events view turns the resulting `ips_events` stream into a triage workflow (filter → inspect → suppress or block at the firewall).
 
-Derived from upstream spec §1.6 (IPS/IDS) Phase 1 table, **trimmed to console Phase 1**:
+Derived from upstream spec §1.6 (IPS/IDS) Phase 1 table — **fully covered per the owner zero-loss ruling (REVIEW-4A)**:
 
 | Upstream Phase 1 feature | Console Phase 1 decision |
 |---|---|
 | Modes inline_drop / inline_tap / passive, ET rule set, category enable/disable, exceptions (SID), bypass (source/dest), custom Suricata rules, threshold tuning, event suppression | IN — this spec |
-| IPS Policy Profiles (conservative/balanced/aggressive presets) | OUT as one-click presets; Phase 1 is manual category toggles (preset = a seeded policy, e.g. `BALANCED`). Deferred to [ROADMAP](../01-PRODUCT/ROADMAP.md) |
-| Auto rule updates (suricata-update scheduling) | OUT of console Phase 1 (build decision, ROADMAP §5) — category set is static in Phase 1 (served by `/ips/rule-categories`); no update-scheduler UI |
-| Anomaly detection (preprocessor tuning) | OUT — no preprocessor UI in Phase 1 |
-| Threat intelligence correlation / feed sync | OUT — Phase 2 (`2.11 Threat Intelligence`) |
-| Bypass rules (skip IPS for source/dest) | Partial — `exceptions` entries are SID-keyed (SCHEMA §4 requires `sid`), so they express "disable SID X for this traffic", not a SID-less capture-level bypass; appliance-side, true traffic bypass is an nftables "skip queue" rule. Flagged in §8 (spec §1.6 lists bypass rules as Phase 1) |
+| IPS Policy Profiles (conservative/balanced/aggressive presets) | IN — one-click presets via `POST /api/v1/ips/policies/apply-preset` (category bundle + mode per preset, DATA_PLANE §3.1); seeded `BALANCED` remains the default policy (restored REVIEW-4A) |
+| Auto rule updates (suricata-update scheduling) | IN — `GET/PUT /api/v1/ips/update-settings` (enabled, interval daily/weekly, time, last/next run) rendered in the Rule Updates card on `#/ips/policies`; engine simulates the update cycle (restored REVIEW-4A) |
+| Anomaly detection (preprocessors) | IN — `preprocessors` JSON toggles on the policy (`stream`/`http`/`tls`/`ssh`, default all on); deep stream-reassembly/decoding tuning stays Phase 2 per the spec's own cut list (restored REVIEW-4A) |
+| Threat intelligence correlation (block known bad IPs from feeds) | IN — policy-level `tiBlocklist` toggle: feed-sourced bad IPs are dropped at IPS level (generator emits `category = "c2"`/`malware` drops for feed IPs). Full feed ingestion/IOC management is spec §2.11 Phase 2 — not a deferral, the spec's own phase assignment (restored REVIEW-4A) |
+| Bypass rules (skip IPS for source/dest) | IN — `exceptions` `sid: 0` = any-SID capture-level bypass (ADR-017) |
 
 **Appliance deployment note:** Suricata runs inline via nftables NFQUEUE — the generator emits a `queue num 1-4 fanout bypass` verdict on the forward chain for flows whose firewall rule attaches an IPS profile (DATA_PLANE §1). `inline_drop` enforces the drop verdict; `inline_tap` accepts but alerts (detect-only); `passive` runs as IDS on a mirror/SPAN tap via af-packet — never in the forwarding path. IDS vs IPS: only `inline_drop` blocks traffic; the other two modes are detect-only.
 
@@ -29,7 +29,7 @@ Reference: [SCHEMA](../03-DATABASE/SCHEMA.md) §3/§4.
 
 | Model | Fields used here | Notes |
 |---|---|---|
-| `IpsPolicy` | `name`, `mode` (`inline_drop\|inline_tap\|passive`, default `inline_drop`), `enabled`, `ruleCategories` JSON `{[category: string]: boolean}`, `customRules` JSON array of raw suricata rule strings, `exceptions` JSON `[{sid: number, source?: string, dest?: string, comment?: string}]`, `thresholds` JSON `[{sid: number, track: "by_src"\|"by_dst", count: number, seconds: number}]` | unique `(tenantId, name)`; hard FK from `FirewallRule.ipsPolicyId` → delete **RESTRICT** (409 while attached) |
+| `IpsPolicy` | `name`, `mode` (`inline_drop\|inline_tap\|passive`, default `inline_drop`), `enabled`, `ruleCategories` JSON `{[category: string]: boolean}`, `customRules` JSON array of raw suricata rule strings, `exceptions` JSON `[{sid: number, source?: string, dest?: string, comment?: string}]`, `thresholds` JSON `[{sid: number, track: "by_src"\|"by_dst", count: number, seconds: number}]`, `preprocessors` JSON `{stream?, http?, tls?, ssh?}`, `tiBlocklist` boolean | unique `(tenantId, name)`; hard FK from `FirewallRule.ipsPolicyId` → delete **RESTRICT** (409 while attached) |
 | `IpsEvent` | `timestamp`, `srcIp`, `srcPort`, `dstIp`, `dstPort`, `action` (`alert\|drop\|reject\|bypass\|suppressed`), `sid` (string, ET-style e.g. `2xxxxxx`), `severity` (`info\|low\|medium\|high\|critical`), `category` (e.g. `trojan`, `web_attack`, `scan`), `message`, `suppressedUntil?` | indexed `(tenantId, timestamp)` + `(tenantId, severity)`; no config FKs — `sid`/category are plain strings |
 | `FirewallRule.ipsPolicyId` | attach point | managed in M03's RuleEditor; M04 only displays the attached-rule count |
 
@@ -46,6 +46,9 @@ Integrity: categories come from the server's category catalog (next section); `r
 | GET | `/api/v1/ips/rule-categories` | ET category list + enabled state | category matrix in editor |
 | GET | `/api/v1/ips/events` | filtered event list | `#/ips/events` load + filter changes |
 | POST | `/api/v1/ips/events/{id}/suppress` | `{duration: "24h"\|"7d"\|"forever"}` | row suppress menu |
+| POST | `/api/v1/ips/policies/apply-preset` | `{preset: "conservative"\|"balanced"\|"aggressive", name?}` → create/replace a policy from the preset bundle | "Apply preset" dropdown → preset dialog |
+| GET | `/api/v1/ips/update-settings` | auto-update scheduler config | "Rule Updates" card load |
+| PUT | `/api/v1/ips/update-settings` | save scheduler (enabled, interval, time) | "Rule Updates" card save |
 
 Query params on `GET /api/v1/ips/events` (locked set: `?severity=&sid=&q=&since=&until=&category=&page=`): severity chip value, exact `sid`, free-text `q` (matches `message`/ip fields), time range `since`/`until` ISO, `category` (see §8 mirroring note), `page`/`limit` pagination.
 
@@ -59,18 +62,24 @@ Expected error cases:
 | `thresholds`/`exceptions` entry with missing/invalid `sid` | `400 VALIDATION_ERROR` |
 | Suppress on nonexistent event | `404 NOT_FOUND` |
 | Invalid `duration` value | `400 VALIDATION_ERROR` (enum: `24h`, `7d`, `forever`) |
+| Unknown `preset` value | `400 VALIDATION_ERROR` (enum: `conservative`, `balanced`, `aggressive`) |
+| `preprocessors` key outside `stream\|http\|tls\|ssh` | `400 VALIDATION_ERROR` |
 
 ## 4. Views & Interactions
 
 ### `#/ips/policies`
 
 - **Policy list:** name, mode badge, enabled switch, "categories on: k/10", custom rules count, attached rules count (link → `#/firewall/rules?search=<policy name>`), actions (edit, duplicate, delete).
+- **Preset dropdown ("Apply preset"):** Conservative / Balanced / Aggressive → preset dialog shows the category bundle + mode that will be applied (per DATA_PLANE §3.1) and either creates a new policy (name input, default preset name) or replaces the selected policy's category map + mode after confirm. Audited + `config:updated {section: "ips"}`.
+- **Rule Updates card** (below the list): enabled switch, interval radio (`daily`/`weekly`), time input, `lastUpdateAt` / `nextUpdateAt` readouts, "Run update now" button (simulated: bumps `lastUpdateAt`, toast "ET rules updated"). Persists to the `ips/auto_update` SystemSetting.
 - **Policy editor dialog:**
   - **Mode selector** with explanation panel (radio cards): `inline_drop` — inline, matching traffic is **dropped** (events carry `action = drop`); `inline_tap` — inline copy, detect-only (events `action = alert`); `passive` — off-path IDS on a mirror/span, detect-only (events `action = alert`). Panel states plainly: only `inline_drop` blocks traffic.
   - **Category matrix:** rows per category from `/ips/rule-categories` (~10, e.g. `malware`, `trojan`, `web_attack`, `scan`, `exploit`, `policy`, `dos`, `botnet` — exact list served by the endpoint), each with toggle + severity-distribution hint; master "all on/off" switch. State mirrors `ruleCategories` JSON.
   - **Custom rules** textarea: raw suricata rule syntax, one per line, loosely validated (non-empty, starts with a known action keyword, contains `sid:`); helper text; error list per line on save.
-  - **Exceptions table:** sid (number), optional source/dest (ip or cidr), comment; add-row + remove; corresponds to threshold.config-style suppressions.
+  - **Exceptions table:** sid (number; `0` = any-SID capture bypass, labeled "bypass (any SID)"), optional source/dest (ip or cidr), comment; add-row + remove; corresponds to threshold.config-style suppressions.
   - **Thresholds table:** sid, `track` (`by_src`/`by_dst`), `count`, `seconds`; helper text "alert at most `count` events per `seconds` per tracked host".
+  - **Anomaly detection (preprocessors) section:** four switches — `stream` reassembly, `http` inspector, `tls` inspector, `ssh` inspector (default all on); caption "Suricata anomaly-detection engines applied for this policy; deep stream/decoding tuning is a Phase-2 item".
+  - **Threat-intel blocklist switch:** `tiBlocklist` — "drop traffic to/from known-bad feed IPs (ET-compatible free feeds)"; when on, the generator emits feed-IP `drop` events (category `c2`/`malware`).
   - Enable switch mirrors `enabled`; save → PUT.
 - Empty state: no policies → EmptyState + "New policy"; seed guarantees two (`BALANCED`, `STRICT_WEB`).
 
@@ -87,7 +96,9 @@ Expected error cases:
 - **Mode semantics (simulated):** `inline_drop` → the `ips-events` generator emits rows with `action = drop` for enabled-category hits, and correlated `firewall_logs` rows with `action = drop` appear for the same flows (SIMULATION_LAYER §3 ips row + §6 contract); `inline_tap` and `passive` → events only (`action = alert`), no correlated drops. `passive` additionally labels traffic as mirror-sourced in the editor explainer.
 - **Category gating:** generator only emits events for categories enabled in the **attached, enabled** policy for that flow's path; with no policy attached (rule without `ipsPolicyId`), the engine-level default policy (first enabled policy by seed order) applies in simulation — documented so tests are deterministic.
 - **Severity mapping:** each category carries a base severity (e.g. `malware`/`trojan` → `high`/`critical`, `scan`/`policy` → `low`/`medium`); `dos` bursts escalate with rate. Exact mapping lives with the generator contract (SIMULATION_LAYER §6: sid ranges 2xxxxxx web, 20xxxxx malware, 21xxxxx scan…).
-- **Exceptions evaluation:** event is not emitted (or downgraded to `bypass`) when `sid` matches and optional `source`/`dest` CIDR contains the flow endpoint — matching Suricata `suppress` (threshold.config) semantics. Capture-level bypass (skip inspection for a flow regardless of SID) is not expressible with the SID-keyed shape — see §8.
+- **Exceptions evaluation:** event is not emitted (or downgraded to `bypass`) when `sid` matches and optional `source`/`dest` CIDR contains the flow endpoint — matching Suricata `suppress` (threshold.config) semantics. `sid: 0` entries render as nftables `skip queue` rules ahead of the queue rule (ADR-017).
+- **TI blocklist:** when the attached policy has `tiBlocklist = true`, feed-sourced source IPs (a small built-in simulated feed list) produce `drop` events with category `c2`/`malware` plus correlated `firewall_logs` drops; appliance-side the feed sync populates an nftables set consumed before the queue rule.
+- **Preprocessors:** toggles gate which anomaly inspectors the simulated engine "runs"; disabling `http`/`tls` suppresses their event families in the generator mix. Recorded config only (no real preprocessing, SIMULATION_LAYER §9).
 - **Thresholds:** per `sid` + `track` key, at most `count` alerts per `seconds` window; further hits within the window are recorded with `action = suppressed` rather than dropped from existence (preserves forensic completeness).
 - **Suppression action:** `POST /suppress` sets `suppressedUntil = now + duration` on the event (and marks `action = suppressed`); `forever` clears `suppressedUntil` to `null` with `action = "suppressed"` carrying the permanence — this convention is pinned in ENDPOINTS.md (§3 example). While suppressed, the generator tags repeat hits with `action = suppressed`.
 - **Zod validation:** `mode`/`severity`/`action`/`track` from locked enums (PROJECT_MEMORY §6); `sid` positive int in exceptions/thresholds (string on events, ET ranges); `count` 1–10 000; `seconds` 1–86 400; custom rules loose-checked as above (real signature validation is explicitly out of simulation scope, SIMULATION_LAYER §9).
@@ -113,6 +124,10 @@ Subscribe `{ channels: ["logs", "alerts"] }` while either view is mounted.
 - Given threshold `sid = 21xxxxx, track = by_src, count = 2, seconds = 60`, when 5 hits arrive from one source in 60 s, then exactly 2 are `alert` and the rest are `suppressed`.
 - Given Suppress → `7d` on an event, when the request returns, then `suppressedUntil` is 7 days ahead and the row shows the suppressed chip.
 - Given "Create firewall block rule" clicked in the detail panel, when RuleEditor opens, then name/action/src fields are prefilled from the event and saving lands in `#/firewall/rules` at the end position.
+- Given "Apply preset → Aggressive" is chosen with name `AGGRESSIVE-DR`, when confirmed, then a policy with all categories on + `inline_drop` mode exists and the audit row names the preset.
+- Given the Rule Updates card set to weekly 03:00, when saved, then `GET /ips/update-settings` echoes the schedule and `nextUpdateAt` is recomputed; "Run update now" bumps `lastUpdateAt`.
+- Given `preprocessors.http = false` on the attached policy, when the generator runs, then no `web_attack` family events appear (inspector off).
+- Given `tiBlocklist = true`, when the generator emits feed-IP traffic, then `drop` events with category `c2` appear and correlated firewall drops exist.
 - Given a custom rule line missing `sid:`, when saving, then a per-line validation error blocks the save.
 - Given policy `BALANCED` attached to 3 rules, when Delete is attempted, then `409 CONFLICT` lists the 3 rule names.
 - Given filters severity=`critical` + 24 h, when loading, then the request carries `?severity=critical&since=<-24h>` and pagination meta is honored (server-side, no client filtering of pages).
@@ -124,5 +139,6 @@ Subscribe `{ channels: ["logs", "alerts"] }` while either view is mounted.
 - **`?category=` mirroring (RESOLVED):** ENDPOINTS.md §5 now carries `?category=` on `/api/v1/ips/events` (matches PROJECT_MEMORY §7.2 locked param list).
 - **`forever` sentinel (RESOLVED):** ENDPOINTS.md pins the convention — `duration: "forever"` → `suppressedUntil = null` + `action = "suppressed"`; §5 above matches.
 - **Default-policy rule (RESOLVED — ADR-017):** traffic on rules without `ipsPolicyId` is evaluated by the first enabled policy by seed order (`id` ascending) — pinned in ENDPOINTS.md §5.
+- ~~**Presets / auto-update / preprocessors / TI correlation deferred**~~ RESOLVED (REVIEW-4A): restored in this spec. TI stays policy-level blocklist only — feed ingestion/IOC management is spec §2.11 Phase 2 (the spec's own assignment, not a deferral).
 - **Suppress vs. threshold interplay:** both produce `action = suppressed`; the events table cannot currently distinguish admin suppression from threshold rate-limiting (distinguishable only via `suppressedUntil` presence). Acceptable for Phase 1; revisit if analysts complain.
 - Custom suricata rules are stored/echoed but never meaningfully evaluated — risk of user expectation mismatch; editor must carry the "loosely validated, signature logic simulated" disclaimer.

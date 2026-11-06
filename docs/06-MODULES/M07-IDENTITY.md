@@ -25,19 +25,19 @@ user-based firewall rules (M03) and per-user QoS (M08).
 
 | Area | Contents |
 |---|---|
-| Users | CRUD (username, email, role from the 8-value enum, `isActive` toggle), password set/reset honoring auth policy, last login display |
+| Users | CRUD (username, email, role from the 8-value enum, `isActive` toggle), password set/reset honoring auth policy, last login display, **TOTP enroll/disenroll** (`totpEnroll` on PUT — one-time otpauth URI + secret reveal) |
 | User groups | CRUD + member multiselect (join table semantics) |
-| Auth settings | Password policy (min length, complexity, expiry), lockout (attempts, window), session lifetime; TOTP **stub only** (§5.6) |
+| Auth settings | Password policy (min length, complexity, expiry), lockout (attempts, window), session lifetime, **TOTP enforce switch** (`totp.required`), **concurrent session limit** (`sessionLimits.maxConcurrentPerUser`) |
 | RADIUS profiles | CRUD (serverIp, authPort, sharedSecret **masked**, timeoutSec, retries) + simulated test-connection |
+| **Directory sources** | LDAP/AD connector CRUD (type `ldap\|ad`, serverIp, port, baseDn, bindDn, bindPassword **masked**, userFilter) + simulated connectivity test — AD/LDAP sync surface (spec §1.10; restored REVIEW-4A) |
 | Captive portal | Single profile editor (enabled, mode `clickthrough\|credentials\|voucher`, interface, session timeout, bandwidth cap, redirect URL, voucher TTL) |
 | Vouchers | Generation dialog (N time-limited codes, shown once, CSV download), voucher list with state |
-| Identity sessions | Live ip→user map with method badges `local/radius/captive_portal/vpn`, started/last seen, expire action |
+| Identity sessions | Live ip→user map with method badges `local/radius/captive_portal/vpn`, started/last seen, expire action; **concurrent-session cap enforced by the session tracker** |
 
-**Out of scope (deferred — see ../01-PRODUCT/ROADMAP.md):** AD/LDAP sync (upstream Ready, no
-Phase-1 contract), SSO/SAML/OIDC/Kerberos (spec cut to Phase 2), RADIUS CoA and Dynamic VLAN
-(Phase 2), concurrent session limits, user activity timeline (Phase 2), real TOTP enrollment
-and login MFA challenge (Phase 2 — stub noted in §5.6), voucher persistence across restarts
-(§8), 802.1X/MAB flows.
+**Out of scope (spec's own phase assignments — not deferrals):** SSO/SAML/OIDC/Kerberos (spec cut to
+Phase 2), RADIUS CoA and Dynamic VLAN (Phase 2), user activity timeline (Phase 2), voucher
+persistence across restarts (§8), 802.1X/MAB flows (Phase 2). MFA (TOTP) and AD/LDAP sync were
+**restored in REVIEW-4A** (spec §1.10 lists both as Phase 1).
 
 ---
 
@@ -50,8 +50,9 @@ From ../03-DATABASE/SCHEMA.md §3 (names verbatim).
 | `User` | `username`, `passwordHash` (bcrypt, never exported), `role` (8-value enum, PROJECT_MEMORY §6), `email?`, `totpSecret?` (**never serialized**), `isActive`, `lastLoginAt?` | `@@unique([tenantId, username])`; deleting a user SET NULLs `audit_log.userId` (username string kept) and cascades group memberships |
 | `UserGroup` | `name`, `description?` | `@@unique([tenantId, name])` |
 | `UserGroupMember` | `groupId` + `userId` (composite PK) | Both FKs `onDelete: Cascade` — membership rows only |
-| `SystemSetting` (category `auth`) | Password policy, lockout, session lifetime, TOTP flag (JSON, shape §5.5) | Seed: lockout 5 attempts / 15 min (DATA_LIFECYCLE §2.5) |
+| `SystemSetting` (category `auth`) | Password policy, lockout, session lifetime, TOTP enforce flag, session limits (JSON, shape §5.2) | Seed: lockout 5 attempts / 15 min (DATA_LIFECYCLE §2.5) |
 | `RadiusProfile` | `name`, `serverIp`, `authPort` (default 1812), `sharedSecret` (**masked in API responses**), `timeoutSec` (default 3), `retries` (default 2) | `@@unique([tenantId, name])` |
+| `DirectorySource` | `name`, `type` (`ldap\|ad`), `serverIp`, `port` (default 389), `baseDn`, `bindDn?`, `bindPassword?` (**masked**), `userFilter?`, `enabled` | `@@unique([tenantId, name])`; LDAP/AD connector (spec §1.10) |
 | `CaptivePortalProfile` | `name`, `enabled` (default false), `mode` (`clickthrough\|credentials\|voucher`), `interfaceName`, `sessionTimeoutMin` (default 240), `bandwidthKbps?`, `redirectUrl?`, `voucherTtlHours` (default 24) | Single active profile per tenant in Phase 1 (list endpoint returns the profile) |
 | `IdentitySession` | `userName`, `sourceIp` (**unique per tenant** — one session per IP), `method` (`local\|radius\|captive_portal\|vpn`), `deviceMac?`, `startedAt`, `lastSeen`, `state` (`active\|expired`) | Index `(tenantId, state)`; ~15 seeded, churns per tick (ER_DIAGRAM §5) |
 
@@ -90,6 +91,11 @@ Paths verbatim from PROJECT_MEMORY §7.2. Envelope/errors per ../04-API/API_STAN
 | GET | `/api/v1/captive-portal/vouchers` | List vouchers (code masked to last 4 chars) | Vouchers card load |
 | POST | `/api/v1/captive-portal/vouchers` | Body `{ count: 1–500, ttlHours?, bandwidthKbps? }` → batch-create codes; **response is the only time the full codes are returned** | "Generate vouchers" dialog |
 | DELETE | `/api/v1/captive-portal/vouchers/{id}` | Revoke one voucher | Voucher row "Revoke" |
+| GET | `/api/v1/directory-sources` | List LDAP/AD sources (`bindPassword` masked) | Directory sources card load |
+| POST | `/api/v1/directory-sources` | Create directory source | "Add source" dialog submit |
+| PUT | `/api/v1/directory-sources/{id}` | Update (omit `bindPassword` to keep stored value) | Source dialog submit |
+| DELETE | `/api/v1/directory-sources/{id}` | Delete directory source | Row action "Delete" |
+| POST | `/api/v1/directory-sources/{id}/test` | Simulated LDAP/AD connectivity test → `{ok, latencyMs, userCount?}` | "Test" button |
 
 **Expected error cases:** `VALIDATION_ERROR` 400 (weak password vs auth policy — error
 `details` names the failed rule; bad email/mac/IPv4; role outside enum); `CONFLICT` 409
@@ -112,8 +118,10 @@ Three hash views (LOCKED §8). Layout/components per ../05-FRONTEND/PAGE_MAP.md 
   member count, add/edit/delete).
 - **User editor dialog:** username, email, role Select, isActive switch, groups multiselect,
   password fields (set on create; "Reset password" generates or accepts a new one). TOTP row:
-  `Not enrolled` + disabled button **"Enroll TOTP (Phase 2)"** — explicit stub, do not fake
-  enrollment.
+  `Not enrolled` + **"Enroll TOTP"** button (enabled for tenant_admin/super_admin on others or self) →
+  server generates the secret (stored in `User.totpSecret`), response shows the `otpauth://` URI +
+  secret **once** (QR-ready string + copy) — `PUT /api/v1/users/{id}` with `{totpEnroll: true}`;
+  enrolled state shows `Enrolled` + "Disenroll" (`{totpEnroll: false}`).
 - **Role descriptions table** (shown as help text next to the role Select; matrix authority:
   ../07-SECURITY/AUTH_AND_RBAC.md):
 
@@ -130,7 +138,13 @@ Three hash views (LOCKED §8). Layout/components per ../05-FRONTEND/PAGE_MAP.md 
 
 - **User Groups card:** name, description, members multiselect (users list); save = `PUT` with
   `memberIds` (replace-all; service diffs into `UserGroupMember` rows).
-- **States:** skeletons; EmptyState for groups ("Create your first group"); delete-user
+- **Directory sources card** (LDAP/AD, spec §1.10): table (name, type chip, server:port, baseDn,
+  enabled switch) + editor dialog: name, type radio (`ldap`/`ad`), serverIp, port, baseDn, bindDn,
+  bindPassword (masked write-only, omit-to-keep), userFilter. "Test" runs the simulated connectivity
+  check (`{ok, latencyMs, userCount?}`). Sources feed RADIUS/LDAP authentication on the appliance;
+  sandbox records config only.
+- **States:** skeletons; EmptyState for groups ("Create your first group") and directory sources
+  ("Connect your directory"); delete-user
   ConfirmDialog lists dependent effects (group memberships removed, audit preserved as
   former-username).
 
@@ -180,25 +194,32 @@ Three hash views (LOCKED §8). Layout/components per ../05-FRONTEND/PAGE_MAP.md 
 
 ### 5.2 Auth settings enforcement (GET/PUT `/api/v1/auth-settings`)
 - JSON shape (zod): `{ password: { minLength: 8–64, requireComplexity: boolean, expiryDays: 0–365 },
-  lockout: { maxAttempts: 3–10, windowMin: 5–60 }, sessionLifetimeHours: 1–24 }`.
-  Seed: complexity on, expiry 90 d, lockout 5 / 15 min, session 8 h (matches ADR-007 JWT).
-  No `totpRequired` key in Phase 1 — an enforce-TOTP switch is a Phase 2 addition
-  (../07-SECURITY/AUTH_AND_RBAC.md §6; the schema column `User.totpSecret` already exists).
+  lockout: { maxAttempts: 3–10, windowMin: 5–60 }, sessionLifetimeHours: 1–24,
+  totp: { required: boolean }, sessionLimits: { maxConcurrentPerUser: 1–16 } }`.
+  Seed: complexity on, expiry 90 d, lockout 5 / 15 min, session 8 h (matches ADR-007 JWT),
+  `totp.required = false`, `maxConcurrentPerUser = 4` (DATA_LIFECYCLE §2.5).
+- `totp.required = true` demands a `totpCode` on every login (enrolled or not — unenrolled users are
+  blocked with `details.totpRequired` until they enroll; the login view surfaces the flow).
+- `maxConcurrentPerUser` is enforced by the identity-session tracker: when a user would exceed the
+  cap, the oldest session expires (replaced) and the event appears in the sessions view; the
+  generator honors it during churn.
 - `PUT` validates the *current* users against the new password policy? No — policy applies to
   new/changed passwords only; expiry is checked at login (simulated).
-- Login flow consumes this policy (lockout counters, expiry) — mechanics in
+- Login flow consumes this policy (lockout counters, expiry, TOTP, session caps) — mechanics in
   ../07-SECURITY/AUTH_AND_RBAC.md; this module only owns the editor.
 
-### 5.3 RADIUS profiles & masking (STRICT)
-- `sharedSecret` is write-only through POST/PUT; **every** read returns the masked literal
-  `"••••••••"` (fixed-length; do not leak length). Reveal only via
+### 5.3 RADIUS, directory sources & masking (STRICT)
+- `sharedSecret` (RADIUS) and `bindPassword` (directory sources) are write-only through POST/PUT; **every** read returns the masked literal
+  `"••••••••"` (fixed-length; do not leak length). RADIUS reveal only via
   `POST /api/v1/radius-profiles/{id}/reveal`, gated to `super_admin`/`tenant_admin`, audited
-  with `result` and `sourceIp`, never included in list endpoints.
-- PUT semantics: omitting `sharedSecret` keeps the stored value (the masked string sent back
+  with `result` and `sourceIp`, never included in list endpoints. Directory `bindPassword` has
+  **no** reveal endpoint (it is re-entered to change) — same masking rule.
+- PUT semantics: omitting the secret keeps the stored value (the masked string sent back
   must be ignored by the server).
-- Test-connection (simulated): SimulatedAdapter answers `ok: true` with seeded jitter
+- Test-connection (simulated, both RADIUS and directory sources): SimulatedAdapter answers `ok: true` with seeded jitter
   latency 5–40 ms for syntactically valid targets, and `ok: false` for invalid/undroutable IPs
-  (e.g. documentation ranges marked dead in the profile). No RADIUS packets exist in sandbox
+  (e.g. documentation ranges marked dead in the profile). Directory tests additionally return a
+  simulated `userCount` for enabled sources. No LDAP/RADIUS packets exist in sandbox
   (SIMULATION_LAYER §9).
 
 ### 5.4 Captive portal & vouchers
@@ -220,11 +241,16 @@ Three hash views (LOCKED §8). Layout/components per ../05-FRONTEND/PAGE_MAP.md 
 - Admin expire (`POST /api/v1/identity/sessions/{id}/expire`) sets `state: "expired"` and
   emits `sessions:update`.
 
-### 5.6 TOTP stub (say it plainly)
-- `User.totpSecret` exists in the schema but Phase 1 has **no enroll, no verify, no login
-  challenge**. The users table renders a placeholder row ("Not enrolled", disabled Phase-2
-  button). `totpSecret` is excluded from every API response; no enforce-TOTP switch is
-  exposed in `auth-settings` in Phase 1 (AUTH_AND_RBAC §6).
+### 5.6 TOTP (MFA — Phase 1, restored REVIEW-4A)
+- `User.totpSecret` is populated by enrollment (user editor → `PUT {totpEnroll: true}`); the
+  otpauth URI/secret is shown exactly once at enroll time and never serialized again (masking rule
+  ADR-011; `totpSecret` is excluded from every API response).
+- Login verification: TOTP-enrolled users must send `totpCode` (ENDPOINTS §1); failure → `401` with
+  `details.totpRequired`. Tenant-wide enforcement via `auth-settings.totp.required` (default off;
+  AUTH_AND_RBAC §6).
+- Sandbox honesty: codes are verified by a standard TOTP algorithm against the stored secret in
+  simulation; no real device is needed for demos (the enroll dialog can display a "demo code"
+  helper). The QR string renders as text + copy (no image assets per §9 tokens).
 
 ---
 
@@ -256,7 +282,9 @@ sessions view subscribes to `alerts`-free channels per ../05-FRONTEND/STATE_AND_
 - [ ] Voucher generation of N codes shows each code exactly once, supports Copy all and CSV download; the list afterwards shows masked codes with correct state badges.
 - [ ] `#/identity/sessions` shows the live map, updates from `sessions:update` diffs within one tick, and method badges use the four locked enum values.
 - [ ] Expire action on a session calls `POST /api/v1/identity/sessions/{id}/expire` and the row flips to `expired` without reload.
-- [ ] TOTP is visibly a stub (disabled control labeled Phase 2) and `totpSecret` never appears in any network response.
+- [ ] TOTP enroll shows the otpauth URI + secret exactly once, stores enrollment ("Enrolled" state), and login with a wrong/missing `totpCode` returns `401 details.totpRequired`; `auth-settings` exposes the `totp.required` switch.
+- [ ] Concurrent-session cap: with `maxConcurrentPerUser = 2`, a third simulated login for the same user expires the oldest session (visible in `#/identity/sessions`).
+- [ ] Directory sources CRUD works with masked `bindPassword`; the Test button renders `{ok, latencyMs, userCount?}`; unknown server IPs fail the test.
 - [ ] Audit rows for user/password mutations contain no `passwordHash`/`totpSecret` values in before/after JSON.
 - [ ] `bun run lint` passes; only hash navigation changes (no new Next.js routes).
 
@@ -268,5 +296,6 @@ sessions view subscribes to `alerts`-free channels per ../05-FRONTEND/STATE_AND_
 - ~~**Password reset transport**~~ RESOLVED: `password` inside `PUT /api/v1/users/{id}` is the documented contract (ENDPOINTS.md §9); no dedicated password endpoint in Phase 1.
 - ~~**Reveal/test/expire/vouchers are PROPOSED EXPANSIONS**~~ RESOLVED: all of them are in the LOCKED surface now (PROJECT_MEMORY §7.2 + ENDPOINTS.md §9); §3 lists them as first-class endpoints.
 - ~~**Identity `config:updated` section naming**~~ RESOLVED: section `identity` is locked (ARCHITECTURE §5 ConfigSection union, STATE_AND_DATA_FLOW §2 invalidation table).
-- Masking constant `"••••••••"` must not leak real length; ensure server masks, never the client.
+- ~~**TOTP stub / AD-LDAP / concurrent session limits deferred**~~ RESOLVED (REVIEW-4A): TOTP enroll+verify+enforce, directory sources, and session caps restored (spec §1.10).
+- Masking constant `"••••••••"` must not leak real length; ensure server masks, never the client (applies to `sharedSecret`, `bindPassword`, `totpSecret`, webhook `secret`).
 - Session replace-on-same-IP (`@@unique([tenantId, sourceIp])`) can surprise in demos where VPN and LAN identities collide; the sessions view should surface the replaced session in the audit/notifications trail if product wants history.

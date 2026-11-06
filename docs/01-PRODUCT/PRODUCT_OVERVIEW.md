@@ -7,7 +7,7 @@
 > API-first console. Known gaps (URL filtering depth, AV quality, sandbox sophistication)
 > are documented honestly and compensated over a 24-month phased roadmap.
 
-Source spec: `upload/Cryptsk_UTM_Optimized_Spec (1).md` — **ground truth for product facts**
+Source spec: `docs/SPEC.md` — **ground truth for product facts**
 (features, phases, pricing, honest gaps). These docs govern build contracts and current
 state; where they deviate from the spec, the deviation is documented (ADR in
 `../00-PROJECT-MEMORY/DECISIONS.md` or the divergence notes in [ROADMAP.md](ROADMAP.md) §5).
@@ -27,14 +27,22 @@ Related: [ROADMAP.md](ROADMAP.md) ·
 | Target market | Small enterprises (10–500 users), branch offices, MSPs, hospitality |
 | Throughput target | 1–10 Gbps per appliance on commodity x86_64 |
 | OS / data plane | Debian 13 (Trixie), nftables + eBPF/XDP + Suricata + nDPI + tc (ADR-001, ADR-003) |
+| OS rationale | Debian 13 wins for a UTM appliance: nftables default, kernel 6.8+ with eBPF/XDP, smallest attack surface, glibc for all ML libraries, security tools packaged Debian-first. Ubuntu 24.04 = viable close second (heavier, Snap, larger attack surface); Rocky 9 / Alpine not recommended; FreeBSD disqualified (no nftables/eBPF/FRR port). Fallback: Debian 12 + backports kernel (spec §2, ADR-001). Debian lineage is proven in production (pfSense CE was Debian-based; OPNsense is the major FreeBSD holdout) |
 | VPN stack | WireGuard (kernel-native), StrongSwan IKEv2, OpenVPN |
 | Network services | Unbound (DNS), Kea (DHCP), Squid/Coraza (proxy/WAF, Phase 2), FreeRADIUS, FRR |
+| Phase 2+ security services | Step-CA (internal PKI), Caddy (reverse proxy), Postfix + Rspamd + ClamAV (email security) |
+| AI / observability | ONNX Runtime inference + PyTorch (offline training) + Python/scikit-learn feature extraction (Phase 3); Prometheus + Grafana + node_exporter; ClickHouse / Meilisearch log search (v2) |
 | Control plane | Database-driven config (PostgreSQL on appliance), Go API + config generators + agent |
 | Delivery | Software (Community/Professional/Enterprise/MSP) + pre-built hardware appliance |
 
 Phase 1 delivers a deployable UTM: firewall, NAT, IPS, VPN, DNS security, DHCP,
-identity, QoS, logging, HA, REST API. Phases 2–4 add SSL inspection, WAF, SD-WAN,
-AI detection, and multi-site/SASE capabilities (see [ROADMAP.md](ROADMAP.md)).
+identity, QoS, logging, HA, REST API. Phase 2 adds SSL/TLS inspection, enhanced app
+control, URL filtering, WAF, SD-WAN, BGP/OSPF routing, IPv6 dual-stack, email security,
+SAML/OIDC + NAC identity, threat intelligence, PKI, and enhanced logging. Phase 3 adds
+the AI engine (DGA, UEBA-lite, encrypted-traffic classification), the ATP sandbox
+(Cuckoo + YARA), DLP, DNS-tunneling detection, basic incident response, and IoT device
+management. Phase 4 adds the multi-site central manager, SASE/CASB/ZTNA basics, advanced
+AI models, and SOAR integration (see [ROADMAP.md](ROADMAP.md) for the full matrix).
 
 ### 1.1 Capability Snapshot (end of Phase 1)
 
@@ -159,4 +167,4 @@ Mellanox ConnectX-4/5.
 | Packet pipeline deep dive | [../02-ARCHITECTURE/DATA_PLANE.md](../02-ARCHITECTURE/DATA_PLANE.md) |
 | Config/control flow deep dive | [../02-ARCHITECTURE/CONTROL_PLANE.md](../02-ARCHITECTURE/CONTROL_PLANE.md) |
 | Auth/RBAC design | [../07-SECURITY/AUTH_AND_RBAC.md](../07-SECURITY/AUTH_AND_RBAC.md) |
-| Full product spec (source of truth for WHAT) | `upload/Cryptsk_UTM_Optimized_Spec (1).md` |
+| Full product spec (source of truth for WHAT) | `docs/SPEC.md` |

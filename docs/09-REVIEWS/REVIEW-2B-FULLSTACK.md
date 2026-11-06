@@ -2,7 +2,7 @@
 
 > Reviewer scope: docs/03-DATABASE (3), docs/04-API (2), docs/05-FRONTEND (3),
 > docs/06-MODULES M01/M03/M07/M09/M10/M11 (6) — 14 files, reviewed line-by-line against
-> the product spec (`upload/Cryptsk_UTM_Optimized_Spec (1).md`, 1562 lines) and the
+> the product spec (`docs/SPEC.md`, 1562 lines) and the
 > LOCKED build contracts in PROJECT_MEMORY / DECISIONS (ADRs).
 >
 > Precedence used throughout: **PROJECT_MEMORY §"if this file and any other doc disagree,

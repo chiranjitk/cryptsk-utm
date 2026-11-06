@@ -77,7 +77,7 @@ flowchart TB
             TC["tc QoS"]
         end
         subgraph SystemServices
-            UB["Unbound"] KEA["Kea"] WG["WireGuard"] SS["StrongSwan"] FRR["FRR"] FR["FreeRADIUS"]
+            UB["Unbound"] KEA["Kea / dhcrelay"] WG["WireGuard"] SS["StrongSwan"] FRR["FRR (incl. bfdd)"] FR["FreeRADIUS"] LLDP["lldpd"] CT["conntrackd"]
         end
         MON["Prometheus + node_exporter + Grafana"]
         AGENT["cryptsk-agent<br/>(applies generated configs, reports status)"]

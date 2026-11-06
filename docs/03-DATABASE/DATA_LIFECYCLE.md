@@ -35,6 +35,7 @@ natural keys: tenant+name, mac, cidr, etc.).
 | Interfaces | `wan0` (physical, wan, static 203.0.113.2/24 gw 203.0.113.1), `wan1` (physical, wan, dhcp, disabled), `lan0` (physical, lan, 192.168.10.1/24), `dmz0` (physical, dmz, 172.16.20.1/24), `vlan10` (vlan on lan0, role lan), `br-mgmt` (bridge, mgmt), `wg0` (vpn) |
 | Zones | WAN [wan0,wan1], LAN [lan0,vlan10], DMZ [dmz0], VPN [wg0] |
 | Static routes | 2 (one to 10.50.0.0/16 via 192.168.10.254, one blackhole example) |
+| PBR rules | 1 (`VOIP-VIA-WAN1` — SIP service forced out wan1, priority 1) |
 | WAN policies | wan0 (icmp → 1.1.1.1, priority 1), wan1 (http → connectivity check, priority 2, failover) |
 
 ### 2.3 Objects & firewall
@@ -53,15 +54,20 @@ natural keys: tenant+name, mac, cidr, etc.).
 | IPS events | 300 backfilled across 30 days, severity mix per profile |
 | VPN | `HQ-MESH` (wireguard_s2s), `ROADWARRIORS` (wireguard_remote, pool 10.99.0.0/24), `BRANCH-IPSEC` (ipsec_s2s), `SSL-ACCESS` (openvpn) — statuses up/up/connecting/down for variety |
 | VPN sessions | ~10 across configs |
-| DNS | policy `DEFAULT` (block ads+malware+phishing), resolver settings, 12 records in `corp.local`, 1 week of query-log aggregates |
-| DHCP | subnet 192.168.10.0/24 (range .100–.200) + 172.16.20.0/24; 4 reservations; ~25 leases (mixed states) |
+| DNS | policy `DEFAULT` (block ads+malware+phishing), resolver settings (incl. one `forwardZones` example `corp.local → 192.168.10.254`), 12 records in `corp.local`, 1 week of query-log aggregates |
+| DHCP | subnet 192.168.10.0/24 (range .100–.200) + 172.16.20.0/24 (family `ipv4`); 4 reservations; ~25 leases (mixed states); relay disabled sample (`servers: [192.168.10.254]`) |
+| VPN groups | `CONTRACTORS` (idle 30 min, max 1 session/user, members `c.reyes`) |
+| Log forwarding | syslog target `SIEM-01` (disabled, udp 10.20.0.9:514), netflow target `NFDUMP-01` (disabled, ipfix :2055) |
+| Webhooks | 1 disabled sample `soc-callback` (events `["alerts.new"]`) |
+| Report schedules | 1 sample `DAILY-TRAFFIC` (daily, html, traffic+threats) |
 | QoS | `WAN-SHAPER` (50000 kbps, video template) + 3 rules (VoIP priority 0 guaranteed, Streaming priority 5 max cap, Bulk priority 7) |
 | HA | disabled by default (`standby` sample config present) |
 
 ### 2.5 System
-- Settings: general (hostname `cryptsk-demo`, timezone `Asia/Calcutta`), auth (password policy, lockout 5/15m), logging (retention days, syslog off), notifications (email off)
+- Settings: general (hostname `cryptsk-demo`, timezone `Asia/Calcutta`, NTP `pool.debian.org` synced), auth (password policy, lockout 5/15m, TOTP off, concurrent sessions 4), logging (retention days, syslog off, disk quota 2048 MB), notifications (email off, thresholds cpu 90 / mem 90 / disk 85 / temp 80), advanced (hardening defaults, firmware `1.0.0` stable), dhcp relay sample, ips auto-update daily 03:00 (enabled)
 - Notifications: 5 unread (2 critical threat, 1 vpn down `BRANCH-IPSEC`, 1 ha info, 1 system update)
 - Config versions: v1 seed snapshot per section
+- SSH keys: 1 sample `ops-laptop` (ed25519 placeholder line); Directory sources: none enabled |
 
 ## 3. Mock Traffic Profiles (MockEngine)
 
@@ -84,6 +90,7 @@ rates, event severity distribution, WAN probe jitter, session churn rates.
 | audit_log | 20,000 rows | same job (never auto-delete config_versions) |
 | notifications | 500 rows | prune read+older-than-7d |
 | dhcp_leases | replace expired | lease state machine expires → `expired` (kept 7d) |
+| report_schedules | n/a (config) | engine bumps `lastRunAt` when a schedule window elapses; run-now endpoint updates it too |
 
 Retention settings (`system_settings` category `logging`) override caps per tenant.
 
@@ -100,10 +107,12 @@ rows by the retention job). The audit log stays **append-only at the API layer**
 ## 5. Reset Semantics (`--reset`)
 
 Volatile (deleted + regenerated): `firewall_logs`, `ips_events`, `identity_sessions`,
-`vpn_sessions`, `dhcp_leases`, `notifications` (regenerated), realtime ring buffers.
-Preserved: all config tables, users, api_keys, config_versions, system_settings,
-audit_log (audit is append-only by ADR-011; reset does not purge it — use manual SQL
-only when explicitly asked).
+`vpn_sessions`, `dhcp_leases`, `notifications` (regenerated), realtime ring buffers
+(incl. the derived LLDP-neighbor and MAC-table views).
+Preserved: all config tables (incl. pbr_rules, port_mirrors, vpn_user_groups, syslog/netflow
+targets, webhooks, report_schedules, ssh_keys, directory_sources), users, api_keys,
+config_versions, system_settings, audit_log (audit is append-only by ADR-011; reset does
+not purge it — use manual SQL only when explicitly asked).
 
 ## 6. Demos & Debugging Recipes
 

@@ -8,7 +8,7 @@ Related: [PROJECT_MEMORY](../00-PROJECT-MEMORY/PROJECT_MEMORY.md) (§7.2 API, §
 
 ## 1. Purpose & Scope (Phase 1)
 
-The Dashboard is the operator's default view after login. It aggregates live telemetry and recent security events into a single screen: throughput per direction with sparklines, active conntrack sessions, alert counts, system health gauges, WAN link strip, VPN tunnel list, and a high-severity threat feed. It is a **read-mostly** module — the only writes are quick actions (backup; service restart is a simulated stub).
+The Dashboard is the operator's default view after login. It aggregates live telemetry and recent security events into a single screen: throughput per direction with sparklines, active conntrack sessions, alert counts, system health gauges, WAN link strip, VPN tunnel list, and a high-severity threat feed. It is a **read-mostly** module — the only writes are quick actions (create backup; restart service via the audited `POST /api/v1/system/services/{name}/restart` endpoint — simulated apply, REVIEW-4A).
 
 Explicitly **OUT of scope in Phase 1** (per upstream spec §1.1 and [ROADMAP](../01-PRODUCT/ROADMAP.md)):
 
@@ -44,11 +44,12 @@ No logical (JSON-array) references are involved in this module.
 | METHOD | Path | Purpose | Triggering UI action |
 |---|---|---|---|
 | GET | `/api/v1/dashboard/summary` | health, throughput, sessions, alerts24h, topApps, topTalkers, wanStatus, vpnStatus | view load; refetch on `config:updated` + every 30 s |
-| GET | `/api/v1/system/status` | cpu/ram/disk/temp/uptime/services; services array also powers the restart menu | gauges + system health card; refetch every 30 s; "Restart service" quick action reads it but issues **no** call of its own (client-side stub, §5/§8) |
+| GET | `/api/v1/system/status` | cpu/ram/disk/temp/uptime/services; services array also powers the restart menu | gauges + system health card; refetch every 30 s; "Restart service" quick action posts to `/system/services/{name}/restart` (§3) |
 | GET | `/api/v1/logs/stats` | chart aggregates `?range=1h\|24h\|7d` | traffic chart when range switched off "live" |
 | GET | `/api/v1/ips/events` | threat feed rows | feed load: parallel `?severity=high&since=<-24h>&limit=10` + `?severity=critical&since=<-24h>&limit=10`, merged newest-first |
 | GET | `/api/v1/notifications` | unread alert badge (`?unread=true`) | view load + on `alerts:new` |
 | POST | `/api/v1/system/backups` | create backup (quick action) | "Create backup" button → navigates/toasts per M10 |
+| POST | `/api/v1/system/services/{name}/restart` | restart a running service (quick action; audited, simulated) | "Restart service" menu item |
 
 Query params used: `?range=` on `/logs/stats`; `?severity=&since=&limit=` (pagination `page/limit` per §7.1) on `/ips/events`; `?unread=` on `/notifications`.
 
@@ -73,7 +74,7 @@ View: `#/dashboard` (single view, no tabs). Layout regions per [PAGE_MAP](../05-
 User actions:
 - Range switch (Live / 1 h / 24 h) on the traffic chart.
 - Quick action "Create backup" → `POST /api/v1/system/backups` → success toast + link `#/system/backups`.
-- Quick action "Restart service" (menu of running services from `/system/status`) → simulated stub: spinner ~2 s, toast "service restarted (simulated)". Client-side only — no API call, no audit row (see §8).
+- Quick action "Restart service" (menu of running services from `/system/status`) → `POST /api/v1/system/services/{name}/restart` (audited, tenant_admin floor, simulated ~2 s apply → service `status: running` again; `config:updated {section: "system"}` broadcast) → toast. (Endpoint restored in REVIEW-4A — no longer a client-side stub.)
 - Click on WAN badge → `#/network/wan`; tunnel row → `#/vpn/configs`; feed row → `#/ips/events`; alerts card → `#/ips/events?severity=critical`.
 
 States: skeleton cards while summary loads; per-card error state with retry; EmptyState variants: "No high-severity events in the last 24 hours" (feed), "No VPN tunnels configured" (tunnel list, with link to `#/vpn/configs`).
@@ -112,13 +113,13 @@ Subscribe with `{ channels: ["metrics", "alerts"] }` on view mount; unsubscribe 
 - Given a new `alerts:new` threat notification, when it arrives, then the alerts-24h count increments by 1 and the feed prepends the row.
 - Given CPU tick of 97, when the gauge renders, then the gauge is rose and the header health badge shows "critical".
 - Given "Create backup" clicked, when the POST succeeds, then a toast appears and `#/system/backups` lists the new backup.
-- Given "Restart service" chosen for a running service name, when confirmed, then a ~2 s spinner runs and a simulated-success toast appears with **no API request issued** (stub is client-side until a real endpoint exists).
+- Given "Restart service" chosen for a running service name, when confirmed, then `POST /api/v1/system/services/{name}/restart` is issued (audited) and after ~2 s the service shows `running` again in the health strip.
 - Given any per-card fetch failure, when it occurs, then only that card shows an error + retry while other cards keep rendering.
 - Given the session cookie expires, when any dashboard fetch 401s, then AuthGate takes over (no stacked error toasts).
 
 ## 8. Open Questions & Risks
 
-- **No restart endpoint in the locked surface:** the "restart service" quick action has no path in PROJECT_MEMORY §7.2. Phase 1 keeps a UI-only simulated stub (spinner + toast, no API call); a real restart route must be proposed against PROJECT_MEMORY §7.2 (extend, never rename) before M10 build — do not invent one ad hoc in code.
+- ~~**No restart endpoint in the locked surface**~~ RESOLVED (REVIEW-4A): `POST /api/v1/system/services/{name}/restart` is in PROJECT_MEMORY §7.2 (simulated restart, audited).
 - **Severity >= high filter:** `/ips/events` `?severity=` takes a single value; the feed needs two parallel calls (high + critical). A `severity=gte:high` extension would simplify — flag to ENDPOINTS.md owner.
 - **Throughput history on first load:** `/dashboard/summary` payload is not shape-pinned for history series (ring-buffer backfill). ENDPOINTS.md must pin the exact summary JSON shape before M01 build.
 - Chart re-render cost: 60-point area chart updating every 2 s is fine, but sparklines in 4 cards + gauges must reuse one socket subscription (no per-card connections).

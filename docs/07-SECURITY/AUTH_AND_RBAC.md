@@ -38,7 +38,7 @@ mentions a `viewer` default; the build contract replaces it — column default i
 | Password hashing | bcrypt, cost 12 (`lib/auth/password.ts`) |
 | Login rate limit | 5 attempts / minute per (username, source IP) → `RATE_LIMITED` 429 |
 | Lockout | From `auth-settings` (`system_settings`, category `auth`): default 5 consecutive failures → 15-minute lockout; per-user counter resets on success |
-| Login outcome | Success: Set-Cookie + `{user, permissions}` payload + `audit_log(login, success)`; failure: `audit_log(login, failure)` + generic error (no user-enumeration differences) |
+| Login outcome | Success: Set-Cookie + `{user, permissions}` payload + `audit_log(login, success)`; failure: `audit_log(login, failure)` + generic error (no user-enumeration differences). TOTP: when the user has enrolled (`totpSecret` set) the body must carry `totpCode`; a missing/invalid code → `401 UNAUTHORIZED` with `details: { totpRequired: true }`. When `auth-settings.totp.required = true`, every login needs the code (M07 §5.6) |
 | Logout | Clears the cookie; Phase 2 note: server-side JWT denylist (jti + Redis) for immediate revocation — Phase 1 accepts tokens until natural 8h expiry |
 | Session check | `GET /api/v1/auth/me` returns user + effective permissions for UI gating |
 
@@ -110,6 +110,10 @@ operational objects; **read** = list/get only; **none** = endpoint invisible (40
 | Identity / users | full | full | edit | none | none | none | read | scoped |
 | QoS | full | full | read | full | read | none | read | scoped |
 | Logs read (firewall, ips) | full | full | full | full | full | read | read | scoped |
+| Log forwarding targets (syslog/NetFlow) | full | full | read | full | read | none | read | scoped |
+| Report schedules | full | full | edit | read | edit | none | read | scoped |
+| Webhooks | full | full | full | read | read | none | read | none |
+| Firmware / service restart / policy templates | full | full | none | read | none | none | read | scoped |
 | Audit read | full | full | read | read | read | none | full | scoped |
 | HA | full | full | read | full | read | none | read | scoped |
 | System settings | full | full | none | read | none | none | read | scoped |
@@ -167,6 +171,10 @@ the same mapping):
 | DNS / DHCP config | `/api/v1/dns/*` (settings/policies/records), `/api/v1/dhcp/*` (subnets/reservations; leases = read) |
 | Identity / users | `/api/v1/users*`, `/api/v1/user-groups*`, `/api/v1/auth-settings`, `/api/v1/radius-profiles*`, `/api/v1/captive-portal` |
 | Logs read | `/api/v1/logs/firewall`, `/api/v1/logs/ips`, `/api/v1/logs/stats`, `/api/v1/dns/query-logs` |
+| Log forwarding targets | `/api/v1/logs/syslog-targets*`, `/api/v1/logs/netflow-targets*` |
+| Report schedules | `/api/v1/logs/report-schedules*` (run = security_admin/soc_analyst) |
+| Webhooks | `/api/v1/webhooks*` (interactive admins only — machine keys get none, mirroring api-keys) |
+| Firmware / restart / templates | `/api/v1/system/firmware*`, `/api/v1/system/services/{name}/restart`, `/api/v1/system/policy-templates*`, `/api/v1/system/setup/complete` |
 | Audit read | `/api/v1/logs/audit` |
 | System settings / backups / HA | `/api/v1/system/settings`, `/api/v1/system/backups*` (restore = admin), `/api/v1/ha/*` |
 | API keys admin | `/api/v1/api-keys*` (POST/DELETE = super_admin only) |
@@ -186,15 +194,20 @@ the same mapping):
 
 ## 6. MFA (TOTP)
 
-- Schema support exists now: `User.totpSecret` (SCHEMA.md).
-- **Phase 1:** optional enroll stub in the identity UI (generate secret + show QR data,
-  not persisted-active flows); **enforcement is explicitly deferred** — no login-time TOTP
-  challenge in Phase 1, and `auth-settings` does not yet expose an "enforce TOTP" switch.
-- When enforced (Phase 2): login becomes two-step (`login` → `mfa` challenge → cookie),
-  denylist/refresh mechanics arrive with the Phase 2 session revocation work.
-- Rationale: appliance-console logins are short-lived local sessions; password + lockout +
-  rate limiting covers the Phase 1 threat profile; MFA enforcement needs the session
-  revocation story to be meaningful.
+- Schema support exists: `User.totpSecret` (SCHEMA.md).
+- **Phase 1 (restored per the owner zero-loss ruling — spec §1.10/§1.14 list TOTP as Phase 1):**
+  - **Enroll:** `POST /api/v1/auth/totp/enroll` is *not* a separate endpoint — enrollment rides the
+    user editor (`PUT /api/v1/users/{id}` with `{totpEnroll: true}`): the server generates the secret
+    (stored in `User.totpSecret`), returns the `otpauth://` URI + secret exactly once, and the users
+    view renders it as a QR-ready string. Disenroll = `PUT {totpEnroll: false}` (clears the secret).
+  - **Verify at login:** TOTP-enrolled users must send `totpCode` (ENDPOINTS §1); failure is
+    `401` with `details.totpRequired`.
+  - **Enforce tenant-wide:** `auth-settings` exposes `totp.required` (default false). When true, every
+    login needs the code (enrolled or the flow blocks with `totpRequired` until enrolled).
+- Phase 2 retains only the session-revocation mechanics (denylist/refresh) — the MFA itself is Phase 1.
+- Rationale for the default-off enforce switch: appliance-console logins are short-lived local
+  sessions; password + lockout + rate limiting covers the base profile, and the switch is off until an
+  operator opts in (same reasoning, flipped from "defer the feature" to "default the switch off").
 
 ## 7. Captive Portal Auth Flow
 

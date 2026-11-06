@@ -10,14 +10,16 @@ Related: [PROJECT_MEMORY](../00-PROJECT-MEMORY/PROJECT_MEMORY.md) (§6 enums, §
 
 M05 connects sites and remote users. An admin creates per-type tunnel configs (WireGuard site-to-site with peers and allowed IPs, WireGuard remote access with an address pool, IPSec s2s/remote with subnets + PSK/EAP, OpenVPN remote access), watches the simulated tunnel come up, monitors status (handshakes, transfer, DPD), downloads ready-to-use client bundles, and manages live sessions (kick misbehaving clients).
 
-Derived from upstream spec §1.7 (VPN) Phase 1 table, **trimmed to console Phase 1**:
+Derived from upstream spec §1.7 (VPN) Phase 1 table — **fully covered per the owner zero-loss ruling (REVIEW-4A)**:
 
 | Upstream Phase 1 feature | Console Phase 1 decision |
 |---|---|
 | WireGuard s2s + remote access, IPSec IKEv2 s2s + remote (EAP-MSCHAPv2 / EAP-TLS), OpenVPN remote access, split tunneling (allowedIps / subnets), DNS assignment, DPD, PFS, keepalive, address pools, client bundles (.conf/.ovpn), tunnel monitoring | IN — this spec |
-| VPN user groups (per-group policies) | OUT of console Phase 1 (build decision, ROADMAP §5) — spec keeps VPN user groups Phase 1 appliance-side; console sessions are flat per config |
-| Per-user/per-group session limits, idle/max session timeouts UI | OUT of console Phase 1 (build decision, ROADMAP §5) — engine defaults apply; simulated sessions churn without limits |
-| IPsec anti-replay window tuning | OUT — engine default, no UI field in the locked config shape |
+| VPN user groups (per-group policies) | IN — `VpnUserGroup` CRUD (pool override, pushed DNS, timeouts, session limits, member usernames) + User Groups tab on `#/vpn/configs` (restored REVIEW-4A) |
+| VPN address pools (per-group) | IN — config-level `pool` + per-group `VpnUserGroup.pool` override applied at connect time (restored REVIEW-4A) |
+| VPN session limits (per-user, per-group) | IN — `VpnUserGroup.maxSessionsPerUser` (+ `maxSessionMin`); a per-user limit is expressed as a single-member group (restored REVIEW-4A) |
+| VPN session timeout (idle, max) | IN — `VpnUserGroup.idleTimeoutMin` + `maxSessionMin`; the session churn honors both (restored REVIEW-4A) |
+| IPsec anti-replay window | IN — `replayWindow` field on `ipsec_*` config shapes (32–1024, editor select) (restored REVIEW-4A) |
 | IKEv1, L2TP over IPSec, SSTP, VPN load balancing, post-connect hooks | OUT — dropped/deferred upstream, see [ROADMAP](../01-PRODUCT/ROADMAP.md) |
 | Real crypto key generation/rotation UI | OUT — keys/PSKs are editable strings; generation is a "generate" helper only (SIMULATION_LAYER §9: no real crypto) |
 | WireGuard native user authentication | N/A — WireGuard is public-key-only (Cryptokey Routing via AllowedIPs; UDP transport, no username/password, no built-in IP assignment — the pool + per-peer `/32` allowedIps are the IPAM). Remote-access identity = provisioned peer name surfaced in `VpnSession.userName`; username/password remote access uses IPSec EAP or OpenVPN |
@@ -29,7 +31,8 @@ Reference: [SCHEMA](../03-DATABASE/SCHEMA.md) §3/§4.
 | Model | Fields used here | Notes |
 |---|---|---|
 | `VpnConfig` | `name`, `type` (`wireguard_s2s\|wireguard_remote\|ipsec_s2s\|ipsec_remote\|openvpn`), `enabled`, `config` (JSON, exact shape per type below), `status` (`up\|down\|connecting\|error`), `statusMessage?` | unique `(tenantId, name)`; index `(tenantId, type)` |
-| `VpnSession` | `vpnId` (FK → `vpn_configs`, **CASCADE** on config delete), `userName?`, `sourceIp`, `assignedIp?`, `bytesIn`, `bytesOut`, `connectedAt`, `lastActivity`, `status` (`active\|idle\|disconnected`) | sessions of a deleted config are cascaded away |
+| `VpnSession` | `vpnId` (FK → `vpn_configs`, **CASCADE** on config delete), `userName?`, `sourceIp`, `assignedIp?`, `groupName?` (VpnUserGroup applied at connect), `bytesIn`, `bytesOut`, `connectedAt`, `lastActivity`, `status` (`active\|idle\|disconnected`) | sessions of a deleted config are cascaded away |
+| `VpnUserGroup` | `name`, `description?`, `pool?` (per-group CIDR override), `dns?`, `idleTimeoutMin?`, `maxSessionMin?`, `maxSessionsPerUser?`, `memberUsernames` (JSON array — logical ref to `VpnSession.userName`) | unique `(tenantId, name)`; group policy applied by the engine at connect time |
 | `NetworkInterface` (read) | `wg0`-style interfaces with `role = vpn` shown as the tunnel iface in status detail | created by seed; no iface CRUD from this module |
 
 `VpnConfig.config` JSON shapes (zod-validated, SCHEMA §4 — exact):
@@ -38,8 +41,8 @@ Reference: [SCHEMA](../03-DATABASE/SCHEMA.md) §3/§4.
 |---|---|
 | `wireguard_s2s` | `{ privateKey: string, listenPort: number, peers: [{ name, publicKey, allowedIps: string[], endpoint?, keepaliveSec? }], address: string }` |
 | `wireguard_remote` | `{ privateKey: string, listenPort: number, address: string, pool: string, dns?: string, keepaliveSec?: number, peers: [{ name, publicKey, allowedIps: string[] }] }` — each provisioned remote client is a peer with a `/32` `allowedIps` from the pool (WireGuard has no built-in address assignment; pool + peer `/32`s are the IPAM). SCHEMA.md §4 mirrors this shape — client-bundle generation appends peers (§5) |
-| `ipsec_s2s` / `ipsec_remote` | `{ localIp, remoteIp?, localSubnets: string[], remoteSubnets: string[], psk, ike: string, esp: string, dpdSec?: number, pfs?: boolean, authMethod?: "psk"\|"eap_mschapv2"\|"eap_tls" }` |
-| `openvpn` | `{ proto: "udp"\|"tcp", port: number, cipher: string, auth: string, pool: string, tls?: boolean }` |
+| `ipsec_s2s` / `ipsec_remote` | `{ localIp, remoteIp?, localSubnets: string[], remoteSubnets: string[], psk, ike: string, esp: string, dpdSec?: number, pfs?: boolean, authMethod?: "psk"\|"eap_mschapv2"\|"eap_tls", replayWindow?: 32\|64\|128\|256\|512\|1024, dns?: string }` |
+| `openvpn` | `{ proto: "udp"\|"tcp", port: number, cipher: string, auth: string, pool: string, tls?: boolean, dns?: string, keepaliveSec?: number }` |
 
 Integrity: deleting a config cascades its sessions (ER_DIAGRAM §2) with a ConfirmDialog warning; `status` is engine-owned (never edited via PUT `config` directly — transitions come from enable/disable and the state machine).
 
@@ -55,6 +58,10 @@ Integrity: deleting a config cascades its sessions (ER_DIAGRAM §2) with a Confi
 | POST | `/api/v1/vpn/configs/{id}/client-bundle` | wg `.conf` / `.ovpn` download payload | "Download client bundle" button |
 | GET | `/api/v1/vpn/sessions` | active sessions | `#/vpn/sessions` load |
 | POST | `/api/v1/vpn/sessions/{id}/disconnect` | kick session | row Disconnect action |
+| GET | `/api/v1/vpn/user-groups` | list VPN user groups | User Groups tab load |
+| POST | `/api/v1/vpn/user-groups` | create group | "Add group" dialog |
+| PUT | `/api/v1/vpn/user-groups/{id}` | update group (incl. `memberUsernames` replace-all) | group editor save |
+| DELETE | `/api/v1/vpn/user-groups/{id}` | delete group | row delete action |
 
 Query params/filters: `GET /api/v1/vpn/sessions` takes `?vpnId=` (per-config filter — additive field filter per PROJECT_MEMORY §7.1) plus `?page=/limit=` pagination; the configs list is small (no pagination needed).
 
@@ -68,20 +75,24 @@ Expected error cases:
 | `client-bundle` on a disabled config | allowed (bundle reflects the stored config), with an "offline config" notice |
 | Disconnect on nonexistent/already-disconnected session | `404 NOT_FOUND` / idempotent success with `status = disconnected` |
 | Port collision between configs (same listenPort) | `409 CONFLICT` |
+| Duplicate VPN user-group name | `409 CONFLICT` |
+| Group `pool` overlapping a remote-access config pool (or another group's) | `400 VALIDATION_ERROR` |
+| `replayWindow` outside the allowed set (32–1024 powers of two) | `400 VALIDATION_ERROR` |
 
 ## 4. Views & Interactions
 
-### `#/vpn/configs` — tabs: WireGuard | IPSec | OpenVPN
+### `#/vpn/configs` — tabs: WireGuard | IPSec | OpenVPN | User Groups
 
-- **Tab mapping:** WireGuard tab lists `wireguard_s2s` + `wireguard_remote`; IPSec tab lists `ipsec_s2s` + `ipsec_remote`; OpenVPN tab lists `openvpn`. Each tab's "Add" opens the editor preset to that type family.
+- **Tab mapping:** WireGuard tab lists `wireguard_s2s` + `wireguard_remote`; IPSec tab lists `ipsec_s2s` + `ipsec_remote`; OpenVPN tab lists `openvpn`. Each tab's "Add" opens the editor preset to that type family. The **User Groups** tab manages `VpnUserGroup` rows (applies to remote-access sessions of any type).
 - **Config list (per tab):** name, subtype chip (s2s / remote access), enabled switch, status badge (`up`=emerald, `connecting`=amber, `down`=zinc, `error`=rose + `statusMessage` tooltip), endpoint/pool summary, actions (edit, status, bundle, delete).
 - **Editors per type** (fields mirror §2 shapes exactly; secrets masked with reveal-eye button):
   - WireGuard s2s: name, privateKey (generate helper), listenPort, tunnel `address` (CIDR), peers table (name, publicKey, `allowedIps` CIDR list, endpoint host:port, keepaliveSec) with add/remove rows.
   - WireGuard remote: privateKey, listenPort, `address`, `pool` (CIDR), pushed `dns`, `keepaliveSec`.
-  - IPSec (s2s/remote): name, `localIp`, `remoteIp` (s2s), `localSubnets` / `remoteSubnets` CIDR list editors, `psk` (masked + reveal + generate), `ike` / `esp` proposal strings (placeholder shows `aes256-sha256-modp2048` style), `dpdSec`, `pfs` switch, `authMethod` select (`psk` for s2s; `eap_mschapv2` / `eap_tls` for remote).
-  - OpenVPN: name, `proto` radio, `port`, `cipher`, `auth`, `pool`, `tls` switch.
+  - IPSec (s2s/remote): name, `localIp`, `remoteIp` (s2s), `localSubnets` / `remoteSubnets` CIDR list editors, `psk` (masked + reveal + generate), `ike` / `esp` proposal strings (placeholder shows `aes256-sha256-modp2048` style), `dpdSec`, `pfs` switch, `authMethod` select (`psk` for s2s; `eap_mschapv2` / `eap_tls` for remote), `replayWindow` select (32/64/128/256/512/1024 — anti-replay window, spec §1.7), pushed `dns` (remote).
+  - OpenVPN: name, `proto` radio, `port`, `cipher`, `auth`, `pool`, `tls` switch, pushed `dns`, `keepaliveSec`.
 - **Status detail dialog** (from `/status`): current status + statusMessage, last handshake age, transfer bytes in/out, DPD state (dead-peer detection alive/expired), peer/subnet summary; auto-refresh every 5 s while open.
 - **Client-bundle action:** POST → response carries filename + text payload → browser download (`hq-mesh-peer1.conf` / `roadwarriors-client.ovpn`). Button hidden on IPSec rows (no bundle contract for IPSec in Phase 1).
+- **User Groups tab:** table (name, description, pool chip, dns, idle/max timeouts, maxSessionsPerUser, member count) + editor dialog: name, description, pool (CIDR, optional — override), dns (optional), idleTimeoutMin / maxSessionMin / maxSessionsPerUser (numbers, optional), `memberUsernames` tag input (remote usernames; must match `VpnSession.userName` values at connect). Empty state CTA.
 - Empty tab state: EmptyState ("No WireGuard tunnels configured") + Add button; seed guarantees four configs spread across tabs.
 
 ### `#/vpn/sessions`
@@ -108,7 +119,7 @@ stateDiagram-v2
 - Enabling a config → `applyConfig("vpn")` → engine flips `status` to `connecting`, then `up` after 2–5 ticks (4–10 s), `statusMessage` updated ("handshake complete with <peer>"); random low-probability `error` states give the error badge something to show (profile-driven; `MOCK_SEED` deterministic).
 - **Status detail data:** handshake time = last simulated DPD success; transfer bytes accumulate per tick for s2s tunnels and per session for remote access; DPD state derived from the machine above.
 - **Client bundles (server-generated):** WireGuard remote → server generates a fresh client keypair, appends a peer row to the config's `peers` (name = bundle name), returns a `.conf` with the client private key + `Endpoint` = appliance WAN + `AllowedIPs` per split-tunnel pool; WireGuard s2s → renders a peer `.conf` for the selected peer; OpenVPN → renders an `.ovpn` with proto/port/cipher/CA-ish placeholders. Simulated keys are random strings (no real crypto, SIMULATION_LAYER §9).
-- **Sessions churn (simulated):** the `sessions` generator connects/disconnects remote-access sessions per tick (DATA_LIFECYCLE §5: ~10 live rows); `assignedIp` drawn from the config `pool`; `bytesIn/bytesOut` grow while `active`, sessions age into `idle` then `disconnected`.
+- **Sessions churn (simulated):** the `sessions` generator connects/disconnects remote-access sessions per tick (DATA_LIFECYCLE §5: ~10 live rows); `assignedIp` drawn from the **matching VpnUserGroup pool when `userName` is a member, else the config `pool`**; `groupName` is stamped on the session; `bytesIn/bytesOut` grow while `active`; sessions age into `idle` then `disconnected` — **group `idleTimeoutMin`/`maxSessionMin` shorten the churn timers for member sessions, and `maxSessionsPerUser` blocks a new connect when the user already holds the limit** (the engine marks the attempt `disconnected` immediately with `statusMessage` "session limit reached").
 - **Disconnect action:** sets session `status = disconnected`, `lastActivity = now`; the generator honors it (no re-spawn of that session in the same window). Remote-user effective kick, simulated.
 - Every mutation → `applyConfig("vpn")` → audit + `config_versions` snapshot (section `vpn`) + `config:updated` broadcast (PROJECT_MEMORY §12).
 
@@ -134,6 +145,9 @@ stateDiagram-v2
 - Given the PSK field, when rendered, then the value is masked and the reveal-eye toggles visibility (never printed in page source as plain text by default).
 - Given two remote configs with overlapping pools, when saving the second, then a `400 VALIDATION_ERROR` with a pool-overlap message appears.
 - Given `#/vpn/sessions` open, when `sessions:update {kind: "vpn"}` arrives, then rows patch in place within 1 s and byte counters tick without a refetch flash.
+- Given user `c.reyes` in group `CONTRACTORS` (pool `10.99.1.0/24`, idle 30 min, max 1/user), when they connect, then `assignedIp` comes from `10.99.1.0/24`, the session shows the group chip, and a second simultaneous connect for the same user is refused ("session limit reached").
+- Given group `CONTRACTORS` with `idleTimeoutMin = 30`, when a member session is idle 30 min (simulated churn), then it flips `idle` → `disconnected` sooner than non-member sessions.
+- Given an IPSec remote edit with `replayWindow = 512`, when saved, then the config JSON stores it and the status dialog shows "anti-replay window 512".
 - Given Disconnect on an active session, when confirmed, then the row turns `disconnected` and a later diff does not resurrect it.
 - Given filter `vpnId = ROADWARRIORS`, when applied, then only that config's sessions render and the query key includes `vpnId` (cache isolation).
 - Given deleting `HQ-MESH`, when confirmed, then its sessions are gone (CASCADE) and the WireGuard tab no longer lists it after `config:updated`.
@@ -144,3 +158,4 @@ stateDiagram-v2
 - **Bundle key persistence:** remote-access bundles append a peer to the config — repeated downloads mutate config history silently; consider marking generated peers (`generated: true`) or a dedicated peer-management UI in Phase 2.
 - **IPSec remote users:** `ipsec_remote` sessions use EAP against identity (M07) — the sim fills `userName`; real appliance needs FreeRADIUS wiring noted in ARCHITECTURE, out of console scope.
 - OpenVPN `.ovpn` contents are placeholder-grade (no real CA/TLS files) — editor copy must not promise production-grade bundles.
+- ~~**VPN user groups / session limits / timeouts / anti-replay deferred**~~ RESOLVED (REVIEW-4A): restored via `VpnUserGroup` + config-shape fields above.

@@ -80,7 +80,7 @@
 
 - **Status:** ACCEPTED (build-level; sandbox hard constraint)
 - **Context:** The sandbox exposes exactly one user-visible route (`/`). A UTM console
-  needs ~28 screens.
+  needs ~29 screens (28 console views + the `#/setup` wizard added by REVIEW-4A).
 - **Decision:** One Next.js route (`src/app/page.tsx`) renders `AppShell`; the sidebar +
   hash router (`#/network/interfaces`, …) select views from a `viewRegistry`. Deep
   links, back/forward, and refresh all work via hash. No other Next.js routes ever.
@@ -223,3 +223,25 @@
 - **Consequences:** SCHEMA.md §4 + M04 §1/§5/§8 + ENDPOINTS.md are aligned; no schema
   migration (sid stays an Int); bypass entries with `sid: 0` must be surfaced in the M04
   UI as "bypass (any SID)" to avoid user confusion.
+
+## ADR-018 — Zero-feature-loss ruling: all spec features covered, console deferrals rescinded
+
+- **Status:** ACCEPTED (product-owner ruling, 2026-11-05)
+- **Context:** The master feature sheet (`docs/SPEC.md`) is the single source of truth for
+  WHAT we build. Earlier build passes had deferred some spec-Phase-1 features from the
+  console contract (PBR, DHCP relay, conditional forwarding, basic DHCPv6, per-user/
+  per-app bandwidth hard limits, LLDP, IGMP snooping, MAC table, SPAN, L2/L3 toggle, BFD,
+  IPS auto-update + presets, VPN user groups, session-limit/timeout UIs, firmware/NTP/
+  SNMP/hardening surfaces, webhooks registration, OpenAPI JSON, setup wizard, …).
+  The product owner then set a hard rule: **zero features may be missing from the doc
+  suite.**
+- **Decision:** (1) Every spec Phase-1 feature is restored to Phase 1 and fully covered by
+  module docs + SCHEMA + ENDPOINTS + PAGE_MAP (audited: 188/188 — REVIEW-4A). (2) Every
+  Phase 2/3/4 feature and §2–§9 product fact has a correctly phase-tagged home
+  (REVIEW-4B). (3) `config:updated` may carry `section: "all"` as the sentinel for
+  restore/template-apply events (full invalidate). (4) LLDP/MAC-table/HA derived views use
+  polling fallback (10 s) instead of new socket events — the 7-event realtime set stays
+  locked.
+- **Consequences:** ROADMAP §5 restoration row + REVIEW-4A/4B reports are the evidence;
+  build order (ADR-014) unchanged; the larger Phase-1 surface raises build effort —
+  accepted by the owner. Any future deviation from SPEC.md requires a new ADR.

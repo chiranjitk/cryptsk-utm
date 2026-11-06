@@ -10,19 +10,23 @@ Related: [PROJECT_MEMORY](../00-PROJECT-MEMORY/PROJECT_MEMORY.md) (§6 enums, §
 
 M03 is where policy lives. An admin defines zones (grouping interfaces), address/service/schedule objects, then writes ordered firewall rules ("from zone A to zone B, for these services, allow/deny/drop/reject") and NAT rules (SNAT/masquerade, DNAT/port-forward, hairpin, exempt). The log generator then enforces what was written — blocked flows appear in `#/logs/firewall` — closing the "config → observable behavior" loop.
 
-Derived from upstream spec §1.4 (Firewall) and §1.5 (NAT) Phase 1 tables, **trimmed to console Phase 1**:
+Derived from upstream spec §1.4 (Firewall) and §1.5 (NAT) Phase 1 tables — **fully covered per the owner zero-loss ruling (REVIEW-4A)**:
 
 | Upstream Phase 1 feature | Console Phase 1 decision |
 |---|---|
-| Zone-based firewall, L3/L4 rules, objects/groups, schedules, enable/disable, comments, hit counters, 4 actions, conn limit, rate limit, SYN protection, port forwarding, logging none/summary/detail, implicit deny logging, rule validation (shadow/conflict), import/export CSV+JSON, ICMP type filtering | IN — this spec |
+| Zone-based firewall, L3/L4 rules, objects/groups, schedules, enable/disable, comments, hit counters, 4 actions, conn limit, rate limit, SYN protection, port forwarding, logging none/summary/detail, implicit deny logging, rule validation (shadow/conflict), import/export CSV+JSON, ICMP type/code filtering | IN — this spec |
 | GeoIP filtering | IN as address object `type = geo` (matching simulated); no GeoIP DB management UI |
 | FQDN-based rules | IN as address object `type = fqdn`; resolution + set updates simulated (no resolver-state UI) |
-| App-aware rules (`applicationIds`), user-based rules (`userIds`), MAC filtering rules | OUT for the RuleEditor in Phase 1 — DB columns exist and are validated, but no pickers in the editor; deferred to [ROADMAP](../01-PRODUCT/ROADMAP.md) Phase 2 (app control / advanced identity) |
-| Rule groups/categories | Reduced to free-form `tags` on rules (no rule-folder UI) |
+| App-aware rules (`applicationIds`) | IN — Applications picker in the RuleEditor fed by `GET /api/v1/network/app-catalog` (nDPI labels); `unknown` label selectable (restored REVIEW-4A) |
+| User-based rules (`userIds`) | IN — Users picker in the RuleEditor (`User.id` via the identity map) (restored REVIEW-4A) |
+| MAC filtering rules (`srcMacs`) | IN — Source MACs input in the RuleEditor (nftables `ether saddr` appliance-side) (restored REVIEW-4A) |
+| Rule groups/categories | IN — first-class `tags`: toolbar tag chips filter the table, tags are suggested from existing values; groups = tag filters (restored REVIEW-4A) |
 | DNS security rules | Owned by M06 (DNS policies), not firewall rules |
-| 1:1 NAT (static NAT) | No dedicated type — compose as `dnat` (no port) + `snat`; documented in the NAT editor hint |
-| NAT pool management (ranges/overload), NAT logging toggle, DNAT port ranges | OUT — `translatedSrc` is a single IP or `"masq"`, `translatedPort` a single int; Phase 2 |
-| NAT session timeouts per rule | OUT — Phase 2 |
+| 1:1 NAT (static NAT) | IN — 1:1 helper in the NAT editor emits the paired `dnat` (no port) + `snat` rows atomically (restored REVIEW-4A) |
+| NAT pool management (range, overload) | IN — `translatedSrcPool` (JSON ip array) + `overload` flag on `snat` rules (restored REVIEW-4A) |
+| Destination NAT port ranges | IN — `translatedPortRange` (port or range list) as an alternative to single `translatedPort` (restored REVIEW-4A) |
+| NAT logging (who got what translation) | IN — `logging` (`none\|summary\|detail`) on NAT rules; `summary`/`detail` rows land in `#/logs/firewall` with the NAT rule name (restored REVIEW-4A) |
+| NAT session timeouts per rule | OUT — Phase 2 (spec's own cut line) |
 
 ## 2. Data Model
 
@@ -33,11 +37,11 @@ Reference: [SCHEMA](../03-DATABASE/SCHEMA.md) §3; JSON-array semantics: [ER_DIA
 | `Zone` | `name`, `type` (`L3\|L2\|VPN`), `interfaceNames` (JSON array of iface names), `description` | hard-FK children: `NetworkInterface.zoneId` (SET NULL on zone delete) |
 | `AddressObject` | `name`, `type` (`ip\|range\|subnet\|fqdn\|geo\|wildcard`), `value` (format per type, e.g. `"10.0.0.5"`, `"10.0.0.5-10.0.0.20"`, `"10.0.0.0/24"`, `"example.com"`, `"DE"`, `"10.0.0.0 255.0.0.0"`), `description` | unique `(tenantId, name)` |
 | `AddressGroup` | `name`, `memberIds` (JSON array of `address_objects.id`), `description` | logical ref; groups are flat (no nesting) in Phase 1 |
-| `ServiceObject` | `name`, `protocol` (`tcp\|udp\|icmp\|any`), `srcPort?`, `dstPort?` (port lists like `"5000-5100,6000"`), `icmpType?`, `description` | — |
+| `ServiceObject` | `name`, `protocol` (`tcp\|udp\|icmp\|any`), `srcPort?`, `dstPort?` (port lists like `"5000-5100,6000"`), `icmpType?`, `icmpCode?`, `description` | — |
 | `ServiceGroup` | `name`, `memberIds` (JSON array of `service_objects.id`), `description` | flat |
 | `ScheduleObject` | `name`, `type` (`always\|recurring\|onetime`), `recurrence?` JSON `{days: number[], start: "HH:MM", end: "HH:MM"}` (1=Mon), `startsAt?`, `endsAt?`, `timezone` (IANA, default `UTC`) | hard FK from `FirewallRule.scheduleId` → **RESTRICT** on delete |
-| `FirewallRule` | `name`, `description?`, `enabled`, `position`, `srcZoneIds`/`dstZoneIds` (JSON id arrays), `srcAddrIds`/`dstAddrIds` (**mixed** object+group ids), `serviceIds` (**mixed**), `applicationIds`, `userIds`, `scheduleId?`, `action` (`allow\|deny\|drop\|reject`), `logging` (`none\|summary\|detail`), `connLimit?`, `rateLimit?`, `synProtection`, `synThreshold?`, `ipsPolicyId?`, `qosPolicyId?`, `tags` (JSON string array), `comment?`, `hitCount`, `lastHitAt?` | ordered by `position`; index `(tenantId, enabled, position)` |
-| `NatRule` | `name?`, `position`, `type` (`snat\|dnat\|hairpin\|exempt`), `enabled`, `srcAddrIds`/`dstAddrIds`/`serviceIds` (mixed, same semantics), `outgoingIface?`, `translatedSrc?` (ip or `"masq"`), `translatedDst?`, `translatedPort?`, `comment?`, `hitCount` | ordered by `position` |
+| `FirewallRule` | `name`, `description?`, `enabled`, `position`, `srcZoneIds`/`dstZoneIds` (JSON id arrays), `srcAddrIds`/`dstAddrIds` (**mixed** object+group ids), `serviceIds` (**mixed**), `applicationIds` (nDPI labels), `userIds`, `srcMacs` (MAC strings), `scheduleId?`, `action` (`allow\|deny\|drop\|reject`), `logging` (`none\|summary\|detail`), `connLimit?`, `rateLimit?`, `synProtection`, `synThreshold?`, `ipsPolicyId?`, `qosPolicyId?`, `tags` (JSON string array), `comment?`, `hitCount`, `lastHitAt?` | ordered by `position`; index `(tenantId, enabled, position)` |
+| `NatRule` | `name?`, `position`, `type` (`snat\|dnat\|hairpin\|exempt`), `enabled`, `srcAddrIds`/`dstAddrIds`/`serviceIds` (mixed, same semantics), `outgoingIface?`, `translatedSrc?` (ip or `"masq"`), `translatedSrcPool` (ip array — SNAT pool), `overload` (pool pat), `translatedDst?`, `translatedPort?` xor `translatedPortRange?` (port list), `logging` (`none\|summary\|detail`), `comment?`, `hitCount` | ordered by `position`; 1:1 NAT = paired dnat+snat rows via the editor helper |
 
 Integrity rules:
 
@@ -103,11 +107,11 @@ Expected error cases:
 
 ### `#/firewall/rules`
 
-- **Toolbar:** zone filter chips (All, WAN, LAN, DMZ, VPN…), search box (`?search=`), Add rule, Import, Export; per-row kebab carries "Reset counters" → `POST /{id}/hits/reset` (audited, §5).
+- **Toolbar:** zone filter chips (All, WAN, LAN, DMZ, VPN…), tag filter chips (rule groups/categories — multi-select from existing `tags` values), search box (`?search=`), Add rule, Import, Export; per-row kebab carries "Reset counters" → `POST /{id}/hits/reset` (audited, §5).
 - **Table** (ordered, row number = evaluation order): position, enable switch, name (+comment tooltip), action badge (allow=emerald, deny/drop=rose-600, reject=orange-500 — UI_DESIGN_SYSTEM §2.3), src zone → dst zone chips, src/dst addresses (resolved object/group names, groups suffixed "+N"), services, schedule icon, protections icons (conn limit / rate limit / SYN), hits + last hit, actions (edit, duplicate, delete). Drag handle reorders via dnd-kit → `POST /firewall-rules/reorder` with the full new id order.
 - **RuleEditor dialog** (shared component, per [UI_DESIGN_SYSTEM](../05-FRONTEND/UI_DESIGN_SYSTEM.md)): sections —
   - General: name, description, tags input, comment.
-  - Match: src/dst zone multi-pick (empty = any), src/dst address `ObjectPicker` (groups shown expandable; selecting a group stores the **group id**), services picker (same mixed semantics), schedule picker (`ScheduleObject` list + "always").
+  - Match: src/dst zone multi-pick (empty = any), src/dst address `ObjectPicker` (groups shown expandable; selecting a group stores the **group id**), services picker (same mixed semantics), **Applications picker** (multi-select from `GET /api/v1/network/app-catalog` nDPI labels — includes the `unknown` label), **Users picker** (multi-select of `User.id` from `/users`; sessions resolved via the identity map at apply time), **Source MACs** input (comma/space separated MAC list, zod mac-regex validated), schedule picker (`ScheduleObject` list + "always").
   - Action: radio `allow|deny|drop|reject`; logging radio `none|summary|detail`.
   - Protections: `connLimit`, `rateLimit` (conn/s per source), SYN protection switch + `synThreshold` (visible when on).
   - Attachments: IPS policy select (from M04), QoS policy select (from M08) — read-only lists fetched from their modules.
@@ -119,7 +123,8 @@ Expected error cases:
 ### `#/firewall/nat`
 
 - **Table** ordered by position: pos, enable switch, name, type badge (snat/dnat/hairpin/exempt), match summary (src → dst, service, outgoing iface), translation summary (e.g. `→ masq`, `8080 → 172.16.20.5:80`), hits, actions.
-- **NAT editor dialog:** type selector gates fields — `snat`: outgoing iface + `translatedSrc` (ip input or "masquerade" switch storing `"masq"`); `dnat`: `translatedDst` + optional `translatedPort`; `hairpin`: both (helper text: for LAN clients reaching a DNAT'd public IP from inside); `exempt`: translation fields disabled (identity NAT). Match pickers reuse `ObjectPicker`.
+- **NAT editor dialog:** type selector gates fields — `snat`: outgoing iface + `translatedSrc` (ip input or "masquerade" switch storing `"masq"`) **or** `translatedSrcPool` (multi-IP editor — NAT pool) with `overload` switch; `dnat`: `translatedDst` + port mode radio (single `translatedPort` / range list `translatedPortRange`); `hairpin`: both (helper text: for LAN clients reaching a DNAT'd public IP from inside); `exempt`: translation fields disabled (identity NAT). All types: `logging` select (`none|summary|detail` — NAT translation logging). Match pickers reuse `ObjectPicker`.
+- **1:1 NAT helper** (toolbar button "1:1 NAT"): one dialog (public IP, internal host, optional iface) → creates the paired `dnat` (no port) + `snat` rows in one transaction + one audit entry; the table renders both rows linked with a "1:1 pair" chip.
 - **Port-forward wizard** (button on dnat rows / toolbar): 3 steps — 1) WAN iface + external port + protocol, 2) internal host (address object or ip) + internal port, 3) preview generated `dnat` rule (+ suggested matching firewall allow rule, one-click create). Wizard emits the same PUT/POST payloads as the editor.
 
 ### `#/firewall/objects` — 5 tabs (view map §8: Address | Address Groups | Services | Service Groups | Schedules)
@@ -127,7 +132,7 @@ Expected error cases:
 - Each tab: DataTable (name, type/value summary, referenced-by count, actions) + Add/Edit dialog per type.
 - **Address dialog:** name, type select with per-type value field + placeholder (ip / range / subnet / fqdn / geo (country code) / wildcard), description.
 - **Group dialogs:** name + member transfer-list (search, available vs. chosen); members stored as raw object ids in `memberIds`.
-- **Service dialog:** name, protocol radio, src/dst port string inputs (validated `"80"`, `"5000-5100,6000"`), icmp type (when protocol=icmp), description.
+- **Service dialog:** name, protocol radio, src/dst port string inputs (validated `"80"`, `"5000-5100,6000"`), icmp type + icmp code (when protocol=icmp), description.
 - **Schedule dialog:** name, type radio — `always`; `recurring` (weekday toggles 1–7, start/end time, IANA timezone select default from system settings); `onetime` (start/end datetime). Shows computed "active now" hint client-side.
 - Delete anywhere: ConfirmDialog; on `409 CONFLICT` render the referencing-rules list from `details` with links to `#/firewall/rules`.
 
@@ -184,6 +189,12 @@ The RuleEditor renders them inline; `shadowed_by`/`conflicts_with` block Save un
 - `rateLimit`: new connections/s per source above the limit → dropped.
 - `synProtection` + `synThreshold`: SYN-flood guard on the rule's match scope; above threshold, SYN cookies / drops (simulated: burst flows above threshold produce `drop` rows).
 
+### NAT pools, port ranges, logging
+
+- `translatedSrcPool` accepts 2–16 IPv4s (each validated); pool is mutually exclusive with a literal `translatedSrc` ip (but `"masq"` + pool is a validation error). `overload = true` (default) = PAT across the pool; `false` = 1:1 rotation (appliance: nftables `snat ip to { ip1, ip2 }` without `persistent`/with `fulcon` semantics — documented in the editor hint).
+- `translatedPortRange` accepts the same port-list grammar as service objects (`"80"`, `"5000-5100,6000"`) and is mutually exclusive with `translatedPort`; the range width must match the service port width when both are set (else `400`).
+- `logging`: `summary` emits one log row per translated flow (rule name = NAT rule name) into `firewall_logs`; `detail` adds the translation pair to the row's message. Simulated generator honors it; `#/logs/firewall` shows NAT rows inline.
+
 ### Hit counters
 
 - Incremented by the firewall-log generator per matched flow (SIMULATION_LAYER §6: `rule_name` = matched rule, hits increment `hit_count` + `last_hit_at`). `GET /{id}/hits` returns the current values; `POST /{id}/hits/reset` zeroes them (audited, per-rule — there is intentionally no "reset all" endpoint in Phase 1).
@@ -216,6 +227,14 @@ Subscribe `{ channels: ["logs"] }` only while `#/firewall/rules` is visible (hit
 - Given `translatedSrc = "masq"` on the SNAT rule, when the NAT table renders, then the translation column shows "masquerade", not the literal string.
 - Given group `TRUSTED` in `srcAddrIds`, when the row renders, then the chip shows `TRUSTED +N` (expanded member count) and validation accepts the mixed id list.
 - Given CSV import with 3 valid + 1 invalid rows, when confirmed, then nothing is persisted and the per-row error is shown.
+- Given a rule with `applicationIds: ["youtube"]`, when a simulated YouTube flow arrives, then only that rule matches on the app dimension and the row renders the app chip; unknown apps match the `unknown` label.
+- Given a rule with `userIds: [7]` (jdoe), when a flow from an identity-session IP mapped to jdoe arrives, then the rule matches (identity map join, SIMULATION_LAYER §6); flows from unmapped IPs do not match.
+- Given a rule with `srcMacs: ["aa:bb:cc:dd:ee:01"]`, when a flow from that MAC arrives, then the rule matches; a malformed MAC in the editor is rejected inline before submit.
+- Given tag filter chips (`guest`, `guardrail`), when both are selected, then only rules carrying both tags render and the chip row shows the active count.
+- Given the 1:1 NAT helper with public `203.0.113.50` and host `172.16.20.5`, when submitted, then two rows (dnat + snat) appear with the "1:1 pair" chip and a single audit entry exists.
+- Given an SNAT rule with `translatedSrcPool: ["198.51.100.10", "198.51.100.11"]` + `overload`, when rendered, then the translation column shows the pool and the appliance note mentions PAT; a second literal `translatedSrc` cannot be set (mutual exclusion 400).
+- Given a DNAT rule with `translatedPortRange: "5000-5100,6000"`, when saved, then the range is stored and `translatedPort` stays null; setting both returns `400 VALIDATION_ERROR`.
+- Given an SNAT rule with `logging = "summary"`, when flows are translated, then `#/logs/firewall` shows rows whose rule name is the NAT rule name.
 - Given `config:updated {section: "firewall"}`, when received on `#/firewall/rules`, then the list refetches without a manual reload.
 - Given zone `WAN`, when the row menu opens, then Delete is hidden and the edit dialog locks name/type.
 - Given a zone edit adding `vlan10`, when saved, then both `zone.interfaceNames` and `vlan10.zoneId` reflect membership in `#/network/interfaces` and `#/firewall/zones`.
@@ -225,6 +244,7 @@ Subscribe `{ channels: ["logs"] }` only while `#/firewall/rules` is visible (hit
 - ~~**Counter reset has no endpoint**~~ RESOLVED: `POST /api/v1/firewall-rules/{id}/hits/reset` is in the locked surface (audited, per-rule).
 - ~~**Zone delete with referencing rules**~~ RESOLVED: zones are logical refs; the service layer returns `409` listing referencing rules (ER_DIAGRAM §3), matching the RESTRICT rule of thumb.
 - **Mixed-id expansion cost:** group expansion at validate/apply time is O(rules × members); fine at sandbox scale, watch it if import files carry hundreds of rules.
-- **`applicationIds`/`userIds` kept but uneditable:** columns are validated but no Phase 1 picker exists; ensure import/export round-trips them without corrupting.
+- ~~**`applicationIds`/`userIds` kept but uneditable**~~ RESOLVED (REVIEW-4A): pickers exist in the RuleEditor; import/export round-trips them (plus `srcMacs`) without corruption.
+- **App catalog is static** in sandbox (a representative top-N nDPI label list served by `/network/app-catalog`); the appliance publishes the live catalog — labels not in the catalog are rejected with `400` naming them.
 - **CSV schema not pinned:** column order/headers for import/export must be fixed in ENDPOINTS.md before the Import dialog is built.
 - GeoIP/FQDN matching is fully simulated (no real sets); acceptance tests must not assert on real-world resolution behavior.

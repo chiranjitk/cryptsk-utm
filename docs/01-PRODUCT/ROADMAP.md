@@ -24,23 +24,28 @@ order) · [../00-PROJECT-MEMORY/PROJECT_MEMORY.md](../00-PROJECT-MEMORY/PROJECT_
 Phase 4 explicit framing from the spec: full SASE is a multi-year, multi-million-dollar
 effort; this is a deliberate starting point, not a Zscaler replacement.
 
+**Scope rule for Phases 2–4 (owner zero-feature-loss ruling, 2026-11-05):** every spec
+§2.x / §3.x / §4.x row stays assigned to its spec phase — nothing is dropped or silently
+moved. Phases 2–4 are product commitments with honest capability scope only (no
+overclaiming); detailed design (schema, endpoints, UI) is deferred to each phase's start.
+
 ### 1.1 Phase 2 Workstreams (detail)
 
 | Spec area | Scope | Key packages |
 |---|---|---|
-| 2.1 SSL/TLS inspection | MITM proxy, TLS 1.2/1.3, selective bypass, cert-pinning/HSTS handling, root CA export | Squid, Step-CA |
+| 2.1 SSL/TLS inspection | MITM proxy, TLS 1.2/1.3 decryption, selective bypass, cert-pinning/HSTS handling, SSL error-handling policy, cert-expiry monitoring + CRL/OCSP checks, root CA export | Squid, Step-CA |
 | 2.2 Enhanced app control | Block/allow by nDPI app, per-app bandwidth, unknown-app policy, SaaS detection (partial) | nDPI + nftables/tc |
-| 2.3 Web security (URL filtering) | Explicit + transparent proxy, category blocking via aggregated free lists, safe-search enforcement, file-type control | Squid + blocklists |
-| 2.4 WAF | Reverse proxy, OWASP CRS, anomaly scoring, FP exclusions, learning mode, per-vhost policies | Coraza + Caddy |
-| 2.5 SD-WAN basics | SLA monitoring (latency/jitter/loss), app-aware path selection, hub-spoke overlay, brownout handling | Custom Go + WireGuard/FRR |
-| 2.6 Dynamic routing | BGP (v4/v6), OSPFv2/v3, route maps, prefix lists, BFD, graceful restart | FRR |
+| 2.3 Web security (URL filtering) | Explicit + transparent proxy, category blocking via aggregated free lists (honest scope: ≈60–70% of commercial categorization DBs, spec §6), custom block/allow lists, safe-search enforcement, file-type control, HTTPS inspection | Squid + blocklists |
+| 2.4 WAF | Reverse proxy, OWASP CRS, anomaly scoring, FP exclusions, learning mode, per-vhost policies, per-URL/IP rate limiting, geo-blocking, basic API protection | Coraza + Caddy |
+| 2.5 SD-WAN basics | SLA monitoring (latency/jitter/loss), app-aware path selection, hub-spoke overlay, brownout handling, per-path stats, overlay encryption — entirely custom engineering, the hardest Phase 2 build (spec) | Custom Go + WireGuard/FRR |
+| 2.6 Dynamic routing | BGP (v4/v6), OSPFv2/v3, route maps, prefix lists, community lists, BFD, graceful restart | FRR |
 | 2.7 IPv6 dual-stack | Firewall/NAT66 (NPTv6), routing, DHCPv6, SLAAC, VPN/QoS over v6 | nftables, Kea, radvd |
-| 2.8 Email security | SMTP proxy, anti-spam/phishing, DKIM/SPF/DMARC, attachment scanning | Postfix + Rspamd + ClamAV |
+| 2.8 Email security | SMTP proxy, anti-spam/phishing, DKIM/SPF/DMARC, attachment scanning, routing rules, blocked file extensions (honest gaps vs commercial: no attachment sandbox, no click-time URL rewriting, no archiving/continuity) | Postfix + Rspamd + ClamAV |
 | 2.9 Advanced identity | SAML 2.0, OIDC, RADIUS CoA + dynamic VLAN, Kerberos/NTLM proxy auth, user activity timeline | FreeRADIUS + custom |
 | 2.10 NAC basics | 802.1X, MAB, dynamic VLAN, device profiling, rogue detection, BYOD onboarding | FreeRADIUS + custom |
 | 2.11 Threat intelligence | Feed ingestion (Abuse.ch/OTX/Spamhaus), IOC management, reputation scoring, auto-block, STIX/TAXII | Custom Go |
 | 2.12 PKI | Internal CA (root + subordinate), lifecycle, OCSP/CRL, auto-renew, export | Step-CA |
-| 2.13 Enhanced logging | Full-text search, CEF/LEEF, compliance templates (PCI/HIPAA/GDPR), anonymization, scheduled reports | ClickHouse/Meilisearch + Go |
+| 2.13 Enhanced logging | Full-text search, CEF/LEEF, compliance templates (PCI/HIPAA/GDPR), anonymization, scheduled reports, executive summary reports | ClickHouse/Meilisearch + Go |
 
 ### 1.2 Phase 3 Workstreams (detail)
 
@@ -56,8 +61,9 @@ effort; this is a deliberate starting point, not a Zscaler replacement.
 AI infrastructure: Python/scikit-learn feature extraction, PyTorch offline training,
 ONNX Runtime inference served by Go, model registry in PostgreSQL, confidence thresholds,
 human-in-the-loop FP/FN feedback, drift monitoring. Eight further models (C2 beaconing,
-lateral movement, phishing NLP, IPS FP reduction, DLP NLP, config anomaly, …) wait for
-Phase 4 / deployed-base data.
+lateral movement, phishing NLP, malware classification from sandbox results, IPS FP
+reduction, DLP NLP, config anomaly, capacity prediction) wait for Phase 4 /
+deployed-base data (six of them formalized as spec §4.5).
 
 ### 1.3 Phase 4 Workstreams (detail)
 
@@ -74,7 +80,7 @@ Phase 4 / deployed-base data.
 
 Phase 1 is DONE when **all** of the following hold:
 
-1. Every spec §1.1–1.15 feature row marked ✅ Ready or 🟡 Custom engineering ships (the 🟡 subset is the appliance's own engineering work list — not silently dropped; console-level deferrals are tracked in §5).
+1. Every spec §1.1–1.15 feature row marked ✅ Ready or 🟡 Custom engineering ships (the 🟡 subset is the appliance's own engineering work list — not silently dropped; the former console-level deferrals were RESTORED to Phase 1 per the owner's zero-feature-loss ruling — see §5).
 2. A default-denial zone-based firewall + NAT is enforced at boot with no manual CLI.
 3. Suricata inline blocking demonstrably stops a test attack (ET rule hit → drop → alert in the dashboard).
 4. WireGuard + IKEv2 + OpenVPN tunnels pass traffic per their status views; client bundles import into real clients.
@@ -222,7 +228,9 @@ this table tracks the console only.
 
 ## 5. Deferred / Cut List (from Spec)
 
-One-liners so nobody re-adds these without a new decision:
+One-liners so nobody re-adds these without a new decision. Exception: items RESTORED per
+an owner ruling are recorded with the ruling reference, not a new ADR (see the RESTORED
+row at the end of this table):
 
 | Item | Status | One-liner |
 |---|---|---|
@@ -241,12 +249,12 @@ One-liners so nobody re-adds these without a new decision:
 | Netdata | Superseded (spec) | Prometheus + node_exporter + Grafana |
 | 10–100 Gbps throughput target | Rescoped (spec) | 1–10 Gbps realistic for small enterprise |
 | Secure Boot / LUKS | Cut / Phase 2 (spec) | Secure Boot is hardware/firmware level; LUKS deferred to Phase 2 |
-| VRF, VXLAN, MACVLAN, MACsec, QinQ | Phase 2 / dropped (spec) | VRF+VXLAN Phase 2; MACsec/QinQ/ERPS dropped (ISP/hardware) |
+| VRF, VXLAN, MACVLAN, MACsec, QinQ, route leaking, ring redundancy | Phase 2 / dropped (spec) | VRF+VXLAN (+ route leaking with VRF) Phase 2; MACsec/QinQ/ERPS/ring-redundancy dropped (ISP/hardware) |
 | PPPoE server, cellular/5G, satellite | Phase 2 / dropped (spec) | PPPoE client ships Phase 1; server/wan-media later |
-| BGP/OSPF, DNSSEC, DHCP failover, SSO/SAML/OIDC (identity), RADIUS CoA/VLAN | Phase 2 (spec) | All planned Phase 2 — listed here because the original spec marked some Phase 1 |
-| Twice-NAT, NAT44/66/NPTv6, per-rule NAT timeouts | Phase 2 (spec) | With IPv6 work in Phase 2 |
-| CAKE qdisc, ingress shaping, hierarchical QoS | Phase 2 (spec) | HTB + FQ_CoDel Phase 1 |
-| Full-text log search, compliance reports, log anonymization, CEF/LEEF | Phase 2 (spec) | Needs ClickHouse/Meilisearch decision in Phase 2 |
+| BGP/OSPF, DNSSEC, DHCP failover, SSO/SAML/OIDC/Kerberos-NTLM (identity, incl. constrained delegation), RADIUS CoA/VLAN, user activity timeline | Phase 2 (spec) | All planned Phase 2 — listed here because the original spec marked some Phase 1 |
+| Twice-NAT, NAT with route-map, NAT44/66/NPTv6, per-rule NAT timeouts | Phase 2 (spec) | With IPv6 work in Phase 2 |
+| CAKE qdisc, ingress shaping, hierarchical QoS, per-class monitoring dashboard, QoS burst allowance | Phase 2 (spec) | HTB + FQ_CoDel Phase 1 |
+| Full-text log search, compliance reports, executive summary reports, log-integrity hash chain, log anonymization, CEF/LEEF | Phase 2 (spec) | Needs ClickHouse/Meilisearch decision in Phase 2 |
 | Scheduled reports + PDF/HTML rendering | Phase 2 (build decision) | Spec divergence — see note in §2 |
 | Active/Active HA, IPS state sync | Phase 3 (spec) | Active/passive Phase 1 is sufficient |
 | API sandbox console, idempotency keys | Phase 2 (spec) | Overkill for the Phase 1 console |
@@ -259,11 +267,25 @@ One-liners so nobody re-adds these without a new decision:
 | L2TP over IPSec, VPN load balancing | Phase 2 (spec) | IKEv2 remote access + OpenVPN cover remote-user needs |
 | VPN post-connect scripts/hooks | Phase 2 (spec) | Client bundles + session limits cover Phase 1 provisioning |
 | Bond rate/fallback tuning | Phase 2 (spec) | Bond/bridge create + status ships Phase 1; fine-tuning knobs later |
-| Console Phase 1 UI deferrals (spec-Phase-1 items the console does not manage yet): LLDP neighbor view, IGMP snooping, MAC table, SPAN/port-mirroring, L2/L3 mode toggle, policy-based routing, BFD route monitoring, IPS auto-update scheduler UI, IPS one-click preset profiles (seeded presets serve instead), VPN user groups, per-user/per-group session-limit & timeout UIs | Console Phase 2 (build decision, not a spec phase change) | Console Phase 1 covers the core admin surface first (M02/M04/M05 §1); the appliance-side spec scope is unchanged and these remain spec Phase 1 features the appliance must expose (UI, CLI, or config file) |
+| Firewall Phase 2: rule versioning/change tracking, asymmetric-routing handling, fragment-handling policy, per-tenant rule-count limits | Phase 2 (spec) | Extends the Phase 1 audit trail + rule-validation engine |
+| IPS stream-reassembly settings UI, protocol-decoding options UI | Phase 2 (spec) | Suricata engine tuning surfaces; Phase 1 ships engine defaults |
+| DNS failover/load balancing, DNS rewriting; DHCP client classification | Phase 2 (spec) | DNS/DHCP enhancements beyond the Phase 1 Unbound/Kea scope |
+| Service isolation via containers (systemd units first) | Phase 2+ (spec §1.14 cut list) | Appliance deployment detail; console unaffected |
+| Secrets management (Vault), change-approval workflow, license management | Phase 2 (spec) | License management also noted in PRODUCT_OVERVIEW §6 (business model must exist first) |
+| Dashboard threat heatmap | Phase 2 (spec) | Lands with the Phase 2 threat features that feed it |
+| Dashboard AI risk score + security posture score | Phase 3 (spec) | Lands with the Phase 3 AI engine |
+| SSL/TLS Phase 3: client-certificate auth / mutual TLS, per-tenant CA trust store, unsupported-cipher handling UI | Phase 3 (spec) | Builds on Phase 2 SSL inspection + Step-CA PKI |
+| WAF Phase 3: bot management, API schema validation, virtual patching | Phase 3 (spec) | Builds on Phase 2 Coraza + OWASP CRS |
+| DPDK / AF_XDP acceleration | Phase 3+ (spec) | Zero-copy fast path for 10G+; XDP + NFQUEUE covers earlier phases |
+| Custom report builder; AI-based uncategorized-URL classification | Phase 3 (spec) | URL-gap mitigation (PRODUCT_OVERVIEW §4) |
+| Spec-Phase-1 features formerly deferred by the console build: policy-based routing (PBR), DHCP relay, conditional forwarding, basic DHCPv6, per-user/per-app bandwidth hard limits, LLDP neighbor view, IGMP snooping, MAC table, SPAN/port-mirroring, L2/L3 mode toggle, BFD route monitoring, IPS auto-update scheduler UI + one-click preset profiles, VPN user groups, per-user/per-group session-limit & timeout UIs | **RESTORED to Phase 1** per owner zero-feature-loss ruling (2026-11-05, REVIEW-4A) | No build-down of spec Phase 1 scope is permitted: every listed feature ships in Phase 1 (console UI or appliance config surface). Detailed implementation lives in the module docs (M02/M03/M04/M05/M06/M08) — see REVIEW-4A. Supersedes the former "Console Phase 2 (build decision)" status |
 
 Nothing in this list is "someday maybe": each row was considered against the spec and
 either cut with a reason or assigned a phase. Re-introducing a cut item requires a new
-ADR and updates to this file and the affected module doc the same day.
+ADR and updates to this file and the affected module doc the same day — except items
+restored by an explicit owner ruling (the RESTORED row above, REVIEW-4A 2026-11-05,
+zero-feature-loss), which are re-adds mandated by the ruling rather than discretionary
+re-introductions and need no new ADR.
 
 Additions relative to spec (build-level refinements, not scope creep):
 

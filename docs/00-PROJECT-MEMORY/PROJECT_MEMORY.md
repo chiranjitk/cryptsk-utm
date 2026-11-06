@@ -15,7 +15,7 @@
 | Category | Unified Threat Management + Next-Gen Firewall |
 | Target market | Small enterprises (10–500 users), branch offices, MSPs, hospitality |
 | Throughput target (product) | 1–10 Gbps per appliance |
-| Full product spec | `upload/Cryptsk_UTM_Optimized_Spec (1).md` — **ground truth for product facts** (features, phases, pricing, honest gaps). Where these docs deviate, the deviation is a documented build-level decision (see `DECISIONS.md` ADRs / `ROADMAP.md` §5); the spec wins on product facts unless an ADR explicitly justifies otherwise |
+| Full product spec | `docs/SPEC.md` — **ground truth for product facts** (features, phases, pricing, honest gaps). Where these docs deviate, the deviation is a documented build-level decision (see `DECISIONS.md` ADRs / `ROADMAP.md` §5); the spec wins on product facts unless an ADR explicitly justifies otherwise |
 | Delivery model | Community / Professional / Enterprise / MSP editions; hardware appliance pre-installed |
 
 ---
@@ -26,6 +26,7 @@
 |---|---|
 | Product spec read & digested | DONE |
 | Documentation suite (`docs/`) | DONE (this suite) |
+| Spec coverage audit (zero-feature-loss) | IN PROGRESS — REVIEW-4A (Phase 1 features in module docs) + REVIEW-4B (Phase 2–4 features + §2–§9 product facts), 2026-11-05; ROADMAP §5 console-deferral row RESTORED to Phase 1 |
 | Application code | **NOT STARTED** |
 | Database schema (Prisma) | DEFINED in `docs/03-DATABASE/SCHEMA.md`, not yet pushed |
 | Realtime mini-service | NOT STARTED (`mini-services/realtime-service/`, port 3003) |
@@ -58,7 +59,10 @@
 
 **NOT in this repo (appliance-side, documented for context only):** Go API, nftables,
 eBPF/XDP, Suricata, nDPI, Unbound, Kea, Squid, StrongSwan, WireGuard, FRR, FreeRADIUS,
-PostgreSQL, Redis, Prometheus/Grafana. See ARCHITECTURE.md for how the console will talk
+PostgreSQL, Redis, Prometheus/Grafana — plus the Phase 2–4 appliance stack: Coraza +
+Caddy (WAF/reverse proxy), Step-CA (PKI), Postfix + Rspamd + ClamAV (email security),
+ClickHouse / Meilisearch (log search, v2), ONNX Runtime (AI inference, Phase 3).
+Versions + licenses: SPEC.md §3. See ARCHITECTURE.md for how the console will talk
 to them in Appliance Mode.
 
 ---
@@ -83,7 +87,6 @@ All UI and API code is written once against the adapter interface. Details:
 /
 ├── AGENTS.md                       AI agent entry pointer (root)
 ├── docs/                           This documentation suite
-├── upload/                         Original product spec (read-only reference)
 ├── prisma/
 │   └── schema.prisma               Definitive schema = docs/03-DATABASE/SCHEMA.md
 ├── db/                             SQLite database file (cryptsk.db)
@@ -160,7 +163,8 @@ All UI and API code is written once against the adapter interface. Details:
 | firewall_rules.logging | `none` `summary` `detail` |
 | services.protocol | `tcp` `udp` `icmp` `any` |
 | nat_rules.type | `snat` `dnat` `hairpin` `exempt` |
-| interfaces.type | `physical` `vlan` `bridge` `bond` `loopback` `gre` |
+| interfaces.type | `physical` `vlan` `bridge` `bond` `loopback` `gre` `ipip` |
+| interfaces.mode | `l2` `l3` (L2/L3 mode toggle — spec §1.2; `l3` default, IP config hidden when `l2`) |
 | interfaces.role | `wan` `lan` `dmz` `vpn` `mgmt` `unused` |
 | wan.config.type | `static` `dhcp` `pppoe` |
 | wan_policies.mode | `priority` `failover` `load_balance` |
@@ -173,9 +177,19 @@ All UI and API code is written once against the adapter interface. Details:
 | notifications.severity | `info` `warning` `critical` |
 | dns_records.type | `A` `AAAA` `CNAME` `MX` `TXT` `SRV` `PTR` |
 | dhcp_leases.state | `active` `expired` `released` |
+| dhcp_subnets.family | `ipv4` `ipv6` (basic DHCPv6 — spec §1.9) |
+| syslog_targets.protocol | `udp` `tcp` `tls` |
+| netflow_targets.version | `v5` `v9` `ipfix` |
+| report_schedules.range | `daily` `weekly` `monthly` |
+| report_schedules.format | `pdf` `html` `csv` `json` |
+| webhooks.events | `alerts.new` `config.updated` `wan.status` `vpn.status` `sessions.update` |
+| snmp.version | `v2c` `v3` |
+| directory_sources.type | `ldap` `ad` |
+| ips_preset | `conservative` `balanced` `aggressive` (one-click policy presets — spec §1.6) |
 | qos_policies.template | `voip` `video` `gaming` `bulk` `custom` |
 | notifications.type | `threat` `system` `vpn` `ha` `config` |
 | ha_configs.role | `disabled` `active` `standby` |
+| bridge stpMode | `stp` `rstp` (JSON field on bridge config, spec §1.2) |
 | identity method | `local` `radius` `captive_portal` `vpn` |
 | audit_log.result | `success` `failure` `denied` |
 
@@ -198,7 +212,9 @@ All UI and API code is written once against the adapter interface. Details:
 
 ```
 AUTH
-POST   /api/v1/auth/login                      {username, password} → sets cookie
+POST   /api/v1/auth/login                      {username, password, totpCode?} → sets cookie
+                                               (totpCode required only when the user has
+                                               enrolled TOTP — M07 §5.6)
 POST   /api/v1/auth/logout
 GET    /api/v1/auth/me                         current user + permissions
 
@@ -310,6 +326,45 @@ GET    /api/v1/notifications                   ?unread=; POST /api/v1/notificati
 POST   /api/v1/notifications/read-all          mark all read (audited)
 GET    /api/v1/config-versions                 ?page=; GET /api/v1/config-versions/{id}
 GET    /api/v1/api-keys                        + POST; DELETE /api/v1/api-keys/{id}
+
+PHASE-1 RESTORED SURFACE (REVIEW-4A — owner zero-loss ruling; additive, never renames)
+SWITCHING / NETWORK EXTRAS (section interfaces)
+GET    /api/v1/network/lldp-neighbors          derived LLDP neighbor table (MockEngine ring)
+GET    /api/v1/network/mac-table               derived bridge FDB view (?iface=&vlan=&q=)
+GET    /api/v1/network/port-mirrors            + POST; PUT/DELETE /api/v1/network/port-mirrors/{id}
+GET    /api/v1/network/app-catalog             nDPI app-label catalog for rule/QoS pickers
+POLICY ROUTES (section routing)
+GET    /api/v1/pbr-rules                       + POST; PUT/DELETE /api/v1/pbr-rules/{id}
+PATCH  /api/v1/pbr-rules/{id}/toggle           {enabled}
+IPS (section ips)
+POST   /api/v1/ips/policies/apply-preset       {preset: conservative|balanced|aggressive, name?}
+GET    /api/v1/ips/update-settings             auto-update scheduler config; PUT same path
+VPN (section vpn)
+GET    /api/v1/vpn/user-groups                 + POST; PUT/DELETE /api/v1/vpn/user-groups/{id}
+DHCP (section dhcp)
+GET    /api/v1/dhcp/relay                      relay (ip-helper) config; PUT same path
+IDENTITY (section identity)
+GET    /api/v1/directory-sources               + POST; PUT/DELETE /api/v1/directory-sources/{id}
+POST   /api/v1/directory-sources/{id}/test     simulated LDAP/AD connectivity test
+LOGGING (section system)
+GET    /api/v1/logs/syslog-targets             + POST; PUT/DELETE /api/v1/logs/syslog-targets/{id}
+GET    /api/v1/logs/netflow-targets            + POST; PUT/DELETE /api/v1/logs/netflow-targets/{id}
+GET    /api/v1/logs/report-schedules           + POST; PUT/DELETE /api/v1/logs/report-schedules/{id}
+POST   /api/v1/logs/report-schedules/{id}/run  generate the report now (simulated)
+GET    /api/v1/logs/reports/export             ?range=1h|24h|7d&format=csv|json
+API PLATFORM (section system)
+GET    /api/v1/webhooks                        + POST; PUT/DELETE /api/v1/webhooks/{id}
+POST   /api/v1/webhooks/{id}/test              simulated delivery → {ok, status, latencyMs}
+GET    /api/v1/openapi.json                    OpenAPI 3.1 artifact (generated from zod)
+SYSTEM (section system)
+POST   /api/v1/system/services/{name}/restart  restart a running service (audited, simulated)
+GET    /api/v1/system/firmware                 current/channel/history; POST …/firmware/check
+POST   /api/v1/system/firmware/upgrade         staged upgrade (safety backup first, simulated)
+POST   /api/v1/system/firmware/rollback        roll back to previous version (simulated)
+GET    /api/v1/system/policy-templates         per-vertical starter templates
+POST   /api/v1/system/policy-templates/{id}/apply
+GET    /api/v1/system/ssh-keys                 + POST; DELETE /api/v1/system/ssh-keys/{id}
+POST   /api/v1/system/setup/complete           mark first-time-setup wizard done
 ```
 
 ### 7.3 Realtime events (socket.io, LOCKED)
@@ -340,8 +395,8 @@ and renders the matching view from a `viewRegistry`. Deep links = hash links.
 ```
 #/login                    auth gate (rendered instead of shell when no session)
 #/dashboard
-#/network/interfaces
-#/network/routing
+#/network/interfaces        tabs: Interfaces | LLDP Neighbors | MAC Table | Mirroring (SPAN)
+#/network/routing           tabs: Static Routes | Policy-Based Routes
 #/network/wan
 #/firewall/rules
 #/firewall/nat
@@ -349,10 +404,10 @@ and renders the matching view from a `viewRegistry`. Deep links = hash links.
 #/firewall/zones
 #/ips/policies
 #/ips/events
-#/vpn/configs              tabs: WireGuard | IPSec | OpenVPN
+#/vpn/configs              tabs: WireGuard | IPSec | OpenVPN | User Groups
 #/vpn/sessions
 #/dns-dhcp/dns             tabs: Resolver Settings | Policies | Records | Query Log
-#/dns-dhcp/dhcp            tabs: Subnets | Reservations | Leases
+#/dns-dhcp/dhcp            tabs: Subnets | Reservations | Leases | Relay
 #/identity/users
 #/identity/sessions
 #/identity/portal          captive portal settings + guest vouchers
@@ -361,11 +416,14 @@ and renders the matching view from a `viewRegistry`. Deep links = hash links.
 #/logs/ips
 #/logs/audit
 #/logs/live                realtime tail (socket.io logs:tail)
-#/logs/reports             basic traffic/threat reports
+#/logs/reports             tabs: Reports | Scheduled | Forwarding
 #/ha
 #/system/settings
 #/system/backups
-#/system/api-keys
+#/system/api-keys          tabs: API Keys | Webhooks
+#/setup                    first-time-setup wizard (view 29; renders instead of the
+                           shell while `system_settings` `setup.completed = false` —
+                           same gate pattern as AuthGate; not in the sidebar)
 ```
 
 Sidebar groups (order): Dashboard, Network, Firewall, IPS, VPN, DNS & DHCP, Identity,
@@ -503,6 +561,32 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-05 — SPEC moved into docs + zero-feature-loss audit (4A/4B) — CLEARED FOR BUILD
+- **Master feature sheet moved:** `upload/Cryptsk_UTM_Optimized_Spec (1).md` → **`docs/SPEC.md`**
+  (git rename; all cross-references updated; `upload/` now git-ignored). SPEC.md is ground
+  truth for WHAT; docs remain ground truth for HOW/state.
+- **Owner hard rule:** ZERO features from SPEC.md may be missing from the doc suite.
+  All prior "console-deferred Phase-1" deferrals are RESCINDED (formalized in **ADR-018**).
+- **4A lane (Phase-1 completeness):** 188/188 spec Phase-1 features covered — zero gaps,
+  zero deferrals. Restored (formerly deferred): PBR, BFD, LLDP, IGMP snooping, MAC table,
+  SPAN/mirroring, L2/L3 toggle, DHCP relay, conditional forwarding, basic DHCPv6,
+  per-user/per-app bandwidth hard limits, IPS auto-update + presets, VPN user groups,
+  session-limit/timeout UIs, firmware/NTP/SNMP/hardening/SSH-keys/policy-templates,
+  webhooks registration, OpenAPI JSON, `#/setup` wizard. New models: PbrRule, PortMirror,
+  VpnUserGroup, SyslogTarget, NetflowTarget, ReportSchedule, Webhook, SshKey,
+  DirectorySource (+HaConfig.sessionSync/trackedInterfaces etc.). ~33 endpoints restored;
+  view registry now 29 views. Report: `09-REVIEWS/REVIEW-4A-FEATURE-COVERAGE.md`.
+- **4B lane (Phase 2–4 + §2–§9):** every Phase 2/3/4 feature + OS/stack/architecture/
+  roadmap/gaps/competitive/pricing/hardware fact phase-tagged in ROADMAP/PRODUCT_OVERVIEW/
+  GLOSSARY (+24 terms). ROADMAP §5 deferral row → RESTORED note. Report:
+  `09-REVIEWS/REVIEW-4B-PRODUCT-COVERAGE.md`.
+- **Contract notes:** realtime stays 7 events (derived views poll 10 s); `config:updated
+  {section:"all"}` = restore/template-apply sentinel (ADR-018); webhooks = console
+  registration CRUD + simulated-delivery stub, appliance delivers for real.
+- **STATUS: documentation complete & spec-audited — development authorized (M0 → M01…M11
+  per ADR-014 order).**
+
+### 2026-11-05 — Three-lane expert review (2A/2B/2C) + cross-agent reconciliation
 ### 2026-11-05 — Three-lane expert review (2A/2B/2C) + cross-agent reconciliation
 - Three parallel expert agents reviewed every doc line-by-line against the spec:
   **2A** network architect (architecture/data-plane/modules M02/M04/M05/M06/M08 +
@@ -534,6 +618,9 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
   features (PBR, DHCP relay/conditional forwarding/DHCPv6, per-user/per-app hard limits,
   IPS auto-update presets, VPN user groups) stay tracked in ROADMAP §5 with product
   sign-off required — see REVIEW reports for the full lists.
+  **[SUPERSEDED 2026-11-05, later same day]** The product owner's zero-feature-loss
+  ruling rescinded ALL console deferrals — every listed feature is RESTORED to Phase 1
+  and covered (see the newest session-log entry above + ADR-018).
 
 ### 2026-11-05 — Solution-architecture / product review (2C) + fixes
 - Reviewed memory pack, product docs, M02/M04/M05 (product lens), DEVELOPMENT_GUIDE
@@ -566,7 +653,7 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 - Stale gap notes across 04-API + 07-SECURITY marked resolved.
 
 ### 2026-11-05 — Documentation phase (docs-first milestone)
-- Read full product spec (`upload/Cryptsk_UTM_Optimized_Spec (1).md`, 1562 lines).
+- Read full product spec (`docs/SPEC.md`, 1562 lines).
 - Authored complete `docs/` suite: memory pack (this file, ADRs, glossary), architecture
   (4 docs), database (3), API (2), frontend (3), modules M01–M11 (11), security (1),
   operations (1), plus root `AGENTS.md` pointer and `docs/README.md` index.

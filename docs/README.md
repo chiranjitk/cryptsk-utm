@@ -16,7 +16,7 @@ dashboard (Next.js 16) — plus a **simulation layer** that stands in for the ap
 data plane (nftables / Suricata / WireGuard / etc.) during development.
 
 - Full product spec (source of truth for WHAT we build):
-  `upload/Cryptsk_UTM_Optimized_Spec (1).md`
+  `docs/SPEC.md`
 - These docs (source of truth for HOW we build it and WHAT STATE we are in): `docs/`
 
 ---
@@ -63,13 +63,20 @@ If you find yourself reading more than ~4 docs, the docs need improving — fix 
 ```
 docs/
 ├── README.md                          ← YOU ARE HERE. Index + agent protocol.
+├── SPEC.md                            ★ MASTER FEATURE SHEET — the original product spec
+│                                      (ground truth for WHAT: every feature, phase, table).
+│                                      ZERO-FEATURE-LOSS rule (owner ruling 2026-11-05):
+│                                      NOTHING in SPEC.md may be missing from the doc suite —
+│                                      Phase-1 items are covered by SCHEMA/ENDPOINTS/module
+│                                      docs; Phase 2–4 features + §2–§9 product facts by
+│                                      ROADMAP/PRODUCT_OVERVIEW/memory docs (lanes 4A/4B).
 │
 ├── 00-PROJECT-MEMORY/                 ★ READ FIRST — the project's brain
 │   ├── PROJECT_MEMORY.md              State snapshot, tech stack, all contracts
 │   │                                  (naming, API surface, view map, design tokens,
 │   │                                  SQLite rules, sandbox constraints), recipes,
 │   │                                  gotchas, append-only session log.
-│   │                                  Authority note: the spec in `upload/` is ground
+│   │                                  Authority note: the spec (`docs/SPEC.md`) is ground
 │   │                                  truth for product facts; these docs govern the
 │   │                                  build contracts; every deviation is recorded
 │   │                                  (ADR or ROADMAP §5 divergence note).
@@ -156,7 +163,7 @@ docs/
    module doc the same day.
 6. **Diagrams as code:** all diagrams are Mermaid blocks inside the docs so they stay
    diff-able and token-cheap. No binary images in docs.
-7. **Spec authority:** the original spec (`upload/Cryptsk_UTM_Optimized_Spec (1).md`)
+7. **Spec authority:** the original spec (`docs/SPEC.md`)
    is ground truth for WHAT the product is (features, phases, pricing, gaps). These
    docs are ground truth for HOW we build and the current state. Where a doc
    intentionally deviates, it must say so and point at the ADR or ROADMAP §5
@@ -172,6 +179,8 @@ docs/
 | 08-OPERATIONS (development guide) | Solution architecture / product (2C) | Reviewed & fixed ✓ 2026-11-05 |
 | 02-ARCHITECTURE, 06-MODULES M02/M04/M05/M06/M08 (technical), 07-SECURITY | Network core engineer / network architect (2A) | Reviewed & fixed ✓ 2026-11-05 — see `09-REVIEWS/REVIEW-2A-NETWORK-ARCHITECT.md` |
 | 03-DATABASE, 04-API, 05-FRONTEND, 06-MODULES M01/M03/M07/M09/M10/M11 | Full-stack / database architect (2B) | Reviewed & fixed ✓ 2026-11-05 — see `09-REVIEWS/REVIEW-2B-FULLSTACK.md` |
+| Spec coverage — Phase 1 zero-loss (module docs, SCHEMA, ENDPOINTS; console-deferred features restored) | Product assurance (4A) | Reviewed & fixed ✓ 2026-11-05 — **188/188 Phase-1 features covered, zero deferrals** — see `09-REVIEWS/REVIEW-4A-FEATURE-COVERAGE.md`; restoration formalized in ADR-018 |
+| Spec coverage — Phase 2–4 features + §2–§9 product facts (product docs, memory, roadmap, glossary) | Product assurance (4B) | Reviewed & fixed ✓ 2026-11-05 — all Phase 2/3/4 features + §2–§9 facts phase-tagged — see `09-REVIEWS/REVIEW-4B-PRODUCT-COVERAGE.md` |
 | Cross-agent reconciliation | Coordinator | Reconciled ✓ 2026-11-05 — NFQUEUE canon (ADR-003), `ips_events` canon (ADR-015), `requestId` envelope (ADR-016), IPS bypass `sid:0` + default policy (ADR-017), M06 lease release locked, SCHEMA wireguard_remote `peers` |
 
 ---

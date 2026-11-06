@@ -52,6 +52,13 @@ Pipeline rules (product-level, from the spec's architecture section):
   bridge and is used here only for the passive/tap capture role. This refines the spec's
   AF_PACKET bullet to match the spec's own pipeline — see REVIEW-2A.)
 - tc does **all** shaping at egress; ingress has no shaper in Phase 1 (spec cut list).
+- **Egress selection (routing):** static/floating routes live in the kernel tables; PBR and
+  multi-WAN are programmed as nftables **mangle fwmarks** + `ip rule fwmark <mark> lookup
+  <table>` with one route table per WAN (M02 §5) — PBR rules evaluate before the multi-WAN
+  mode selection. **BFD sessions** (FRR `bfdd`) monitor static-route next hops; a down session
+  pulls the route from the candidate set (floating-route failover). DHCP relay renders as
+  `dhcrelay`/Kea relay config per interface (spec §1.9) — a control-plane concern that
+  determines where DHCP packets are forwarded, not a new drop authority.
 
 ## 2. Per-Stage Contract
 
@@ -245,11 +252,11 @@ flowchart TB
 | Streaming (Netflix/YouTube) | AF31 (best effort by default) | 26 (0) | priority 5 class |
 | Bulk (backups, updates) | CS1 | 8 | priority 7 class |
 
-- Per-user and per-app limits: identity-map / nDPI matchers place flows into dedicated
-  classes with their own guarantees/caps — custom engineering per spec §1.11. Phase 1
-  ships classification + per-class caps (templates first, M08); dedicated hard-limit
-  classes per user/app are a fast-follow (spec-divergence note: spec lists them as
-  Phase 1 — tracked in REVIEW-2A).
+- Per-user and per-app hard limits are **first-class in Phase 1** (restored REVIEW-4A, M08):
+  `matchUsers`/`matchApps` + `maxKbps` QoS rules place matching flows into dedicated classes
+  with their own guarantees/caps (identity-map / nDPI matchers do the classification, same
+  mechanism as user-based firewall rules §3); the generator flattens series at those caps.
+  QoS templates (voip/video/gaming/bulk) ship as predefined marking + class bundles.
 - CAKE, ingress shaping (IFB), and multi-level hierarchy are Phase 2 (ROADMAP §5).
 
 ## 6. Kernel Requirements Checklist (from Spec)

@@ -60,6 +60,15 @@ erDiagram
     TENANT ||--o{ FIREWALLLOG : "scoped rows"
     TENANT ||--o{ AUDITLOG : "scoped rows"
     TENANT ||--o{ IDENTITYSESSION : "identity sessions"
+    TENANT ||--o{ PBRRULE : "policy routes"
+    TENANT ||--o{ PORTMIRROR : "SPAN sessions"
+    TENANT ||--o{ VPNUSERGROUP : "vpn groups"
+    TENANT ||--o{ SYSLOGTARGET : "forwarding"
+    TENANT ||--o{ NETFLOWTARGET : "forwarding"
+    TENANT ||--o{ REPORTSCHEDULE : "scheduled reports"
+    TENANT ||--o{ WEBHOOK : "callbacks"
+    TENANT ||--o{ SSHKEY : "mgmt access"
+    TENANT ||--o{ DIRECTORYSOURCE : "ldap/ad"
 ```
 
 Note: all child tables carry `tenantId @default(1)`. Every tenant-scoped model has a
@@ -113,8 +122,14 @@ layer is the integrity boundary:
 | `firewall_rules.serviceIds` | ServiceObject.id **and** ServiceGroup.id | rule matching (mixed) |
 | `firewall_rules.applicationIds` | nDPI app label ids (strings from app catalog) | app-aware rules |
 | `firewall_rules.userIds` | User.id | user-based rules |
-| `firewall_rules.tags` | string tags | filtering only |
+| `firewall_rules.tags` | string tags | rule groups/categories filtering (first-class toolbar chips) |
+| `firewall_rules.srcMacs` | MAC strings | MAC filtering rules (nftables `ether saddr`) |
 | `nat_rules.srcAddrIds / dstAddrIds / serviceIds` | same semantics as firewall | NAT matching |
+| `pbr_rules.srcAddrIds / dstAddrIds / serviceIds` | same semantics as firewall | policy-based routing matching |
+| `pbr_rules.outgoingIface` | NetworkInterface.name | forced egress (logical ref, validated on save) |
+| `port_mirrors.srcIface / dstIface` | NetworkInterface.name | SPAN source/target (logical ref) |
+| `vpn_user_groups.memberUsernames` | VpnSession.userName (strings) | VPN user groups → per-group pools/limits |
+| `ha_configs.trackedInterfaces` | NetworkInterface.name | Keepalived track_interface |
 | `qos_rules.matchApps / matchUsers / matchAddresses` | app labels / User.id / AddressObject.id | shaping matchers |
 | `ips_policies.customRules` | raw rule strings | suricata passthrough |
 
@@ -145,6 +160,10 @@ validates that every id belongs to *either* table. Never hardcode "all ids are o
 | vpn_sessions | ~10 | churn |
 | dhcp_leases | ~25 | steady |
 | config tables | 10–30 rows each | per admin action |
+| pbr_rules / port_mirrors / vpn_user_groups | 0–5 rows | per admin action |
+| syslog/netflow targets, webhooks, report_schedules, ssh_keys, directory_sources | 0–3 rows | per admin action |
+| lldp_neighbors (derived) | ~10 live rows | churn per tick (ring buffer, not persisted) |
+| mac_table (derived) | ~40 live rows | churn per tick (ring buffer, not persisted) |
 
 At demo scale SQLite handles this trivially; retention job caps firewall_logs at 50k rows
 (see DATA_LIFECYCLE §4).

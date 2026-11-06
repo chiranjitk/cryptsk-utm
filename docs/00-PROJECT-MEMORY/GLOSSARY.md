@@ -10,6 +10,7 @@
 | NGFW | Next-Generation Firewall — stateful firewall with application awareness (DPI) |
 | MSP | Managed Service Provider — operates many customer networks; drives our multi-tenancy |
 | Appliance | The x86_64 hardware box running Debian + Cryptsk stack |
+| Central Manager | Multi-site management plane (central dashboard, policy push, log aggregation, site templates) — Phase 4 |
 | Console | The web management UI built in this repo ("Cryptsk Console") |
 | Zone | Group of interfaces with a trust role (WAN, LAN, DMZ, VPN); the zone-based firewall enforces inter-zone policy between them |
 
@@ -36,6 +37,11 @@
 | MSS clamp | Rewrite TCP MSS in SYN to avoid PMTU black holes on tunnels |
 | NetFlow/IPFIX | Flow export format for top-talkers/statistics |
 | GeoIP | Country-level IP filtering using MaxMind GeoLite2 |
+| BGP | Border Gateway Protocol — exterior dynamic routing via FRR (Phase 2, IPv4 + IPv6) |
+| OSPF | Open Shortest Path First (v2/v3) — interior dynamic routing via FRR (Phase 2) |
+| BFD | Bidirectional Forwarding Detection — fast neighbor failure detection paired with BGP/OSPF (Phase 2; Phase 1 uses it for route reachability monitoring) |
+| VRF | Virtual Routing and Forwarding — isolated routing tables on one appliance (Phase 2) |
+| VXLAN | Layer-2 overlay tunnel over a Layer-3 underlay (Phase 2) |
 
 ## VPN
 
@@ -60,6 +66,11 @@
 | Sinkhole | Answer blocked domains with NXDOMAIN or a fixed IP (0.0.0.0) |
 | DoT / DoH | DNS-over-TLS (853) / DNS-over-HTTPS — encrypted DNS |
 | RRL | Response Rate Limiting — anti-amplification for DNS |
+| Conditional forwarding | Forward only chosen domains to a specific upstream server (Unbound forward-zone, Phase 1) |
+| DNSSEC | Cryptographic validation of DNS answers (Phase 2) |
+| NPTv6 | IPv6 prefix translation ("NAT66") — Phase 2 with the IPv6 dual-stack work |
+| SLAAC | IPv6 stateless address autoconfiguration (kernel + radvd, Phase 2) |
+| DHCPv6 | IPv6 address assignment via Kea (basic in Phase 1; full with dual-stack in Phase 2) |
 | Kea | ISC DHCP server (DHCPv4/v6) with API + reservations |
 | Reservation | Static MAC→IP binding in DHCP |
 | Lease | Dynamic address assignment with expiry |
@@ -80,6 +91,11 @@
 | RBAC | Role-Based Access Control — exactly 8 roles: `super_admin`, `tenant_admin`, `security_admin`, `network_admin`, `soc_analyst`, `helpdesk`, `auditor`, `api_service` |
 | Identity mapping | IP→user correlation (from RADIUS/portal/VPN sessions) for user-based rules |
 | Dynamic VLAN | RADIUS assigns the VLAN for a session |
+| SAML 2.0 | XML-federation single sign-on for admin/portal auth (Phase 2) |
+| OIDC | OpenID Connect — OAuth2-based SSO with ID tokens (Phase 2) |
+| Kerberos/NTLM | AD-integrated auth (Heimdal + Squid) for transparent web-proxy identity (Phase 2) |
+| NAC | Network Access Control — 802.1X/MAB, device profiling, dynamic VLAN (Phase 2 basics) |
+| BYOD | Bring-Your-Own-Device onboarding via captive portal + issued certificate (Phase 2) |
 
 ## Security Features
 
@@ -90,6 +106,14 @@
 | SSL/TLS inspection | MITM decryption of HTTPS using internal CA (Step-CA) (Phase 2) |
 | HSTS | HTTP Strict Transport Security — browser forces HTTPS (bypass handling in Phase 2) |
 | JA3/JA4 | TLS client fingerprints — app classification inside TLS (Phase 2) |
+| MITM / SSL bump | Man-in-the-middle TLS interception with the internal CA (Squid + Step-CA, Phase 2) |
+| Coraza | Open-source WAF engine (ModSecurity syntax) — the WAF core with OWASP CRS (Phase 2) |
+| Step-CA | Internal certificate authority (root + subordinate, ACME, OCSP/CRL) — Phase 2 PKI |
+| OCSP / CRL | Certificate revocation checks (Phase 2 PKI + SSL inspection) |
+| Postfix / Rspamd / ClamAV | SMTP proxy + anti-spam/phishing engine + signature AV (Phase 2 email security); ClamAV ≈60–70% effective — honest gap |
+| DKIM / SPF / DMARC | Email anti-spoofing checks/signing (Rspamd + OpenDKIM/OpenDMARC, Phase 2) |
+| Cuckoo Sandbox | Malware detonation sandbox (Phase 3 ATP; ≈50–60% of commercial quality per spec) |
+| ONNX Runtime | Lightweight ML inference runtime for the Phase 3 AI models (DGA, UEBA-lite, encrypted-traffic classification) |
 | ATP | Advanced Threat Protection — sandbox detonation of files (Phase 3, Cuckoo) |
 | YARA | Pattern-matching rules for malware identification |
 | DLP | Data Loss Prevention — regex/keyword scanning of egress content (Phase 3) |

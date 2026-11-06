@@ -22,16 +22,15 @@ marks. A policy can be attached to firewall rules via `FirewallRule.qosPolicyId`
 **In scope (Phase 1):** policy CRUD (name, template `voip|video|gaming|bulk|custom`,
 `bandwidthKbps`, optional `ifaceName`), per-policy rule CRUD with validation, priority-based
 ordering (0 highest – 7 lowest), enable/disable, an effect-explanation panel ("what tc does
-with this"), and a simulated utilization preview demonstrating cap flattening.
+with this"), a simulated utilization preview demonstrating cap flattening, and **per-user /
+per-application hard bandwidth limits** (spec §1.11 — first-class: a rule whose only matchers are
+`matchUsers`/`matchApps` with a `maxKbps` is a dedicated hard-limit class; the view offers
+"Limit user…" / "Limit application…" quick-create actions, restored REVIEW-4A).
 
-**Out of scope (deferred — see ../01-PRODUCT/ROADMAP.md, upstream cut list):** CAKE qdisc,
+**Out of scope (spec's own phase assignments — not deferrals):** CAKE qdisc,
 ingress/reverse-path shaping (ifb), hierarchical parent-child classes beyond one level,
 per-class monitoring dashboard (beyond the §4 sparkline), burst allowance, QoS template
-marketplace/custom template editor. **Spec-divergence note (REVIEW-2A):** spec §1.11 lists
-per-user and per-application bandwidth limits as Phase 1 custom engineering; Phase 1 here
-ships the matchers (`matchUsers`/`matchApps`) plus per-class guaranteed/max caps, while
-dedicated hard-limit classes per user/app are a fast-follow — get product sign-off or
-prioritize the fast-follow before build.
+marketplace/custom template editor.
 
 ---
 
@@ -93,7 +92,11 @@ rose for caps exceeded, amber warnings; no indigo/blue anywhere, including the s
 
 - **Rules table** (ordered by priority): priority (0–7 badge), name, matchers (apps chips /
   users avatars-initials / addresses mono), guaranteed → max kbps, DSCP badge (e.g. `EF 46`),
-  enabled toggle, edit/delete. "Add Rule" opens the **rule editor dialog**:
+  **hard-limit badge** (rose "limit" chip when the rule is a per-user/per-app hard limit — exactly one
+  matcher dimension + `maxKbps` set + no `guaranteedKbps`), enabled toggle, edit/delete.
+  "Add Rule" opens the **rule editor dialog**; toolbar quick-actions **"Limit user…"** and
+  **"Limit application…"** open the same dialog prefilled (single matcher + `maxKbps`, priority 5
+  suggestion, hard-limit badge preview):
   - name; priority **Slider 0–7** (with caption "0 = highest precedence; ties break by creation order");
   - guaranteed/max kbps pair with live validation message (§5.2);
   - DSCP mark picker: Select of well-known values (table below) + "Custom…" numeric entry 0–63;
@@ -161,6 +164,12 @@ confirm note that it will not rewrite existing rules.
 - `dscpMark` 0–63. `matchApps/matchUsers/matchAddresses` arrays of known ids in-tenant; a rule
   with **no matcher at all** is the catch-all class — allowed only once per policy (else 409)
   and the UI labels it "Any traffic (catch-all)".
+- **Hard-limit semantics (spec §1.11 per-user / per-application limits):** a rule matching exactly
+  one dimension (`matchUsers` xor `matchApps`, single-valued or a small group) with `maxKbps` and no
+  `guaranteedKbps` is a **hard limit class** — traffic of that user/app cannot exceed `maxKbps`
+  regardless of spare capacity (HTB `ceil = maxKbps` with no borrow above the cap). The generator
+  clamps the matching user's/app's series at the cap. Overlapping hard limits: the most specific
+  (single user) wins over the app-level class.
 - Enabling a rule re-runs the sum check; disable relaxes it.
 
 ### 5.3 Ordering & attachment semantics
@@ -208,6 +217,8 @@ Charts must use the locked palette (ADR-013); the cap line is rose.
 - [ ] Deleting a policy without firewall references cascades its rules after ConfirmDialog.
 - [ ] Attaching the same enabled iface to a second policy returns `409 CONFLICT`.
 - [ ] With a 50 000 kbps cap attached to `wan0`, the sparkline's tx series flattens at ~50 000 within ticks and the cap line is visible.
+- [ ] "Limit user…" prefills the rule dialog with a single-user matcher + maxKbps; after save the rule renders the rose "limit" badge and the generator clamps that user's series at the cap (per-user hard limit, spec §1.11).
+- [ ] "Limit application…" does the same for an app label; a user-level limit wins over an app-level limit on overlapping flows.
 - [ ] Effect panel lists one HTB child class per enabled rule with rate/ceil/prio and an fq_codel leaf, and states clearly that tc is not executed in sandbox.
 - [ ] Every mutation writes an audit row and a `config_versions` snapshot (section `qos`) and broadcasts `config:updated`.
 - [ ] `bun run lint` passes; no new Next.js routes; charts use only the locked palette (no indigo/blue).
@@ -222,3 +233,4 @@ Charts must use the locked palette (ADR-013); the cap line is rose.
 - The utilization sparkline is a UI affordance beyond the strict table spec — keep it strictly derived from `metrics:tick`, never a second stats endpoint (none exists in §7.2).
 - `bandwidthKbps` units are kbps everywhere; guard against a Mbps typo in the seed (`WAN-SHAPER` = 50 000 kbps, DATA_LIFECYCLE §2.4).
 - Generator cap-clamping is approximate (per-tick clamping, not token-bucket); demos should not claim exact throughput fidelity (SIMULATION_LAYER §9).
+- ~~**Per-user/per-app hard limits deferred**~~ RESOLVED (REVIEW-4A): hard-limit classes are first-class (§5.2 semantics + §4 quick-create actions); no schema change was needed (`matchUsers`/`matchApps` + `maxKbps` already express them).

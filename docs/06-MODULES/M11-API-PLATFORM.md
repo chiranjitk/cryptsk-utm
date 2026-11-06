@@ -1,9 +1,10 @@
 # M11 — API Platform
 
 > TL;DR: The console-as-platform rules: API-key lifecycle and scope matrix, rate limiting,
-> machine-client conventions (envelope, pagination, error contract), and usage auditing.
-> No dedicated UI view — keys are managed in `#/system/api-keys` (M10); webhooks and OpenAPI
-> generation are documented strategy, explicitly NOT built in Phase 1.
+> machine-client conventions (envelope, pagination, error contract), usage auditing,
+> webhook registrations (simulated delivery in sandbox — the machine-facing change
+> notifications), and the generated OpenAPI artifact. No dedicated UI view — keys and
+> webhooks are managed in `#/system/api-keys` (M10); no swagger UI bundle ships in Phase 1.
 
 Related: ../00-PROJECT-MEMORY/PROJECT_MEMORY.md (§7 API contract — LOCKED) · ../04-API/API_STANDARDS.md (authoritative standards) ·
 ../04-API/ENDPOINTS.md (full catalog) · ../07-SECURITY/AUTH_AND_RBAC.md (role matrix) · ../03-DATABASE/SCHEMA.md (ApiKey) ·
@@ -17,35 +18,34 @@ Related: ../00-PROJECT-MEMORY/PROJECT_MEMORY.md (§7 API contract — LOCKED) ·
 Every console feature is API-first (ADR-002): the UI talks only to `/api/v1/…` route
 handlers. This module defines the *platform* guarantees that make the same API usable by
 machines: authentication modes (session cookie vs API key), scope enforcement, rate limits,
-the response envelope and error contract, pagination, and audit of machine access. It also
-records deliberate non-goals so nobody "helpfully" builds them early.
+the response envelope and error contract, pagination, and audit of machine access.
 
-**In scope (Phase 1):**
+Derived from upstream spec §1.15 (API) Phase 1 table — **fully covered per the owner
+zero-loss ruling (REVIEW-4A)**:
 
-| Area | Contents |
+| Upstream Phase 1 feature | Console Phase 1 decision |
 |---|---|
-| Key lifecycle | Create (name, scopes, expiry), one-time secret reveal, list (prefix + `lastUsedAt`), revoke, expiry enforcement |
-| Scope matrix | `read` / `write` / `admin` → allowed method classes per resource family (§3.1) |
-| Rate limiting | Per-key and per-session defaults with `429 RATE_LIMITED` + `Retry-After` (§5.2) |
-| Usage audit | `lastUsedAt` maintenance; machine actions attributed in `audit_log` (§5.3) |
-| Client conventions | Envelope, error codes, pagination, filtering, auth headers (§5.4–5.5) with copy-paste curl quickstart |
+| REST API (all features) | IN — every feature is a `/api/v1` route handler (ADR-002) |
+| API versioning (`/api/v1/`) | IN — path-segment versioning, LOCKED (API_STANDARDS §1) |
+| OpenAPI/Swagger docs | IN — `GET /api/v1/openapi.json` (OpenAPI 3.1 artifact generated from the zod validators + the §7.2 route table); the upstream `swaggo` row targets the Go appliance API — the console generates from zod. Human-readable docs = ENDPOINTS.md; **no swagger UI bundle** ships in Phase 1 (restored REVIEW-4A) |
+| API key management (create, revoke, scope) | IN — `#/system/api-keys` + `ck_` bearer keys with the three LOCKED scope arrays |
+| API rate limiting | IN — per-key 60/min, per-session 300/min, token bucket, `429` + `Retry-After` (§5.2 / API_STANDARDS §9) |
+| API pagination | IN — offset/page pagination (LOCKED deviation from the spec's "cursor-based" note; API_STANDARDS §6 reserves cursors for Phase 2 at appliance log volumes) |
+| API batch operations | IN — batch-style endpoints in the LOCKED surface: `POST /firewall-rules/import` (batch create), `/firewall-rules/reorder` + `/nat-rules/reorder` (batch reposition), `POST /captive-portal/vouchers` (batch generate), `POST /notifications/read-all` (batch update). A generic batch endpoint is **not** part of the contract |
+| API request/response logging (audit) | IN — every mutation audited in `audit_log` by the shared handler; machine calls attributed to the key name (§5.3) |
+| Webhook support (event callbacks) | IN — registration CRUD + HMAC secret + simulated delivery test (spec-Phase-1 product feature; **console ships stubs** per ROADMAP §5: sandbox marks deliveries instead of performing real HTTP; the appliance sender signs payloads with the secret) (restored REVIEW-4A) |
+| API change notifications (WebSocket push) | IN — for **console** clients via the locked socket events (§7.3); for **machine** clients the notification channel is webhooks (above) + REST polling — the socket event set stays console-facing, so no new realtime event is introduced (see §6) |
 
-**Out of scope (deferred — see ../01-PRODUCT/ROADMAP.md):**
-
-| Feature | Why deferred |
-|---|---|
-| **Webhook support / event callbacks** (upstream 1.15, custom engineering) | Not in the Phase-1 contract; realtime today is the socket.io event set (PROJECT_MEMORY §7.3) and is console-facing only |
-| **OpenAPI/Swagger generation** (upstream Ready via swaggo — that line targets the Go appliance API) | Documented as future work in §4.2; deliberately NOT built now |
-| Batch/bulk operation endpoints | Upstream Ready, no Phase-1 contract beyond firewall import (`POST /api/v1/firewall-rules/import`) |
-| API sandbox/test console, idempotency keys | Upstream Phase 2 |
-| GraphQL | Dropped upstream |
-| Cursor-based pagination | Deviation: Phase 1 is offset/page pagination (LOCKED §7.1); see §5.4 |
+**Out of scope (spec's own assignments or locked deviations — not deferrals):** API
+sandbox/test console + idempotency keys (upstream Phase 2), GraphQL (dropped upstream), a
+swagger UI bundle (docs stay ENDPOINTS.md + the openapi.json artifact), a generic batch
+endpoint (the locked per-resource batch endpoints above cover §1.15's "batch operations").
 
 ---
 
 ## 2. Data Model
 
-Only one model is platform-owned (SCHEMA.md §3): `ApiKey`.
+Only two models are platform-owned (SCHEMA.md §3): `ApiKey` and `Webhook`.
 
 | Field | Meaning |
 |---|---|
@@ -56,6 +56,7 @@ Only one model is platform-owned (SCHEMA.md §3): `ApiKey`.
 | `lastUsedAt` | Updated on successful key-authenticated requests (throttled ~1/min/key, M10 §5.4) |
 | `expiresAt` | Optional; expired keys authenticate as `401 UNAUTHORIZED` |
 | `revoked` | Soft-delete flag set by `DELETE /api/v1/api-keys/{id}`; revoked keys fail 401; the row remains for audit |
+| `Webhook` | `name` (unique per tenant), `url` (https only), `events` (JSON array of the locked `webhooks.events` values), `secret?` (HMAC, write-only/masked), `enabled`, `lastDeliveryAt?`, `lastStatus?` (simulated), `failureCount`, `createdAt` | Registration row; delivery is simulated in sandbox (realtime-service marks fields), real signed HTTP happens appliance-side (§5.6) |
 
 Key generation: `ck_` + 32+ URL-safe random chars (server-side CSPRNG); the full key is
 returned **only** in the POST response and shown once in the M10 dialog. Sessions (cookie
@@ -74,6 +75,16 @@ Key-management endpoints are LOCKED in PROJECT_MEMORY §7.2:
 | GET | `/api/v1/api-keys` | List keys (prefix, scopes, `lastUsedAt`, `expiresAt`, `revoked`, `createdAt`) — never the secret | Open `#/system/api-keys` (M10) |
 | POST | `/api/v1/api-keys` | Create key; response carries the full key exactly once | "New API key" dialog (M10) |
 | DELETE | `/api/v1/api-keys/{id}` | Revoke (soft) | "Revoke" row action (M10) |
+| GET | `/api/v1/webhooks` | List registrations (`secret` masked, never returned) | Webhooks tab on `#/system/api-keys` (M10) |
+| POST | `/api/v1/webhooks` | Register `{name, url, events, secret?}` | "Add webhook" dialog (M10) |
+| PUT | `/api/v1/webhooks/{id}` | Update (omit `secret` to keep stored value) | Webhook editor save (M10) |
+| DELETE | `/api/v1/webhooks/{id}` | Delete registration | Row delete action (M10) |
+| POST | `/api/v1/webhooks/{id}/test` | Simulated delivery → `{ok, status, latencyMs}`; updates `lastDeliveryAt`/`lastStatus` | "Send test" row action (M10) |
+| GET | `/api/v1/openapi.json` | OpenAPI 3.1 artifact (machine-readable docs) | Machine clients / curl |
+
+Role floors (ENDPOINTS §14): webhooks are `security_admin`-floor for everything and
+**interactive admins only — machine keys get none** (mirroring api-key create/revoke);
+`GET /openapi.json` is `helpdesk`-floor (any authenticated principal).
 
 Platform rules that apply to **every** other endpoint (full catalog:
 ../04-API/ENDPOINTS.md; standards: ../04-API/API_STANDARDS.md):
@@ -108,31 +119,31 @@ projection of it and must be kept consistent.
 
 | Surface | Where it lives | Notes |
 |---|---|---|
-| Key management UI | `#/system/api-keys` — owned by M10 (create dialog with one-time secret reveal + copy, list with prefix/`lastUsedAt`/`expiresAt`/revoked, revoke ConfirmDialog) | This module defines the behavior; M10 renders it |
-| Machine-client docs | This document (§5) + ../04-API/ENDPOINTS.md | The only "docs" until OpenAPI exists |
-| Future: OpenAPI/Swagger docs page | Not built in Phase 1 | See §4.2 |
+| Key management UI | `#/system/api-keys` tab "API Keys" — owned by M10 (create dialog with one-time secret reveal + copy, list with prefix/`lastUsedAt`/`expiresAt`/revoked, revoke ConfirmDialog) | This module defines the behavior; M10 renders it |
+| Webhook registration UI | `#/system/api-keys` tab "Webhooks" — owned by M10 (CRUD, events multiselect, masked secret, "Send test") | Behavior defined here (§5.6); M10 renders it |
+| Machine-client docs | This document (§5) + ../04-API/ENDPOINTS.md + `GET /api/v1/openapi.json` | The openapi.json artifact is generated from zod (§4.2); ENDPOINTS.md is the human catalog |
 
 ### 4.1 What NOT to build (negative requirements)
 
-No `#/api` or `#/developers` view, no swagger UI bundle, no `/api/v1/openapi.json` route, no
-webhook configuration screen — all absent by decision (§1). Grep-verifiable in acceptance
+No `#/api` or `#/developers` view and **no swagger UI bundle** — absent by decision (§1).
+The `openapi.json` **route itself is in the LOCKED surface** (ENDPOINTS §14) — do not remove
+it, do not hand-write its content (it must be generated). Grep-verifiable in acceptance
 criteria §7.
 
-### 4.2 OpenAPI / documentation strategy (future work — recorded, not built)
+### 4.2 OpenAPI / documentation strategy
 
-Stated explicitly so nobody builds it now: **no OpenAPI/Swagger artifact ships in Phase 1.**
-The upstream spec's `swaggo` row applies to the Go appliance API, not this console. The
-agreed future approach:
+`GET /api/v1/openapi.json` (restored REVIEW-4A — the spec §1.15 "OpenAPI/Swagger docs" row)
+serves a build-time-generated **OpenAPI 3.1 artifact**:
 
 1. **Source of truth:** the zod validators in `src/lib/validators/` + the LOCKED route table
    in PROJECT_MEMORY §7.2 (single definition; no hand-written parallel spec to drift).
 2. **Generation:** a build-time script compiles zod schemas → OpenAPI 3.1 (zod-to-json-schema
-   pipeline), later served as `GET /api/v1/openapi.json` + a docs view; until then
-   ../04-API/ENDPOINTS.md is the human-readable catalog.
-3. **Contract tests first:** when the generator lands it must fail the build if a route
-   handler diverges from §7.2 (paths are LOCKED — expand, never rename).
-4. Until item 2 exists, machine-client documentation = this module + ENDPOINTS.md; both
-   update in the same task per the doc rules.
+   pipeline) and emits the static artifact the route serves. The generation must fail the
+   build if a route handler diverges from §7.2 (paths are LOCKED — expand, never rename).
+3. **Human-readable docs** remain ENDPOINTS.md (kept in the same task as any route change);
+   no interactive swagger UI ships in Phase 1.
+4. Machine-client documentation = this module + ENDPOINTS.md + the artifact; all three update
+   in the same task per the doc rules.
 
 ---
 
@@ -223,16 +234,38 @@ curl -X POST /api/v1/firewall-rules -H "Authorization: Bearer ck_readonly…" \
 Client rules of thumb: never log the full key; branch on `error.code`, not messages;
 respect `Retry-After`; expect identical shapes for key and session auth (no dual API).
 
+### 5.6 Webhooks (registration + simulated delivery — restored REVIEW-4A)
+
+- **Registration:** `POST /api/v1/webhooks` takes `{name, url, events, secret?}`; `url` must
+  be **https**; `events` is a JSON array drawn exactly from the locked `webhooks.events` enum
+  (PROJECT_MEMORY §6): `alerts.new`, `config.updated`, `wan.status`, `vpn.status`,
+  `sessions.update` — the dot-form of the console realtime events. `logs.tail` is deliberately
+  excluded to protect log volume. `secret` (HMAC) is write-only: set on POST, omitted on PUT
+  to keep, never returned by GET (same masking rule as RADIUS sharedSecret, M07 §5.3).
+- **Delivery (sandbox = simulated stub):** the realtime-service does **not** perform real
+  HTTP. When a matching event fires, it marks the registration (`lastDeliveryAt`, `lastStatus`
+  e.g. `"200"`/`"timeout"`, `failureCount`) with seeded outcomes; "Send test" runs one marked
+  delivery and returns `{ok, status, latencyMs}`. The **appliance** sender performs real
+  signed POSTs (HMAC-SHA256 header using the registration secret) — ROADMAP records this
+  stub-vs-real nuance; no contract change is needed when the real sender lands.
+- **Payloads:** mirror the §7.3 event payloads (`{notification}` / `{section}` / `{iface,
+  state}` …) wrapped as `{event, ts, data}` so consumers can branch on `event`.
+- **Error cases:** `409 CONFLICT` duplicate webhook name (unique per tenant); `400`
+  VALIDATION_ERROR invalid `url` (https enforced) or an event outside the enum; `404`
+  unknown id; `403 FORBIDDEN` machine keys (registration is interactive-admin-only,
+  ENDPOINTS §14). Deliveries are never audited per-attempt (noise); registration mutations
+  are audited.
+
 ---
 
 ## 6. Realtime
 
 | Concern | Phase-1 position |
 |---|---|
-| Socket events for machine clients | **None.** The LOCKED event set (`metrics:tick`, `logs:tail`, `alerts:new`, `sessions:update`, `wan:status`, `vpn:status`, `config:updated`, §7.3) is console-facing only; machine clients poll the REST API |
-| Webhooks / event callbacks | Out of scope Phase 1 (§1) — deferred to ROADMAP; do not add a sender or config UI |
-| `config:updated` | Console-only cache invalidation trigger (../05-FRONTEND/STATE_AND_DATA_FLOW.md); when webhooks arrive later they will mirror this event semantics |
-| Appliance-mode transport | Realtime stays socket.io → appliance mode swaps to Redis pub/sub → Go → WebSocket with the same event names (ADR-008/ADR-010) — transparent to this module |
+| Socket events for machine clients | **None.** The LOCKED event set (`metrics:tick`, `logs:tail`, `alerts:new`, `sessions:update`, `wan:status`, `vpn:status`, `config:updated`, §7.3) is console-facing only; machine clients consume **webhooks** (dot-form subset: `alerts.new`, `config.updated`, `wan.status`, `vpn.status`, `sessions.update` — §5.6) and poll the REST API. No new socket event was needed by any restored feature — the 7-event set is unchanged |
+| Webhooks / event callbacks | **In Phase 1 as simulated stubs** (§5.6, ROADMAP nuance): registration UI + marked deliveries in sandbox; real HMAC-signed sender is appliance-side. Do not add a second sender or a delivery-retry engine in the console |
+| `config:updated` | Console-side cache invalidation trigger (../05-FRONTEND/STATE_AND_DATA_FLOW.md §2); the `config.updated` webhook carries the same `{section}` payload for machine consumers |
+| Appliance-mode transport | Realtime stays socket.io → appliance mode swaps to Redis pub/sub → Go → WebSocket with the same event names (ADR-008/ADR-010) — transparent to this module; the webhook sender joins the appliance side without a console contract change |
 
 ---
 
@@ -251,8 +284,12 @@ respect `Retry-After`; expect identical shapes for key and session auth (no dual
 - [ ] Every error response matches `{ "error": { "code", "message", "details"? } }` with codes from the LOCKED set — spot-check 400/401/403/404/409/429.
 - [ ] List endpoints return `meta: { page, limit, total, totalPages }` for `?page=&limit=&sort=` requests.
 - [ ] Key-authenticated and session-authenticated calls return identical envelopes and shapes for the same resource (no dual API surface).
-- [ ] No OpenAPI route, swagger UI, webhook sender, `#/api` view, or batch endpoint exists in Phase 1 (grep-verifiable negative).
-- [ ] `bun run lint` passes; key management UI remains only in `#/system/api-keys` (M10) — no new views or routes.
+- [ ] `GET /api/v1/openapi.json` returns a parseable OpenAPI 3.1 document whose paths match the §7.2 route table exactly (no extra, no missing); the artifact is build-generated, not hand-maintained.
+- [ ] Webhook registration: https-only URL enforced `400`; events outside the five locked values rejected `400`; duplicate name `409`; `secret` never appears in any GET/list response.
+- [ ] "Send test" returns `{ok, status, latencyMs}`, updates `lastDeliveryAt`/`lastStatus`, and no real HTTP egress occurs in sandbox (simulated stub per ROADMAP).
+- [ ] A machine key (any scope) receives `403 FORBIDDEN` on every `/webhooks*` call; `GET /openapi.json` with a `read`-scope key succeeds.
+- [ ] No swagger UI bundle, no `#/api` view, and no generic batch endpoint exists in Phase 1 (grep-verifiable negatives); batch-style operations ride the LOCKED import/reorder/voucher/read-all endpoints.
+- [ ] `bun run lint` passes; key + webhook management UI remains only in `#/system/api-keys` (M10) — no new views or routes.
 
 ---
 
@@ -260,8 +297,11 @@ respect `Retry-After`; expect identical shapes for key and session auth (no dual
 
 - ~~**Rate-limit numbers are PROPOSED**~~ RESOLVED: §5.2 now mirrors API_STANDARDS §9 (key 60/min, session 300/min, login 5/min per username+IP); API_STANDARDS wins on future changes.
 - **Scope matrix vs RBAC matrix drift:** §3.1 is the key-projection of ../07-SECURITY/AUTH_AND_RBAC.md; both docs must change in the same task whenever either changes — otherwise 403 behavior becomes unpredictable per route.
-- **Webhooks are spec-Phase-1 but contract-deferred:** the upstream spec lists webhook support under 1.15 (Phase 1); the locked build surface has no webhook endpoints, so Phase 1 console ships without them — revisit via PROJECT_MEMORY expansion before appliance mode (see §1).
+- **Webhook delivery is a stub by design** (RESOLVED REVIEW-4A, nuance kept): spec §1.15 lists webhooks as Phase-1 custom engineering; the console ships registration + simulated delivery (ROADMAP §5 "console ships stubs"), with the real HMAC sender appliance-side. If product later demands console-side real delivery, that is a contract change (new egress rules) — flag to the coordinator before building.
+- **Machine-facing change notifications:** spec §1.15 "API change notifications (WebSocket push)" is satisfied for console clients by the locked socket events and for machine clients by webhooks + polling. If a machine-facing WebSocket channel is ever required, that would need a new event/surface decision (and an ADR) — currently deliberately not built; the 7-event realtime set is unchanged.
+- **OpenAPI drift guard:** the generator must fail the build on §7.2 divergence; until the build exists, ENDPOINTS.md + this doc are the drift-controlled sources — update both in the same task as any route change.
 - Attribution convention (`username` = key name, `bot-` prefix) is informal; consider a dedicated `actorType` column on `audit_log` in a Phase-2 schema pass instead of overloading strings.
 - In-memory rate counters reset on process restart — acceptable in sandbox (ADR-010); appliance Redis counters must not silently change semantics (headers/limits) when AgentAdapter lands.
 - Key secrets appear in shell history of whoever runs the quickstart; document `read -s` / env-file practice in the future developer guide (08-OPERATIONS) rather than complicating the API.
 - Offset pagination + live-updating log tables can skip/repeat rows across pages; acceptable Phase 1 (log views pin `sort=-timestamp`), revisit with cursor pagination in Phase 2.
+- ~~**Webhooks are spec-Phase-1 but contract-deferred**~~ RESOLVED (REVIEW-4A): `/webhooks*` + `/openapi.json` are in PROJECT_MEMORY §7.2 and ENDPOINTS §14; delivery is simulated (stub) in sandbox by ruling.

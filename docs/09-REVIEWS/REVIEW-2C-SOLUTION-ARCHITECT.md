@@ -3,7 +3,7 @@
 > **Reviewer:** Senior Solution Design Architect & Product Strategist (UTM/NGFW/SASE background)
 > **Date:** 2026-11-05 · **Lane:** product coherence, strategic consistency, decision integrity, terminology accuracy
 > **Scope (assigned docs only):** `docs/README.md`, `00-PROJECT-MEMORY/` (PROJECT_MEMORY, DECISIONS, GLOSSARY), `01-PRODUCT/` (PRODUCT_OVERVIEW, ROADMAP), `06-MODULES/M02-NETWORK.md`, `M04-IPS.md`, `M05-VPN.md` (product/scope lens), `08-OPERATIONS/DEVELOPMENT_GUIDE.md`
-> **Ground truth:** `upload/Cryptsk_UTM_Optimized_Spec (1).md` (1562 lines, read in full). Spec wins on contradictions unless a doc has a sound, explicitly-justified improvement.
+> **Ground truth:** `docs/SPEC.md` (1562 lines, read in full). Spec wins on contradictions unless a doc has a sound, explicitly-justified improvement.
 
 ---
 

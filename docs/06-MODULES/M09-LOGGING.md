@@ -1,8 +1,9 @@
 # M09 — Logging & Reporting
 
 > TL;DR: Searchable firewall/IPS/audit log views with server-side pagination, a realtime live
-> tail over the socket, and aggregate traffic/threat reports from `/logs/stats`. Retention is
-> capped by the lifecycle job; scheduled PDF reports are explicitly out of Phase 1.
+> tail over the socket, aggregate traffic/threat reports from `/logs/stats`, scheduled reports
+> (daily/weekly/monthly in pdf/html/csv/json), and syslog/NetFlow forwarding targets with
+> buffered reliability. Retention is capped by the lifecycle job.
 
 Related: ../00-PROJECT-MEMORY/PROJECT_MEMORY.md (§7.2 API, §7.3 realtime, §8 views, §9 tokens) ·
 ../03-DATABASE/SCHEMA.md (FirewallLog, IpsEvent, AuditLog) · ../03-DATABASE/DATA_LIFECYCLE.md §4 (retention) ·
@@ -27,15 +28,14 @@ threat reports built on aggregate queries. It consumes the MockEngine-generated 
 | IPS logs | Severity/category filters; suppressed badge; links to M04 suppress flow |
 | Audit log | Actor, `object.verb` action, object type/id/name, result, before/after JSON in a detail drawer |
 | Live tail | `#/logs/live` over the `logs:tail` socket event; kind filter, pause/resume, autoscroll, 500-row in-memory buffer, severity coloring |
-| Reports | `#/logs/reports`: range picker 1h/24h/7d; cards + charts from `/logs/stats` (traffic trend, top apps, top talkers, threat mix, action mix); print-friendly layout |
+| Reports | `#/logs/reports` → **Reports tab**: range picker 1h/24h/7d; cards + charts from `/logs/stats` (traffic trend, top apps, top talkers, threat mix, action mix); print-friendly layout; **export csv/json** (`GET /logs/reports/export`), PDF via browser print (appliance: wkhtmltopdf), HTML snapshot download |
+| Scheduled reports | **Scheduled tab**: CRUD for daily/weekly/monthly schedules (format pdf/html/csv/json, sections, recipients), run-now, `lastRunAt` (spec §1.12; restored REVIEW-4A) |
+| Log forwarding | **Forwarding tab**: syslog targets (host/port/protocol `udp\|tcp\|tls`/minSeverity) + NetFlow/IPFIX targets (host/port/version `v5\|v9\|ipfix`/samplingRate) CRUD, per-target `bufferedRows` reliability counter (spec §1.12; restored REVIEW-4A) |
 
-**Out of scope (deferred — see ../01-PRODUCT/ROADMAP.md):** syslog forwarding and log
-forwarding reliability buffers (upstream Ready, no Phase-1 endpoint; the seed's logging
-`syslog` toggle is display-only), NetFlow/IPFIX export targets, scheduled reports
-(daily/weekly/monthly) and PDF/HTML report formats (Phase 1 is on-screen + browser print
-only), full-text search backends (ClickHouse/Meilisearch), compliance/executive templates,
-log integrity hash-chaining, anonymization, CEF/LEEF export — all on the upstream Phase-2
-list. Editing IPS exceptions lives in M04; this module only renders event data.
+**Out of scope (spec's own phase assignments — not deferrals):** full-text search backends
+(ClickHouse/Meilisearch), compliance/executive templates, log integrity hash-chaining,
+anonymization, CEF/LEEF export — all on the upstream Phase-2 list. Editing IPS exceptions lives in
+M04; this module only renders event data.
 
 ---
 
@@ -46,9 +46,12 @@ are denormalized strings on purpose so rows survive rule deletion, SCHEMA §5).
 
 | Model | Fields used here | Notes |
 |---|---|---|
-| `FirewallLog` | `timestamp`, `srcIp/srcPort`, `dstIp/dstPort`, `protocol` (`tcp\|udp\|icmp`), `action` (`allow\|deny\|drop\|reject`), `ruleName?`, `appName?` (nDPI label), `bytes`, `packets`, `userName?` | Index `(tenantId, timestamp)` + `srcIp`/`dstIp`; cap 50 000 rows (retention) |
+| `FirewallLog` | `timestamp`, `srcIp/srcPort`, `dstIp/dstPort`, `protocol` (`tcp\|udp\|icmp`), `action` (`allow\|deny\|drop\|reject`), `ruleName?`, `appName?` (nDPI label), `bytes`, `packets`, `userName?` | Index `(tenantId, timestamp)` + `srcIp`/`dstIp`; cap 50 000 rows (retention); also receives NAT-translation rows when a NAT rule has `logging` ≠ none (M03 §5) |
 | `IpsEvent` | `timestamp`, `srcIp/srcPort`, `dstIp/dstPort`, `action` (`alert\|drop\|reject\|bypass\|suppressed`), `sid?`, `severity` (`info\|low\|medium\|high\|critical`), `category?` (e.g. trojan, web_attack, scan, policy), `message?`, `suppressedUntil?` | Cap 5 000 rows; `suppressed` action/suppressedUntil render the suppressed badge |
 | `AuditLog` | `createdAt`, `userId?`/`username?`, `sourceIp?`, `action` (e.g. `login`, `rule.create`, `iface.update`, `config.apply`), `objectType`, `objectId?`, `objectName?`, `beforeState?`/`afterState?` (JSON strings), `result` (`success\|failure\|denied`) | Append-only (ADR-011); cap 20 000 rows; never purged by `--reset` (DATA_LIFECYCLE §5) |
+| `SyslogTarget` | `name`, `host`, `port` (514), `protocol` (`udp\|tcp\|tls`), `minSeverity`, `enabled` | forwarding config; engine tracks simulated `bufferedRows` per target |
+| `NetflowTarget` | `name`, `host`, `port` (2055), `version` (`v5\|v9\|ipfix`), `samplingRate`, `enabled` | flow-export config (softflowd/nfdump appliance-side) |
+| `ReportSchedule` | `name`, `range` (`daily\|weekly\|monthly`), `format` (`pdf\|html\|csv\|json`), `sections`, `recipients?`, `enabled`, `lastRunAt?` | scheduled reports (spec §1.12) |
 
 Growth expectations (ER_DIAGRAM §5): firewall_logs ~1–3 rows/tick, ips_events 0–1/tick —
 hence server-side pagination everywhere; the client never receives unbounded arrays.
@@ -67,6 +70,11 @@ Paths verbatim from PROJECT_MEMORY §7.2. Pagination `?page=&limit=&sort=-timest
 | GET | `/api/v1/logs/audit` | Audit page; filters `?user=&objectType=&page=` (+ `?q=`, `?since=`, `?until=`, `?result=`) | Open `#/logs/audit`, filter |
 | GET | `/api/v1/logs/stats` | Aggregates for reports; `?range=1h\|24h\|7d` | Open `#/logs/reports`, change range |
 | GET | `/api/v1/logs/firewall/export` | CSV of the current filter (same params as `/logs/firewall`, no `page`) | "Export CSV" button on `#/logs/firewall` |
+| GET | `/api/v1/logs/reports/export` | `?range=&format=csv\|json` report export | "Download CSV/JSON" on the Reports tab |
+| GET/POST/PUT/DELETE | `/api/v1/logs/syslog-targets` (+`/{id}`) | syslog forwarding target CRUD | Forwarding tab → Syslog card |
+| GET/POST/PUT/DELETE | `/api/v1/logs/netflow-targets` (+`/{id}`) | NetFlow/IPFIX target CRUD | Forwarding tab → NetFlow card |
+| GET/POST/PUT/DELETE | `/api/v1/logs/report-schedules` (+`/{id}`) | scheduled report CRUD | Scheduled tab |
+| POST | `/api/v1/logs/report-schedules/{id}/run` | generate the report now | "Run now" row action |
 | POST | `/api/v1/ips/events/{id}/suppress` | *(owned by M04)* Body `{ duration: "24h"\|"7d"\|"forever" }` | "Suppress" action on an IPS row in `#/logs/ips` (reuses M04 endpoint; do not duplicate) |
 
 The export endpoint is part of the locked surface (PROJECT_MEMORY §7.2 + ENDPOINTS.md §11);
@@ -136,7 +144,9 @@ states per ../05-FRONTEND/UI_DESIGN_SYSTEM.md (skeletons, EmptyState, error + Re
   (reconnect handled by the shared socket hook); buffer full → oldest rows silently dropped
   (counter shows 500 / 500).
 
-### `#/logs/reports`
+### `#/logs/reports` — 3 tabs: Reports | Scheduled | Forwarding
+
+#### Tab 1 — Reports
 
 - **Range picker:** segmented control `1h | 24h | 7d` → `GET /api/v1/logs/stats?range=…`.
 - **Cards row:** total flows (sum of action series), blocked % (`(deny+drop+reject) / total`),
@@ -155,9 +165,32 @@ states per ../05-FRONTEND/UI_DESIGN_SYSTEM.md (skeletons, EmptyState, error + Re
     that data; extending `/logs/stats` is a Phase 2 expansion (see §8).
 - **Print-friendly layout:** a "Print" button triggers `window.print()`; a print stylesheet
   (page CSS, not a route) collapses filter bars and sidebars, forces light theme and
-  black-on-white tables. Marked as the Phase-1 substitute for scheduled PDFs.
+  black-on-white tables. Browser print-to-PDF is the Phase-1 PDF path (the appliance renders via
+  wkhtmltopdf); a "Download HTML" action saves a self-contained snapshot; "Download CSV/JSON" hits
+  `GET /logs/reports/export` (spec §1.12 report formats).
 - **States:** per-card skeleton; empty range → EmptyState per chart ("No events in this
   window") rather than zeroed axes.
+
+#### Tab 2 — Scheduled reports
+
+- **Table:** name, range chip (`daily`/`weekly`/`monthly`), format chip, sections chips, recipients
+  (or "—"), `lastRunAt` ("never" when null), enabled toggle, actions (edit, **Run now**, delete).
+- **Editor dialog:** name, range radio, format Select (pdf/html/csv/json — pdf/html note "rendered
+  via the report view/print in sandbox"), sections checkboxes (traffic/threats/audit), recipients
+  (comma-separated emails; display-only in sandbox — no mailer), enabled.
+- **Run now** → `POST /{id}/run` → opens the generated report (print view for html/pdf, download for
+  csv/json) and bumps `lastRunAt`.
+
+#### Tab 3 — Forwarding (syslog + NetFlow)
+
+- **Syslog targets card:** table (name, host:port, protocol chip, minSeverity, enabled,
+  `bufferedRows` — amber when > 0, "target unreachable" dot) + editor dialog (name, host, port,
+  protocol radio `udp|tcp|tls`, minSeverity Select, enabled). Reliability (spec §1.12): rows the
+  engine marks unreachable buffer into a per-target queue shown as `bufferedRows`; the queue flushes
+  when the target returns (appliance: rsyslog queue).
+- **NetFlow targets card:** table (name, host:port, version chip `v5|v9|ipfix`, sampling 1-in-N,
+  enabled) + editor dialog. Appliance: softflowd/nfdump exporters per spec §1.12.
+- All target mutations are audited (`syslog_target.create` etc.) and snapshot section `system`.
 
 ---
 
@@ -186,6 +219,10 @@ states per ../05-FRONTEND/UI_DESIGN_SYSTEM.md (skeletons, EmptyState, error + Re
   oldest-first by the retention job every 500 ticks); `notifications` pruned separately
   (M10). Expired DHCP leases are kept 7 days (M06). Retention overrides live in
   `system_settings` category `logging` — edited in M10, consumed here only as banner copy.
+- **Disk quota (spec §1.12 storage management):** `logging/disk_quota` (`{diskQuotaMb}`) — when the
+  simulated log volume crosses the quota the retention job tightens to the smallest table cap until
+  under quota; the banner shows quota + current usage. Appliance-side, rollover is monthly
+  PostgreSQL partitioning (DATA_LIFECYCLE §4 note).
 - Log tables have **no FKs to config tables**: `ruleName`/`appName` are denormalized strings,
   so filtering by rule still works after the rule is deleted (SCHEMA §5).
 
@@ -247,8 +284,10 @@ consumer is mounted; unsubscribes on unmount (../05-FRONTEND/STATE_AND_DATA_FLOW
 - [ ] `#/logs/live` streams entries from `logs:tail` within ~1 s of generation; kind filter, pause/resume, autoscroll, and the 500-row cap all behave as specified.
 - [ ] Pausing keeps counting missed rows and Resume renders them; the buffer never exceeds 500 entries.
 - [ ] Disabling the realtime mini-service shows the amber "Live updates paused" banner on `#/logs/live` and the view recovers on reconnect.
-- [ ] `#/logs/reports` honors the 1h/24h/7d picker, renders the five aggregates from `/logs/stats`, and all charts use only the locked palette.
-- [ ] Print layout removes shell chrome and prints legibly in light theme (browser print preview check).
+- [ ] `#/logs/reports` renders 3 tabs; the Reports tab honors the 1h/24h/7d picker, renders the five aggregates from `/logs/stats`, and all charts use only the locked palette.
+- [ ] Report export buttons produce CSV/JSON downloads via `/logs/reports/export`; the print stylesheet prints legibly in light theme (browser print preview check).
+- [ ] Scheduled tab: creating a daily html schedule shows `lastRunAt = never`; Run now generates the report and bumps `lastRunAt`; engine-driven schedules update it on their window.
+- [ ] Forwarding tab: syslog target CRUD with protocol/minSeverity; a target the engine marks unreachable shows a rising `bufferedRows` counter that flushes back to 0 when reachable; NetFlow target CRUD with version/sampling.
 - [ ] Severity/action badges match the §5.4 color map on every view; no indigo/blue anywhere.
 - [ ] `bun run lint` passes; no new Next.js routes; no client-side filtering of unbounded log arrays.
 
@@ -261,4 +300,5 @@ consumer is mounted; unsubscribes on unmount (../05-FRONTEND/STATE_AND_DATA_FLOW
 - Retention override keys (`system_settings` category `logging`) are named in DATA_LIFECYCLE §4 but not itemized; M10 must fix exact key names when building settings.
 - Live tail is client-side buffered only (500 rows); the server ring buffer (2 000 log entries, SIMULATION_LAYER §4) is not browsable — out of contract, noted as future work.
 - Dashboard/report cards computing "delta vs previous window" need a second stats call; confirm acceptable load or extend `range` semantics in ENDPOINTS.md.
+- ~~**Syslog/NetFlow targets + scheduled reports deferred**~~ RESOLVED (REVIEW-4A): restored (Forwarding/Scheduled tabs; spec §1.12). Email *delivery* of reports stays display-only in sandbox (no mailer) — the appliance sends to `recipients`.
 - Firewall `q` matching across `userName` can leak user-activity patterns to roles without identity read rights — verify the RBAC matrix (../07-SECURITY/AUTH_AND_RBAC.md) treats logs/audit consistently.

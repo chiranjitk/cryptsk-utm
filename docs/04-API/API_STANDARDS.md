@@ -82,6 +82,10 @@ that file wins on any RBAC conflict):
 | api_service | special | per key `read` scope | per key `write` scope | per key `admin` scope |
 
 Floor ladder used in ENDPOINTS.md tables: `helpdesk < soc_analyst < network_admin = security_admin < tenant_admin < super_admin`.
+REVIEW-4A additions (restored spec-Phase-1 features) map onto extra capability areas — log forwarding
+targets (network_admin full), report schedules (security_admin/soc_analyst edit), webhooks
+(security_admin full, machine keys none), firmware/service-restart/policy-templates (tenant_admin
+full) — see the authoritative matrix in AUTH_AND_RBAC §4.
 
 - A "role floor" is the minimum role required; every higher level passes. L3 is peer level **for the
   ladder only** — the capability matrix above is area-specific, and where a floor would admit a role the

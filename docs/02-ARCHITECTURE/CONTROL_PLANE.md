@@ -88,7 +88,7 @@ always runs before activation; rollback is the previous still-on-disk generation
 | WireGuard | `/etc/wireguard/wgN.conf` per interface | `vpn` (type wireguard_*) | `wg-quick strip wgN` parse check | `wg syncconf wgN <(wg-quick strip wgN)` (keeps handshake state) | Previous file + `wg syncconf` |
 | OpenVPN (SSL VPN) | `/etc/openvpn/server/<name>.conf` (+ `ccd/`) | `vpn` (type openvpn) | staged parse: `openvpn --config <file> --dev null --ifconfig-noexec --route-noexec` (no native dry-run) | `systemctl restart openvpn-server@<name>` — restart drops active tunnels; UI confirmation like FreeRADIUS | Previous file + restart |
 | StrongSwan (IPSec) | `/etc/swanctl/swanctl.conf` (+secrets) | `vpn` (type ipsec_*) | parse the staged file (swanctl has no dry-run; ensure UDP 500 + 4500 are permitted for IKEv2/NAT-T) | `swanctl --load-all` | Previous file + `--load-all` (existing SAs rekeyed, not dropped) |
-| FRR (routing, Phase 2 BGP/OSPF) | `/etc/frr/frr.conf` | `routing` | `vtysh -C -f <file>` (config check) | `vtysh -f <file>` / `frr-reload.py` | Previous file + reload (frr-reload preserves sessions) |
+| FRR (routing — BFD sessions; Phase 2 BGP/OSPF) | `/etc/frr/frr.conf` (+ `bfdd` peers) | `routing` | `vtysh -C -f <file>` (config check) | `vtysh -f <file>` / `frr-reload.py` | Previous file + reload (frr-reload preserves sessions) |
 | FreeRADIUS | Raddb snippets (clients.conf, users, sites) | `identity` (radius profiles) | `radiusd -C` (config test) | **Service restart** — caution: restarts drop in-flight RADIUS conversations; generator marks this section "restart required" and the UI asks for confirmation / maintenance window | Previous files + restart |
 | Keepalived (HA) | `/etc/keepalived/keepalived.conf` | `ha` | `keepalived --config-test` | `systemctl reload keepalived` (reload, not restart — VIP stays) | Previous file + reload |
 | Squid + Coraza (proxy/WAF) | `squid.conf`, Caddy/Coraza bundle | `proxy` (Phase 2) | `squid -k parse`; Coraza config lint | `squid -k reconfigure`; Caddy reload | Previous files + reconfigure |
@@ -104,6 +104,14 @@ Generator rules:
    column semantics documented in SCHEMA.md §4 per-model notes (id-list JSON refs are
    resolved by the generator, which must fail loudly on dangling references — the
    service layer prevents them, see ER_DIAGRAM §3).
+
+REVIEW-4A additions to the same sections (no new services, no new drop authorities): the
+`routing` generation also renders static/default/blackhole routes and PBR marks via iproute2
+(`ip route` / `ip rule fwmark` + per-WAN tables — the nftables mangle chain carries the
+fwmark) and BFD peers for `bfd` routes via FRR `bfdd`; the `dhcp` generation renders
+`dhcrelay`/Kea relay config from the `dhcp/relay` setting and `kea-dhcp6.conf` for
+`family = ipv6` subnets; the `system` generation covers NTP (chrony), SNMP (`snmpd.conf`),
+hardening (sshd_config + mgmt allowlist), and systemd timers for report schedules.
 
 Sandbox analog: `SimulatedAdapter.applyConfig(section)` performs no rendering; it bumps
 `config_versions`, marks the section "applied", and flips MockEngine behavior per
@@ -194,8 +202,11 @@ Example payloads (verbatim from PROJECT_MEMORY §7.3):
   schedule windows and lets the log/flow generators honor them (e.g. `BUSINESS_HOURS`
   social-block rule produces drops only during the window, seed example in
   DATA_LIFECYCLE §2.3).
-- **Report scheduling is Phase 2** (email delivery, PDF) — see the spec divergence note
-  in ROADMAP §2. The console's Phase 1 reports are on-screen + CSV/JSON export (M09).
+- **Report scheduling is Phase 1** (restored REVIEW-4A): `report_schedules` rows fire on their
+  window (engine/timer bumps `lastRunAt`); formats pdf/html/csv/json; sandbox delivery is
+  on-screen + downloads (csv/json) and browser-print PDF — email delivery to `recipients` is
+  appliance-side (no mailer in the console). See the spec-divergence note in ROADMAP §2 for
+  what moved when the row was restored.
 
 ## 6. Backup / Restore and Firmware Upgrade (High Level)
 
@@ -215,8 +226,8 @@ Example payloads (verbatim from PROJECT_MEMORY §7.3):
 |---|---|---|
 | Backup | `pg_dump` (config + logs metadata) + `/etc/cryptsk` + certs + generated-files provenance bundled as one tar artifact; manifest with version hash; stored locally and optionally copied off-box via API download | JSON snapshot: all config tables (+ users, api_keys, settings) exported to a restore file; `system/backups` POST creates it, restore endpoint re-imports through the normal validation path |
 | Restore | Stop config appliers → restore DB + files → run all generators for every section → verify each service status → report | Same semantic: restore re-imports rows then broadcasts `config:updated` per section; **audit_log is not replaced** (append-only, ADR-011) |
-| Firmware upgrade | `apt`-based upgrade under systemd; mandatory pre-upgrade versioned backup; staged apply; service-by-service health checks; failure → automatic rollback to previous backup + previous package set | "Upgrade" is a no-op status message (SIMULATION_LAYER §3 system row) |
-| Rollback | Restore previous versioned backup + previous generation files; VRRP peer can hold the VIP during the window | Restore previous snapshot via backups endpoint |
+| Firmware upgrade | `apt`-based upgrade under systemd; mandatory pre-upgrade versioned backup; staged apply; service-by-service health checks; failure → automatic rollback to previous backup + previous package set | Simulated staged upgrade (M10 §5.6): safety backup → version bump → history entry in the `advanced/firmware` setting, one audited POST, `config:updated {section: "system"}` |
+| Rollback | Restore previous versioned backup + previous generation files; VRRP peer can hold the VIP during the window | Roll back to the previous `history` entry in the firmware setting (simulated; appliance: previous versioned backup + package set) |
 
 HA pair upgrade ordering (product): upgrade standby first → force failover → upgrade
 former active. Detail belongs to M10 operational runbook when HA ships.

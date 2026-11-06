@@ -59,20 +59,31 @@ never copy it into zustand. If two views need it, they share the query cache.
 |---|---|
 | `firewall` | `firewall-rules`, `nat-rules`, `zones`, `address-objects`, `address-groups`, `service-objects`, `service-groups`, `schedule-objects` |
 | `nat` | `nat-rules` |
-| `interfaces` | `interfaces` |
-| `routing` | `routes`, `wan-policies` |
+| `interfaces` | `interfaces`, `port-mirrors` |
+| `routing` | `routes`, `pbr-rules`, `wan-policies` |
 | `dns` | `dns-settings`, `dns-policies`, `dns-records` |
-| `dhcp` | `dhcp-subnets`, `dhcp-reservations`, `dhcp-leases` |
-| `vpn` | `vpn-configs`, `vpn-sessions` |
-| `ips` | `ips-policies`, `ips-rule-categories` |
+| `dhcp` | `dhcp-subnets`, `dhcp-reservations`, `dhcp-leases`, `dhcp-relay` |
+| `vpn` | `vpn-configs`, `vpn-sessions`, `vpn-user-groups` |
+| `ips` | `ips-policies`, `ips-rule-categories`, `ips-update-settings` |
 | `qos` | `qos-policies`, `qos-rules` |
 | `ha` | `ha-status`, `ha-config` |
-| `identity` | `users`, `user-groups`, `radius-profiles`, `auth-settings`, `captive-portal`, `identity-sessions` |
-| `system` | `system-settings`, `system-status`, `system-backups`, `api-keys`, `config-versions` |
+| `identity` | `users`, `user-groups`, `radius-profiles`, `auth-settings`, `captive-portal`, `identity-sessions`, `directory-sources` |
+| `system` | `system-settings`, `system-status`, `system-backups`, `system-firmware`, `system-ssh-keys`, `system-policy-templates`, `api-keys`, `webhooks`, `notifications`, `config-versions`, `logs-syslog-targets`, `logs-netflow-targets`, `logs-report-schedules` |
+
+REVIEW-4A additions: `pbr-rules`, `port-mirrors`, `dhcp-relay`, `vpn-user-groups`,
+`ips-update-settings`, and `directory-sources` ride their module's existing sections; the
+restored log-forwarding/API-platform config surfaces (syslog/netflow targets, report
+schedules, webhooks) broadcast `system` per PROJECT_MEMORY §7.2 grouping. The sentinel
+`section: "all"` (restore, template apply) invalidates every prefix below plus
+`dashboard-summary` and re-evaluates the `setup.completed` gate.
 
 Section values are the LOCKED `ConfigSection` union (ARCHITECTURE.md §5 — `firewall | nat |
 interfaces | routing | dns | dhcp | vpn | ips | qos | ha | identity | system`); WAN-policy
 mutations broadcast `routing` (multi-WAN belongs to the routing section, spec §1.3).
+
+The derived engine views (`network-lldp-neighbors`, `network-mac-table`) are **not** in this
+table: they are ring-buffer snapshots fetched with short polling/auto-refresh (10 s) inside
+their tabs, not `config:updated`-driven caches.
 
 `dashboard-summary` is invalidated on every `config:updated` regardless of section. The
 mapping lives in `src/hooks/use-config-updated.ts`; adding a resource means extending the

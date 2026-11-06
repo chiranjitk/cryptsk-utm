@@ -2,7 +2,7 @@
 
 Reviewer: Network Core Engineer / Senior Network Architect (Agent 2-a)
 Scope: 10 documents — ARCHITECTURE.md, DATA_PLANE.md, CONTROL_PLANE.md, SIMULATION_LAYER.md, M02-NETWORK.md, M04-IPS.md, M05-VPN.md, M06-DNS-DHCP.md, M08-QOS.md, AUTH_AND_RBAC.md
-Ground truth: `upload/Cryptsk_UTM_Optimized_Spec (1).md` (1562 lines), read in full.
+Ground truth: `docs/SPEC.md` (1562 lines), read in full.
 Note: a sibling review (2C) was editing some of the same files concurrently; where 2C had already fixed an item, this review verified instead of re-fixing, and only completed dangling references (e.g., M04 §8 bypass item).
 
 ---
