@@ -611,6 +611,66 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
   via dialog → row live → ConfirmDialog delete; probe now; delete cascade; dashboard
   WAN strip === Multi-WAN state; mobile 390 px). lint 0/0; tsc clean for M02 files.
 
+### 2026-11-06 — M04 Intrusion Prevention module LIVE (policies · events · policy-aware engine)
+- **M04 shipped vertically (ADR-014 order …M03→M02→M04…):** API surface — `ips/policies`
+  (CRUD), `ips/policies/apply-preset` (conservative/balanced/aggressive bundles per
+  DATA_PLANE §3.1, create-or-replace), `ips/rule-categories` (15-category catalog with
+  base severity/preprocessor family/sid ranges), `ips/events` (locked param set
+  severity/sid/q/since/until/category/page — server-paginated), `ips/events/{id}/suppress`
+  (`24h|7d|forever`; forever → `suppressedUntil=null` + action=suppressed per ENDPOINTS §3),
+  `ips/update-settings` (GET/PUT/POST run-now on `ips/auto_update` SystemSetting). Service
+  layer `src/lib/ips/*` (catalog+presets, RESTRICT-aware CRUD, event query, update-cycle
+  simulation on GET when the window passes). Views `src/components/views/ips/*`:
+  policies table (mode badges, enabled toggle, categories k/15, attached-rules deep link
+  `#/firewall/rules?search=`), PolicyEditor (mode radio cards w/ "only inline_drop blocks"
+  explainer, category matrix w/ master on/off + inspector-off hints, custom suricata rules
+  w/ per-line 400 rendering, exceptions (sid 0 = any-SID bypass label per ADR-017),
+  thresholds, preprocessors, TI blocklist, stale-data banner on config:updated), preset
+  dialog (bundle preview + create/replace), Rule Updates card (schedule + run now). Events
+  view: severity chips + range presets + category/q/sid filters, 50-row live tail
+  (logs:tail kind=ips, filtered, deduped), row actions (suppress menu, Block), detail
+  Sheet w/ full fields.
+- **Cross-module handoff (M04→M03):** "Create firewall block rule" creates a temp address
+  object (`ips-src-<sid>`, reused on 409), stashes a create-mode draft in
+  sessionStorage `ips:prefill-rule`, navigates `#/firewall/rules?prefill=1`; rules-view
+  reads hash query once at first render (lazy state, lint-safe) and RuleEditor gained an
+  optional `prefill` prop (create mode, custom title).
+- **Engine now policy-aware (SIMULATION_LAYER §6):** `loadIpsPolicyStates` + generator
+  rewrite — category gating (enabled set), mode semantics (inline_drop → drop events +
+  CORRELATED `firewall_logs` row `ruleName:"ips:<policy>"` same 5-tuple; inline_tap/
+  passive → alert only), preprocessor family gating (http/tls/stream off → family
+  silenced), TI blocklist feed IPs → c2/malware drops, thresholds (count/seconds/track →
+  excess rows `action=suppressed`), exceptions (targeted → row dropped; sid 0 → bypass).
+  Default policy = first enabled by id asc, prefers one attached to an enabled rule
+  (ADR-017). Reload on `config:updated {section:"ips"}` (3 s throttle).
+- **CRITICAL BUG FIXED (pre-existing, M03-era):** firewall-log persistence had been dead
+  since the GeneratedFlow refactor — the tick pushed the flow WRAPPER into
+  `pendingFwLogs`, so `new Date(undefined)` → `PrismaClientValidationError` on every
+  createMany batch, silently swallowed by `.catch(()=>{})` (fw logs frozen at 10:48 while
+  ips kept flowing — the tell). Tick now unwraps `flow.log`, uses `flow.fwRuleId` for hit
+  counters, and fw createMany failures LOG loudly instead of vanishing. Also fixed the
+  stuck realtime cursor: the engine emitted into the instrumentation bundle's copy of the
+  events ring while `/api/internal/events` read the route bundle's copy — ring state moved
+  to globalThis (same singleton trick as the engine).
+- **Realtime subscribe fix (pre-existing):** `useRealtime` never sent `subscribe`, so the
+  service's channel-gated rooms (metrics/logs/alerts) delivered nothing to ANY view. Hook
+  now emits `subscribe` on connect (+reconnect) and `unsubscribe` on cleanup. Live tail on
+  `#/ips/events` and the dashboard throughput chart verified streaming afterwards (live
+  dots 5→7; chart timestamps advance). NOTE for browser tests: `?XTransformPort` routing
+  only exists on the Caddy gateway (:81) — testing against :3000 directly silently
+  bypasses socket.io; test realtime through the gateway.
+- **Verified (agent-browser via gateway + curl):** policies list (BALANCED 13/15 enabled
+  w/ TI on, STRICT_WEB 4/15 disabled), editor create w/ per-line custom-rule validation
+  blocking save then passing, preset AGGRESSIVE applied, Run update now bumps lastUpdate,
+  weekly schedule → next run Nov 9 (Monday) recompute, events table severity filter
+  (server-side, all-critical page), suppress 7d → suppressedUntil +7d server-verified,
+  TI feed IP row (45.83.91.7 → drop, "feed IP matched simulated TI blocklist"), block-rule
+  handoff end-to-end (prefilled editor → "Rule created" → row in rules table), delete
+  BALANCED → 409 "attached to 1 firewall rule — detach first", dark mode + 390 px mobile,
+  sticky footer. lint 0/0; tsc 7 (baseline was 14 — fixed fwFlows unwrap, trim() union,
+  left the rest); post-restart event mix honors BALANCED (no dos/info_leak/policy-off
+  categories; drops only under inline_drop).
+
 ### 2026-11-06 — Enterprise blue theme (ADR-019) + M03 Firewall & NAT module LIVE
 - **Theme (owner request):** emerald/teal look replaced with enterprise white & blue —
   ADR-019 records the decision (supersedes ADR-013 palette). Brand = blue-600 light /

@@ -172,6 +172,8 @@ export function RuleEditor(props: {
   onOpenChange: (open: boolean) => void;
   editing: FwRule | null;
   duplicateOf: FwRule | null;
+  /** create-mode draft handed over from other modules (e.g. M04 IPS events) */
+  prefill?: FwRule | null;
   zones: Zone[];
   addresses: AddressObject[];
   addressGroups: NamedWithMembers[];
@@ -182,7 +184,7 @@ export function RuleEditor(props: {
   onSaved: () => void;
 }) {
   const { open, editing, duplicateOf } = props;
-  const base = editing ?? duplicateOf;
+  const base = editing ?? duplicateOf ?? props.prefill ?? null;
   const [form, setForm] = useState<RuleForm>(() => {
     const f = formFromRule(base);
     if (!editing && duplicateOf) f.name = `${duplicateOf.name}-copy`;
@@ -302,7 +304,7 @@ export function RuleEditor(props: {
     <Dialog open={open} onOpenChange={props.onOpenChange}>
       <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-3xl overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{editing ? `Edit rule — ${editing.name}` : duplicateOf ? `Duplicate rule — ${duplicateOf.name}-copy` : "Add firewall rule"}</DialogTitle>
+          <DialogTitle>{editing ? `Edit rule — ${editing.name}` : duplicateOf ? `Duplicate rule — ${duplicateOf.name}-copy` : props.prefill ? `Add rule — prefilled (${props.prefill.name})` : "Add firewall rule"}</DialogTitle>
           <DialogDescription>
             Rules are evaluated top-down, first match wins. Empty match dimensions are wildcards.
           </DialogDescription>

@@ -69,6 +69,12 @@ export function useRealtime(
     const on = (ev: string, fn: (...args: unknown[]) => void) => s.on(ev, fn);
     const off = (ev: string) => s.off(ev);
 
+    // channel gating (realtime-service): join rooms for channel events;
+    // config/status events ride the default room. Re-subscribe on reconnect.
+    const join = () => s.emit("subscribe", { channels: [...set] });
+    if (s.connected) join();
+    s.on("connect", join);
+
     if (set.has("metrics")) on("metrics:tick", (t) => ref.current.onMetricsTick?.(t as MetricsTickPayload));
     if (set.has("logs")) on("logs:tail", (l) => ref.current.onLogsTail?.(l as LogTailPayload));
     if (set.has("alerts")) on("alerts:new", (a) => ref.current.onAlertsNew?.(a as AlertNewPayload));
@@ -79,6 +85,8 @@ export function useRealtime(
     on("vpn:status", (v) => ref.current.onVpnStatus?.(v as VpnStatusPayload));
 
     return () => {
+      s.emit("unsubscribe", { channels: [...set] });
+      off("connect");
       for (const ev of [
         "metrics:tick", "logs:tail", "alerts:new", "sessions:update",
         "config:updated", "wan:status", "vpn:status",

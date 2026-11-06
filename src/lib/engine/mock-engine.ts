@@ -18,7 +18,8 @@ import {
 import { loadEvalRules, loadExpansionContext } from "@/lib/firewall/rule-loader";
 import { parseIds } from "@/lib/firewall/refs";
 import type { EvalRule } from "@/lib/firewall/rule-match";
-import { IpsEventGenerator } from "./generators/ips-events";
+import { IpsEventGenerator, type IpsPolicyRuntime } from "./generators/ips-events";
+import { loadIpsPolicyStates } from "@/lib/ips/service";
 import {
   SessionChurnMachine,
   VpnStateMachine,
@@ -77,6 +78,8 @@ class MockEngine {
 
   private ifaces: IfaceMeta[] = [];
   private rules: EvalRule[] = [];
+  private ipsPolicy: IpsPolicyRuntime | null = null; // default policy (ADR-017)
+  private lastIpsLoad = 0;
   private ruleNameToId = new Map<string, number>();
   private hostPools: HostPoolEntry[] = [];
   private userNames: string[] = [];
@@ -146,7 +149,7 @@ class MockEngine {
         db.vpnConfig.findMany({ where: { tenantId: 1 }, select: { id: true, name: true, type: true, enabled: true, status: true } }),
       ]);
       this.ifaces = ifaces.map((i) => ({ name: i.name, role: i.role, enabled: i.enabled }));
-      await this.reloadPolicy(true);
+      await Promise.all([this.reloadPolicy(true), this.reloadIpsPolicies(true)]);
       this.policySeq = currentCursor();
       for (const w of wans) {
         this.wanProbes.set(w.interfaceName, {
@@ -258,6 +261,33 @@ class MockEngine {
         void this.reloadPolicy(true);
         break;
       }
+      // M04: policy/category/mode/preset changes re-arm the ips generator
+      if (e.type === "config:updated" && e.payload.section === "ips") {
+        void this.reloadIpsPolicies(true);
+        break;
+      }
+    }
+  }
+
+  /**
+   * (Re)load the IPS policy the generator enforces: enabled policies with
+   * expanded category sets; the default policy is the first enabled by id asc
+   * (ADR-017). Called on bootstrap and on `config:updated {section: ips}`
+   * (throttled to 3 s, same as firewall rules).
+   */
+  async reloadIpsPolicies(force = false): Promise<void> {
+    const now = Date.now();
+    if (!force && now - this.lastIpsLoad < 3000) return;
+    this.lastIpsLoad = now;
+    try {
+      const states = await loadIpsPolicyStates(1);
+      // default policy = first enabled by seed order; prefer one attached to an
+      // enabled rule when present so events match visible attachment
+      const attached = states.find((p) => p.attachedToEnabledRule);
+      this.ipsPolicy = attached ?? states[0] ?? null;
+      this.ipsGen.setPolicy(this.ipsPolicy);
+    } catch (err) {
+      console.error("[mock-engine] reloadIpsPolicies failed:", err instanceof Error ? err.message : err);
     }
   }
 
@@ -294,10 +324,12 @@ class MockEngine {
 
       // 4) firewall logs (+ rule hit counters)
       const apps = this.profile.appMix.map(([a]) => a);
-      const fwLogs = this.fwGen.generate(this.hostPools, apps, this.userNames);
-      for (const log of fwLogs) {
-        const rule = this.rules.find((r) => r.name === log.ruleName);
-        if (rule) this.hitDeltas.set(rule.id, (this.hitDeltas.get(rule.id) ?? 0) + 1);
+      const fwFlows = this.fwGen.generate(this.hostPools, apps, this.userNames);
+      for (const flow of fwFlows) {
+        const log = flow.log;
+        // fwRuleId comes from the rule matcher — falls back to name lookup
+        const ruleId = flow.fwRuleId ?? this.ruleNameToId.get(log.ruleName ?? "") ?? this.rules.find((r) => r.name === log.ruleName)?.id;
+        if (ruleId) this.hitDeltas.set(ruleId, (this.hitDeltas.get(ruleId) ?? 0) + 1);
         this.logSeq += 1;
         this.logsRing.push({ kind: "firewall", entry: log, seq: this.logSeq });
         this.pendingFwLogs.push(log);
@@ -305,12 +337,34 @@ class MockEngine {
       if (this.logsRing.length > LOGS_RING_CAP) this.logsRing.splice(0, this.logsRing.length - LOGS_RING_CAP);
 
       // 5) ips events (+ threat alerts as notifications)
-      const ips = this.ipsGen.generate();
+      const generated = this.ipsGen.generate();
+      const ips = generated?.event ?? null;
       if (ips) {
         this.logSeq += 1;
         this.logsRing.push({ kind: "ips", entry: ips, seq: this.logSeq });
         this.pendingIpsEvents.push(ips);
         if (this.logsRing.length > LOGS_RING_CAP) this.logsRing.splice(0, this.logsRing.length - LOGS_RING_CAP);
+
+        // inline_drop policies also produce a correlated firewall_logs row
+        // for the same flow (SIMULATION_LAYER §6 / M04 §5)
+        if (generated!.correlatedFwDrop) {
+          const fwCorrelated: FirewallLogEntry = {
+            ts: ips.ts,
+            srcIp: ips.srcIp ?? "0.0.0.0",
+            dstIp: ips.dstIp ?? "0.0.0.0",
+            srcPort: ips.srcPort ?? 0,
+            dstPort: ips.dstPort ?? 0,
+            protocol: "tcp",
+            action: "drop",
+            ruleName: this.ipsPolicy ? `ips:${this.ipsPolicy.name}` : "ips",
+            appName: null,
+            bytes: 800 + Math.floor(this.rand() * 60000),
+            packets: 4 + Math.floor(this.rand() * 40),
+            userName: null,
+          };
+          this.pendingFwLogs.push(fwCorrelated);
+          emitEvent({ type: "logs:tail", payload: { kind: "firewall", entry: fwCorrelated } });
+        }
         if ((ips.severity === "high" || ips.severity === "critical") && this.tickNo - this.lastAlertTick > 10) {
           this.lastAlertTick = this.tickNo;
           const notification = await db.notification
@@ -345,8 +399,8 @@ class MockEngine {
         }
         emitEvent({ type: "logs:tail", payload: { kind: "ips", entry: ips } });
       }
-      for (const log of fwLogs) {
-        emitEvent({ type: "logs:tail", payload: { kind: "firewall", entry: log } });
+      for (const flow of fwFlows) {
+        emitEvent({ type: "logs:tail", payload: { kind: "firewall", entry: flow.log } });
       }
 
       // 6) vpn session churn
@@ -389,7 +443,9 @@ class MockEngine {
             userName: l.userName,
           })),
         })
-        .catch(() => {});
+        .catch((e: unknown) => {
+          console.error("[mock-engine] firewallLog createMany failed:", e instanceof Error ? e.message : e);
+        });
     }
     // ips events
     const ips = this.pendingIpsEvents.splice(0, this.pendingIpsEvents.length);
@@ -456,17 +512,29 @@ class MockEngine {
 }
 
 async function trim(model: "firewallLog" | "ipsEvent", cap: number) {
-  const delegate = model === "firewallLog" ? db.firewallLog : db.ipsEvent;
-  const count = await delegate.count({ where: { tenantId: 1 } });
+  const count =
+    model === "firewallLog"
+      ? await db.firewallLog.count({ where: { tenantId: 1 } })
+      : await db.ipsEvent.count({ where: { tenantId: 1 } });
   if (count <= cap) return;
   const excess = count - cap;
-  const oldest = await delegate.findMany({
-    where: { tenantId: 1 },
-    orderBy: { timestamp: "asc" },
-    take: excess,
-    select: { id: true },
-  });
-  await delegate.deleteMany({ where: { id: { in: oldest.map((r) => r.id) } } }).catch(() => {});
+  const oldest =
+    model === "firewallLog"
+      ? await db.firewallLog.findMany({
+          where: { tenantId: 1 },
+          orderBy: { timestamp: "asc" },
+          take: excess,
+          select: { id: true },
+        })
+      : await db.ipsEvent.findMany({
+          where: { tenantId: 1 },
+          orderBy: { timestamp: "asc" },
+          take: excess,
+          select: { id: true },
+        });
+  const ids = oldest.map((r) => r.id);
+  if (model === "firewallLog") await db.firewallLog.deleteMany({ where: { id: { in: ids } } }).catch(() => {});
+  else await db.ipsEvent.deleteMany({ where: { id: { in: ids } } }).catch(() => {});
 }
 
 // ── singleton (survives HMR via globalThis) ────────────────────────────────

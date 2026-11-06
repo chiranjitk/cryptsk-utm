@@ -26,6 +26,8 @@ import { ZonesView } from "@/components/views/firewall/zones-view";
 import { InterfacesView } from "@/components/views/network/interfaces-view";
 import { RoutingView } from "@/components/views/network/routing-view";
 import { WanView } from "@/components/views/network/wan-view";
+import { PoliciesView } from "@/components/views/ips/policies-view";
+import { EventsView } from "@/components/views/ips/events-view";
 import { fetchApi, useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
@@ -235,6 +237,10 @@ export function AppShell() {
               <RoutingView />
             ) : view.path === "/network/wan" ? (
               <WanView />
+            ) : view.path === "/ips/policies" ? (
+              <PoliciesView />
+            ) : view.path === "/ips/events" ? (
+              <EventsView />
             ) : (
               <PlaceholderView view={view} />
             )}

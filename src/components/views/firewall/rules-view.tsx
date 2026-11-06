@@ -87,6 +87,33 @@ import {
 import { RuleEditor } from "./rule-editor";
 
 const RULES_KEY = ["firewall", "rules"] as const;
+/** sessionStorage handoff key written by M04 events-view "Block source". */
+const IPS_PREFILL_KEY = "ips:prefill-rule";
+
+/**
+ * One-shot deep-link read at first render (view remounts per navigation):
+ * `#/firewall/rules?search=<name>` prefills the search box; `?prefill=1`
+ * consumes the sessionStorage draft from M04 "Create firewall block rule".
+ */
+function readRulesDeepLink(): { search: string; prefill: FwRule | null } {
+  if (typeof window === "undefined") return { search: "", prefill: null };
+  const qs = window.location.hash.split("?")[1];
+  if (!qs) return { search: "", prefill: null };
+  const params = new URLSearchParams(qs);
+  const out = { search: params.get("search") ?? "", prefill: null as FwRule | null };
+  if (params.get("prefill")) {
+    const raw = sessionStorage.getItem(IPS_PREFILL_KEY);
+    sessionStorage.removeItem(IPS_PREFILL_KEY);
+    if (raw) {
+      try {
+        out.prefill = JSON.parse(raw) as FwRule;
+      } catch {
+        // corrupted handoff — ignore, plain create flow still works
+      }
+    }
+  }
+  return out;
+}
 
 interface NameMaps {
   zoneById: Map<number, Zone>;
@@ -523,12 +550,15 @@ export function RulesView() {
 
   const [zoneFilter, setZoneFilter] = useState<number | null>(null);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
-  const [search, setSearch] = useState("");
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [deepLink] = useState(readRulesDeepLink);
+  const [search, setSearch] = useState(deepLink.search);
+  const [editorOpen, setEditorOpen] = useState(() => deepLink.prefill != null);
   const [editing, setEditing] = useState<FwRule | null>(null);
   const [duplicateOf, setDuplicateOf] = useState<FwRule | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [deleting, setDeleting] = useState<FwRule | null>(null);
+  /** create-mode draft handed over from M04 (IPS event block-source) */
+  const [prefillRule, setPrefillRule] = useState<FwRule | null>(deepLink.prefill);
 
   const rules = useMemo(() => rulesQuery.data?.data ?? [], [rulesQuery.data]);
   const zones = useMemo(() => zonesQuery.data?.data ?? [], [zonesQuery.data]);
@@ -833,9 +863,13 @@ export function RulesView() {
       {editorOpen && (
         <RuleEditor
           open={editorOpen}
-          onOpenChange={setEditorOpen}
+          onOpenChange={(open) => {
+            setEditorOpen(open);
+            if (!open) setPrefillRule(null);
+          }}
           editing={editing}
           duplicateOf={duplicateOf}
+          prefill={prefillRule}
           zones={zones}
           addresses={addrQuery.data?.data ?? []}
           addressGroups={addrGrpQuery.data?.data ?? []}

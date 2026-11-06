@@ -78,11 +78,18 @@ export type EngineEvent =
 
 const MAX_EVENTS = 1000;
 
-const state: { events: EngineEvent[]; cursor: number; started: boolean } = {
-  events: [],
-  cursor: 0,
-  started: false,
+/**
+ * Ring state lives on globalThis (same trick as the MockEngine singleton):
+ * Next/Turbopack evaluates this module once per bundle graph (instrumentation
+ * vs route chunks), and the engine must emit into the SAME ring the
+ * /api/internal/events route reads — otherwise the realtime cursor stalls.
+ */
+const g = globalThis as unknown as {
+  __cryptskEventRing?: { events: EngineEvent[]; cursor: number };
 };
+
+const state = g.__cryptskEventRing ?? { events: [] as EngineEvent[], cursor: 0 };
+g.__cryptskEventRing = state;
 
 export function emitEvent(evt: Omit<EngineEvent, "seq">): EngineEvent {
   state.cursor += 1;
