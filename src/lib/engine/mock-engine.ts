@@ -29,6 +29,10 @@ import {
   type VpnTunnelStatus,
   type WanProbeState,
 } from "./generators/sessions";
+import { DnsQueryGenerator, type DnsPolicyRuntime, type DnsQueryLogEntry } from "./generators/dns-queries";
+import { loadDnsRuntime } from "@/lib/dns/service";
+import { DhcpLeaseMachine, type DhcpRuntime } from "./generators/dhcp-leases";
+import { loadDhcpRuntime } from "@/lib/dhcp/service";
 
 export interface VpnSessionState {
   id: number;
@@ -58,6 +62,7 @@ export interface LogRingEntry {
 
 const METRICS_RING_CAP = 500; // SIMULATION_LAYER §4
 const LOGS_RING_CAP = 2000; // SIMULATION_LAYER §4
+const DNS_RING_CAP = 2000; // M06 §8 sanctions 2000 (engine-only change)
 const TICK_MS = 2000;
 const PERSIST_EVERY = 10; // ticks (20 s)
 const SESSIONS_EMIT_EVERY = 5; // ticks
@@ -86,6 +91,8 @@ class MockEngine {
 
   readonly metricsRing: MetricsTick[] = [];
   readonly logsRing: LogRingEntry[] = [];
+  /** M06: derived DNS query log — ring-only, never persisted (M06 §2/§5.4). */
+  readonly dnsRing: DnsQueryLogEntry[] = [];
 
   private ifaces: IfaceMeta[] = [];
   private rules: EvalRule[] = [];
@@ -112,9 +119,15 @@ class MockEngine {
   private wanMachine = new WanProbeMachine(this.rand, this.profile.wanFlapRate);
   private vpnMachine = new VpnStateMachine(this.rand);
   private churn = new SessionChurnMachine(this.rand);
+  private dnsGen = new DnsQueryGenerator(this.rand, this.profile);
+  private dhcpMachine = new DhcpLeaseMachine(this.rand);
 
   private pendingFwLogs: FirewallLogEntry[] = [];
   private pendingIpsEvents: IpsEventEntry[] = [];
+  private dnsRuntime: DnsPolicyRuntime | null = null;
+  private lastDnsLoad = 0;
+  private dhcpRuntime: DhcpRuntime = { subnets: [], reservations: [], leases: [] };
+  private lastDhcpLoad = 0;
   private sessionDiffsBacklog: Array<{ id: number; userName: string | null; status?: string; bytesIn?: number; bytesOut?: number; lastActivity?: string }> = [];
   private lastAlertTick = -100;
 
@@ -163,7 +176,7 @@ class MockEngine {
         db.wanPolicy.findMany({ where: { tenantId: 1 }, include: { interface: { select: { enabled: true } } } }),
       ]);
       this.ifaces = ifaces.map((i) => ({ name: i.name, role: i.role, enabled: i.enabled }));
-      await Promise.all([this.reloadPolicy(true), this.reloadIpsPolicies(true)]);
+      await Promise.all([this.reloadPolicy(true), this.reloadIpsPolicies(true), this.reloadDnsState(true), this.reloadDhcpState(true)]);
       this.policySeq = currentCursor();
       for (const w of wans) {
         this.wanProbes.set(w.interfaceName, {
@@ -251,23 +264,27 @@ class MockEngine {
   private watchPolicyChanges(): void {
     const { events, cursor } = eventsSince(this.policySeq);
     this.policySeq = cursor;
+    // collect every section first (no per-event break — two different-section
+    // saves inside one 2 s window must both reload)
+    let fw = false;
+    let ips = false;
+    let vpn = false;
+    let dns = false;
+    let dhcp = false;
     for (const e of events) {
-      if (e.type === "config:updated" && (e.payload.section === "firewall" || e.payload.section === "nat")) {
-        void this.reloadPolicy(true);
-        break;
-      }
-      // M04: policy/category/mode/preset changes re-arm the ips generator
-      if (e.type === "config:updated" && e.payload.section === "ips") {
-        void this.reloadIpsPolicies(true);
-        break;
-      }
-      // M05: tunnel config / user-group / disconnect changes re-sync tunnels
-      // + sessions (API owns the enable/disable edge; the machine walks it up)
-      if (e.type === "config:updated" && e.payload.section === "vpn") {
-        void this.reloadVpnState(true);
-        break;
-      }
+      if (e.type !== "config:updated") continue;
+      const s = e.payload.section;
+      if (s === "firewall" || s === "nat") fw = true; // firewall rules expand
+      else if (s === "ips") ips = true; // M04: re-arm the ips generator
+      else if (s === "vpn") vpn = true; // M05: tunnels + sessions re-sync
+      else if (s === "dns") dns = true; // M06: policies + resolver settings
+      else if (s === "dhcp") dhcp = true; // M06: subnets/reservations churn
     }
+    if (fw) void this.reloadPolicy(true);
+    if (ips) void this.reloadIpsPolicies(true);
+    if (vpn) void this.reloadVpnState(true);
+    if (dns) void this.reloadDnsState(true);
+    if (dhcp) void this.reloadDhcpState(true);
   }
 
   /**
@@ -445,12 +462,44 @@ class MockEngine {
     }
   }
 
+  /**
+   * M06: enabled DNS policies (id asc) + resolver settings arm the query-log
+   * generator (evaluation order per M06 §5.1). 3 s throttle, same as rules.
+   */
+  async reloadDnsState(force = false): Promise<void> {
+    const now = Date.now();
+    if (!force && now - this.lastDnsLoad < 3000) return;
+    this.lastDnsLoad = now;
+    try {
+      this.dnsRuntime = await loadDnsRuntime(1);
+      this.dnsGen.setRuntime(this.dnsRuntime);
+    } catch (err) {
+      console.error("[mock-engine] reloadDnsState failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  /**
+   * M06: enabled IPv4 subnets + reservations + active leases feed the lease
+   * churn machine. v6 subnets are config-only in simulation (M06 §5.4).
+   */
+  async reloadDhcpState(force = false): Promise<void> {
+    const now = Date.now();
+    if (!force && now - this.lastDhcpLoad < 3000) return;
+    this.lastDhcpLoad = now;
+    try {
+      this.dhcpRuntime = await loadDhcpRuntime(1);
+    } catch (err) {
+      console.error("[mock-engine] reloadDhcpState failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
   private async tick(): Promise<void> {
     try {
       this.tickNo += 1;
       // self-heal across HMR: the globalThis singleton keeps old generator
       // instances; re-syncing the profile is idempotent and cheap.
       this.ipsGen.setProfile(this.profile);
+      this.dnsGen.setProfile(this.profile);
 
       // 0) config:updated watcher — firewall/nat/ips/vpn policy reloads
       // (API routes emit in another bundle; the global ring bridges them)
@@ -571,6 +620,13 @@ class MockEngine {
         emitEvent({ type: "logs:tail", payload: { kind: "firewall", entry: flow.log } });
       }
 
+      // 5b) dns query log — derived view, ring-only, never persisted, and no
+      // socket event (M06 §2/§5.4/§6: the Query Log tab polls)
+      for (const q of this.dnsGen.generate()) {
+        this.dnsRing.push(q);
+      }
+      if (this.dnsRing.length > DNS_RING_CAP) this.dnsRing.splice(0, this.dnsRing.length - DNS_RING_CAP);
+
       // 6) vpn session churn
       const churnDiffs = this.churn.step(this.vpnSessions);
       for (const d of churnDiffs) {
@@ -586,6 +642,9 @@ class MockEngine {
       if (this.tickNo % 5 === 0 && this.rand() < 0.15) {
         await this.spawnVpnSession();
       }
+
+      // 6c) dhcp lease churn — planner plans, engine executes DB I/O (M06 §5.4)
+      await this.dhcpChurnStep();
 
       // 7) periodic persistence
       if (this.tickNo % PERSIST_EVERY === 0) await this.persist();
@@ -684,6 +743,70 @@ class MockEngine {
     // firewall_logs cap 50k, ips_events cap 5k (DATA_LIFECYCLE §4)
     await trim("firewallLog", 50_000);
     await trim("ipsEvent", 5_000);
+    // dhcp leases: expired/released rows kept 7 days (DATA_LIFECYCLE §4 / M06 §4)
+    await db.dhcpLease
+      .deleteMany({
+        where: {
+          tenantId: 1,
+          state: { in: ["expired", "released"] },
+          endsAt: { lt: new Date(Date.now() - 7 * 86_400_000) },
+        },
+      })
+      .catch(() => {});
+  }
+
+  /** M06 §5.4 lease churn: apply the planner's renew/release/expire/create plan. */
+  private async dhcpChurnStep(): Promise<void> {
+    if (this.dhcpRuntime.subnets.length === 0) return;
+    const nowMs = Date.now();
+    const plan = this.dhcpMachine.step(this.dhcpRuntime, nowMs);
+    for (const id of plan.expireIds) {
+      await db.dhcpLease.update({ where: { id }, data: { state: "expired" } }).catch(() => {});
+    }
+    for (const id of plan.renewIds) {
+      const lease = this.dhcpRuntime.leases.find((l) => l.id === id);
+      const leaseTimeSec = lease?.leaseTimeSec ?? 86400;
+      await db.dhcpLease
+        .update({ where: { id }, data: { endsAt: new Date(nowMs + leaseTimeSec * 1000) } })
+        .catch(() => {});
+    }
+    for (const id of plan.releaseIds) {
+      await db.dhcpLease.update({ where: { id }, data: { state: "released" } }).catch(() => {});
+    }
+    const gone = new Set<number>([...plan.expireIds, ...plan.releaseIds]);
+    this.dhcpRuntime.leases = this.dhcpRuntime.leases.filter((l) => !gone.has(l.id));
+    for (const c of plan.creates) {
+      // release frees the IP for reuse — prune stale non-active rows first (M06 §3);
+      // @@unique([subnetId, ip]) then accepts the fresh insert
+      await db.dhcpLease
+        .deleteMany({ where: { subnetId: c.subnetId, ip: c.ip, state: { not: "active" } } })
+        .catch(() => {});
+      const created = await db.dhcpLease
+        .create({
+          data: {
+            tenantId: 1,
+            subnetId: c.subnetId,
+            mac: c.mac,
+            ip: c.ip,
+            hostname: c.hostname,
+            state: "active",
+            startsAt: new Date(nowMs),
+            endsAt: new Date(c.endsAtMs),
+          },
+        })
+        .catch(() => null);
+      if (created) {
+        this.dhcpRuntime.leases.push({
+          id: created.id,
+          subnetId: c.subnetId,
+          mac: c.mac,
+          ip: c.ip,
+          hostname: c.hostname,
+          endsAtMs: c.endsAtMs,
+          leaseTimeSec: this.dhcpRuntime.subnets.find((s) => s.id === c.subnetId)?.leaseTime ?? 86400,
+        });
+      }
+    }
   }
 }
 

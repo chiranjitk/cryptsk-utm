@@ -495,6 +495,15 @@ QoS, Logs & Reports, HA, System. Full layouts per view: `docs/05-FRONTEND/PAGE_M
 13. **No indigo/blue colors** anywhere (components, charts, docs examples).
 14. **Schema changes:** edit `prisma/schema.prisma` → `bun run db:push` → update `docs/03-DATABASE/*` in the same task.
 15. New dependencies allowed only when a doc'd reason exists (e.g. `socket.io`, `socket.io-client`, `jose`, `bcryptjs`).
+16. **GITHUB PUSH ON PHASE COMPLETION (HARD RULE, user-mandated 2026-11-06):** every
+    module/phase (M0x) completion MUST end with a `git commit` + `git push origin main`
+    to `github.com/chiranjitk/cryptsk-utm` **in the same session** — no exceptions, no
+    batching across phases. Verify with `git ls-remote origin main` that the remote SHA
+    matches local HEAD. Auth: GitHub PAT supplied per-session by the user (the sandbox
+    does not persist tokens; never write the token to any file).
+17. **Never commit runtime artifacts** (`.env`, `.next/`, `db/`, `dev.log`, `upload/`,
+    `.zscripts/` logs) — the `.gitignore` guards these; if a sandbox checkpoint clobbers
+    it, restore it before pushing (gotcha: it happened once, 2026-11-06).
 
 ---
 
@@ -577,6 +586,43 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 ---
 
 ## 15. SESSION LOG (append-only — newest on top)
+
+### 2026-11-06 — M06 DNS & DHCP module LIVE (resolver · policies · records · query log · subnets · reservations · leases · relay)
+- **M06 shipped vertically (ADR-014 order …M05→M06…):** API surface — `dns/settings`
+  (GET/PUT), `dns/policies` (+`[id]`), `dns/records` (+`[id]`, per-type value grammar
+  M06 §5.2), `dns/query-logs` (derived, engine ring 2000), `dhcp/subnets` (+`[id]`,
+  family-aware CIDR math + per-family overlap 409 + cascade counts), `dhcp/reservations`
+  (+`[id]`, MAC unique 409 w/ holder), `dhcp/leases` (`?state=&subnetId=&q=`), LOCKED
+  `dhcp/leases/[id]/release` (active-only → 409 otherwise), `dhcp/relay` (GET/PUT,
+  iface existence 400). All routes `area: "dns_dhcp"`, sections `dns`/`dhcp` → audit +
+  config_versions + `config:updated` broadcast via `route()`.
+- **Engine:** `generators/dns-queries.ts` (85/10/5 mix; first-match policy eval:
+  customAllow → customBlock("custom") → blockCategories; forwardZones latency flavor;
+  ring-only, no event) + `generators/dhcp-leases.ts` (pure planner: expire/renew/
+  release/create; pool minus reservations; reserved-IP reassign release; churn IPv4-only)
+  wired as tick steps 5b/6c; `watchPolicyChanges()` de-`break`ed (lost-event bug fixed)
+  + dns/dhcp sections; retention prunes expired/released leases > 7 d.
+- **Views:** `views/dns-dhcp/{dns,dhcp}-view.tsx` (4+4 tabs, `?tab=` deep links,
+  Query Log 10 s poll — no socket event per M06 §6), `dns-dhcp-api.ts` (envelope unwrap
+  preserving zod details), `dns-dhcp-ui.tsx` (ResultBadge/BlockedBadge/LeaseStateBadge/
+  FamilyChip/IpListEditor/OptionsEditor + per-section invalidation hooks).
+- **zod 4 gotcha (§13 material):** `.partial()` fails on schemas carrying
+  `.superRefine()` — split a refinement-free base object and re-validate merges in the
+  service (`updateRecord` re-runs `dnsRecordCreateSchema.safeParse`).
+- **Radix gotcha:** `<DialogContent>` without a `<Dialog open>` wrapper throws a
+  client-side exception (Next dev overlay shows component stack) — all four editors
+  wrapped.
+- **Shell fix (pre-existing):** sidebar `ScrollArea` grew past `h-screen`
+  (flex `min-height:auto`) inflating docH and floating the footer on desktop —
+  `min-h-0` added; sidebar scrolls internally (794 px viewport), footer sticky bottom.
+- **DB reseed was required** — sandbox restore had emptied `users` (login 401s);
+  `bun prisma/seed.ts` restored 8 users + DNS/DHCP seed rows.
+- **HARD RULE added (§11.16/17, user-mandated):** GitHub push on every phase completion;
+  never commit runtime artifacts. M06 pushed per that rule (remote SHA verified).
+- Verified: lint 0/0; tsc 0 in M06 files (9 pre-existing baseline); browser E2E —
+  login → DNS tabs (policy create/delete via dialogs) → query-log blocked rows after
+  live policy change (one tick) → DHCP subnets (overlap 409, v6 save) → leases
+  (churn + release flips to released) → relay; mobile 390 px + desktop 1440 px footer.
 
 ### 2026-11-06 — M05 VPN module LIVE (configs · sessions · user groups · tunnel state machine)
 - **M05 shipped vertically (ADR-014 order …M02→M04→M05…):** API surface —

@@ -30,6 +30,8 @@ import { PoliciesView } from "@/components/views/ips/policies-view";
 import { EventsView } from "@/components/views/ips/events-view";
 import { ConfigsView } from "@/components/views/vpn/configs-view";
 import { SessionsView } from "@/components/views/vpn/sessions-view";
+import { DnsView } from "@/components/views/dns-dhcp/dns-view";
+import { DhcpView } from "@/components/views/dns-dhcp/dhcp-view";
 import { fetchApi, useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
@@ -147,7 +149,7 @@ export function AppShell() {
           <p className="text-[11px] leading-tight text-zinc-500">UTM / NGFW Console</p>
         </div>
       </div>
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <SidebarNav current={routePath} onNavigate={() => setMobileOpen(false)} />
       </ScrollArea>
       <div className="border-t border-zinc-200 px-4 py-3 text-[11px] text-zinc-500 dark:border-zinc-800">
@@ -247,6 +249,10 @@ export function AppShell() {
               <ConfigsView />
             ) : view.path === "/vpn/sessions" ? (
               <SessionsView />
+            ) : view.path === "/dns-dhcp/dns" ? (
+              <DnsView />
+            ) : view.path === "/dns-dhcp/dhcp" ? (
+              <DhcpView />
             ) : (
               <PlaceholderView view={view} />
             )}
