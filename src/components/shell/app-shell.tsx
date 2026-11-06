@@ -36,6 +36,11 @@ import { UsersView } from "@/components/views/identity/users-view";
 import { IdentitySessionsView } from "@/components/views/identity/sessions-view";
 import { PortalView } from "@/components/views/identity/portal-view";
 import { QosView } from "@/components/views/qos/qos-view";
+import { FirewallLogsView } from "@/components/views/logs/firewall-logs-view";
+import { IpsLogsView } from "@/components/views/logs/ips-logs-view";
+import { AuditView } from "@/components/views/logs/audit-view";
+import { LiveTailView } from "@/components/views/logs/live-tail-view";
+import { ReportsView } from "@/components/views/logs/reports-view";
 import { fetchApi, useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
@@ -265,6 +270,16 @@ export function AppShell() {
               <PortalView />
             ) : view.path === "/qos/policies" ? (
               <QosView />
+            ) : view.path === "/logs/firewall" ? (
+              <FirewallLogsView />
+            ) : view.path === "/logs/ips" ? (
+              <IpsLogsView />
+            ) : view.path === "/logs/audit" ? (
+              <AuditView />
+            ) : view.path === "/logs/live" ? (
+              <LiveTailView />
+            ) : view.path === "/logs/reports" ? (
+              <ReportsView />
             ) : (
               <PlaceholderView view={view} />
             )}
