@@ -27,11 +27,11 @@
 | Product spec read & digested | DONE |
 | Documentation suite (`docs/`) | DONE (this suite) |
 | Spec coverage audit (zero-feature-loss) | DONE — REVIEW-4A + REVIEW-4B closed 2026-11-05; ROADMAP §5 console-deferral row RESTORED to Phase 1 |
-| Application code | **LIVE — M01→M07 pushed to GitHub** (dashboard, network, firewall & NAT, IPS, VPN, DNS & DHCP, identity) |
+| Application code | **COMPLETE — M01→M11 pushed to GitHub** (dashboard, network, firewall & NAT, IPS, VPN, DNS & DHCP, identity, QoS, logging & reports, system/HA/notifications, API platform) — all 29 hash views live, zero placeholders |
 | Database schema (Prisma) | LIVE — pushed + seeded (`db/cryptsk.db`) |
 | Realtime mini-service | LIVE (`mini-services/realtime-service/`, port 3003) |
-| Build milestone | **M7: Identity complete** — next M08 QoS (ROADMAP.md §Build Order / ADR-014) |
-| Current module in progress | none (M07 just completed) |
+| Build milestone | **M11: API Platform complete — ALL Phase-1 modules shipped (ADR-014 order M01→M11)** |
+| Current module in progress | none — Phase 1 console build is feature-complete |
 
 ---
 
@@ -586,6 +586,62 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 ---
 
 ## 15. SESSION LOG (append-only — newest on top)
+
+### 2026-11-06 — M08→M11 FINAL SPRINT (QoS · Logging & Reports · System/HA/Notifications · API Platform) — Phase 1 console COMPLETE
+- **Four modules shipped in one session, each committed + pushed immediately on phase
+  completion (HARD RULE §11.16):** `feat(M08)` 370560c → `feat(M09)` 1b1966d →
+  `feat(M11)` 5293ed7 → `feat(M10)` aa1d926. M11 pushed before M10 because the
+  `#/system/api-keys` view UI (M10 §4 ownership unchanged) calls M11's endpoints —
+  shipping endpoints first keeps every pushed commit working. Build-order numbering
+  preserved in commit sequence.
+- **M08 QoS (`/qos/policies`):** policies CRUD (+ruleCount, iface attach w/ one-enabled-policy-per-iface
+  409), rules CRUD scoped `?policyId=`, validation (prio 0–7, guaranteed≤max, enabled-guaranteed-sum≤budget
+  naming sum vs budget, dscp 0–63, matcher id existence, catch-all uniqueness), template seeding on create
+  (voip/video/gaming/bulk/custom per §5.1 — voip seeds `SIP` only: `RTP` not in the app catalog),
+  hard-limit classes (single matchUsers/matchApps dimension + maxKbps, no guaranteed) + "Limit user…"/
+  "Limit application…" quick-create, delete protection 409 listing referencing firewall rule names, tc
+  effect panel (htb → child classes → fq_codel; "sandbox does not run tc" footnote), utilization sparkline
+  (metrics:tick, rose cap line, wan-aggregate fallback). Engine: `loadQosRuntime` + per-tick cap clamp in
+  `metrics.ts` (attached iface → clamp; iface-less → proportional wan-aggregate scaling) — verified live
+  (wan0 rides exactly 50 000 kbps; disable → unclamped next tick).
+- **M09 Logging (`/logs/firewall|ips|audit|live|reports`):** server-paginated firewall/ips/audit lists with
+  per-view filters (q/action/src/dst/since/until · severity/category · user/objectType/result) — every filter
+  in the TanStack key, page resets on change; row detail Sheets; CSV export `X-Row-Cap: 10000`;
+  `/logs/stats` LOCKED shape (1h→5min, 24h→60min, 7d→360min buckets; series allow|deny|drop|reject +
+  ipsBySeverity); live tail (500-row client ring, pause counts missed, autoscroll, kind filter, amber
+  reconnect banner off socket events); reports (range picker, 4 stat cards, stacked action trend, action-mix
+  + threat-mix donuts, print CSS, CSV/JSON export); scheduled reports CRUD + run-now (lastRunAt); syslog +
+  NetFlow target CRUD (Forwarding tab). Audit objectTypes facet rides `GET /logs/audit?facets=objectTypes`
+  (additive param, no new route). M04's `/ips/events/{id}/suppress` reused from the IPS logs view.
+- **M10 System/HA (`/ha`, `/system/settings`, `/system/backups`, `#/setup` gate, topbar bell):** HA status
+  (simulated heartbeat, tracked-iface chips, sync chips, Keepalived explainer) + config editor gated on
+  **ha WRITE** permission (admin column doesn't exist for ha — editor gate = `canWrite("ha")`); settings
+  singleton map GET + batch PUT (snmp community masked-literal omit-to-keep; retention overrides within
+  hard caps; NTP synced flipped by engine after enabled save); backups = JSON files under `db/backups/`
+  (config|full), restore auto-safety-backup + section "all" snapshot + typed `RESTORE` confirm; firmware
+  state in `advanced/firmware` (check → available 1.0.1, upgrade = safety backup + history, rollback 409
+  when <2 entries); ssh-keys (server-derived `SHA256:…` fingerprint, private-key 400); policy templates
+  (tpl-office|tpl-hospitality|tpl-msp-branch, apply = idempotent-by-replace + section "all"); services
+  restart; setup wizard = full-screen 5-step gate rendering INSTEAD of the shell while `system/setup`
+  .completed=false (verified live by flipping the flag; seed ships completed=true); notification center
+  (bell popover, unread badge, alerts:new live prepend, mark-read + deep link, mark-all-read) replaced the
+  static topbar bell. **Engine:** resource-threshold watcher (edge-triggered, one open system-notification
+  per metric, warning → critical, info recovery) — verified emitting live ("CPU above threshold" warning
+  @97% + recovery rows).
+- **M11 API Platform (no view of its own; UI = `#/system/api-keys` tabs):** api-keys lifecycle (`ck_` + 32
+  url-safe chars, sha256 hash, prefix-only reads, full key in POST response exactly once, soft revoke,
+  expiresAt auth-time 401, machine keys 403 on /api-keys* AND /webhooks*, scopes = the 3 LOCKED arrays);
+  webhooks CRUD (https-only, 5-event enum, secret write-only/omit-to-keep, simulated delivery test →
+  {ok,status,latencyMs} + row marking); `GET /api/v1/openapi.json` = OpenAPI 3.1.0 generated from a
+  ROUTE_MANIFEST mirroring §7.2 verbatim (126 paths / 193 operations, duplicate-path drift guard, no area
+  → any authenticated principal). session.ts already throttles lastUsedAt (1/min/key).
+- **View conventions kept:** white/blue ADR-019, React-19 lint compliance (render-time derived reset
+  instead of set-state-in-effect; no ref access during render), server pagination everywhere, sticky
+  footer intact, 29/29 hash views live with zero placeholders.
+- **Ops notes:** dev server OOM-killed twice under parallel agent load (restart + `rm -rf .next` fixed a
+  stuck root-page compile); browser verification must go through the gateway origin (:81) — `localhost:3000`
+  direct does not proxy `XTransformPort`, so socket.io never connects there (test-origin artifact, not an
+  app bug).
 
 ### 2026-11-06 — M07 Identity & Access module LIVE (users · groups · auth policy · RADIUS · directory sources · captive portal + vouchers · identity sessions)
 - **M07 shipped vertically (ADR-014 order …M06→M07…):** API surface — `users`
