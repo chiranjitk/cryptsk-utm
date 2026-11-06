@@ -110,6 +110,21 @@ class MockEngine {
     return [...this.wanProbes.values()].map((p) => ({ iface: p.iface, state: p.enabled ? p.state : "down" }));
   }
 
+  /**
+   * Force an immediate probe cycle for one WAN iface (M02 §5 "Probe now").
+   * NOTE: bootstrap() only runs once — WAN policies created after engine boot
+   * are not in wanProbes, so this returns null for them (sandbox behavior).
+   */
+  forceProbe(iface: string): "up" | "degraded" | "down" | "unknown" | null {
+    const p = this.wanProbes.get(iface);
+    if (!p) return null;
+    if (!p.enabled) return null;
+    // run a few immediate cycles so thresholds can actually cross
+    for (let i = 0; i < 3; i++) this.wanMachine.step(p);
+    if (p.state !== "unknown") emitEvent({ type: "wan:status", payload: { iface: p.iface, state: p.state } });
+    return p.state;
+  }
+
   async start(): Promise<void> {
     if (this.started) return;
     if (this.starting) return this.starting;

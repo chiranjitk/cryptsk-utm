@@ -23,6 +23,9 @@ import { RulesView } from "@/components/views/firewall/rules-view";
 import { NatView } from "@/components/views/firewall/nat-view";
 import { ObjectsView } from "@/components/views/firewall/objects-view";
 import { ZonesView } from "@/components/views/firewall/zones-view";
+import { InterfacesView } from "@/components/views/network/interfaces-view";
+import { RoutingView } from "@/components/views/network/routing-view";
+import { WanView } from "@/components/views/network/wan-view";
 import { fetchApi, useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
@@ -226,6 +229,12 @@ export function AppShell() {
               <ObjectsView />
             ) : view.path === "/firewall/zones" ? (
               <ZonesView />
+            ) : view.path === "/network/interfaces" ? (
+              <InterfacesView />
+            ) : view.path === "/network/routing" ? (
+              <RoutingView />
+            ) : view.path === "/network/wan" ? (
+              <WanView />
             ) : (
               <PlaceholderView view={view} />
             )}

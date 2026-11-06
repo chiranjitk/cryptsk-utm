@@ -559,6 +559,13 @@ for envelope shape. Do not add console.log spam; remove temp logs after.
   parsed arrays. General rule: JSON columns are parsed per column, always.
 - Deleting referenced seed rows during E2E tests breaks id-based JSON references
   (groups' memberIds, rule arrays). Restore with EXPLICIT ids (raw insert), not upsert.
+- Parallel-built modules (backend + frontend agents against the same spec): the pinned
+  contract must pin REQUEST payload shapes too, not just response shapes. M02 shipped
+  a drift — frontend sent a uniform config-envelope, backend validator was a flat
+  discriminated union (vlan `parent`/`vlanId` flat; bond create `mode` = aggregation
+  mode; physical WAN edits top-level, not in `config`). Caught by browser E2E create
+  flow, fixed same session. Rule: before wiring the shell, POST one row of each type
+  through the real UI and assert the row renders.
 
 ---
 
@@ -570,6 +577,39 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 ---
 
 ## 15. SESSION LOG (append-only — newest on top)
+
+### 2026-11-06 — M02 Network module LIVE (interfaces · routing · multi-WAN)
+- **M02 shipped vertically (ADR-014 order M01→M03→M02→…):** 15 API routes —
+  `/interfaces` (list w/ live rx/tx + link/degraded states, create, detail, PUT, DELETE
+  w/ transactional cascade: WanPolicy → zones.interfaceNames → StaticRoute null → row),
+  `/interfaces/{id}/stats` (engine ring: rates + totals + 60-tick sparkline + uptime),
+  `/network/lldp-neighbors` + `/network/mac-table` (derived views — deterministic
+  30 s/60 s churn buckets, statics from DHCP reservations + bridge membership; bridge
+  filter expands to member ifaces per FDB semantics), `/network/port-mirrors` (+[id],
+  one active mirror per src → 409), `/routes` (+[id], blackhole XOR gateway),
+  `/pbr-rules` (+[id], +toggle, egress iface XOR gateway, object-id existence checks),
+  `/wan-policies` (+[id], +probe → MockEngine.forceProbe + fresh state). Validators in
+  `src/lib/validators/network.ts` (discriminated create union, flat update schema +
+  per-type config patches); services `src/lib/network/*`. RBAC area `network`.
+- **Views:** `#/network/interfaces` (4 tabs: Interfaces w/ realtime sparklines +
+  type-aware editors + stats dialog, LLDP, MAC Table, Mirroring), `#/network/routing`
+  (Static Routes + PBR w/ ObjectPicker), `#/network/wan` (policy cards + failover
+  explainer w/ active-egress calc + Probe now). Reuse fw-ui (ConfirmDialog,
+  TableSkeleton, QueryError, ObjectPicker, toasts). Realtime: metrics:tick → row
+  rates/sparklines; wan:status → badge flips + transition toasts; config:updated →
+  section-aware invalidation. nav-config M02 placeholders removed; app-shell wired.
+- **Contract bug caught by browser E2E (fixed):** the interface editor initially sent
+  a uniform config-envelope while `ifaceCreateSchema` is a flat discriminated union
+  (vlan needs flat `parent`+`vlanId`; bond create `mode` = aggregation mode) and
+  physical WAN edits must ride TOP-LEVEL `wanType/ip/gateway/dns/lldp`, not `config`.
+  Fix: per-type flat create payloads + flat physical update payloads + logical
+  `config` patches. LESSON: §13 cross-agent contract drift — when backend + frontend
+  are built in parallel, the pinned shape table must include exact payload shapes,
+  not just response shapes.
+- **Verified:** curl (all endpoints incl. 400/409 rules: physical-delete, blackhole+gw,
+  PBR both/neither, mirror dup, unknown iface/zone) + Agent Browser E2E (create vlan42
+  via dialog → row live → ConfirmDialog delete; probe now; delete cascade; dashboard
+  WAN strip === Multi-WAN state; mobile 390 px). lint 0/0; tsc clean for M02 files.
 
 ### 2026-11-06 — Enterprise blue theme (ADR-019) + M03 Firewall & NAT module LIVE
 - **Theme (owner request):** emerald/teal look replaced with enterprise white & blue —

@@ -14,9 +14,9 @@ export type ViewDef = {
 
 export const VIEWS: ViewDef[] = [
   { path: "/dashboard", title: "Dashboard", icon: "LayoutDashboard" },
-  { path: "/network/interfaces", title: "Interfaces", icon: "Network", placeholder: "M02" },
-  { path: "/network/routing", title: "Routing", icon: "Route", placeholder: "M02" },
-  { path: "/network/wan", title: "Multi-WAN", icon: "Globe", placeholder: "M02" },
+  { path: "/network/interfaces", title: "Interfaces", icon: "Network" },
+  { path: "/network/routing", title: "Routing", icon: "Route" },
+  { path: "/network/wan", title: "Multi-WAN", icon: "Globe" },
   { path: "/firewall/rules", title: "Firewall Rules", icon: "ShieldCheck" },
   { path: "/firewall/nat", title: "NAT", icon: "ArrowLeftRight" },
   { path: "/firewall/objects", title: "Objects", icon: "Boxes" },
