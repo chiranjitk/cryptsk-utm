@@ -1,0 +1,576 @@
+   451→   451→}
+   452→   452→
+   453→   453→model VpnSession {
+   454→   454→  id           Int      @id @default(autoincrement())
+   455→   455→  tenantId     Int      @default(1) @map("tenant_id")
+   456→   456→  vpnId        Int      @map("vpn_id")
+   457→   457→  userName     String?  @map("user_name")
+   458→   458→  sourceIp     String   @map("source_ip")
+   459→   459→  assignedIp   String?  @map("assigned_ip")
+   460→   460→  bytesIn      Int      @default(0) @map("bytes_in")
+   461→   461→  bytesOut     Int      @default(0) @map("bytes_out")
+   462→   462→  groupName    String?  @map("group_name") // VpnUserGroup.name at connect time (logical ref)
+   463→   463→  connectedAt  DateTime @default(now()) @map("connected_at")
+   464→   464→  lastActivity DateTime @default(now()) @map("last_activity")
+   465→   465→  status       String   @default("active") // active | idle | disconnected
+   466→   466→
+   467→   467→  tenant Tenant    @relation(fields: [tenantId], references: [id])
+   468→   468→  config VpnConfig @relation(fields: [vpnId], references: [id], onDelete: Cascade)
+   469→   469→
+   470→   470→  @@index([tenantId, vpnId, status])
+   471→   471→  @@map("vpn_sessions")
+   472→   472→}
+   473→   473→
+   474→   474→// ───────────────────────── DNS & DHCP ─────────────────────────
+   475→   475→
+   476→   476→model DnsPolicy {
+   477→   477→  id              Int     @id @default(autoincrement())
+   478→   478→  tenantId        Int     @default(1) @map("tenant_id")
+   479→   479→  name            String
+   480→   480→  enabled         Boolean @default(true)
+   481→   481→  blockCategories String  @default("[]") @map("block_categories") // JSON: ads, malware, phishing, adult, social, gambling
+   482→   482→  customBlock     String  @default("[]") @map("custom_block") // JSON array of domains
+   483→   483→  customAllow     String  @default("[]") @map("custom_allow")
+   484→   484→  sinkholeIp      String  @default("0.0.0.0") @map("sinkhole_ip")
+   485→   485→  action          String  @default("sinkhole") // sinkhole | nxdomain
+   486→   486→
+   487→   487→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   488→   488→
+   489→   489→  @@unique([tenantId, name])
+   490→   490→  @@map("dns_policies")
+   491→   491→}
+   492→   492→
+   493→   493→model DnsRecord {
+   494→   494→  id       Int     @id @default(autoincrement())
+   495→   495→  tenantId Int     @default(1) @map("tenant_id")
+   496→   496→  zone     String  // e.g. corp.local
+   497→   497→  name     String
+   498→   498→  type     String  // A | AAAA | CNAME | MX | TXT | SRV | PTR
+   499→   499→  value    String
+   500→   500→  ttl      Int     @default(3600)
+   501→   501→  priority Int?
+   502→   502→  enabled  Boolean @default(true)
+   503→   503→
+   504→   504→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   505→   505→
+   506→   506→  @@index([tenantId, zone, name])
+   507→   507→  @@map("dns_records")
+   508→   508→}
+   509→   509→
+   510→   510→model DhcpSubnet {
+   511→   511→  id          Int     @id @default(autoincrement())
+   512→   512→  tenantId    Int     @default(1) @map("tenant_id")
+   513→   513→  interfaceName String @map("interface_name")
+   514→   514→  family      String  @default("ipv4") // ipv4 | ipv6 — basic DHCPv6 (spec §1.9); v6 rows render kea-dhcp6.conf
+   515→   515→  subnetCidr  String  @map("subnet_cidr") // 192.168.10.0/24 or 2001:db8:10::/64
+   516→   516→  rangeStart  String  @map("range_start")
+   517→   517→  rangeEnd    String  @map("range_end")
+   518→   518→  gateway     String?
+   519→   519→  dnsServers  String  @default("[]") @map("dns_servers") // JSON array of ips
+   520→   520→  leaseTime   Int     @default(86400) @map("lease_time")
+   521→   521→  options     String  @default("{}") // JSON custom dhcp options
+   522→   522→  enabled     Boolean @default(true)
+   523→   523→
+   524→   524→  tenant       Tenant            @relation(fields: [tenantId], references: [id])
+   525→   525→  reservations DhcpReservation[]
+   526→   526→  leases       DhcpLease[]
+   527→   527→
+   528→   528→  @@index([tenantId, interfaceName])
+   529→   529→  @@map("dhcp_subnets")
+   530→   530→}
+   531→   531→
+   532→   532→model DhcpReservation {
+   533→   533→  id        Int    @id @default(autoincrement())
+   534→   534→  tenantId  Int    @default(1) @map("tenant_id")
+   535→   535→  subnetId  Int    @map("subnet_id")
+   536→   536→  mac       String
+   537→   537→  ip        String
+   538→   538→  hostname  String?
+   539→   539→
+   540→   540→  tenant Tenant     @relation(fields: [tenantId], references: [id])
+   541→   541→  subnet DhcpSubnet @relation(fields: [subnetId], references: [id], onDelete: Cascade)
+   542→   542→
+   543→   543→  @@unique([tenantId, mac]) // NOT globally unique — two tenants may have the same MAC
+   544→   544→  @@map("dhcp_reservations")
+   545→   545→}
+   546→   546→
+   547→   547→model DhcpLease {
+   548→   548→  id        Int      @id @default(autoincrement())
+   549→   549→  tenantId  Int      @default(1) @map("tenant_id")
+   550→   550→  subnetId  Int      @map("subnet_id")
+   551→   551→  mac       String
+   552→   552→  ip        String
+   553→   553→  hostname  String?
+   554→   554→  state     String   @default("active") // active | expired | released
+   555→   555→  startsAt  DateTime @default(now()) @map("starts_at")
+   556→   556→  endsAt    DateTime @map("ends_at")
+   557→   557→
+   558→   558→  tenant Tenant     @relation(fields: [tenantId], references: [id])
+   559→   559→  subnet DhcpSubnet @relation(fields: [subnetId], references: [id], onDelete: Cascade)
+   560→   560→
+   561→   561→  @@index([tenantId, state])
+   562→   562→  @@unique([subnetId, ip]) // unique per subnet, not globally (tenants reuse RFC1918 space)
+   563→   563→  @@map("dhcp_leases")
+   564→   564→}
+   565→   565→
+   566→   566→// ───────────────────────── QoS ─────────────────────────
+   567→   567→
+   568→   568→model QosPolicy {
+   569→   569→  id            Int     @id @default(autoincrement())
+   570→   570→  tenantId      Int     @default(1) @map("tenant_id")
+   571→   571→  name          String
+   572→   572→  enabled       Boolean @default(true)
+   573→   573→  template      String? // voip | video | gaming | bulk | custom
+   574→   574→  bandwidthKbps Int     @map("bandwidth_kbps") // total shaper for the policy
+   575→   575→  ifaceName     String? @map("iface_name") // optional per-wan attachment
+   576→   576→
+   577→   577→  tenant Tenant   @relation(fields: [tenantId], references: [id])
+   578→   578→  rules  QosRule[]
+   579→   579→  fwRules FirewallRule[]
+   580→   580→
+   581→   581→  @@unique([tenantId, name])
+   582→   582→  @@map("qos_policies")
+   583→   583→}
+   584→   584→
+   585→   585→model QosRule {
+   586→   586→  id             Int     @id @default(autoincrement())
+   587→   587→  tenantId       Int     @default(1) @map("tenant_id")
+   588→   588→  policyId       Int     @map("policy_id")
+   589→   589→  name           String
+   590→   590→  priority       Int     // 0 highest .. 7 lowest
+   591→   591→  guaranteedKbps Int?    @map("guaranteed_kbps")
+   592→   592→  maxKbps        Int?    @map("max_kbps")
+   593→   593→  dscpMark       Int?    @map("dscp_mark")
+   594→   594→  matchApps      String  @default("[]") @map("match_apps")       // JSON nDPI label ids
+   595→   595→  matchUsers     String  @default("[]") @map("match_users")
+   596→   596→  matchAddresses String  @default("[]") @map("match_addresses")  // address_objects ids
+   597→   597→
+   598→   598→  tenant Tenant    @relation(fields: [tenantId], references: [id])
+   599→   599→  policy QosPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+   600→   600→
+   601→   601→  @@index([tenantId, policyId])
+   602→   602→  @@map("qos_rules")
+   603→   603→}
+   604→   604→
+   605→   605→// ───────────────────────── Identity ─────────────────────────
+   606→   606→
+   607→   607→model RadiusProfile {
+   608→   608→  id           Int    @id @default(autoincrement())
+   609→   609→  tenantId     Int    @default(1) @map("tenant_id")
+   610→   610→  name         String
+   611→   611→  serverIp     String @map("server_ip")
+   612→   612→  authPort     Int    @default(1812) @map("auth_port")
+   613→   613→  sharedSecret String @map("shared_secret") // masked in API responses
+   614→   614→  timeoutSec   Int    @default(3) @map("timeout_sec")
+   615→   615→  retries      Int    @default(2)
+   616→   616→
+   617→   617→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   618→   618→
+   619→   619→  @@unique([tenantId, name])
+   620→   620→  @@map("radius_profiles")
+   621→   621→}
+   622→   622→
+   623→   623→model CaptivePortalProfile {
+   624→   624→  id                Int     @id @default(autoincrement())
+   625→   625→  tenantId          Int     @default(1) @map("tenant_id")
+   626→   626→  name              String
+   627→   627→  enabled           Boolean @default(false)
+   628→   628→  mode              String  @default("clickthrough") // clickthrough | credentials | voucher
+   629→   629→  interfaceName     String  @map("interface_name")
+   630→   630→  sessionTimeoutMin Int     @default(240) @map("session_timeout_min")
+   631→   631→  bandwidthKbps     Int?    @map("bandwidth_kbps")
+   632→   632→  redirectUrl       String? @map("redirect_url")
+   633→   633→  voucherTtlHours   Int     @default(24) @map("voucher_ttl_hours")
+   634→   634→
+   635→   635→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   636→   636→
+   637→   637→  @@unique([tenantId, name])
+   638→   638→  @@map("captive_portal_profiles")
+   639→   639→}
+   640→   640→
+   641→   641→model IdentitySession {
+   642→   642→  id        Int      @id @default(autoincrement())
+   643→   643→  tenantId  Int      @default(1) @map("tenant_id")
+   644→   644→  userName  String   @map("user_name")
+   645→   645→  sourceIp  String   @map("source_ip")
+   646→   646→  method    String   // local | radius | captive_portal | vpn
+   647→   647→  deviceMac String?  @map("device_mac")
+   648→   648→  startedAt DateTime @default(now()) @map("started_at")
+   649→   649→  lastSeen  DateTime @default(now()) @map("last_seen")
+   650→   650→  state     String   @default("active") // active | expired
+   651→   651→
+   652→   652→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   653→   653→
+   654→   654→  @@index([tenantId, state])
+   655→   655→  @@unique([tenantId, sourceIp]) // one identity per source IP per tenant
+   656→   656→  @@map("identity_sessions")
+   657→   657→}
+   658→   658→
+   659→   659→// ───────────────────────── Logs (append-heavy) ─────────────────────────
+   660→   660→
+   661→   661→model FirewallLog {
+   662→   662→  id        Int      @id @default(autoincrement())
+   663→   663→  tenantId  Int      @default(1) @map("tenant_id")
+   664→   664→  timestamp DateTime @default(now())
+   665→   665→  srcIp     String?  @map("src_ip")
+   666→   666→  dstIp     String?  @map("dst_ip")
+   667→   667→  srcPort   Int?     @map("src_port")
+   668→   668→  dstPort   Int?     @map("dst_port")
+   669→   669→  protocol  String?  // tcp | udp | icmp
+   670→   670→  action    String?  // allow | deny | drop | reject
+   671→   671→  ruleName  String?  @map("rule_name")
+   672→   672→  appName   String?  @map("app_name") // nDPI label
+   673→   673→  bytes     Int      @default(0)
+   674→   674→  packets   Int      @default(0)
+   675→   675→  userName  String?  @map("user_name")
+   676→   676→
+   677→   677→  @@index([tenantId, timestamp])
+   678→   678→  @@index([srcIp])
+   679→   679→  @@index([dstIp])
+   680→   680→  @@map("firewall_logs")
+   681→   681→}
+   682→   682→
+   683→   683→model AuditLog {
+   684→   684→  id         Int      @id @default(autoincrement())
+   685→   685→  tenantId   Int      @default(1) @map("tenant_id")
+   686→   686→  userId     Int?     @map("user_id")
+   687→   687→  username   String?
+   688→   688→  sourceIp   String?  @map("source_ip")
+   689→   689→  action     String   // login, rule.create, rule.update, iface.update, config.apply, …
+   690→   690→  objectType String   @map("object_type") // firewall_rule, nat_rule, interface, …
+   691→   691→  objectId   Int?     @map("object_id")
+   692→   692→  objectName String?  @map("object_name")
+   693→   693→  beforeState String? @map("before_state") // JSON
+   694→   694→  afterState  String? @map("after_state")  // JSON
+   695→   695→  result     String   @default("success") // success | failure | denied
+   696→   696→  createdAt  DateTime @default(now()) @map("created_at")
+   697→   697→
+   698→   698→  user User? @relation(fields: [userId], references: [id])
+   699→   699→
+   700→   700→  @@index([tenantId, createdAt])
+   701→   701→  @@index([tenantId, objectType])
+   702→   702→  @@map("audit_log")
+   703→   703→}
+   704→   704→
+   705→   705→// ───────────────────────── System ─────────────────────────
+   706→   706→
+   707→   707→model ConfigVersion {
+   708→   708→  id            Int      @id @default(autoincrement())
+   709→   709→  tenantId      Int      @default(1) @map("tenant_id")
+   710→   710→  version       Int
+   711→   711→  section       String   // firewall | nat | interfaces | routing | dns | dhcp | vpn | ips | qos | ha | identity | system
+   712→   712→  configSnapshot String  @map("config_snapshot") // JSON snapshot of the section
+   713→   713→  changeSummary String?  @map("change_summary")
+   714→   714→  createdBy     Int?     @map("created_by")
+   715→   715→  createdAt     DateTime @default(now()) @map("created_at")
+   716→   716→
+   717→   717→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   718→   718→  author User?  @relation("ConfigVersionAuthor", fields: [createdBy], references: [id])
+   719→   719→
+   720→   720→  @@unique([tenantId, section, version])
+   721→   721→  @@map("config_versions")
+   722→   722→}
+   723→   723→
+   724→   724→model SystemSetting {
+   725→   725→  id        Int      @id @default(autoincrement())
+   726→   726→  tenantId  Int      @default(1) @map("tenant_id")
+   727→   727→  category  String   // general | auth | logging | notifications | dns | dhcp | ips | advanced
+   728→   728→  key       String
+   729→   729→  value     String   // JSON
+   730→   730→  updatedAt DateTime @updatedAt @map("updated_at")
+   731→   731→
+   732→   732→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   733→   733→
+   734→   734→  @@unique([tenantId, category, key])
+   735→   735→  @@map("system_settings")
+   736→   736→}
+   737→   737→
+   738→   738→model Notification {
+   739→   739→  id           Int      @id @default(autoincrement())
+   740→   740→  tenantId     Int      @default(1) @map("tenant_id")
+   741→   741→  type         String   // threat | system | vpn | ha | config
+   742→   742→  severity     String   // info | warning | critical
+   743→   743→  title        String
+   744→   744→  message      String?
+   745→   745→  sourceModule String?  @map("source_module")
+   746→   746→  isRead       Boolean  @default(false) @map("is_read")
+   747→   747→  createdAt    DateTime @default(now()) @map("created_at")
+   748→   748→
+   749→   749→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   750→   750→
+   751→   751→  @@index([tenantId, isRead, createdAt])
+   752→   752→  @@map("notifications")
+   753→   753→}
+   754→   754→
+   755→   755→model ApiKey {
+   756→   756→  id         Int       @id @default(autoincrement())
+   757→   757→  tenantId   Int       @default(1) @map("tenant_id")
+   758→   758→  name       String
+   759→   759→  prefix     String    @unique // "ck_" + 8 chars — stored for lookup, full key shown once
+   760→   760→  hashedKey  String    @map("hashed_key") // sha256 of full key
+   761→   761→  scopes     String    @default("[\"read\"]") // JSON: read | write | admin
+   762→   762→  lastUsedAt DateTime? @map("last_used_at")
+   763→   763→  expiresAt  DateTime? @map("expires_at")
+   764→   764→  revoked    Boolean   @default(false)
+   765→   765→  createdAt  DateTime  @default(now()) @map("created_at")
+   766→   766→
+   767→   767→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   768→   768→
+   769→   769→  @@map("api_keys")
+   770→   770→}
+   771→   771→
+   772→   772→model HaConfig {
+   773→   773→  id         Int     @id @default(autoincrement())
+   774→   774→  tenantId   Int     @default(1) @map("tenant_id")
+   775→   775→  enabled    Boolean @default(false)
+   776→   776→  role       String  @default("disabled") // disabled | active | standby
+   777→   777→  priority   Int     @default(100) // higher wins master election (Keepalived semantics)
+   778→   778→  virtualIp  String? @map("virtual_ip") // CIDR
+   779→   779→  ifaceName  String  @map("iface_name")
+   780→   780→  peerIp     String? @map("peer_ip")
+   781→   781→  syncConfig Boolean @default(true) @map("sync_config")
+   782→   782→  sessionSync Boolean @default(true) @map("session_sync") // conntrackd firewall-session replication (spec §1.13)
+   783→   783→  trackedInterfaces String @default("[]") @map("tracked_interfaces") // JSON array of iface names — Keepalived track_interface (HA link monitoring)
+   784→   784→  failAfterSec Int   @default(10) @map("fail_after_sec")
+   785→   785→  holdDownSec  Int   @default(60) @map("hold_down_sec")
+   786→   786→
+   787→   787→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   788→   788→
+   789→   789→  @@map("ha_configs")
+   790→   790→}
+   791→   791→
+   792→   792→// ───────────────────────── Phase-1 restored models (REVIEW-4A) ─────────────────────────
+   793→   793→
+   794→   794→model PbrRule {
+   795→   795→  id            Int     @id @default(autoincrement())
+   796→   796→  tenantId      Int     @default(1) @map("tenant_id")
+   797→   797→  name          String
+   798→   798→  position      Int
+   799→   799→  enabled       Boolean @default(true)
+   800→   800→  srcAddrIds    String  @default("[]") @map("src_addr_ids") // JSON id array (mixed object+group, like firewall)
+   801→   801→  dstAddrIds    String  @default("[]") @map("dst_addr_ids")
+   802→   802→  serviceIds    String  @default("[]") @map("service_ids")
+   803→   803→  outgoingIface String? @map("outgoing_iface") // force egress WAN iface (fwmark → policy table)
+   804→   804→  gateway       String? // or force this next hop
+   805→   805→  description   String?
+   806→   806→  createdAt     DateTime @default(now()) @map("created_at")
+   807→   807→
+   808→   808→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   809→   809→
+   810→   810→  @@index([tenantId, enabled, position])
+   811→   811→  @@map("pbr_rules")
+   812→   812→}
+   813→   813→
+   814→   814→model PortMirror {
+   815→   815→  id          Int     @id @default(autoincrement())
+   816→   816→  tenantId    Int     @default(1) @map("tenant_id")
+   817→   817→  name        String
+   818→   818→  srcIface    String  @map("src_iface") // mirrored (SPAN source) iface name
+   819→   819→  dstIface    String  @map("dst_iface") // mirror target (capture) iface name
+   820→   820→  direction   String  @default("both") // ingress | egress | both
+   821→   821→  enabled     Boolean @default(true)
+   822→   822→  description String?
+   823→   823→  createdAt   DateTime @default(now()) @map("created_at")
+   824→   824→
+   825→   825→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   826→   826→
+   827→   827→  @@unique([tenantId, name])
+   828→   828→  @@index([tenantId, srcIface])
+   829→   829→  @@map("port_mirrors")
+   830→   830→}
+   831→   831→
+   832→   832→model VpnUserGroup {
+   833→   833→  id                  Int     @id @default(autoincrement())
+   834→   834→  tenantId            Int     @default(1) @map("tenant_id")
+   835→   835→  name                String
+   836→   836→  description         String?
+   837→   837→  pool                String? // per-group address pool CIDR (overrides the config pool)
+   838→   838→  dns                 String? // pushed DNS server
+   839→   839→  idleTimeoutMin      Int?    @map("idle_timeout_min") // VPN idle session timeout (group)
+   840→   840→  maxSessionMin       Int?    @map("max_session_min") // max session duration (group)
+   841→   841→  maxSessionsPerUser  Int?    @map("max_sessions_per_user") // per-group session limit (per-user limit = single-member group)
+   842→   842→  memberUsernames     String  @default("[]") @map("member_usernames") // JSON array of remote usernames (logical ref to VpnSession.userName)
+   843→   843→  createdAt           DateTime @default(now()) @map("created_at")
+   844→   844→
+   845→   845→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   846→   846→
+   847→   847→  @@unique([tenantId, name])
+   848→   848→  @@map("vpn_user_groups")
+   849→   849→}
+   850→   850→
+   851→   851→model SyslogTarget {
+   852→   852→  id          Int     @id @default(autoincrement())
+   853→   853→  tenantId    Int     @default(1) @map("tenant_id")
+   854→   854→  name        String
+   855→   855→  host        String
+   856→   856→  port        Int     @default(514)
+   857→   857→  protocol    String  @default("udp") // udp | tcp | tls
+   858→   858→  minSeverity String  @default("info") @map("min_severity") // info | low | medium | high | critical
+   859→   859→  enabled     Boolean @default(true)
+   860→   860→  createdAt   DateTime @default(now()) @map("created_at")
+   861→   861→
+   862→   862→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   863→   863→
+   864→   864→  @@unique([tenantId, name])
+   865→   865→  @@map("syslog_targets")
+   866→   866→}
+   867→   867→
+   868→   868→model NetflowTarget {
+   869→   869→  id           Int     @id @default(autoincrement())
+   870→   870→  tenantId     Int     @default(1) @map("tenant_id")
+   871→   871→  name         String
+   872→   872→  host         String
+   873→   873→  port         Int     @default(2055)
+   874→   874→  version      String  @default("ipfix") // v5 | v9 | ipfix
+   875→   875→  samplingRate Int     @default(100) @map("sampling_rate") // 1-in-N
+   876→   876→  enabled      Boolean @default(true)
+   877→   877→  createdAt    DateTime @default(now()) @map("created_at")
+   878→   878→
+   879→   879→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   880→   880→
+   881→   881→  @@unique([tenantId, name])
+   882→   882→  @@map("netflow_targets")
+   883→   883→}
+   884→   884→
+   885→   885→model ReportSchedule {
+   886→   886→  id         Int      @id @default(autoincrement())
+   887→   887→  tenantId   Int      @default(1) @map("tenant_id")
+   888→   888→  name       String
+   889→   889→  range      String   @default("daily") // daily | weekly | monthly
+   890→   890→  format     String   @default("pdf")   // pdf | html | csv | json
+   891→   891→  sections   String   @default("[\"traffic\",\"threats\"]") @map("sections") // JSON array: traffic | threats | audit
+   892→   892→  recipients String?  // email addresses (appliance-side delivery; sandbox: on-screen/run-now)
+   893→   893→  enabled    Boolean  @default(true)
+   894→   894→  lastRunAt  DateTime? @map("last_run_at")
+   895→   895→  createdAt  DateTime @default(now()) @map("created_at")
+   896→   896→
+   897→   897→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   898→   898→
+   899→   899→  @@unique([tenantId, name])
+   900→   900→  @@map("report_schedules")
+   901→   901→}
+   902→   902→
+   903→   903→model Webhook {
+   904→   904→  id             Int      @id @default(autoincrement())
+   905→   905→  tenantId       Int      @default(1) @map("tenant_id")
+   906→   906→  name           String
+   907→   907→  url            String   // https endpoint (absolute; appliance-side delivery)
+   908→   908→  events         String   @default("[\"alerts.new\"]") // JSON array of webhooks.events values (§6)
+   909→   909→  secret         String?  // HMAC secret — masked in API responses (write-only)
+   910→   910→  enabled        Boolean  @default(true)
+   911→   911→  lastDeliveryAt DateTime? @map("last_delivery_at")
+   912→   912→  lastStatus     String?  @map("last_status") // e.g. "200" | "timeout" (simulated)
+   913→   913→  failureCount   Int      @default(0) @map("failure_count")
+   914→   914→  createdAt      DateTime @default(now()) @map("created_at")
+   915→   915→
+   916→   916→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   917→   917→
+   918→   918→  @@unique([tenantId, name])
+   919→   919→  @@map("webhooks")
+   920→   920→}
+   921→   921→
+   922→   922→model SshKey {
+   923→   923→  id          Int      @id @default(autoincrement())
+   924→   924→  tenantId    Int      @default(1) @map("tenant_id")
+   925→   925→  name        String
+   926→   926→  publicKey   String   @map("public_key") // OpenSSH authorized_keys line
+   927→   927→  fingerprint String?  // sha256 fingerprint (derived on save)
+   928→   928→  addedBy     String?  @map("added_by") // username
+   929→   929→  enabled     Boolean  @default(true)
+   930→   930→  createdAt   DateTime @default(now()) @map("created_at")
+   931→   931→
+   932→   932→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   933→   933→
+   934→   934→  @@unique([tenantId, name])
+   935→   935→  @@map("ssh_keys")
+   936→   936→}
+   937→   937→
+   938→   938→model DirectorySource {
+   939→   939→  id           Int     @id @default(autoincrement())
+   940→   940→  tenantId     Int     @default(1) @map("tenant_id")
+   941→   941→  name         String
+   942→   942→  type         String  @default("ldap") // ldap | ad
+   943→   943→  serverIp     String  @map("server_ip")
+   944→   944→  port         Int     @default(389)
+   945→   945→  baseDn       String  @map("base_dn")
+   946→   946→  bindDn       String? @map("bind_dn")
+   947→   947→  bindPassword String? @map("bind_password") // write-only, masked in responses (sharedSecret masking rule)
+   948→   948→  userFilter   String? @map("user_filter") // e.g. (memberOf=cn=vpn,ou=groups,…)
+   949→   949→  enabled      Boolean @default(true)
+   950→   950→  createdAt    DateTime @default(now()) @map("created_at")
+   951→   951→
+   952→   952→  tenant Tenant @relation(fields: [tenantId], references: [id])
+   953→   953→
+   954→   954→  @@unique([tenantId, name])
+   955→   955→  @@map("directory_sources")
+   956→   956→}
+   957→   957→```
+   958→   958→
+   959→   959→## 4. JSON Field Shapes (zod-validated)
+   960→   960→
+   961→   961→| Field | Shape |
+   962→   962→|---|---|
+   963→   963→| `NetworkInterface.config` (physical) | `{ mac?: string, speedMbps?: number, duplex?: "half"\|"full", wanType?: "static"\|"dhcp"\|"pppoe", ip?: string, cidrPrefix?: number, gateway?: string, dns?: string[], pppoe?: { user: string, password: string, service?: string }, lldp?: boolean }` — `lldp` enables LLDP transmit on the iface (default true) |
+   964→   964→| `NetworkInterface.config` (vlan) | `{ parent: string }` (vlanId is a column) |
+   965→   965→| `NetworkInterface.config` (bridge) | `{ members: string[], stp?: boolean, stpMode?: "stp"\|"rstp", igmpSnooping?: boolean }` |
+   966→   966→| `NetworkInterface.config` (bond) | `{ members: string[], mode: "active-backup"\|"802.3ad"\|"balance-xor" }` |
+   967→   967→| `NetworkInterface.config` (gre) | `{ local: string, remote: string, ttl?: number }` |
+   968→   968→| `NetworkInterface.config` (ipip) | `{ local: string, remote: string }` (proto-41 tunnel; no TTL field) |
+   969→   969→| `ScheduleObject.recurrence` | `{ days: number[], start: "HH:MM", end: "HH:MM" }` (days 1=Mon..7=Sun) |
+   970→   970→| `IpsPolicy.ruleCategories` | `{ [category: string]: boolean }` — categories list served by `/api/v1/ips/rule-categories` |
+   971→   971→| `IpsPolicy.exceptions` | `[{ sid: number, source?: string, dest?: string, comment?: string }]` — `sid: 0` means "any SID" (SID-less capture-level bypass; generator renders it as an nftables `skip queue` rule ahead of the Suricata queue rule — ADR-017) |
+   972→   972→| `IpsPolicy.thresholds` | `[{ sid: number, track: "by_src"\|"by_dst", count: number, seconds: number }]` |
+   973→   973→| `IpsPolicy.preprocessors` | `{ stream?: boolean, http?: boolean, tls?: boolean, ssh?: boolean }` — anomaly-detection engine toggles, default all true (spec §1.6) |
+   974→   974→| `SystemSetting.value` (category `dns`, key `resolver`) | `{ forwarders: string[], cacheSizeMb: number, rrl: boolean, dot: boolean, forwardZones: [{ domain: string, server: string, port?: number }], doh?: { enabled: boolean, port?: number } }` — `forwardZones` = per-domain conditional forwarding (Unbound forward-zones, spec §1.8); `doh` = DoH server toggle (spec §1.8) |
+   975→   975→| `SystemSetting.value` (category `dhcp`, key `relay`) | `{ enabled: boolean, servers: string[], interfaces: string[] }` — DHCP relay / ip-helper (spec §1.9) |
+   976→   976→| `SystemSetting.value` (category `ips`, key `auto_update`) | `{ enabled: boolean, interval: "daily"\|"weekly", time: "HH:MM", source: "et_free", lastUpdateAt?: string, nextUpdateAt?: string }` — suricata-update scheduler (spec §1.6) |
+   977→   977→| `SystemSetting.value` (category `general`, key `ntp`) | `{ enabled: boolean, servers: string[], synced: boolean, lastSyncAt?: string }` — NTP configuration (spec §1.14) |
+   978→   978→| `SystemSetting.value` (category `advanced`, key `snmp`) | `{ enabled: boolean, version: "v2c"\|"v3", community?: string (masked in responses), port?: number, allowedIps?: string[], v3?: { user: string, authProto?: "sha"\|"sha256", privProto?: "aes"\|"des" } }` — SNMP v2c/v3 (spec §1.14) |
+   979→   979→| `SystemSetting.value` (category `advanced`, key `hardening`) | `{ sshPasswordAuth: boolean, managementAllowlist: string[], stopUnusedServices: boolean }` — system hardening toggles (spec §1.14) |
+   980→   980→| `SystemSetting.value` (category `notifications`, key `thresholds`) | `{ cpuPct: number, memPct: number, diskPct: number, tempC: number }` — resource-alert thresholds (spec §1.14); engine emits warning/critical notifications when crossed |
+   981→   981→| `SystemSetting.value` (category `advanced`, key `firmware`) | `{ current: string, channel: "stable", lastCheckAt?: string, available?: string, history: [{ version: string, appliedAt: string }] }` — firmware upgrade/rollback state (spec §1.14; appliance = apt + systemd, sandbox simulated) |
+   982→   982→| `SystemSetting.value` (category `auth`, keys `totp` + `sessionLimits`) | `totp: { required: boolean }`; `sessionLimits: { maxConcurrentPerUser: number }` (1–16) — MFA enforcement + concurrent session limits (spec §1.10/§1.14) |
+   983→   983→| `SystemSetting.value` (category `logging`, key `disk_quota`) | `{ diskQuotaMb: number }` — log storage disk quota (spec §1.12 storage management) |
+   984→   984→| `VpnConfig.config` (wireguard_s2s) | `{ privateKey: string, listenPort: number, peers: [{ name, publicKey, allowedIps: string[], endpoint?, keepaliveSec? }], address: string }` |
+   985→   985→| `VpnConfig.config` (wireguard_remote) | `{ privateKey: string, listenPort: number, address: string, pool: string, dns?: string, keepaliveSec?: number, peers: [{ name, publicKey, allowedIps: string[] }] }` — each provisioned remote client is a peer with a `/32` `allowedIps` from the pool (pool + peer `/32`s are the IPAM; client-bundle generation appends peers, M05 §5) |
+   986→   986→| `VpnConfig.config` (ipsec_*) | `{ localIp, remoteIp?, localSubnets: string[], remoteSubnets: string[], psk, ike: string, esp: string, dpdSec?: number, pfs?: boolean, authMethod?: "psk"\|"eap_mschapv2"\|"eap_tls", replayWindow?: 32\|64\|128\|256\|512\|1024, dns?: string }` — `replayWindow` = IPsec anti-replay window (spec §1.7); `dns` = pushed DNS for EAP remote-access clients |
+   987→   987→| `VpnConfig.config` (openvpn) | `{ proto: "udp"\|"tcp", port: number, cipher: string, auth: string, pool: string, tls?: boolean, dns?: string, keepaliveSec?: number }` |
+   988→   988→| `DhcpSubnet.options` | `{ [optionCode: string]: string }` e.g. `{ "42": "192.168.10.1" }` (NTP) |
+   989→   989→| `QosPolicy`/`QosRule` matches | arrays of ids / nDPI label ids (strings) |
+   990→   990→| `PbrRule` id arrays | same mixed object+group id semantics as `nat_rules` (ER_DIAGRAM §3) |
+   991→   991→| `VpnUserGroup.memberUsernames` | JSON array of remote usernames (logical ref; matched against `VpnSession.userName` by the engine) |
+   992→   992→| `Webhook.events` | JSON array of the locked `webhooks.events` values (PROJECT_MEMORY §6) |
+   993→   993→| `HaConfig.trackedInterfaces` | JSON array of interface names (logical ref to `interfaces.name`) |
+   994→   994→| `FirewallRule.srcMacs` | JSON array of MAC strings (`aa:bb:cc:dd:ee:ff`, zod mac regex) |
+   995→   995→| `SystemSetting.value` | free JSON per settings schema (M10) |
+   996→   996→| `ApiKey.scopes` | `["read"]`, `["read","write"]`, or `["read","write","admin"]` |
+   997→   997→
+   998→   998→## 5. Index & Integrity Notes
+   999→   999→
+  1000→  1000→- Hot paths: `firewall_logs(tenantId,timestamp)`, `ips_events(tenantId,timestamp)`,
+  1001→  1001→  `audit_log(tenantId,createdAt)`, `firewall_rules(tenantId,enabled,position)`.
+  1002→  1002→- Log retention job (DATA_LIFECYCLE §4) deletes by timestamp in batches; no FK from logs to config tables (rows survive rule deletion — `ruleName`/`appName` are denormalized strings on purpose).
+  1003→  1003→- Deletes: config objects RESTRICT when referenced (service layer checks logical refs before delete and returns `CONFLICT` with referencing rule names); children with FK cascade: reservations/leases (subnet), vpn_sessions (vpn), qos_rules (policy), group members.
+  1004→  1004→- All list endpoints are tenant-scoped automatically (handler injects `tenantId` from JWT).
+  1005→  1005→
+  1006→  1006→## 6. Pseudo-Resources (no dedicated table — persistence decisions)
+  1007→  1007→
+  1008→  1008→| Resource | Persistence | Notes |
+  1009→  1009→|---|---|---|
+  1010→  1010→| DNS resolver settings (`GET/PUT /api/v1/dns/settings`) | `SystemSetting` row: category `dns`, key `resolver`, JSON value | forwarders, cache size, RRL toggle, DoT display flag, **forwardZones (per-domain conditional forwarding)**, **DoH server toggle** |
+  1011→  1011→| DHCP relay (`GET/PUT /api/v1/dhcp/relay`) | `SystemSetting` row: category `dhcp`, key `relay`, JSON value | ip-helper servers + interfaces (spec §1.9) |
+  1012→  1012→| IPS auto-update scheduler (`GET/PUT /api/v1/ips/update-settings`) | `SystemSetting` row: category `ips`, key `auto_update`, JSON value | suricata-update interval + last/next run (spec §1.6) |
+  1013→  1013→| Firmware state (`/api/v1/system/firmware*`) | `SystemSetting` row: category `advanced`, key `firmware` | current version, history, rollback source; appliance = apt + systemd |
+  1014→  1014→| Backups (`/api/v1/system/backups`) | Filesystem JSON files under `db/backups/<ts>-<label>.json` | list = directory scan; restore = snapshot reload; never stored in SQLite (avoid self-copy problem) |
+  1015→  1015→| Captive-portal vouchers | In-memory (MockEngine), volatile by design (Phase 1) | list/generate/revoke via `/api/v1/captive-portal/vouchers` |
+  1016→  1016→| DNS query log | Derived view from MockEngine ring buffer (not a table) | see DATA_LIFECYCLE §3 |
+  1017→  1017→| LLDP neighbor table (`GET /api/v1/network/lldp-neighbors`) | Derived view from MockEngine ring buffer (not a table) | `switching` generator churns neighbors per tick; reset clears |
+  1018→  1018→| MAC/FDB table (`GET /api/v1/network/mac-table`) | Derived view from MockEngine ring buffer (not a table) | bridge FDB entries; static entries surface via DHCP reservations + bridge members |
+  1019→  1019→
+  1020→  1020→## 7. Do / Don't
+  1021→  1021→
+  1022→  1022→- DO copy §3 verbatim into `prisma/schema.prisma` at bootstrap (M0), then `bun run db:push`.
+  1023→  1023→- DO extend schema only together with this doc (recipe PROJECT_MEMORY §12).
+  1024→  1024→- DON'T add Prisma enums, `Json` type, or array scalars.
+  1025→  1025→- DON'T add FKs for JSON-array logical references — they live in ER_DIAGRAM §3 and service-layer checks only.
+  1026→  1026→

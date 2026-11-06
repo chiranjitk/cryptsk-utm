@@ -1,0 +1,386 @@
+/**
+ * MockEngine — sandbox stand-in for the appliance data plane (SIMULATION_LAYER §4).
+ * 2 s tick loop; seeded PRNG (mulberry32, MOCK_SEED env, default 1337);
+ * ring buffers: 500 metric ticks + 2000 log entries; periodic persistence to
+ * SQLite so /api/v1/logs/* and /api/v1/ips/events return live data.
+ * Singleton per process (globalThis guard survives HMR).
+ */
+
+import { db } from "@/lib/db";
+import { emitEvent, type FirewallLogEntry, type IpsEventEntry, type MetricsTick } from "./events";
+import { getProfile, type TrafficProfile } from "./profiles";
+import { MetricsGenerator, type IfaceMeta } from "./generators/metrics";
+import { FirewallLogGenerator, type RuleMeta } from "./generators/firewall-logs";
+import { IpsEventGenerator } from "./generators/ips-events";
+import {
+  SessionChurnMachine,
+  VpnStateMachine,
+  WanProbeMachine,
+  type VpnTunnelState,
+  type VpnTunnelStatus,
+  type WanProbeState,
+} from "./generators/sessions";
+
+export interface VpnSessionState {
+  id: number;
+  vpnId: number;
+  userName: string | null;
+  status: string; // active | idle | disconnected
+  bytesIn: number;
+  bytesOut: number;
+  lastActivity: string;
+}
+
+export interface LogRingEntry {
+  kind: "firewall" | "ips";
+  entry: FirewallLogEntry | IpsEventEntry;
+  seq: number;
+}
+
+const METRICS_RING_CAP = 500; // SIMULATION_LAYER §4
+const LOGS_RING_CAP = 2000; // SIMULATION_LAYER §4
+const TICK_MS = 2000;
+const PERSIST_EVERY = 10; // ticks (20 s)
+const SESSIONS_EMIT_EVERY = 5; // ticks
+const RETENTION_EVERY = 250; // ticks
+
+const LAN_HOSTS = Array.from({ length: 24 }, (_, i) => `192.168.10.${10 + i * 10}`).concat(
+  Array.from({ length: 8 }, (_, i) => `192.168.20.${100 + i * 2}`),
+  Array.from({ length: 6 }, (_, i) => `10.99.1.${10 + i}`),
+);
+
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+class MockEngine {
+  private started = false;
+  private starting: Promise<void> | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private tickNo = 0;
+  private rand: () => number = mulberry32(Number(process.env.MOCK_SEED ?? 1337));
+  private profile: TrafficProfile = getProfile();
+
+  readonly metricsRing: MetricsTick[] = [];
+  readonly logsRing: LogRingEntry[] = [];
+
+  private ifaces: IfaceMeta[] = [];
+  private rules: RuleMeta[] = [];
+  private wanProbes = new Map<string, WanProbeState>();
+  private tunnels: VpnTunnelState[] = [];
+  private vpnSessions: VpnSessionState[] = [];
+  private hitDeltas = new Map<number, number>();
+
+  private metricsGen = new MetricsGenerator(this.rand);
+  private fwGen = new FirewallLogGenerator(this.rand, [], this.profile);
+  private ipsGen = new IpsEventGenerator(this.rand, this.profile);
+  private wanMachine = new WanProbeMachine(this.rand, this.profile.wanFlapRate);
+  private vpnMachine = new VpnStateMachine(this.rand);
+  private churn = new SessionChurnMachine(this.rand);
+
+  private pendingFwLogs: FirewallLogEntry[] = [];
+  private pendingIpsEvents: IpsEventEntry[] = [];
+  private sessionDiffsBacklog: Array<{ id: number; userName: string | null; status?: string; bytesIn?: number; bytesOut?: number; lastActivity?: string }> = [];
+  private lastAlertTick = -100;
+
+  get uptimeSec(): number {
+    return 983412 + Math.floor(process.uptime());
+  }
+  get tickNumber(): number {
+    return this.tickNo;
+  }
+  get wanStates(): Array<{ iface: string; state: string }> {
+    return [...this.wanProbes.values()].map((p) => ({ iface: p.iface, state: p.enabled ? p.state : "down" }));
+  }
+
+  async start(): Promise<void> {
+    if (this.started) return;
+    if (this.starting) return this.starting;
+    this.starting = this.bootstrap();
+    await this.starting;
+    this.started = true;
+    this.timer = setInterval(() => {
+      void this.tick();
+    }, TICK_MS);
+    // first tick immediately so the UI has data on boot
+    void this.tick();
+  }
+
+  private async bootstrap(): Promise<void> {
+    try {
+      const [ifaces, rules, wans, vpns] = await Promise.all([
+        db.networkInterface.findMany({ where: { tenantId: 1 }, select: { name: true, role: true, enabled: true } }),
+        db.firewallRule.findMany({ where: { tenantId: 1 }, select: { id: true, name: true, action: true, enabled: true } }),
+        db.wanPolicy.findMany({ where: { tenantId: 1 }, include: { interface: { select: { enabled: true } } } }),
+        db.vpnConfig.findMany({ where: { tenantId: 1 }, select: { id: true, name: true, type: true, enabled: true, status: true } }),
+      ]);
+      this.ifaces = ifaces.map((i) => ({ name: i.name, role: i.role, enabled: i.enabled }));
+      this.rules = rules.map((r) => ({ id: r.id, name: r.name, action: r.action, enabled: r.enabled }));
+      this.fwGen.setRules(this.rules);
+      for (const w of wans) {
+        this.wanProbes.set(w.interfaceName, {
+          iface: w.interfaceName,
+          enabled: w.enabled && w.interface.enabled,
+          state: (w.state === "up" || w.state === "degraded" ? w.state : "down") as WanProbeState["state"],
+          goodProbes: 0,
+          badProbes: 0,
+        });
+      }
+      this.tunnels = vpns.map((v) => ({
+        id: v.id,
+        name: v.name,
+        type: v.type,
+        enabled: v.enabled,
+        status: (["up", "down", "connecting", "error"].includes(v.status) ? v.status : "down") as VpnTunnelStatus,
+        dpdTicks: 0,
+      }));
+      const sessions = await db.vpnSession.findMany({
+        where: { tenantId: 1, status: { not: "disconnected" } },
+        select: { id: true, vpnId: true, userName: true, status: true, bytesIn: true, bytesOut: true, lastActivity: true },
+      });
+      this.vpnSessions = sessions.map((s) => ({
+        id: s.id,
+        vpnId: s.vpnId,
+        userName: s.userName,
+        status: s.status,
+        bytesIn: s.bytesIn,
+        bytesOut: s.bytesOut,
+        lastActivity: s.lastActivity.toISOString(),
+      }));
+    } catch (err) {
+      console.error("[mock-engine] bootstrap failed (will retry):", err instanceof Error ? err.message : err);
+      // retry in 5 s — DB may not be ready yet
+      setTimeout(() => {
+        this.starting = null;
+        void this.start();
+      }, 5000);
+      throw err;
+    }
+  }
+
+  private logSeq = 0;
+
+  private async tick(): Promise<void> {
+    try {
+      this.tickNo += 1;
+      // self-heal across HMR: the globalThis singleton keeps old generator
+      // instances; re-syncing the profile is idempotent and cheap.
+      this.ipsGen.setProfile(this.profile);
+
+      // 1) metrics
+      const tick = this.metricsGen.tick(this.ifaces, this.tickNo, this.profile.baselines);
+      this.metricsRing.push(tick);
+      if (this.metricsRing.length > METRICS_RING_CAP) this.metricsRing.shift();
+      emitEvent({ type: "metrics:tick", payload: tick });
+
+      // 2) wan probes
+      for (const p of this.wanProbes.values()) {
+        const next = this.wanMachine.step(p);
+        if (next && next !== "unknown") {
+          emitEvent({ type: "wan:status", payload: { iface: p.iface, state: next } });
+        }
+      }
+
+      // 3) vpn tunnels
+      for (const t of this.tunnels) {
+        const next = this.vpnMachine.step(t);
+        if (next) {
+          const msg =
+            next === "up" ? "Tunnel established" : next === "connecting" ? "IKE/DPD negotiation in progress" : "Tunnel down";
+          emitEvent({ type: "vpn:status", payload: { vpnId: t.id, status: next, statusMessage: msg } });
+        }
+      }
+
+      // 4) firewall logs (+ rule hit counters)
+      const apps = this.profile.appMix.map(([a]) => a);
+      const fwLogs = this.fwGen.generate(LAN_HOSTS, apps);
+      for (const log of fwLogs) {
+        const rule = this.rules.find((r) => r.name === log.ruleName);
+        if (rule) this.hitDeltas.set(rule.id, (this.hitDeltas.get(rule.id) ?? 0) + 1);
+        this.logSeq += 1;
+        this.logsRing.push({ kind: "firewall", entry: log, seq: this.logSeq });
+        this.pendingFwLogs.push(log);
+      }
+      if (this.logsRing.length > LOGS_RING_CAP) this.logsRing.splice(0, this.logsRing.length - LOGS_RING_CAP);
+
+      // 5) ips events (+ threat alerts as notifications)
+      const ips = this.ipsGen.generate();
+      if (ips) {
+        this.logSeq += 1;
+        this.logsRing.push({ kind: "ips", entry: ips, seq: this.logSeq });
+        this.pendingIpsEvents.push(ips);
+        if (this.logsRing.length > LOGS_RING_CAP) this.logsRing.splice(0, this.logsRing.length - LOGS_RING_CAP);
+        if ((ips.severity === "high" || ips.severity === "critical") && this.tickNo - this.lastAlertTick > 10) {
+          this.lastAlertTick = this.tickNo;
+          const notification = await db.notification
+            .create({
+              data: {
+                tenantId: 1,
+                type: "threat",
+                severity: ips.severity === "critical" ? "critical" : "warning",
+                title: `IPS ${ips.severity}: ${ips.category ?? "event"} on ${ips.action === "drop" ? "wan0" : "lan"}`,
+                message: ips.message,
+                sourceModule: "ips",
+              },
+            })
+            .catch(() => null);
+          if (notification) {
+            emitEvent({
+              type: "alerts:new",
+              payload: {
+                notification: {
+                  id: notification.id,
+                  type: notification.type,
+                  severity: notification.severity,
+                  title: notification.title,
+                  message: notification.message,
+                  sourceModule: notification.sourceModule,
+                  createdAt: notification.createdAt.toISOString(),
+                  isRead: notification.isRead,
+                },
+              },
+            });
+          }
+        }
+        emitEvent({ type: "logs:tail", payload: { kind: "ips", entry: ips } });
+      }
+      for (const log of fwLogs) {
+        emitEvent({ type: "logs:tail", payload: { kind: "firewall", entry: log } });
+      }
+
+      // 6) vpn session churn
+      const churnDiffs = this.churn.step(this.vpnSessions);
+      this.sessionDiffsBacklog.push(...churnDiffs);
+      if (this.tickNo % SESSIONS_EMIT_EVERY === 0 && this.sessionDiffsBacklog.length > 0) {
+        emitEvent({ type: "sessions:update", payload: { kind: "vpn", diff: this.sessionDiffsBacklog.slice(0, 50) } });
+        this.sessionDiffsBacklog = [];
+      }
+
+      // 7) periodic persistence
+      if (this.tickNo % PERSIST_EVERY === 0) await this.persist();
+
+      // 8) retention housekeeping
+      if (this.tickNo % RETENTION_EVERY === 0) await this.retention();
+    } catch (err) {
+      console.error("[mock-engine] tick error:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  private async persist(): Promise<void> {
+    // firewall logs
+    const fw = this.pendingFwLogs.splice(0, this.pendingFwLogs.length);
+    if (fw.length) {
+      await db.firewallLog
+        .createMany({
+          data: fw.map((l) => ({
+            tenantId: 1,
+            timestamp: new Date(l.ts),
+            srcIp: l.srcIp,
+            dstIp: l.dstIp,
+            srcPort: l.srcPort,
+            dstPort: l.dstPort,
+            protocol: l.protocol,
+            action: l.action,
+            ruleName: l.ruleName,
+            appName: l.appName,
+            bytes: l.bytes,
+            packets: l.packets,
+            userName: l.userName,
+          })),
+        })
+        .catch(() => {});
+    }
+    // ips events
+    const ips = this.pendingIpsEvents.splice(0, this.pendingIpsEvents.length);
+    if (ips.length) {
+      await db.ipsEvent
+        .createMany({
+          data: ips.map((e) => ({
+            tenantId: 1,
+            timestamp: new Date(e.ts),
+            srcIp: e.srcIp,
+            srcPort: e.srcPort,
+            dstIp: e.dstIp,
+            dstPort: e.dstPort,
+            action: e.action,
+            sid: e.sid,
+            severity: e.severity,
+            category: e.category,
+            message: e.message,
+          })),
+        })
+        .catch(() => {});
+    }
+    // rule hit counters
+    if (this.hitDeltas.size) {
+      for (const [id, delta] of this.hitDeltas) {
+        await db.firewallRule
+          .update({ where: { id }, data: { hitCount: { increment: delta }, lastHitAt: new Date() } })
+          .catch(() => {});
+      }
+      this.hitDeltas.clear();
+    }
+    // wan policy states
+    for (const p of this.wanProbes.values()) {
+      await db.wanPolicy
+        .updateMany({ where: { tenantId: 1, interfaceName: p.iface }, data: { state: p.enabled ? p.state : "down" } })
+        .catch(() => {});
+    }
+    // vpn tunnel statuses
+    for (const t of this.tunnels) {
+      await db.vpnConfig
+        .update({ where: { id: t.id }, data: { status: t.status } })
+        .catch(() => {});
+    }
+    // vpn session byte counters / status
+    for (const s of this.vpnSessions) {
+      await db.vpnSession
+        .update({
+          where: { id: s.id },
+          data: { bytesIn: s.bytesIn, bytesOut: s.bytesOut, status: s.status, lastActivity: new Date(s.lastActivity) },
+        })
+        .catch(() => {});
+    }
+    // dhcp lease expiry housekeeping (lease state machine — DATA_LIFECYCLE §4)
+    await db.dhcpLease
+      .updateMany({ where: { tenantId: 1, state: "active", endsAt: { lt: new Date() } }, data: { state: "expired" } })
+      .catch(() => {});
+  }
+
+  private async retention(): Promise<void> {
+    // firewall_logs cap 50k, ips_events cap 5k (DATA_LIFECYCLE §4)
+    await trim("firewallLog", 50_000);
+    await trim("ipsEvent", 5_000);
+  }
+}
+
+async function trim(model: "firewallLog" | "ipsEvent", cap: number) {
+  const delegate = model === "firewallLog" ? db.firewallLog : db.ipsEvent;
+  const count = await delegate.count({ where: { tenantId: 1 } });
+  if (count <= cap) return;
+  const excess = count - cap;
+  const oldest = await delegate.findMany({
+    where: { tenantId: 1 },
+    orderBy: { timestamp: "asc" },
+    take: excess,
+    select: { id: true },
+  });
+  await delegate.deleteMany({ where: { id: { in: oldest.map((r) => r.id) } } }).catch(() => {});
+}
+
+// ── singleton (survives HMR via globalThis) ────────────────────────────────
+const g = globalThis as unknown as { __cryptskMockEngine?: MockEngine };
+
+export function getMockEngine(): MockEngine {
+  if (!g.__cryptskMockEngine) g.__cryptskMockEngine = new MockEngine();
+  return g.__cryptskMockEngine;
+}
+
+export type { MockEngine };

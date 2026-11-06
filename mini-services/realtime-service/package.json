@@ -1,0 +1,12 @@
+{
+  "name": "cryptsk-realtime-service",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "bun --hot index.ts",
+    "start": "bun index.ts"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.1"
+  }
+}

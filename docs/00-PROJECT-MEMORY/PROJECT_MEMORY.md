@@ -561,6 +561,25 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-06 — M0 foundation BUILT & browser-verified (Task D-1 + fixes)
+- **Shipped:** prisma/schema.prisma (all models, SQLite/ADR-005 adaptation) + seed
+  (tenant, 8 users/roles, zones, 7 ifaces, 12 fw rules, BALANCED/STRICT_WEB IPS, …);
+  lib/api handler (envelope/RBAC/audit/requestId), auth login/logout/me (jose, 8h,
+  username+password per AUTH_AND_RBAC §2); realtime mini-service on 3003 (7 locked
+  events); MockEngine (mulberry32/MOCK_SEED, profiles, firewall+IPS+metrics generators,
+  ring caps 500/2000) + SimulatedAdapter; /api/v1/dashboard/summary; AppShell (sidebar
+  27 links, hash router, auth gate, dark mode, sticky footer) + real #/dashboard
+  (gauges, live throughput chart via metrics:tick + 60-tick backfill, WAN strip,
+  threat feed, apps donut, top talkers, quick actions) + login + placeholder views.
+- **Fixed during build:** IpsEventGenerator missing profile (tick crash) — constructor
+  arg + self-healing setProfile in tick; duplicate dev-server processes killed; HMR-safe
+  singleton via globalThis verified.
+- **Verified end-to-end (agent-browser):** login (admin/admin123) → dashboard renders
+  live data (CPU/mem/disk/temp, 42k sessions, wan0 up / wan1 down, 27 alerts feed,
+  backfilled chart); placeholder views route correctly; mobile 390px responsive; lint
+  clean; no runtime errors in dev.log.
+
+### 2026-11-05 — SPEC moved into docs + zero-feature-loss audit (4A/4B) — CLEARED FOR BUILD
 ### 2026-11-05 — SPEC moved into docs + zero-feature-loss audit (4A/4B) — CLEARED FOR BUILD
 - **Master feature sheet moved:** `upload/Cryptsk_UTM_Optimized_Spec (1).md` → **`docs/SPEC.md`**
   (git rename; all cross-references updated; `upload/` now git-ignored). SPEC.md is ground

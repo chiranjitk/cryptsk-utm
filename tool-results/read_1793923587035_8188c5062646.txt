@@ -1,0 +1,663 @@
+     1→# PROJECT MEMORY — Cryptsk UTM/NGFW Console
+     2→
+     3→> **THE single source of truth** for project state, contracts, and conventions.
+     4→> Every AI agent reads this file FIRST. Last updated: **2026-11-05**.
+     5→> If this file and any other doc disagree, this file wins — then fix the other doc.
+     6→
+     7→---
+     8→
+     9→## 1. Project Identity
+    10→
+    11→| Field | Value |
+    12→|---|---|
+    13→| Product name | **Cryptsk UTM / NGFW** |
+    14→| Console app name | **Cryptsk Console** (the web dashboard built in this repo) |
+    15→| Category | Unified Threat Management + Next-Gen Firewall |
+    16→| Target market | Small enterprises (10–500 users), branch offices, MSPs, hospitality |
+    17→| Throughput target (product) | 1–10 Gbps per appliance |
+    18→| Full product spec | `docs/SPEC.md` — **ground truth for product facts** (features, phases, pricing, honest gaps). Where these docs deviate, the deviation is a documented build-level decision (see `DECISIONS.md` ADRs / `ROADMAP.md` §5); the spec wins on product facts unless an ADR explicitly justifies otherwise |
+    19→| Delivery model | Community / Professional / Enterprise / MSP editions; hardware appliance pre-installed |
+    20→
+    21→---
+    22→
+    23→## 2. Current Status Snapshot
+    24→
+    25→| Item | Status (2026-11-05) |
+    26→|---|---|
+    27→| Product spec read & digested | DONE |
+    28→| Documentation suite (`docs/`) | DONE (this suite) |
+    29→| Spec coverage audit (zero-feature-loss) | IN PROGRESS — REVIEW-4A (Phase 1 features in module docs) + REVIEW-4B (Phase 2–4 features + §2–§9 product facts), 2026-11-05; ROADMAP §5 console-deferral row RESTORED to Phase 1 |
+    30→| Application code | **NOT STARTED** |
+    31→| Database schema (Prisma) | DEFINED in `docs/03-DATABASE/SCHEMA.md`, not yet pushed |
+    32→| Realtime mini-service | NOT STARTED (`mini-services/realtime-service/`, port 3003) |
+    33→| Build milestone | **M0: Project bootstrap** — see ROADMAP.md §Build Order |
+    34→| Current module in progress | none (docs phase just completed) |
+    35→
+    36→---
+    37→
+    38→## 3. Tech Stack (Build Mode = this repository)
+    39→
+    40→| Layer | Choice | Version | Why / ADR |
+    41→|---|---|---|---|
+    42→| Framework | Next.js (App Router) + TypeScript 5 | 16.x | Non-negotiable platform; single repo for UI + API |
+    43→| UI | React + Tailwind CSS 4 + shadcn/ui (New York) | React 19 | Full component set already in `src/components/ui` |
+    44→| Icons | lucide-react | 0.5x | Bundled with shadcn |
+    45→| Charts | recharts | 2.15 | Already installed; use `src/components/ui/chart.tsx` wrapper |
+    46→| State (client) | zustand | 5 | `stores/` |
+    47→| State (server) | TanStack Query | 5 | `hooks/` with strict query-key convention |
+    48→| Validation | zod | 4 | All API input + DB JSON field shapes |
+    49→| DB | Prisma 6 + **SQLite** | 6.11 | Sandbox constraint; portable to PostgreSQL (ADR-005) |
+    50→| Auth | Custom JWT (jose) + httpOnly cookie | — | ADR-007 |
+    51→| Realtime | socket.io mini-service | 4.x | Port 3003, separate bun project (ADR-008) |
+    52→| Forms | react-hook-form + @hookform/resolvers | 7 | With zod resolvers |
+    53→| Toasts | sonner | 2 | Global `<Toaster>` in layout |
+    54→| Themes | next-themes | 0.4 | Light + dark, dark is default for ops console |
+    55→| Animation | framer-motion | 12 | Subtle only (view transitions, list stagger) |
+    56→| DnD (rule reorder) | @dnd-kit | 6 | Firewall/NAT/QoS rule ordering |
+    57→| Tables | @tanstack/react-table | 8 | Logs, rules, sessions tables |
+    58→| AI SDK (future admin assist) | z-ai-web-dev-sdk | 0.0.18 | **Backend only** — never in client code |
+    59→
+    60→**NOT in this repo (appliance-side, documented for context only):** Go API, nftables,
+    61→eBPF/XDP, Suricata, nDPI, Unbound, Kea, Squid, StrongSwan, WireGuard, FRR, FreeRADIUS,
+    62→PostgreSQL, Redis, Prometheus/Grafana — plus the Phase 2–4 appliance stack: Coraza +
+    63→Caddy (WAF/reverse proxy), Step-CA (PKI), Postfix + Rspamd + ClamAV (email security),
+    64→ClickHouse / Meilisearch (log search, v2), ONNX Runtime (AI inference, Phase 3).
+    65→Versions + licenses: SPEC.md §3. See ARCHITECTURE.md for how the console will talk
+    66→to them in Appliance Mode.
+    67→
+    68→---
+    69→
+    70→## 4. Dual-Mode Architecture (the one concept that explains everything)
+    71→
+    72→The console is built against a **`SystemAdapter` interface** with two implementations:
+    73→
+    74→| Mode | Adapter | Where it runs | Data plane |
+    75→|---|---|---|---|
+    76→| **Sandbox Mode** (development, now) | `SimulatedAdapter` | Inside this repo (Next API + mini-service) | `MockEngine` generates traffic, logs, events, statuses |
+    77→| **Appliance Mode** (production, later) | `AgentAdapter` | Go agent on Debian appliance (port 8080) | Real nftables/Suricata/WireGuard/etc. |
+    78→
+    79→All UI and API code is written once against the adapter interface. Details:
+    80→`docs/02-ARCHITECTURE/SIMULATION_LAYER.md`. This is ADR-004.
+    81→
+    82→---
+    83→
+    84→## 5. Directory Map (planned build structure)
+    85→
+    86→```
+    87→/
+    88→├── AGENTS.md                       AI agent entry pointer (root)
+    89→├── docs/                           This documentation suite
+    90→├── prisma/
+    91→│   └── schema.prisma               Definitive schema = docs/03-DATABASE/SCHEMA.md
+    92→├── db/                             SQLite database file (cryptsk.db)
+    93→├── mini-services/
+    94→│   └── realtime-service/           socket.io service, port 3003, own package.json,
+    95→│       └── index.ts                started with `bun --hot`
+    96→├── src/
+    97→│   ├── app/
+    98→│   │   ├── layout.tsx              Root layout: ThemeProvider, QueryProvider, Toaster
+    99→│   │   ├── page.tsx                THE ONLY ROUTE — renders <AppShell/>
+   100→│   │   ├── globals.css             Tailwind 4 + theme tokens
+   101→│   │   └── api/
+   102→│   │       └── v1/                 ALL API route handlers (Next route handlers)
+   103→│   │           ├── auth/…          login, logout, me
+   104→│   │           ├── dashboard/…     summary
+   105→│   │           ├── interfaces/…    interfaces CRUD + stats
+   106→│   │           ├── routes/…        static routes
+   107→│   │           ├── wan-policies/…
+   108→│   │           ├── zones/…  address-objects/…  address-groups/…
+   109→│   │           ├── service-objects/…  service-groups/…  schedule-objects/…
+   110→│   │           ├── firewall-rules/…  nat-rules/…
+   111→│   │           ├── ips/…  vpn/…  dns/…  dhcp/…
+   112→│   │           ├── users/…  user-groups/…  radius-profiles/…
+   113→│   │           ├── captive-portal/…  identity/…
+   114→│   │           ├── qos/…  logs/…  ha/…
+   115→│   │           └── system/…  api-keys/…  notifications/…  config-versions/…
+   116→│   ├── components/
+   117→│   │   ├── ui/                     shadcn (EXISTS — do not rewrite, extend ok)
+   118→│   │   ├── shell/                  AppShell, Sidebar, Topbar, AuthGate, ViewRenderer
+   119→│   │   ├── views/                  One folder per module: dashboard/, network/,
+   120→│   │   │                           firewall/, ips/, vpn/, dns-dhcp/, identity/,
+   121→│   │   │                           qos/, logs/, ha/, system/, reports/
+   122→│   │   ├── charts/                 Chart wrappers (recharts + ui/chart)
+   123→│   │   └── shared/                 StatusBadge, ObjectPicker, RuleEditor, DataTable,
+   124→│   │                               EmptyState, ConfirmDialog, JsonFieldViewer …
+   125→│   ├── lib/
+   126→│   │   ├── db.ts                   EXISTS — Prisma client singleton
+   127→│   │   ├── utils.ts                EXISTS — cn() etc.
+   128→│   │   ├── auth/                   jwt.ts, session.ts, rbac.ts, password.ts
+   129→│   │   ├── api/                    envelope.ts, errors.ts, handler.ts, audit.ts
+   130→│   │   ├── adapters/               types.ts (SystemAdapter), simulated.ts, agent.ts
+   131→│   │   ├── engine/                 MockEngine, profiles, generators, seeds
+   132→│   │   └── validators/             zod schemas per resource + enums.ts
+   133→│   ├── stores/                     ui-store.ts (view/theme), app-store.ts (user)
+   134→│   ├── hooks/                      one file per resource: use-firewall-rules.ts …
+   135→│   └── types/                      api.ts, models.ts, realtime.ts
+   136→└── dev.log                         Dev server log (read recent tail when debugging)
+   137→```
+   138→
+   139→---
+   140→
+   141→## 6. Naming Conventions (LOCKED)
+   142→
+   143→| Context | Convention | Example |
+   144→|---|---|---|
+   145→| Prisma model (TS name) | PascalCase singular | `FirewallRule` |
+   146→| SQLite table/column | snake_case via `@@map`/`@map` | `firewall_rules`.`source_addr_ids` |
+   147→| API JSON | camelCase | `sourceAddrIds` |
+   148→| TS variables/functions | camelCase | `getHitCount()` |
+   149→| TS types/components | PascalCase | `RuleEditor` |
+   150→| Files (TS) | kebab-case | `use-firewall-rules.ts` |
+   151→| Docs files | UPPERCASE-KEBAB or M0x-NAME | `PROJECT_MEMORY.md`, `M03-FIREWALL.md` |
+   152→| DB id columns | `id Int @id @default(autoincrement())` | — |
+   153→| Timestamps | `createdAt/updatedAt` → columns `created_at`/`updated_at` | — |
+   154→| Soft-delete | none (Phase 1: hard delete + audit log) | — |
+   155→| Booleans | `enabled`, `isRead` (no `is` prefix on DB columns except audit-ish fields) | — |
+   156→
+   157→**Canonical enum values (stored as String, validated by zod — ADR-005):**
+   158→
+   159→| Field | Allowed values |
+   160→|---|---|
+   161→| user.role | `super_admin` `tenant_admin` `security_admin` `network_admin` `soc_analyst` `helpdesk` `auditor` `api_service` |
+   162→| firewall_rules.action | `allow` `deny` `drop` `reject` |
+   163→| firewall_rules.logging | `none` `summary` `detail` |
+   164→| services.protocol | `tcp` `udp` `icmp` `any` |
+   165→| nat_rules.type | `snat` `dnat` `hairpin` `exempt` |
+   166→| interfaces.type | `physical` `vlan` `bridge` `bond` `loopback` `gre` `ipip` |
+   167→| interfaces.mode | `l2` `l3` (L2/L3 mode toggle — spec §1.2; `l3` default, IP config hidden when `l2`) |
+   168→| interfaces.role | `wan` `lan` `dmz` `vpn` `mgmt` `unused` |
+   169→| wan.config.type | `static` `dhcp` `pppoe` |
+   170→| wan_policies.mode | `priority` `failover` `load_balance` |
+   171→| wan_policies.probe_type | `icmp` `tcp` `dns` `http` |
+   172→| vpn_configs.type | `wireguard_s2s` `wireguard_remote` `ipsec_s2s` `ipsec_remote` `openvpn` |
+   173→| vpn_configs.status | `up` `down` `connecting` `error` |
+   174→| ips_policies.mode | `inline_drop` `inline_tap` `passive` |
+   175→| ips_events.action | `alert` `drop` `reject` `bypass` `suppressed` |
+   176→| severity (ips_events) | `info` `low` `medium` `high` `critical` |
+   177→| notifications.severity | `info` `warning` `critical` |
+   178→| dns_records.type | `A` `AAAA` `CNAME` `MX` `TXT` `SRV` `PTR` |
+   179→| dhcp_leases.state | `active` `expired` `released` |
+   180→| dhcp_subnets.family | `ipv4` `ipv6` (basic DHCPv6 — spec §1.9) |
+   181→| syslog_targets.protocol | `udp` `tcp` `tls` |
+   182→| netflow_targets.version | `v5` `v9` `ipfix` |
+   183→| report_schedules.range | `daily` `weekly` `monthly` |
+   184→| report_schedules.format | `pdf` `html` `csv` `json` |
+   185→| webhooks.events | `alerts.new` `config.updated` `wan.status` `vpn.status` `sessions.update` |
+   186→| snmp.version | `v2c` `v3` |
+   187→| directory_sources.type | `ldap` `ad` |
+   188→| ips_preset | `conservative` `balanced` `aggressive` (one-click policy presets — spec §1.6) |
+   189→| qos_policies.template | `voip` `video` `gaming` `bulk` `custom` |
+   190→| notifications.type | `threat` `system` `vpn` `ha` `config` |
+   191→| ha_configs.role | `disabled` `active` `standby` |
+   192→| bridge stpMode | `stp` `rstp` (JSON field on bridge config, spec §1.2) |
+   193→| identity method | `local` `radius` `captive_portal` `vpn` |
+   194→| audit_log.result | `success` `failure` `denied` |
+   195→
+   196→---
+   197→
+   198→## 7. API Contract (LOCKED)
+   199→
+   200→### 7.1 General rules
+   201→
+   202→- Base path: `/api/v1/…` (Next route handlers, NOT server actions).
+   203→- Auth: httpOnly cookie `cryptsk_token` (JWT, 8h). API keys via `Authorization: Bearer ck_<key>` for machine access.
+   204→- Response envelope: success `{ "data": …, "meta"?: … }`; error `{ "error": { "code", "message", "details"?, "requestId"? } }` (`requestId` = per-request correlation id from the shared handler middleware — ADR-016).
+   205→- Standard errors: `VALIDATION_ERROR` 400, `UNAUTHORIZED` 401, `FORBIDDEN` 403, `NOT_FOUND` 404, `CONFLICT` 409, `RATE_LIMITED` 429, `INTERNAL` 500.
+   206→- Pagination: `?page=1&limit=25&sort=-timestamp` → `meta: { page, limit, total, totalPages }`.
+   207→- Filtering: `?q=` free text + field filters (`?severity=critical&since=ISO&until=ISO`).
+   208→- All mutations write an `audit_log` row (actor, before/after) — enforced in `lib/api/handler.ts`.
+   209→- Full standards: `docs/04-API/API_STANDARDS.md`. Full catalog with examples: `docs/04-API/ENDPOINTS.md`.
+   210→
+   211→### 7.2 API_SURFACE catalog (paths are LOCKED — expand, never rename)
+   212→
+   213→```
+   214→AUTH
+   215→POST   /api/v1/auth/login                      {username, password, totpCode?} → sets cookie
+   216→                                               (totpCode required only when the user has
+   217→                                               enrolled TOTP — M07 §5.6)
+   218→POST   /api/v1/auth/logout
+   219→GET    /api/v1/auth/me                         current user + permissions
+   220→
+   221→DASHBOARD
+   222→GET    /api/v1/dashboard/summary               health, throughput, sessions, alerts24h,
+   223→                                               topApps, topTalkers, wanStatus, vpnStatus
+   224→
+   225→NETWORK
+   226→GET    /api/v1/interfaces                      list (with live stats)
+   227→POST   /api/v1/interfaces                      create (vlan/bridge/bond/gre)
+   228→GET    /api/v1/interfaces/{id}                 detail
+   229→PUT    /api/v1/interfaces/{id}                 update (ip config, mtu, role, zone…)
+   230→DELETE /api/v1/interfaces/{id}                 delete (non-physical only)
+   231→GET    /api/v1/interfaces/{id}/stats           per-iface counters
+   232→GET    /api/v1/routes                          static routes list
+   233→POST   /api/v1/routes
+   234→PUT    /api/v1/routes/{id}
+   235→DELETE /api/v1/routes/{id}
+   236→GET    /api/v1/wan-policies                    multi-WAN policies + probe states
+   237→POST   /api/v1/wan-policies
+   238→PUT    /api/v1/wan-policies/{id}
+   239→DELETE /api/v1/wan-policies/{id}
+   240→POST   /api/v1/wan-policies/{id}/probe         force probe now
+   241→
+   242→OBJECTS
+   243→GET    /api/v1/zones                           + POST;  PUT/DELETE /api/v1/zones/{id}
+   244→GET    /api/v1/address-objects                 + POST;  PUT/DELETE /api/v1/address-objects/{id}
+   245→GET    /api/v1/address-groups                  + POST;  PUT/DELETE /api/v1/address-groups/{id}
+   246→GET    /api/v1/service-objects                 + POST;  PUT/DELETE /api/v1/service-objects/{id}
+   247→GET    /api/v1/service-groups                  + POST;  PUT/DELETE /api/v1/service-groups/{id}
+   248→GET    /api/v1/schedule-objects                + POST;  PUT/DELETE /api/v1/schedule-objects/{id}
+   249→
+   250→FIREWALL
+   251→GET    /api/v1/firewall-rules                  ordered list (+ ?zone=&search=)
+   252→POST   /api/v1/firewall-rules
+   253→GET    /api/v1/firewall-rules/{id}
+   254→PUT    /api/v1/firewall-rules/{id}
+   255→DELETE /api/v1/firewall-rules/{id}
+   256→PATCH  /api/v1/firewall-rules/{id}/toggle      {enabled}
+   257→POST   /api/v1/firewall-rules/reorder          {orderedIds: number[]}
+   258→GET    /api/v1/firewall-rules/{id}/hits        hit counters
+   259→POST   /api/v1/firewall-rules/{id}/hits/reset  reset per-rule counters (audited)
+   260→POST   /api/v1/firewall-rules/validate         shadow/conflict check (no persist)
+   261→POST   /api/v1/firewall-rules/import           {format: json|csv, payload}
+   262→GET    /api/v1/firewall-rules/export?format=
+   263→GET    /api/v1/nat-rules                       + POST; PUT/DELETE /api/v1/nat-rules/{id}
+   264→PATCH  /api/v1/nat-rules/{id}/toggle           {enabled}
+   265→POST   /api/v1/nat-rules/reorder               {orderedIds: number[]}
+   266→
+   267→IPS
+   268→GET    /api/v1/ips/policies                    + POST; PUT/DELETE /api/v1/ips/policies/{id}
+   269→GET    /api/v1/ips/rule-categories             ET category list + enabled state
+   270→GET    /api/v1/ips/events                      ?severity=&sid=&q=&since=&until=&category=&page=
+   271→POST   /api/v1/ips/events/{id}/suppress        {duration: "24h"|"7d"|"forever"}
+   272→
+   273→VPN
+   274→GET    /api/v1/vpn/configs                     + POST; PUT/DELETE /api/v1/vpn/configs/{id}
+   275→GET    /api/v1/vpn/configs/{id}/status         tunnel state, DPD, handshakes
+   276→POST   /api/v1/vpn/configs/{id}/client-bundle  → wg .conf / .ovpn download payload
+   277→GET    /api/v1/vpn/sessions                    active sessions
+   278→POST   /api/v1/vpn/sessions/{id}/disconnect
+   279→
+   280→DNS & DHCP
+   281→GET    /api/v1/dns/settings                    resolver config; PUT same path
+   282→GET    /api/v1/dns/policies                    + POST; PUT/DELETE /api/v1/dns/policies/{id}
+   283→GET    /api/v1/dns/records                     + POST; PUT/DELETE /api/v1/dns/records/{id}
+   284→GET    /api/v1/dns/query-logs                  ?q=&blocked=
+   285→GET    /api/v1/dhcp/subnets                    + POST; PUT/DELETE /api/v1/dhcp/subnets/{id}
+   286→GET    /api/v1/dhcp/reservations               + POST; PUT/DELETE /api/v1/dhcp/reservations/{id}
+   287→GET    /api/v1/dhcp/leases                     ?state=active|expired
+   288→POST   /api/v1/dhcp/leases/{id}/release        force-release a lease
+   289→
+   290→IDENTITY
+   291→GET    /api/v1/users                           + POST; PUT/DELETE /api/v1/users/{id}
+   292→GET    /api/v1/user-groups                     + POST; PUT/DELETE /api/v1/user-groups/{id}
+   293→GET    /api/v1/auth-settings                   password policy, lockout, TOTP; PUT same
+   294→GET    /api/v1/radius-profiles                 + POST; PUT/DELETE /api/v1/radius-profiles/{id}
+   295→POST   /api/v1/radius-profiles/{id}/test       simulated connectivity test → {data:{ok, latencyMs}}
+   296→POST   /api/v1/radius-profiles/{id}/reveal     clear sharedSecret (super_admin/tenant_admin, audited)
+   297→GET    /api/v1/captive-portal                  profile; PUT same path
+   298→GET    /api/v1/captive-portal/vouchers         list vouchers (simulated, in-memory)
+   299→POST   /api/v1/captive-portal/vouchers         {count, ttlHours?, bandwidthKbps?} → batch
+   300→DELETE /api/v1/captive-portal/vouchers/{id}   revoke one voucher
+   301→GET    /api/v1/identity/sessions               live ip→user sessions map
+   302→POST   /api/v1/identity/sessions/{id}/expire   force-expire a session (audited)
+   303→
+   304→QOS
+   305→GET    /api/v1/qos/policies                    + POST; PUT/DELETE /api/v1/qos/policies/{id}
+   306→GET    /api/v1/qos/rules                       + POST; PUT/DELETE /api/v1/qos/rules/{id}
+   307→       (qos rules are scoped by ?policyId=)
+   308→
+   309→LOGS
+   310→GET    /api/v1/logs/firewall                   ?q=&action=&src=&dst=&since=&until=&page=
+   311→GET    /api/v1/logs/firewall/export            CSV of current filter (same params, no page)
+   312→GET    /api/v1/logs/ips                        ?severity=&category=&page=
+   313→GET    /api/v1/logs/audit                      ?user=&objectType=&page=
+   314→GET    /api/v1/logs/stats                      chart aggregates ?range=1h|24h|7d
+   315→
+   316→HA
+   317→GET    /api/v1/ha/status                       local + peer state (simulated)
+   318→GET    /api/v1/ha/config                       PUT same path
+   319→
+   320→SYSTEM
+   321→GET    /api/v1/system/status                   cpu/ram/disk/temp/uptime/services
+   322→GET    /api/v1/system/settings                 PUT same path
+   323→GET    /api/v1/system/backups                  + POST (create); POST /api/v1/system/backups/{id}/restore
+   324→GET    /api/v1/system/backups/{id}/download    JSON backup download
+   325→GET    /api/v1/notifications                   ?unread=; POST /api/v1/notifications/{id}/read
+   326→POST   /api/v1/notifications/read-all          mark all read (audited)
+   327→GET    /api/v1/config-versions                 ?page=; GET /api/v1/config-versions/{id}
+   328→GET    /api/v1/api-keys                        + POST; DELETE /api/v1/api-keys/{id}
+   329→
+   330→PHASE-1 RESTORED SURFACE (REVIEW-4A — owner zero-loss ruling; additive, never renames)
+   331→SWITCHING / NETWORK EXTRAS (section interfaces)
+   332→GET    /api/v1/network/lldp-neighbors          derived LLDP neighbor table (MockEngine ring)
+   333→GET    /api/v1/network/mac-table               derived bridge FDB view (?iface=&vlan=&q=)
+   334→GET    /api/v1/network/port-mirrors            + POST; PUT/DELETE /api/v1/network/port-mirrors/{id}
+   335→GET    /api/v1/network/app-catalog             nDPI app-label catalog for rule/QoS pickers
+   336→POLICY ROUTES (section routing)
+   337→GET    /api/v1/pbr-rules                       + POST; PUT/DELETE /api/v1/pbr-rules/{id}
+   338→PATCH  /api/v1/pbr-rules/{id}/toggle           {enabled}
+   339→IPS (section ips)
+   340→POST   /api/v1/ips/policies/apply-preset       {preset: conservative|balanced|aggressive, name?}
+   341→GET    /api/v1/ips/update-settings             auto-update scheduler config; PUT same path
+   342→VPN (section vpn)
+   343→GET    /api/v1/vpn/user-groups                 + POST; PUT/DELETE /api/v1/vpn/user-groups/{id}
+   344→DHCP (section dhcp)
+   345→GET    /api/v1/dhcp/relay                      relay (ip-helper) config; PUT same path
+   346→IDENTITY (section identity)
+   347→GET    /api/v1/directory-sources               + POST; PUT/DELETE /api/v1/directory-sources/{id}
+   348→POST   /api/v1/directory-sources/{id}/test     simulated LDAP/AD connectivity test
+   349→LOGGING (section system)
+   350→GET    /api/v1/logs/syslog-targets             + POST; PUT/DELETE /api/v1/logs/syslog-targets/{id}
+   351→GET    /api/v1/logs/netflow-targets            + POST; PUT/DELETE /api/v1/logs/netflow-targets/{id}
+   352→GET    /api/v1/logs/report-schedules           + POST; PUT/DELETE /api/v1/logs/report-schedules/{id}
+   353→POST   /api/v1/logs/report-schedules/{id}/run  generate the report now (simulated)
+   354→GET    /api/v1/logs/reports/export             ?range=1h|24h|7d&format=csv|json
+   355→API PLATFORM (section system)
+   356→GET    /api/v1/webhooks                        + POST; PUT/DELETE /api/v1/webhooks/{id}
+   357→POST   /api/v1/webhooks/{id}/test              simulated delivery → {ok, status, latencyMs}
+   358→GET    /api/v1/openapi.json                    OpenAPI 3.1 artifact (generated from zod)
+   359→SYSTEM (section system)
+   360→POST   /api/v1/system/services/{name}/restart  restart a running service (audited, simulated)
+   361→GET    /api/v1/system/firmware                 current/channel/history; POST …/firmware/check
+   362→POST   /api/v1/system/firmware/upgrade         staged upgrade (safety backup first, simulated)
+   363→POST   /api/v1/system/firmware/rollback        roll back to previous version (simulated)
+   364→GET    /api/v1/system/policy-templates         per-vertical starter templates
+   365→POST   /api/v1/system/policy-templates/{id}/apply
+   366→GET    /api/v1/system/ssh-keys                 + POST; DELETE /api/v1/system/ssh-keys/{id}
+   367→POST   /api/v1/system/setup/complete           mark first-time-setup wizard done
+   368→```
+   369→
+   370→### 7.3 Realtime events (socket.io, LOCKED)
+   371→
+   372→Transport: connect with `io("/?XTransformPort=3003")` — NEVER a port in the hostname.
+   373→Service: `mini-services/realtime-service/` (bun --hot, port 3003).
+   374→
+   375→| Event (server → client) | Payload shape | Emitted |
+   376→|---|---|---|
+   377→| `metrics:tick` | `{ ts, ifaces: [{name, rxKbps, txKbps}], cpuPct, memPct, conntrackCount }` | every 2s |
+   378→| `logs:tail` | `{ kind: "firewall"\|"ips", entry: FirewallLog \| IpsEvent }` | ~1–3/s, while tailed |
+   379→| `alerts:new` | `{ notification: Notification }` | on generated threat/system alerts |
+   380→| `sessions:update` | `{ kind: "vpn"\|"identity", diff: [...] }` | on session change |
+   381→| `wan:status` | `{ iface, state: up\|down\|degraded }` | on probe state change |
+   382→| `vpn:status` | `{ vpnId, status: up\|down\|connecting\|error, statusMessage? }` | on tunnel state change |
+   383→| `config:updated` | `{ section: string }` | after any config mutation (clients refetch) |
+   384→
+   385→Client → server (subscribe control): `subscribe { channels: ["metrics","logs","alerts"] }`, `unsubscribe { channels }`.
+   386→
+   387→---
+   388→
+   389→## 8. View Map — Single-Route SPA (LOCKED)
+   390→
+   391→**HARD SANDBOX RULE: the only Next.js route is `/` (`src/app/page.tsx`). Never create
+   392→other routes.** All navigation is client-side: `AppShell` parses `window.location.hash`
+   393→and renders the matching view from a `viewRegistry`. Deep links = hash links.
+   394→
+   395→```
+   396→#/login                    auth gate (rendered instead of shell when no session)
+   397→#/dashboard
+   398→#/network/interfaces        tabs: Interfaces | LLDP Neighbors | MAC Table | Mirroring (SPAN)
+   399→#/network/routing           tabs: Static Routes | Policy-Based Routes
+   400→#/network/wan
+   401→#/firewall/rules
+   402→#/firewall/nat
+   403→#/firewall/objects         tabs: Address | Address Groups | Services | Service Groups | Schedules
+   404→#/firewall/zones
+   405→#/ips/policies
+   406→#/ips/events
+   407→#/vpn/configs              tabs: WireGuard | IPSec | OpenVPN | User Groups
+   408→#/vpn/sessions
+   409→#/dns-dhcp/dns             tabs: Resolver Settings | Policies | Records | Query Log
+   410→#/dns-dhcp/dhcp            tabs: Subnets | Reservations | Leases | Relay
+   411→#/identity/users
+   412→#/identity/sessions
+   413→#/identity/portal          captive portal settings + guest vouchers
+   414→#/qos/policies
+   415→#/logs/firewall
+   416→#/logs/ips
+   417→#/logs/audit
+   418→#/logs/live                realtime tail (socket.io logs:tail)
+   419→#/logs/reports             tabs: Reports | Scheduled | Forwarding
+   420→#/ha
+   421→#/system/settings
+   422→#/system/backups
+   423→#/system/api-keys          tabs: API Keys | Webhooks
+   424→#/setup                    first-time-setup wizard (view 29; renders instead of the
+   425→                           shell while `system_settings` `setup.completed = false` —
+   426→                           same gate pattern as AuthGate; not in the sidebar)
+   427→```
+   428→
+   429→Sidebar groups (order): Dashboard, Network, Firewall, IPS, VPN, DNS & DHCP, Identity,
+   430→QoS, Logs & Reports, HA, System. Full layouts per view: `docs/05-FRONTEND/PAGE_MAP.md`.
+   431→
+   432→---
+   433→
+   434→## 9. Design Tokens Contract (LOCKED)
+   435→
+   436→| Token | Value | Notes |
+   437→|---|---|---|
+   438→| Color hard rule | **NO indigo, NO blue** (any `indigo-*`, `blue-*`) | platform rule; applies to charts too |
+   439→| Brand primary | emerald (`--primary` = emerald-500 dark / emerald-600 light) | buttons, active nav |
+   440→| Accent | teal | charts secondary, focus rings may use standard ring token |
+   441→| Semantic allow/healthy | emerald-500 | allow rules, UP states |
+   442→| Semantic warn/degraded | amber-500 | degraded WAN, warnings |
+   443→| Semantic block/critical | rose-600 | deny/drop rules, critical alerts |
+   444→| Neutrals | zinc | backgrounds, borders, text (dark: zinc-950 base) |
+   445→| Charts palette | emerald, teal, amber, rose, orange, violet, zinc | ordered series colors |
+   446→| Theme | dark default, light available (next-themes, class strategy) | |
+   447→| Radius | shadcn default (`--radius`) | do not change |
+   448→| Density | cards `p-4`/`p-6`, grids `gap-4`/`gap-6` | consistency rule |
+   449→| Long lists | `max-h-96 overflow-y-auto` + custom scrollbar styles | logs, tables |
+   450→| Touch targets | min 44px on mobile controls | |
+   451→| Footer | sticky bottom via `min-h-screen flex flex-col` + `mt-auto` | only console login/marketing surfaces need it |
+   452→| Motion | framer-motion, subtle (150–250ms), respect reduced motion | |
+   453→| Icons | lucide only | no other icon sets |
+   454→| Logo | text wordmark "CRYPTSK" + ShieldCheck lucide glyph | no image assets needed |
+   455→
+   456→---
+   457→
+   458→## 10. Database Rules (SQLite Adaptation — LOCKED)
+   459→
+   460→1. File DB at `db/cryptsk.db`; schema source = `prisma/schema.prisma`; apply with `bun run db:push`. Client: `import { db } from '@/lib/db'`.
+   461→2. **PostgreSQL → SQLite mapping rules:**
+   462→
+   463→| Spec (PostgreSQL) | Build (Prisma/SQLite) |
+   464→|---|---|
+   465→| `SERIAL`/`BIGSERIAL` PK | `Int @id @default(autoincrement())` |
+   466→| `TIMESTAMPTZ` | `DateTime` (stored ISO-8601 UTC) |
+   467→| `JSONB` | `String` holding JSON (`@default("{}")` / `@default("[]")`), validated by zod, helpers in `lib/json.ts` |
+   468→| `TEXT[]`, `INET[]`, `INTEGER[]` | `String` holding JSON array |
+   469→| id-list references (`source_addr_ids INTEGER[]`) | `String` JSON array of ids = **logical reference**, integrity enforced in service layer |
+   470→| `INET`, `CIDR`, `MACADDR` | `String` + zod validation (`ipv4()`, `cidr`, mac regex) |
+   471→| `DATERANGE` | `startsAt DateTime?` + `endsAt DateTime?` |
+   472→| PG enums | `String` + zod enum (§6 table) — **do NOT use Prisma enums on SQLite** |
+   473→
+   474→3. **No Prisma enums. No Prisma `Json` type. No array scalar types.** (Portability + SQLite guarantees.)
+   475→4. Every tenant-scoped model has `tenantId Int @default(1)` FK → `tenants`. Sandbox seeds exactly one tenant (id 1, name "Default").
+   476→5. Multi-row list endpoints paginate; big tables (`firewall_logs`, `ips_events`, `audit_log`) get `@@index` on `(tenantId, createdAt)` + hot filters.
+   477→6. Definitive schema + per-model notes: `docs/03-DATABASE/SCHEMA.md`. Relations: `ER_DIAGRAM.md`. Seed/reset: `DATA_LIFECYCLE.md`.
+   478→
+   479→---
+   480→
+   481→## 11. Sandbox Execution Rules (HARD CONSTRAINTS — memorize)
+   482→
+   483→1. **Single route:** only `/` via `src/app/page.tsx`. Creating other pages/routes is a bug.
+   484→2. **Dev server:** `bun run dev` (port 3000) runs in background; never run a second instance; never `bun run build`.
+   485→3. **Logs:** check `/home/z/my-project/dev.log` (tail only) when debugging.
+   486→4. **Lint:** `bun run lint` must pass before declaring work done.
+   487→5. **Relative fetch only:** no absolute URLs, no ports in hostnames. Cross-service = `?XTransformPort=<port>`.
+   488→6. **Realtime** = socket.io mini-service on 3003; client connects `io("/?XTransformPort=3003")`. No SSE/polling substitutes for realtime features.
+   489→7. **z-ai-web-dev-sdk is backend-only** (API routes / mini-services). Never bundle into client.
+   490→8. **No test code.** Verification = lint + dev.log + browser check.
+   491→9. **Use existing shadcn/ui** in `src/components/ui`; don't rebuild primitives.
+   492→10. **API routes, not server actions.**
+   493→11. **Build frontend first** so the user sees results early, then backend wiring.
+   494→12. **Footer sticky** (`min-h-screen flex flex-col` + `mt-auto`) wherever a footer exists; never overlay content.
+   495→13. **No indigo/blue colors** anywhere (components, charts, docs examples).
+   496→14. **Schema changes:** edit `prisma/schema.prisma` → `bun run db:push` → update `docs/03-DATABASE/*` in the same task.
+   497→15. New dependencies allowed only when a doc'd reason exists (e.g. `socket.io`, `socket.io-client`, `jose`, `bcryptjs`).
+   498→
+   499→---
+   500→
+   501→## 12. Recipes (How To Do Common Things)
+   502→
+   503→### Add a new view (client "page")
+   504→1. Create `src/components/views/<module>/<View>.tsx`.
+   505→2. Register in `src/components/shell/view-registry.ts` (hash path + component + nav meta).
+   506→3. Add sidebar entry (auto from registry, grouped per §8).
+   507→4. Add data hooks in `src/hooks/use-<resource>.ts` (TanStack Query, key `[resource, params]`).
+   508→5. Respect: p-4/p-6, gap-4/6, max-h scroll lists, EmptyState, skeleton loading, 44px targets.
+   509→
+   510→### Add a new API resource
+   511→1. Zod schemas in `src/lib/validators/<resource>.ts` (reuse §6 enums).
+   512→2. Route handlers under `src/app/api/v1/<resource>/…` using `lib/api/handler.ts`
+   513→   (envelope + auth + RBAC + audit are injected there — do not hand-roll).
+   514→3. Adapter calls if runtime state is involved (`lib/adapters/`).
+   515→4. Hooks + wire into views. Add/verify endpoint in `docs/04-API/ENDPOINTS.md`.
+   516→
+   517→### Add a DB table/column
+   518→1. Edit `prisma/schema.prisma` (follow §10 rules; snake_case maps).
+   519→2. `bun run db:push`.
+   520→3. Update `docs/03-DATABASE/SCHEMA.md` + `ER_DIAGRAM.md` (+ seed if needed).
+   521→4. Append session log entry.
+   522→
+   523→### Apply a config change (the core loop of a UTM)
+   524→`UI → POST/PUT API → zod validate → DB write (tx) → audit_log → adapter.applyConfig(section)
+   525→→ (sandbox: SimulatedAdapter marks version + broadcasts config:updated)
+   526→→ (appliance: generator renders nftables.conf/unbound.conf/… → agent applies → status)`
+   527→Sections: firewall | nat | interfaces | routing | dns | dhcp | vpn | ips | qos | ha | identity | system.
+   528→Never let the UI talk to system services directly.
+   529→
+   530→### Debug something
+   531→`bun run lint` → tail `dev.log` → browser check the exact hash view → check network tab
+   532→for envelope shape. Do not add console.log spam; remove temp logs after.
+   533→
+   534→---
+   535→
+   536→## 13. Gotchas (learned-the-hard-way section — keep appending)
+   537→
+   538→- Next 16 + React 19: keep `"use client"` on every interactive component; server components
+   539→  cannot use zustand/socket hooks.
+   540→- recharts + React 19: use the `ui/chart.tsx` shadcn wrapper patterns; avoid dynamic
+   541→  imports inside render loops.
+   542→- Prisma on SQLite: no enums/Json/arrays (see §10). Forgetting `@map` breaks snake_case contract.
+   543→- TanStack Query: never inline `queryKey` objects without params; keys must include all
+   544→  filters so cache invalidation works (`config:updated` handler invalidates by prefix).
+   545→- socket.io through the gateway: query string must be exactly `?XTransformPort=3003`;
+   546→  the mini-service must bind 0.0.0.0 and print its port at boot.
+   547→- Mock data must be **seedable** (fixed seed) or screenshots/demos become unreproducible.
+   548→- Time handling: store UTC, display with `date-fns` in user locale; the spec's schedules
+   549→  use IANA timezone strings (`Asia/Calcutta` etc.).
+   550→- Never render raw JSON blobs in UI without a `JsonFieldViewer` (monospace, collapsible).
+   551→- Rate: logs tables must paginate server-side; loading 5k rows into a client table will jank.
+   552→
+   553→---
+   554→
+   555→## 14. Doc Map (see `docs/README.md` §3 for full tree + reading matrix)
+   556→
+   557→Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (2) ·
+   558→05-FRONTEND (3) · 06-MODULES (11) · 07-SECURITY (1) · 08-OPERATIONS (1) = 27 docs + this file + README + ADRs + glossary + review reports in `09-REVIEWS/`.
+   559→
+   560→---
+   561→
+   562→## 15. SESSION LOG (append-only — newest on top)
+   563→
+   564→### 2026-11-05 — SPEC moved into docs + zero-feature-loss audit (4A/4B) — CLEARED FOR BUILD
+   565→- **Master feature sheet moved:** `upload/Cryptsk_UTM_Optimized_Spec (1).md` → **`docs/SPEC.md`**
+   566→  (git rename; all cross-references updated; `upload/` now git-ignored). SPEC.md is ground
+   567→  truth for WHAT; docs remain ground truth for HOW/state.
+   568→- **Owner hard rule:** ZERO features from SPEC.md may be missing from the doc suite.
+   569→  All prior "console-deferred Phase-1" deferrals are RESCINDED (formalized in **ADR-018**).
+   570→- **4A lane (Phase-1 completeness):** 188/188 spec Phase-1 features covered — zero gaps,
+   571→  zero deferrals. Restored (formerly deferred): PBR, BFD, LLDP, IGMP snooping, MAC table,
+   572→  SPAN/mirroring, L2/L3 toggle, DHCP relay, conditional forwarding, basic DHCPv6,
+   573→  per-user/per-app bandwidth hard limits, IPS auto-update + presets, VPN user groups,
+   574→  session-limit/timeout UIs, firmware/NTP/SNMP/hardening/SSH-keys/policy-templates,
+   575→  webhooks registration, OpenAPI JSON, `#/setup` wizard. New models: PbrRule, PortMirror,
+   576→  VpnUserGroup, SyslogTarget, NetflowTarget, ReportSchedule, Webhook, SshKey,
+   577→  DirectorySource (+HaConfig.sessionSync/trackedInterfaces etc.). ~33 endpoints restored;
+   578→  view registry now 29 views. Report: `09-REVIEWS/REVIEW-4A-FEATURE-COVERAGE.md`.
+   579→- **4B lane (Phase 2–4 + §2–§9):** every Phase 2/3/4 feature + OS/stack/architecture/
+   580→  roadmap/gaps/competitive/pricing/hardware fact phase-tagged in ROADMAP/PRODUCT_OVERVIEW/
+   581→  GLOSSARY (+24 terms). ROADMAP §5 deferral row → RESTORED note. Report:
+   582→  `09-REVIEWS/REVIEW-4B-PRODUCT-COVERAGE.md`.
+   583→- **Contract notes:** realtime stays 7 events (derived views poll 10 s); `config:updated
+   584→  {section:"all"}` = restore/template-apply sentinel (ADR-018); webhooks = console
+   585→  registration CRUD + simulated-delivery stub, appliance delivers for real.
+   586→- **STATUS: documentation complete & spec-audited — development authorized (M0 → M01…M11
+   587→  per ADR-014 order).**
+   588→
+   589→### 2026-11-05 — Three-lane expert review (2A/2B/2C) + cross-agent reconciliation
+   590→### 2026-11-05 — Three-lane expert review (2A/2B/2C) + cross-agent reconciliation
+   591→- Three parallel expert agents reviewed every doc line-by-line against the spec:
+   592→  **2A** network architect (architecture/data-plane/modules M02/M04/M05/M06/M08 +
+   593→  AUTH_AND_RBAC — 23 issues), **2B** full-stack/db architect (database/API/frontend/
+   594→  modules M01/M03/M07/M09/M10/M11 — 32 issues), **2C** solution architect (memory/
+   595→  product/roadmap — 15 issues). Reports in `09-REVIEWS/REVIEW-2A-NETWORK-ARCHITECT.md`,
+   596→  `REVIEW-2B-FULLSTACK.md`, `REVIEW-2C-SOLUTION-ARCHITECT.md`.
+   597→- Coordinator reconciliation locked the canonical facts that now hold **project-wide**:
+   598→  1. Suricata Phase-1 inline = **nftables NFQUEUE** (`queue num 1-4 fanout bypass`);
+   599→     AF_PACKET = passive/SPAN only (ADR-003 refined; propagated to DECISIONS, ROADMAP,
+   600→     PRODUCT_OVERVIEW, GLOSSARY).
+   601→  2. `ips_events` is the canonical table name (spec's `ips_logs` = typo) — ADR-015.
+   602→  3. Error envelope now carries optional `requestId` (ULID from handler middleware) —
+   603→     ADR-016; PROJECT_MEMORY §7.1 + API_STANDARDS §4 updated.
+   604→  4. IPS bypass: `exceptions` `sid: 0` = any SID (nftables skip-queue); default policy
+   605→     for rules without `ipsPolicyId` = first enabled by seed order — ADR-017;
+   606→     SCHEMA §4 + ENDPOINTS §5 + M04 aligned.
+   607→  5. SCHEMA §4 `wireguard_remote` config now includes `peers[]` (bundle generation
+   608→     appends them; M05 §2/§4 aligned).
+   609→  6. `POST /dhcp/leases/{id}/release` is locked (M06 §3/§4/§7/§8 updated from "proposed
+   610→     PATCH").
+   611→  7. `vpn:status` confirmed in the locked 7-event realtime set everywhere (incl. ADR-008,
+   612→     M11 machine-client note).
+   613→  8. Notification severity = `info|warning|critical` (3-level); `ips_events` severity stays
+   614→     5-level; `notifications.type` = `threat|system|vpn|ha|config` — SCHEMA/ENDPOINTS/M09
+   615→     aligned.
+   616→  9. Hardware tier naming = Starter/Standard/Performance; default user role = `helpdesk`.
+   617→- Remaining open items before M0 code: none blocking. Console-deferred spec-Phase-1
+   618→  features (PBR, DHCP relay/conditional forwarding/DHCPv6, per-user/per-app hard limits,
+   619→  IPS auto-update presets, VPN user groups) stay tracked in ROADMAP §5 with product
+   620→  sign-off required — see REVIEW reports for the full lists.
+   621→  **[SUPERSEDED 2026-11-05, later same day]** The product owner's zero-feature-loss
+   622→  ruling rescinded ALL console deferrals — every listed feature is RESTORED to Phase 1
+   623→  and covered (see the newest session-log entry above + ADR-018).
+   624→
+   625→### 2026-11-05 — Solution-architecture / product review (2C) + fixes
+   626→- Reviewed memory pack, product docs, M02/M04/M05 (product lens), DEVELOPMENT_GUIDE
+   627→  against the original spec. Fixed: spec-authority wording (§1), stale M05 `vpn:status`
+   628→  open question, stale M04 `?category=` note + `forever`-sentinel semantics (aligned to
+   629→  ENDPOINTS.md: `suppressedUntil = null` + `action = "suppressed"`), M02 PPPoE shape
+   630→  missing `password` (now matches SCHEMA.md), ADR-008 event list missing `vpn:status`,
+   631→  webhooks phase attribution in ROADMAP (spec Phase 1 custom engineering; console ships
+   632→  stubs), ROADMAP §5 build-deferral attribution for IGMP-snooping/LLDP/PBR/BFD/IPS-auto-
+   633→  update/VPN-user-groups rows, glossary RBAC role list + SASE/CASB split + IDS/IPS +
+   634→  shadow rule + TPROXY wording, PRODUCT_OVERVIEW "webhooks (stubs)" wording, README
+   635→  09-REVIEWS folder + review-status table + reading-matrix row, ROADMAP §1.4 Phase 1
+   636→  exit criteria (Architect note). Details: `docs/09-REVIEWS/REVIEW-2C-SOLUTION-ARCHITECT.md`.
+   637→
+   638→### 2026-11-05 — Contract reconciliation pass (post-doc-suite review)
+   639→- Added additive endpoints to §7.2: hits/reset, nat toggle + reorder, ips events `?category=`,
+   640→  captive-portal vouchers (GET/POST/DELETE), identity sessions expire, radius test + reveal,
+   641→  dhcp lease release, logs/firewall/export, backups download, notifications read-all.
+   642→  Mirrored into 04-API/ENDPOINTS.md tables (same role floors + audit flags).
+   643→- Added `vpn:status` socket event (§7.3); M05 realtime table updated to consume it.
+   644→- Split severity enums (§6): ips_events = info|low|medium|high|critical;
+   645→  notifications = info|warning|critical.
+   646→- ConfigSection now includes `identity` (ARCHITECTURE §4 + SIMULATION_LAYER §3).
+   647→- SCHEMA.md fixes: User.role default `helpdesk` (no `viewer` role), PPPoE password field,
+   648→  HA priority = higher wins (Keepalived semantics corrected), §6 Pseudo-Resources table
+   649→  (dns settings → SystemSetting row, backups → filesystem JSON, vouchers in-memory).
+   650→- RBAC authority confirmed = 07-SECURITY/AUTH_AND_RBAC.md §4; M07 role table reconciled
+   651→  (security_admin owns firewall/IPS/VPN-session-ops; network_admin owns network/DNS/DHCP/QoS/HA/VPN-config;
+   652→  helpdesk read-only).
+   653→- Stale gap notes across 04-API + 07-SECURITY marked resolved.
+   654→
+   655→### 2026-11-05 — Documentation phase (docs-first milestone)
+   656→- Read full product spec (`docs/SPEC.md`, 1562 lines).
+   657→- Authored complete `docs/` suite: memory pack (this file, ADRs, glossary), architecture
+   658→  (4 docs), database (3), API (2), frontend (3), modules M01–M11 (11), security (1),
+   659→  operations (1), plus root `AGENTS.md` pointer and `docs/README.md` index.
+   660→- Locked contracts: API_SURFACE (§7), view map (§8), design tokens (§9), SQLite rules (§10),
+   661→  naming + enums (§6), realtime events (§7.3).
+   662→- **No application code written yet.** Next milestone: M0 project bootstrap (see ROADMAP.md).
+   663→

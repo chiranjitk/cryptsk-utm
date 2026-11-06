@@ -1,0 +1,402 @@
+     1→     1→# Page Map — Single-Route SPA Views
+     2→     2→
+     3→     3→> **TL;DR:** The console is a single Next.js route (`/` → `src/app/page.tsx`) that renders
+     4→     4→> `AppShell`. All 29 screens are client-side hash views (`#/dashboard`, `#/firewall/rules`,
+     5→     5→> …) resolved from a `viewRegistry` — this is a HARD sandbox rule (ADR-006); `#/setup` is
+     6→     6→> view 29 and renders instead of the shell while first-time setup is incomplete. This
+     7→     7→> document reproduces the LOCKED view map, defines the shell layout and sidebar tree, and
+     8→     8→> gives a compact blueprint (layout, components, hooks, realtime, actions) for every view.
+     9→     9→
+    10→    10→Related: [PROJECT_MEMORY §7.2–§9 (endpoints, realtime, views, tokens)](../00-PROJECT-MEMORY/PROJECT_MEMORY.md) ·
+    11→    11→[UI_DESIGN_SYSTEM.md](./UI_DESIGN_SYSTEM.md) ·
+    12→    12→[STATE_AND_DATA_FLOW.md](./STATE_AND_DATA_FLOW.md) ·
+    13→    13→[ARCHITECTURE.md](../02-ARCHITECTURE/ARCHITECTURE.md) ·
+    14→    14→Module specs: [M01](../06-MODULES/M01-DASHBOARD.md) … [M11](../06-MODULES/M11-API-PLATFORM.md)
+    15→    15→
+    16→    16→---
+    17→    17→
+    18→    18→## 1. Routing Model
+    19→    19→
+    20→    20→- **Why hashes:** the sandbox exposes exactly one user-visible route (`/`). ADR-006
+    21→    21→  (DECISIONS.md) locks the decision: one Next route, `AppShell` parses
+    22→    22→  `window.location.hash`, and renders the matching view from
+    23→    23→  `src/components/shell/view-registry.ts`. Creating any other Next.js route is a bug
+    24→    24→  (PROJECT_MEMORY §11.1).
+    25→    25→- **Registry entry:** `{ path: "#/firewall/rules", group: "Firewall", label: "Rules",
+    26→    26→  icon: LucideIcon, component: DynamicComponent, order }`. Sidebar and breadcrumbs are
+    27→    27→  generated from the registry, never hand-written per view.
+    28→    28→- **Hash syntax:** `#/` + group + `/` + view. Tabbed views append the tab id as a third
+    29→    29→  segment for deep links (`#/firewall/objects/services`, `#/dns-dhcp/dns/records`);
+    30→    30→  the LOCKED two-segment paths from PROJECT_MEMORY §8 always resolve to the first tab.
+    31→    31→  Filter deep links use hash query params: `#/ips/events?severity=critical`.
+    32→    32→- **Deep-linking / back / forward / refresh:** all work for free via `hashchange` — the
+    33→    33→  shell listens on the event, parses the hash, and swaps the view (per-view code splitting
+    34→    34→  via `next/dynamic` mitigates the single-bundle trade-off of ADR-006).
+    35→    35→- **Auth gate:** when unauthenticated, `AuthGate` renders the `#/login` view **in place of
+    36→    36→  the whole shell** (no sidebar/topbar leak). After successful login the user lands on the
+    37→    37→  originally requested hash, or `#/dashboard` when the request was bare `/`. The same
+    38→    38→  gate pattern hosts the **setup gate**: while `setup.completed` is false, `#/setup`
+    39→    39→  renders instead of the shell (PROJECT_MEMORY §8, view 29).
+    40→    40→- **Session expiry:** any `401` from the fetch wrapper clears the app store and points the
+    41→    41→  hash to `#/login` (see STATE_AND_DATA_FLOW §3).
+    42→    42→
+    43→    43→## 2. Shell Layout
+    44→    44→
+    45→    45→```mermaid
+    46→    46→flowchart TB
+    47→    47→    subgraph Shell["AppShell (src/components/shell/)"]
+    48→    48→        TOP["Topbar: menu button (mobile) · breadcrumbs · notifications bell<br/>· theme toggle · user menu (avatar dropdown)"]
+    49→    49→        subgraph BODY["flex row"]
+    50→    50→            NAV["Sidebar: CRYPTSK wordmark + ShieldCheck<br/>11 nav groups from viewRegistry<br/>collapse toggle (icon rail)"]
+    51→    51→            MAIN["Main content: ViewRenderer → active view<br/>scrollable, p-4/p-6, max-w constraints"]
+    52→    52→        end
+    53→    53→        FOOT["Footer slot: sticky footer (min-h-screen flex flex-col + mt-auto)<br/>only on login-style surfaces, never overlays content"]
+    54→    54→    end
+    55→    55→    GATE["AuthGate: no session → renders #/login instead of this shell"]
+    56→    56→    GATE --> Shell
+    57→    57→```
+    58→    58→
+    59→    59→- **Sidebar** (built on `ui/sidebar.tsx`): collapsible — full labels on lg+, icon rail on
+    60→    60→  md, hidden into a `Sheet` on mobile. Active item: emerald primary treatment; group
+    61→    61→  headers are muted `text-xs` labels. Collapse state persists in `ui-store`.
+    62→    62→- **Topbar:** mobile menu button (opens the sidebar `Sheet`), breadcrumbs (tabbed views),
+    63→    63→  notifications bell (`Popover` listing notifications; unread count badge;
+    64→    64→  `alerts:new` pushes into it), theme toggle (`Sun`/`Moon` via next-themes), user menu
+    65→    65→  (`DropdownMenu`: username + role, "Logout" → `POST /api/v1/auth/logout` → `#/login`).
+    66→    66→- **Notifications data:** `GET /api/v1/notifications?unread=` +
+    67→    67→  `POST /api/v1/notifications/{id}/read` (mark read on open).
+    68→    68→- **Footer:** only the login view carries a footer (sticky per §11.12); app views fill
+    69→    69→  the viewport and scroll the main region.
+    70→    70→
+    71→    71→## 3. Sidebar Tree (LOCKED paths + icon suggestions)
+    72→    72→
+    73→    73→Group icons are the normative suggestion; per-item glyphs are implementation freedom.
+    74→    74→
+    75→    75→- **Dashboard** — `LayoutDashboard`
+    76→    76→  - `#/dashboard` — Overview
+    77→    77→- **Network** — `Network`
+    78→    78→  - `#/network/interfaces` (suggested: `Cable`)
+    79→    79→  - `#/network/routing` (suggested: `Route`)
+    80→    80→  - `#/network/wan` (suggested: `RadioTower`)
+    81→    81→- **Firewall** — `ShieldHalf`
+    82→    82→  - `#/firewall/rules` (suggested: `ListOrdered`)
+    83→    83→  - `#/firewall/nat` (suggested: `ArrowRightLeft`)
+    84→    84→  - `#/firewall/objects` — tabs: Address | Address Groups | Services | Service Groups | Schedules (suggested: `Boxes`)
+    85→    85→  - `#/firewall/zones` (suggested: `BrickWall`)
+    86→    86→- **IPS** — `Radar`
+    87→    87→  - `#/ips/policies` (suggested: `ShieldAlert`)
+    88→    88→  - `#/ips/events` (suggested: `Siren`)
+    89→    89→- **VPN** — `LockKeyhole`
+    90→    90→  - `#/vpn/configs` — tabs: WireGuard | IPSec | OpenVPN | User Groups (suggested: `KeyRound`)
+    91→    91→  - `#/vpn/sessions` (suggested: `Activity`)
+    92→    92→- **DNS & DHCP** — `Globe`
+    93→    93→  - `#/dns-dhcp/dns` — tabs: Resolver Settings | Policies | Records | Query Log
+    94→    94→  - `#/dns-dhcp/dhcp` — tabs: Subnets | Reservations | Leases | Relay
+    95→    95→- **Identity** — `Users`
+    96→    96→  - `#/identity/users`
+    97→    97→  - `#/identity/sessions` (suggested: `UserCheck`)
+    98→    98→  - `#/identity/portal` — captive portal settings + guest vouchers
+    99→    99→- **QoS** — `Gauge`
+   100→   100→  - `#/qos/policies`
+   101→   101→- **Logs & Reports** — `ScrollText`
+   102→   102→  - `#/logs/firewall`
+   103→   103→  - `#/logs/ips`
+   104→   104→  - `#/logs/audit`
+   105→   105→  - `#/logs/live` — realtime tail (socket.io `logs:tail`)
+   106→   106→  - `#/logs/reports` — tabs: Reports | Scheduled | Forwarding
+   107→   107→- **HA** — `Server`
+   108→   108→  - `#/ha`
+   109→   109→- **System** — `Settings`
+   110→   110→  - `#/system/settings`
+   111→   111→  - `#/system/backups`
+   112→   112→  - `#/system/api-keys` — tabs: API Keys | Webhooks
+   113→   113→
+   114→   114→`#/setup` (view 29) is **not** a sidebar entry — it renders instead of the shell while
+   115→   115→first-time setup is incomplete (same gate pattern as `#/login`).
+   116→   116→
+   117→   117→## 4. Per-View Blueprints
+   118→   118→
+   119→   119→Conventions: "Components" lists shared patterns from [UI_DESIGN_SYSTEM §5](./UI_DESIGN_SYSTEM.md#5-component-patterns-canonical-shared-registry)
+   120→   120→plus `ui/*` primitives; "Data" names the hooks (`src/hooks/`, TanStack Query) and the
+   121→   121→LOCKED endpoints they call; "Realtime" lists PROJECT_MEMORY §7.3 events the view
+   122→   122→subscribes to (`config:updated` is handled globally — see STATE_AND_DATA_FLOW §4 — and is
+   123→   123→listed only where it drives the whole view). Module specs in `../06-MODULES/` own the
+   124→   124→detailed behavior; blueprints here stay layout-level.
+   125→   125→
+   126→   126→---
+   127→   127→
+   128→   128→### `#/login`
+   129→   129→- **Purpose:** authenticate and obtain the `cryptsk_token` cookie.
+   130→   130→- **Layout:** centered card on `--background`; CRYPTSK wordmark + ShieldCheck; username +
+   131→   131→  password fields; sign-in button; inline error for wrong credentials; **sticky footer**
+   132→   132→  (console/legal links) via `min-h-screen flex flex-col` + `mt-auto`.
+   133→   133→- **Components:** Card, Form, Input, Button, Alert; footer slot.
+   134→   134→- **Data:** `useLogin()` → `POST /api/v1/auth/login`; session bootstrap `GET /api/v1/auth/me`.
+   135→   135→- **Realtime:** none (socket connects after login).
+   136→   136→- **Actions:** sign in; redirect to originally requested hash or `#/dashboard`.
+   137→   137→
+   138→   138→### `#/dashboard`
+   139→   139→- **Purpose:** 30-second health answer: traffic, sessions, threats, WAN/VPN, system.
+   140→   140→- **Layout:**
+   141→   141→```
+   142→   142→┌ health strip: StatusBadge healthy|degraded|critical · uptime · quick actions ┐
+   143→   143→┌ MetricCard throughput ┬ MetricCard sessions ┬ alerts 24h ┬ notifications ───┤
+   144→   144→┌ throughput area chart (rx/tx, Live|1h|24h) ────┬ top apps donut ─────────────┤
+   145→   145→┌ top talkers table ─────────────────────────────┬ threat feed (max-h-96) ─────┤
+   146→   146→┌ WAN strip badges ┬ VPN tunnel list ┬ CPU/RAM/disk Gauges · temp · services ───┘
+   147→   147→```
+   148→   148→- **Components:** PageScaffold, MetricCard, Sparkline, Gauge, StatusBadge, DataTable (talkers), EmptyState, ChartContainer (Area/Pie).
+   149→   149→- **Data:** `useDashboardSummary()` → `GET /api/v1/dashboard/summary`; `useSystemStatus()` → `GET /api/v1/system/status`; range switch → `GET /api/v1/logs/stats?range=1h|24h`.
+   150→   150→- **Realtime:** `metrics:tick` (ring buffer → cards + live chart), `wan:status` (strip), `alerts:new` (feed + badge), `sessions:update` (debounced summary refetch).
+   151→   151→- **Actions:** range switch; "Create backup" → `POST /api/v1/system/backups`; "Restart service" → `POST /api/v1/system/services/{name}/restart` (menu of running services from `/system/status`; audited, simulated — M01 §4); deep links to WAN/VPN/IPS views. Details: [M01](../06-MODULES/M01-DASHBOARD.md).
+   152→   152→
+   153→   153→### `#/network/interfaces` — 4 tabs: Interfaces | LLDP Neighbors | MAC Table | Mirroring (SPAN)
+   154→   154→- **Purpose:** manage physical/VLAN/bridge/bond/loopback/GRE/IPIP interfaces with live stats, plus the switching extras (LLDP discovery, FDB view, SPAN sessions).
+   155→   155→- **Layout (tab 1):** full-width table (name, type/role chips, L2/L3 mode chip, addresses, StatusBadge link state, rx/tx Sparkline) + detail `Sheet` (config, counters, errors/drops). Tab 2 LLDP Neighbors: derived neighbor table (auto-refresh 10 s, not persisted). Tab 3 MAC Table: derived FDB view with iface/VLAN filters. Tab 4 Mirroring: `PortMirror` CRUD table (one active mirror per source iface).
+   156→   156→- **Components:** PageScaffold, Tabs, DataTable, StatusBadge, Sparkline, Sheet, ConfirmDialog, FormSection dialogs.
+   157→   157→- **Data:** `useInterfaces()` → `GET/POST /api/v1/interfaces`; `GET/PUT/DELETE /api/v1/interfaces/{id}`; `useInterfaceStats(id)` → `GET /api/v1/interfaces/{id}/stats`; `useLldpNeighbors()` → `GET /api/v1/network/lldp-neighbors`; `useMacTable()` → `GET /api/v1/network/mac-table?iface=&vlan=&q=`; `usePortMirrors()` → `GET/POST /api/v1/network/port-mirrors` + `PUT/DELETE /{id}`.
+   158→   158→- **Realtime:** `metrics:tick` (per-iface `rxKbps`/`txKbps` sparklines); LLDP/MAC tabs are engine-derived (10 s auto-refresh, no socket event — flagged in REVIEW-4A).
+   159→   159→- **Actions:** create (vlan/bridge/bond/gre/ipip/loopback), edit (incl. `mode l2|l3`, `wanType`, `config.lldp`, bridge `stpMode`/`igmpSnooping`), delete (non-physical only — disabled with Tooltip otherwise); mirror CRUD. Details: [M02](../06-MODULES/M02-NETWORK.md).
+   160→   160→
+   161→   161→### `#/network/routing` — 2 tabs: Static Routes | Policy-Based Routes
+   162→   162→- **Purpose:** static routes incl. default route, blackholes, floating routes + BFD monitoring; policy-based routing (match → forced egress).
+   163→   163→- **Layout (tab 1):** DataTable (destination, gateway/blackhole chip, interface, distance, BFD chip, StatusBadge reachability) + create/edit Dialog. Tab 2: ordered `PbrRule` table (pos, match summary, `→ iface|gateway` action, enabled toggle) + editor dialog with `ObjectPicker` and the mutually-exclusive egress choice.
+   164→   164→- **Components:** PageScaffold, Tabs, DataTable, ConfirmDialog, FormSection, ObjectPicker.
+   165→   165→- **Data:** `useRoutes()` → `GET/POST /api/v1/routes`; `PUT/DELETE /api/v1/routes/{id}`; `usePbrRules()` → `GET/POST /api/v1/pbr-rules`; `PUT/DELETE /api/v1/pbr-rules/{id}`; `PATCH /api/v1/pbr-rules/{id}/toggle`.
+   166→   166→- **Realtime:** none beyond global `config:updated` (section `routing` invalidates `routes`, `pbr-rules`, `wan-policies`).
+   167→   167→- **Actions:** add/edit/delete route (incl. `bfd` toggle); add/edit/delete/toggle PBR rule. Details: [M02](../06-MODULES/M02-NETWORK.md).
+   168→   168→
+   169→   169→### `#/network/wan`
+   170→   170→- **Purpose:** multi-WAN policies (priority / failover / load_balance) and probe health.
+   171→   171→- **Layout:** policy cards or table (mode chip, assigned interfaces, probe type/target, interval) + per-WAN StatusBadge; probe history line chart.
+   172→   172→- **Components:** PageScaffold, DataTable or Card grid, StatusBadge, FormSection, ChartContainer (Line).
+   173→   173→- **Data:** `useWanPolicies()` → `GET/POST /api/v1/wan-policies`; `PUT/DELETE /api/v1/wan-policies/{id}`; `useForceProbe()` → `POST /api/v1/wan-policies/{id}/probe`.
+   174→   174→- **Realtime:** `wan:status` (`{iface, state: up|down|degraded}` → badge flips, toast on down).
+   175→   175→- **Actions:** create/edit/delete policy; force probe now; edit probe settings.
+   176→   176→
+   177→   177→### `#/firewall/rules`
+   178→   178→- **Purpose:** the core policy table — ordered, zone-scoped L3/L4 rules.
+   179→   179→- **Layout:**
+   180→   180→```
+   181→   181→┌ zone Select · search Input · validate button · import/export ── [+ Add rule] ┐
+   182→   182→┌ # ┆ enabled Switch ┆ name ┆ src→dst zones ┆ objects ┆ service ┆ action ┆ hits ┆ kebab ┐
+   183→   183→└ dnd-kit reorder handles (drag to reprioritize) ──────────────────────────────┘
+   184→   184→```
+   185→   185→- **Components:** PageScaffold, DataTable, Switch (optimistic toggle), RuleEditor (Sheet), ObjectPicker, ConfirmDialog, StatusBadge, JsonFieldViewer (rule detail), `@dnd-kit` sortable rows.
+   186→   186→- **Data:** `useFirewallRules({zone, search})` → `GET/POST /api/v1/firewall-rules`; `GET/PUT/DELETE /api/v1/firewall-rules/{id}`; `PATCH /api/v1/firewall-rules/{id}/toggle`; `POST /api/v1/firewall-rules/reorder`; `GET /api/v1/firewall-rules/{id}/hits`; `POST /api/v1/firewall-rules/validate`; `POST /api/v1/firewall-rules/import`; `GET /api/v1/firewall-rules/export?format=`.
+   187→   187→- **Realtime:** `config:updated` (section `firewall`) refetches the table.
+   188→   188→- **Actions:** create/edit/duplicate/delete; toggle enable (optimistic); drag reorder (optimistic); validate (shadow/conflict alerts); import JSON/CSV; export. Details: [M03](../06-MODULES/M03-FIREWALL.md).
+   189→   189→
+   190→   190→### `#/firewall/nat`
+   191→   191→- **Purpose:** SNAT / DNAT / hairpin / exempt rules.
+   192→   192→- **Layout:** like the rules table but with `type` chips and translation columns (original → translated); RuleEditor variant.
+   193→   193→- **Components:** PageScaffold, DataTable, RuleEditor (NAT fields), StatusBadge (type chips), ConfirmDialog.
+   194→   194→- **Data:** `useNatRules()` → `GET/POST /api/v1/nat-rules`; `PUT/DELETE /api/v1/nat-rules/{id}`.
+   195→   195→- **Realtime:** `config:updated` (section `nat`).
+   196→   196→- **Actions:** create/edit/delete; reorder; port-forward presets.
+   197→   197→
+   198→   198→### `#/firewall/objects`
+   199→   199→- **Purpose:** reusable network objects behind the rules.
+   200→   200→- **Layout:** PageScaffold + `Tabs` (Address | Address Groups | Services | Service Groups | Schedules); each tab = DataTable + create/edit Dialog; group rows expandable (Collapsible) to members.
+   201→   201→- **Components:** PageScaffold, Tabs, DataTable, FormSection dialogs, ConfirmDialog, Collapsible.
+   202→   202→- **Data:** `useAddressObjects()`, `useAddressGroups()`, `useServiceObjects()`, `useServiceGroups()`, `useScheduleObjects()` → `GET/POST /api/v1/address-objects | address-groups | service-objects | service-groups | schedule-objects` (+ `PUT/DELETE /{id}` each).
+   203→   203→- **Realtime:** `config:updated` (section `firewall`).
+   204→   204→- **Actions:** CRUD per tab; delete blocked with Tooltip when object is referenced by a rule (`CONFLICT` → ErrorState explaining usage).
+   205→   205→
+   206→   206→### `#/firewall/zones`
+   207→   207→- **Purpose:** zone definitions and interface membership.
+   208→   208→- **Layout:** zone cards (name, emoji-free icon, members as interface chips) or table; edit Dialog assigns interfaces via multi-select.
+   209→   209→- **Components:** PageScaffold, Card grid, FormSection, ConfirmDialog.
+   210→   210→- **Data:** `useZones()` → `GET/POST /api/v1/zones`; `PUT/DELETE /api/v1/zones/{id}`.
+   211→   211→- **Realtime:** `config:updated` (section `firewall`).
+   212→   212→- **Actions:** create/edit/delete zone; assign/remove interfaces.
+   213→   213→
+   214→   214→### `#/ips/policies`
+   215→   215→- **Purpose:** Suricata policy modes, Emerging Threats category tuning, one-click presets, auto-update scheduler.
+   216→   216→- **Layout:** policies table (mode chip: inline_drop/inline_tap/passive, preset badge, "categories on: k/10") + **Rule Updates card** (auto-update: enabled switch, interval daily|weekly, time, last/next run — `SystemSetting` `ips/auto_update`) + **Presets row** (three one-click buttons: conservative/balanced/aggressive → `POST /api/v1/ips/policies/apply-preset`) + rule-categories Accordion: category rows with count + Switch; policy editor includes `preprocessors` toggles (stream/http/tls/ssh) and the `tiBlocklist` toggle.
+   217→   217→- **Components:** PageScaffold, DataTable, Accordion, Switch, FormSection, StatusBadge, ConfirmDialog (preset apply).
+   218→   218→- **Data:** `useIpsPolicies()` → `GET/POST /api/v1/ips/policies` (+`PUT/DELETE /{id}`); `useIpsRuleCategories()` → `GET /api/v1/ips/rule-categories`; `useApplyIpsPreset()` → `POST /api/v1/ips/policies/apply-preset`; `useIpsUpdateSettings()` → `GET/PUT /api/v1/ips/update-settings`.
+   219→   219→- **Realtime:** `config:updated` (section `ips`); the update scheduler's simulated cycle surfaces `lastUpdateAt`/`nextUpdateAt` on refetch.
+   220→   220→- **Actions:** create/edit/delete policy; toggle categories; set per-policy mode; apply preset; save update schedule. Details: [M04](../06-MODULES/M04-IPS.md).
+   221→   221→
+   222→   222→### `#/ips/events`
+   223→   223→- **Purpose:** IDS/IPS event explorer.
+   224→   224→- **Layout:** filter bar (`q`, severity Select, sid, since/until via Calendar+Popover) + server-paginated DataTable (timestamp, severity badge, category, src → dst, action badge); row `Sheet` detail with JsonFieldViewer payload; suppress kebab action.
+   225→   225→- **Components:** PageScaffold, DataTable, StatusBadge, Sheet, JsonFieldViewer, DropdownMenu, ConfirmDialog.
+   226→   226→- **Data:** `useIpsEvents(filters)` → `GET /api/v1/ips/events?severity=&sid=&q=&since=&until=&page=`; `useSuppressEvent()` → `POST /api/v1/ips/events/{id}/suppress`.
+   227→   227→- **Realtime:** optional `logs:tail` (kind `ips`) prepend when "live" toggle is on; `alerts:new` refreshes unread badge.
+   228→   228→- **Actions:** open detail; suppress 24h / 7d / forever; jump from dashboard threat feed deep links (`?severity=critical`, `?q=<sid>`).
+   229→   229→
+   230→   230→### `#/vpn/configs` — 4 tabs: WireGuard | IPSec | OpenVPN | User Groups
+   231→   231→- **Purpose:** tunnel configuration across the three stacks + per-group VPN user policies.
+   232→   232→- **Layout:** `Tabs` (WireGuard | IPSec | OpenVPN | **User Groups**) → tunnel cards/table: name, type chip, StatusBadge (`up`/`connecting`/`down`/`error`), peers, last handshake; detail Sheet with DPD + handshake info, `replayWindow` (IPsec), keepalive/DNS/pool fields (remote-access), and client-bundle download. **User Groups tab:** `VpnUserGroup` table (name, pool, dns, timeouts, limits, member count) + editor dialog (pool override, pushed DNS, `idleTimeoutMin`, `maxSessionMin`, `maxSessionsPerUser`, `memberUsernames` multiselect).
+   233→   233→- **Components:** PageScaffold, Tabs, DataTable or Card grid, StatusBadge, Sheet, JsonFieldViewer (bundle preview), FormSection, ConfirmDialog.
+   234→   234→- **Data:** `useVpnConfigs({type})` → `GET/POST /api/v1/vpn/configs` (+`PUT/DELETE /{id}`); `useVpnConfigStatus(id)` → `GET /api/v1/vpn/configs/{id}/status`; `useClientBundle()` → `POST /api/v1/vpn/configs/{id}/client-bundle`; `useVpnUserGroups()` → `GET/POST /api/v1/vpn/user-groups` (+`PUT/DELETE /{id}`).
+   235→   235→- **Realtime:** `vpn:status` (`{vpnId, status, statusMessage?}` → badge flips without refetch),
+   236→   236→  `sessions:update` (kind `vpn`) updates counts/status rows.
+   237→   237→- **Actions:** CRUD per type; manage user groups; download `wg .conf` / `.ovpn` bundle; inspect status. Details: [M05](../06-MODULES/M05-VPN.md).
+   238→   238→
+   239→   239→### `#/vpn/sessions`
+   240→   240→- **Purpose:** active remote-access sessions and admin disconnect.
+   241→   241→- **Layout:** DataTable (user, virtual IP, real IP, tunnel, since, rx/tx) + disconnect row action.
+   242→   242→- **Components:** PageScaffold, DataTable, ConfirmDialog, StatusBadge, tabular-nums byte columns.
+   243→   243→- **Data:** `useVpnSessions()` → `GET /api/v1/vpn/sessions`; `useDisconnectSession()` → `POST /api/v1/vpn/sessions/{id}/disconnect`.
+   244→   244→- **Realtime:** `sessions:update` (kind `vpn`) applies diffs without refetch.
+   245→   245→- **Actions:** disconnect (ConfirmDialog states the user + tunnel).
+   246→   246→
+   247→   247→### `#/dns-dhcp/dns`
+   248→   248→- **Purpose:** Unbound resolver settings, DNS policies, local records, query log.
+   249→   249→- **Layout:** `Tabs` — Resolver Settings (FormSection form: upstreams, caching, blocklists); Policies (DataTable + dialog); Records (DataTable + dialog, type chips A/AAAA/CNAME/MX/TXT/SRV/PTR); Query Log (filter `?q=&blocked=` + paginated table, blocked rows rose-dotted).
+   250→   250→- **Components:** PageScaffold, Tabs, DataTable, FormSection, ConfirmDialog, StatusBadge, Switch.
+   251→   251→- **Data:** `useDnsSettings()` → `GET/PUT /api/v1/dns/settings`; `useDnsPolicies()`, `useDnsRecords()` → `GET/POST /api/v1/dns/policies | dns/records` (+`PUT/DELETE /{id}`); `useDnsQueryLogs()` → `GET /api/v1/dns/query-logs`.
+   252→   252→- **Realtime:** `config:updated` (section `dns`).
+   253→   253→- **Actions:** save resolver settings; CRUD policies/records; filter query log. Details: [M06](../06-MODULES/M06-DNS-DHCP.md).
+   254→   254→
+   255→   255→### `#/dns-dhcp/dhcp` — 4 tabs: Subnets | Reservations | Leases | Relay
+   256→   256→- **Purpose:** Kea subnets (IPv4 + basic DHCPv6), static reservations, lease table, relay config.
+   257→   257→- **Layout:** `Tabs` — Subnets (cards: family chip v4/v6, CIDR, range, lease usage Progress); Reservations (DataTable + dialog); Leases (state filter `?state=active|expired` + paginated table, state badges); **Relay** (singleton settings card: enabled switch, server IP list, interface multiselect, info note "appliance renders dhcrelay/Kea relay per interface; sandbox records the config").
+   258→   258→- **Components:** PageScaffold, Tabs, DataTable, Progress, StatusBadge, FormSection, ConfirmDialog.
+   259→   259→- **Data:** `useDhcpSubnets()`, `useDhcpReservations()`, `useDhcpLeases()` → `GET/POST /api/v1/dhcp/subnets | dhcp/reservations | dhcp/leases` (+`PUT/DELETE` for subnets/reservations); `useDhcpRelay()` → `GET/PUT /api/v1/dhcp/relay`.
+   260→   260→- **Realtime:** `config:updated` (section `dhcp`); leases refetch on focus.
+   261→   261→- **Actions:** CRUD subnets/reservations (family `ipv4|ipv6` gates IP validation); filter leases; force-release a lease
+   262→   262→  (`POST /api/v1/dhcp/leases/{id}/release`, `network_admin`, audited); save relay config. Details: [M06](../06-MODULES/M06-DNS-DHCP.md).
+   263→   263→
+   264→   264→### `#/identity/users`
+   265→   265→- **Purpose:** local users, groups, RADIUS profiles, password policy.
+   266→   266→- **Layout:** users DataTable (username, role chip, groups, StatusBadge enabled) + panels: groups table, RADIUS profiles table, password/TOTP policy FormSection — secondary panels in tabs or side Sheet to keep one primary table.
+   267→   267→- **Components:** PageScaffold, DataTable, FormSection, ConfirmDialog, StatusBadge, DropdownMenu.
+   268→   268→- **Data:** `useUsers()`, `useUserGroups()`, `useRadiusProfiles()`, `useAuthSettings()`, `useDirectorySources()` → `GET/POST /api/v1/users | user-groups | radius-profiles | directory-sources` (+`PUT/DELETE /{id}`) and `GET/PUT /api/v1/auth-settings`.
+   269→   269→- **Realtime:** `config:updated` (section `identity`).
+   270→   270→- **Actions:** CRUD users/groups/RADIUS profiles/**directory sources** (LDAP/AD card: type chip, server:port, baseDn, masked bindPassword, simulated "Test" → `{ok, latencyMs, userCount?}`); TOTP enroll/disenroll; reset password; edit lockout/TOTP policy. Details: [M07](../06-MODULES/M07-IDENTITY.md).
+   271→   271→
+   272→   272→### `#/identity/sessions`
+   273→   273→- **Purpose:** live ip→user identity map from RADIUS/captive portal/VPN/local auth.
+   274→   274→- **Layout:** DataTable (ip, user, method chip: local/radius/captive_portal/vpn, since, idle) — read-only live view.
+   275→   275→- **Components:** PageScaffold, DataTable, StatusBadge, EmptyState, DropdownMenu.
+   276→   276→- **Data:** `useIdentitySessions()` → `GET /api/v1/identity/sessions`.
+   277→   277→- **Realtime:** `sessions:update` (kind `identity`) patches rows in place.
+   278→   278→- **Actions:** filter/search; row links to `#/identity/users`; force-expire a session
+   279→   279→  (`POST /api/v1/identity/sessions/{id}/expire` — kebab action, `security_admin`, audited).
+   280→   280→
+   281→   281→### `#/identity/portal`
+   282→   282→- **Purpose:** captive portal profile and guest vouchers.
+   283→   283→- **Layout:** settings FormSection (enabled, mode `clickthrough|credentials|voucher`, interface,
+   284→   284→  session timeout, bandwidth cap, redirect URL, voucher TTL) + vouchers card (list/table with status
+   285→   285→  chips, generate action).
+   286→   286→- **Components:** PageScaffold, FormSection, Switch, DataTable, ConfirmDialog.
+   287→   287→- **Data:** `useCaptivePortal()` → `GET/PUT /api/v1/captive-portal`; `useVouchers()` →
+   288→   288→  `GET/POST /api/v1/captive-portal/vouchers` + `DELETE /api/v1/captive-portal/vouchers/{id}`
+   289→   289→  (vouchers are MockEngine in-memory state — SCHEMA.md §6).
+   290→   290→- **Realtime:** `config:updated`.
+   291→   291→- **Actions:** save portal profile; generate/revoke vouchers.
+   292→   292→
+   293→   293→### `#/qos/policies`
+   294→   294→- **Purpose:** traffic-shaping policies and their rules.
+   295→   295→- **Layout:** master-detail: policies list (template chips: voip/video/gaming/bulk/custom) → selected policy's rules table (`?policyId=`) with priorities; RuleEditor (QoS variant) for rules.
+   296→   296→- **Components:** PageScaffold, DataTable, RuleEditor, StatusBadge, ConfirmDialog.
+   297→   297→- **Data:** `useQosPolicies()` → `GET/POST /api/v1/qos/policies` (+`PUT/DELETE /{id}`); `useQosRules(policyId)` → `GET/POST /api/v1/qos/rules?policyId=` (+`PUT/DELETE /{id}`).
+   298→   298→- **Realtime:** `config:updated` (section `qos`).
+   299→   299→- **Actions:** CRUD policies/rules; reorder rule priority. Details: [M08](../06-MODULES/M08-QOS.md).
+   300→   300→
+   301→   301→### `#/logs/firewall`
+   302→   302→- **Purpose:** historical firewall log search.
+   303→   303→- **Layout:** filter bar (`q`, action Select, src, dst, since/until) + server-paginated DataTable (timestamp, action badge, src → dst, service, app, rule name); row Sheet with JsonFieldViewer payload.
+   304→   304→- **Components:** PageScaffold, DataTable, StatusBadge, Sheet, JsonFieldViewer, Calendar/Popover filters.
+   305→   305→- **Data:** `useFirewallLogs(filters)` → `GET /api/v1/logs/firewall?q=&action=&src=&dst=&since=&until=&page=`.
+   306→   306→- **Realtime:** none (live needs → link `#/logs/live`).
+   307→   307→- **Actions:** filter, paginate, inspect, export CSV (`GET /api/v1/logs/firewall/export` with the same
+   308→   308→  filter params). Details: [M09](../06-MODULES/M09-LOGGING.md).
+   309→   309→
+   310→   310→### `#/logs/ips`
+   311→   311→- **Purpose:** historical IPS event archive (same UX as ips/events without suppress).
+   312→   312→- **Layout:** filter bar (`severity`, `category`, `page`) + paginated DataTable; detail Sheet.
+   313→   313→- **Components:** PageScaffold, DataTable, StatusBadge, Sheet, JsonFieldViewer.
+   314→   314→- **Data:** `useIpsLogs(filters)` → `GET /api/v1/logs/ips?severity=&category=&page=`.
+   315→   315→- **Realtime:** none.
+   316→   316→- **Actions:** filter, paginate, inspect.
+   317→   317→
+   318→   318→### `#/logs/audit`
+   319→   319→- **Purpose:** who changed what — the compliance trail.
+   320→   320→- **Layout:** filter bar (`user`, `objectType`) + paginated DataTable (timestamp, actor, action, objectType, result badge); row expands to before/after diff via two JsonFieldViewer panels.
+   321→   321→- **Components:** PageScaffold, DataTable, StatusBadge, JsonFieldViewer.
+   322→   322→- **Data:** `useAuditLogs(filters)` → `GET /api/v1/logs/audit?user=&objectType=&page=`.
+   323→   323→- **Realtime:** none.
+   324→   324→- **Actions:** filter, paginate, inspect before/after.
+   325→   325→
+   326→   326→### `#/logs/live`
+   327→   327→- **Purpose:** realtime tail of firewall/IPS log streams.
+   328→   328→- **Layout:**
+   329→   329→```
+   330→   330→┌ kind toggle: firewall | ips ┆ pause / resume ┆ severity filter ┆ autoscroll ──┐
+   331→   331→┌ streaming rows (newest on top, severity badge + src → dst + message) ────────┐
+   332→   332→└ virtualized list, max-h region, paused rows dim to 50% opacity ──────────────┘
+   333→   333→```
+   334→   334→- **Components:** PageScaffold, StatusBadge, ToggleGroup, Button, virtualized list (plain map + `max-h-96 overflow-y-auto` in Phase 1).
+   335→   335→- **Data:** `useLogTail("firewall" | "ips")` — no REST; buffer lives in the realtime store.
+   336→   336→- **Realtime:** `logs:tail` (`{kind, entry}`), `alerts:new` (toast on high/critical while open); subscribes `{channels:["logs","alerts"]}`.
+   337→   337→- **Actions:** pause/resume, switch kind, clear buffer, jump to historical views.
+   338→   338→
+   339→   339→### `#/logs/reports` — 3 tabs: Reports | Scheduled | Forwarding
+   340→   340→- **Purpose:** reports over pre-aggregated buckets, scheduled report CRUD, syslog/NetFlow forwarding targets.
+   341→   341→- **Layout (Reports tab):** range toggle (1h | 24h | 7d) + chart cards from the locked `/logs/stats` payload (ENDPOINTS §11): stacked action-trend area, action-mix donut, threats-by-severity (`ipsBySeverity`) donut, KPI cards (total flows, blocked %, critical+high); export csv/json (`GET /logs/reports/export`), PDF via browser print. **Scheduled tab:** `ReportSchedule` table (range daily|weekly|monthly, format pdf|html|csv|json, sections chips, recipients, enabled, `lastRunAt`) + create/edit dialog + "Run now" (`POST …/run` → on-screen/download result). **Forwarding tab:** Syslog targets card (host, port, protocol udp|tcp|tls, minSeverity, `bufferedRows` reliability counter) + NetFlow targets card (host, port, version v5|v9|ipfix, samplingRate).
+   342→   342→- **Components:** PageScaffold, Tabs, ChartContainer (Area/Bar/Pie), MetricCard, DataTable, FormSection, ConfirmDialog.
+   343→   343→- **Data:** `useLogsStats(range)` → `GET /api/v1/logs/stats?range=1h|24h|7d`; `useLogsReportsExport()` → `GET /api/v1/logs/reports/export`; `useReportSchedules()` → `GET/POST /api/v1/logs/report-schedules` (+`PUT/DELETE /{id}`, `POST /{id}/run`); `useSyslogTargets()`, `useNetflowTargets()` → `GET/POST /api/v1/logs/syslog-targets | logs/netflow-targets` (+`PUT/DELETE /{id}`).
+   344→   344→- **Realtime:** none (reports are aggregates; schedule firing bumps `lastRunAt` server-side).
+   345→   345→- **Actions:** switch range; export; CRUD schedules + run-now; CRUD forwarding targets. Details: [M09](../06-MODULES/M09-LOGGING.md).
+   346→   346→
+   347→   347→### `#/ha`
+   348→   348→- **Purpose:** high-availability pair status and configuration.
+   349→   349→- **Layout:** two status cards (local + peer: role badge disabled/active/standby, VIP, sync state incl. `configSynced`/`sessionSynced`, tracked-interface state chips, last heartbeat) + config FormSection (enabled, role, priority "higher wins", VIP CIDR, iface, peer IP, `syncConfig`, `sessionSync` (conntrackd), `trackedInterfaces` multiselect, failAfter/holdDown).
+   350→   350→- **Components:** PageScaffold, Card grid, StatusBadge, FormSection, ConfirmDialog.
+   351→   351→- **Data:** `useHaStatus()` → `GET /api/v1/ha/status`; `useHaConfig()` → `GET/PUT /api/v1/ha/config`.
+   352→   352→- **Realtime:** none locked for HA in §7.3 — page refetches on focus and on `config:updated`; HA events arrive as notifications (`type: "ha"`) via `alerts:new`.
+   353→   353→- **Actions:** edit HA config; force state refresh. Details: [M10](../06-MODULES/M10-SYSTEM.md).
+   354→   354→
+   355→   355→### `#/system/settings`
+   356→   356→- **Purpose:** appliance identity/time/services plus all system-level settings cards.
+   357→   357→- **Layout:** health strip (CPU/RAM/disk/temp gauges + services list from status) + settings cards: General (hostname, timezone); **System time (NTP)** (enabled, server list, simulated sync state); **SNMP** (v2c/v3 radio, masked community / v3 user+protocols, port, allowlist); **Hardening** (SSH password auth, mgmt allowlist, stop-unused services); **Firmware** (current/channel, check, upgrade/rollback with safety-backup note, history); **SSH keys** (table + add/remove, fingerprint mono); Notifications prefs (email display-only + **resource-alert thresholds** cpu/mem/disk/temp); Logging retention overrides; Advanced toggles; **Policy templates** (per-vertical catalog + apply); Config history + side-by-side diff viewer (12 LOCKED sections).
+   358→   358→- **Components:** PageScaffold, FormSection, Gauge, StatusBadge, Switch, DataTable (ssh keys, firmware history, versions), JsonFieldViewer + diff panes, ConfirmDialog.
+   359→   359→- **Data:** `useSystemSettings()` → `GET/PUT /api/v1/system/settings`; `useSystemStatus()` → `GET /api/v1/system/status`; `useFirmware()` → `GET /api/v1/system/firmware` + `POST …/check | …/upgrade | …/rollback`; `useSshKeys()` → `GET/POST /api/v1/system/ssh-keys` + `DELETE /{id}`; `usePolicyTemplates()` → `GET /api/v1/system/policy-templates` + `POST /{id}/apply`; `useConfigVersions()` → `GET /api/v1/config-versions` (+`/{id}`).
+   360→   360→- **Realtime:** `metrics:tick` (cpuPct/memPct refresh gauges between manual reloads); threshold breaches surface as `system` notifications via `alerts:new`.
+   361→   361→- **Actions:** save each card; firmware check/upgrade/rollback; manage SSH keys; apply template; diff two versions. Details: [M10](../06-MODULES/M10-SYSTEM.md).
+   362→   362→
+   363→   363→### `#/system/backups`
+   364→   364→- **Purpose:** config backup / restore.
+   365→   365→- **Layout:** backups DataTable (created, size, origin chip, note) + "Create backup" action; restore behind ConfirmDialog (restores are destructive).
+   366→   366→- **Components:** PageScaffold, DataTable, ConfirmDialog, DropdownMenu.
+   367→   367→- **Data:** `useBackups()` → `GET/POST /api/v1/system/backups`; `POST /api/v1/system/backups/{id}/restore`;
+   368→   368→  `GET /api/v1/system/backups/{id}/download` (JSON download).
+   369→   369→- **Realtime:** `config:updated` (section `system`).
+   370→   370→- **Actions:** create backup; restore; audit trail records both.
+   371→   371→
+   372→   372→### `#/system/api-keys` — 2 tabs: API Keys | Webhooks
+   373→   373→- **Purpose:** machine access keys (`ck_…` bearer tokens) + webhook registrations.
+   374→   374→- **Layout (API Keys tab):** keys DataTable (name, prefix `ck_…`, scopes badges, created, last used, expires, StatusBadge revoked) + create dialog showing the full secret **once** with copy button. **Webhooks tab:** registrations table (name, url, events chips, enabled, last delivery + status chip, failureCount) + create/edit dialog (https URL, five-event multiselect, masked HMAC secret) + "Send test" row action.
+   375→   375→- **Components:** PageScaffold, Tabs, DataTable, ConfirmDialog, Input, Button (copy), StatusBadge.
+   376→   376→- **Data:** `useApiKeys()` → `GET/POST /api/v1/api-keys`; `DELETE /api/v1/api-keys/{id}`; `useWebhooks()` → `GET/POST /api/v1/webhooks` + `PUT/DELETE /{id}` + `POST /{id}/test`.
+   377→   377→- **Realtime:** none.
+   378→   378→- **Actions:** create (one-time reveal + Copy), revoke; webhook CRUD + test. Details: [M11](../06-MODULES/M11-API-PLATFORM.md) (semantics), [M10](../06-MODULES/M10-SYSTEM.md) (view).
+   379→   379→
+   380→   380→### `#/setup` (view 29 — first-time setup wizard)
+   381→   381→- **Purpose:** guided first-run: admin password change, WAN pick, LAN/DHCP defaults, policy template, finish.
+   382→   382→- **Layout:** renders **instead of the shell** while `setup.completed` is false; centered single-column stepper (Progress header, back/next); summary step before finish.
+   383→   383→- **Components:** Card, Progress, FormSection, Button; no sidebar/topbar.
+   384→   384→- **Data:** reads/writes only through regular module endpoints (interfaces, dhcp subnets, policy templates) + `POST /api/v1/system/setup/complete` on finish; gate reads `SystemSetting` `setup.completed`.
+   385→   385→- **Realtime:** none (gate re-evaluates on `config:updated {section: "system"}`).
+   386→   386→- **Actions:** complete steps; finish setup (shell renders → `#/dashboard`). Details: [M10 §4](../06-MODULES/M10-SYSTEM.md).
+   387→   387→
+   388→   388→## 5. Navigation Behaviors
+   389→   389→
+   390→   390→- **Unknown hash:** any hash that misses the registry redirects to `#/dashboard` and fires
+   391→   391→  one `toast.info("Unknown page — redirected to dashboard")`. Never render a blank main.
+   392→   392→- **Per-group default child:** the first item of each group in §3 is its default
+   393→   393→  (`#/network` → `#/network/interfaces`, `#/logs` → `#/logs/firewall`, …). Group headers
+   394→   394→  in the sidebar navigate to their default child.
+   395→   395→- **Last-visited memory:** `ui-store` (zustand `persist`) keeps `lastViews: Record<group,
+   396→   396→  path>`; a bare `#/group` or app relaunch with bare `#/` restores the group's last
+   397→   397→  visited child, else its default. `activeView`, `sidebarCollapsed` persist the same way.
+   398→   398→- **Breadcrumbs:** tabbed views render `Breadcrumb` in the topbar:
+   399→   399→  `Firewall / Objects / Address` (group / view / tab). Non-tabbed views show
+   400→   400→  `Group / View`. Breadcrumbs are links built from the registry — clicking the group goes
+
+[showing lines 1-400 of 416; use offset=401 with limit to continue reading]
