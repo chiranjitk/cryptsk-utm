@@ -578,6 +578,72 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-06 — M05 VPN module LIVE (configs · sessions · user groups · tunnel state machine)
+- **M05 shipped vertically (ADR-014 order …M02→M04→M05…):** API surface —
+  `/vpn/configs` (list w/ live sessionCount, create, PUT, DELETE cascade),
+  `/vpn/configs/{id}/status` (handshake/DPD/transfer/peers + anti-replay for
+  ipsec + session counts for remote types), `/vpn/configs/{id}/client-bundle`
+  (wg s2s peer .conf / wg remote .conf that APPENDS a provisioned peer with a
+  fresh placeholder keypair + /32 from the pool / openvpn .ovpn; ipsec_* → 409;
+  disabled config → allowed w/ "offline config" notice), `/vpn/sessions`
+  (?vpnId=&status=&q=&page=), `/vpn/sessions/{id}/disconnect` (idempotent),
+  `/vpn/user-groups` CRUD (pool-overlap 400 vs remote configs + other groups;
+  memberUsernames replace-all). Validators `src/lib/validators/vpn.ts`
+  (discriminated per-type config union per SCHEMA §4; listenPort 1–65535,
+  keepalive 0–120, dpd 5–600, replayWindow ∈ 32…1024). Service
+  `src/lib/vpn/service.ts` (+ shared types in `src/lib/vpn/types.ts`; engine
+  owns status — PUT writes it ONLY on the enable/disable apply edge:
+  enable → connecting, disable → down + Disabled by operator). Shared types
+  lib-first: views/vpn-api re-exports from lib/vpn/types (no lib→components dep).
+- **Views** `src/components/views/vpn/*`: `#/vpn/configs` (4 tabs WireGuard |
+  IPSec | OpenVPN | User Groups; per-family tables w/ subtype chips, engine
+  status badges, endpoint/pool summary; per-type editors — wg peers table w/
+  per-row CidrListEditor, ipsec authMethod select + replayWindow + pfs,
+  openvpn proto radio; masked SecretField w/ reveal-eye + generate helper;
+  status dialog w/ 5 s auto-poll; bundle menu item HIDDEN on ipsec rows;
+  delete confirm w/ cascade warning), `#/vpn/sessions` (config/status/q
+  filters, server pagination, disconnect confirm, sessions:update realtime
+  in-place patching — bytes tick w/o refetch flash, throttled refetch only on
+  status transition under an active status filter), GroupsPanel (pool/dns/
+  timeouts/limits editor + member TagInput w/ suggestions from live sessions).
+- **Engine:** `reloadVpnState` on `config:updated {section: vpn}` (3 s throttle)
+  re-syncs tunnels + sessions + group policies; VpnSessionState gained
+  idleChanceMul/disconnectChanceMul/expiresAt — CONTRACTORS members churn out
+  faster (idleTimeoutMin) and hard-expire at maxSessionMin; spawn generator
+  keeps ~10 live rows (DATA_LIFECYCLE §5) honoring maxSessionsPerUser +
+  60-tick kick cooldown; assignedIp from the MATCHING GROUP POOL when member
+  else config pool; groupName stamped; engine-up statusMessage names the peer.
+- **CRITICAL FIX (pre-existing, M03-era regression):** `watchPolicyChanges()`
+  was defined but NEVER CALLED from the tick — config:updated-driven policy
+  reloads (firewall/nat/ips) were dead; IPS "policy-aware engine" only worked
+  via bootstrap timing. Now invoked every tick (step 0). **Second fix:** tunnel
+  status transitions now persist IMMEDIATELY (per-transition update) — the 20 s
+  periodic persist lagged the DB behind engine memory, leaving UI badges stale
+  after vpn:status-triggered refetches.
+- **Realtime ops note:** the socket.io mini-service (port 3003) had a ZOMBIE
+  process with a stuck poll loop — clients connected but received NOTHING
+  (metrics/sessions/config all silent). Symptom: UI badge stale while DB was
+  already `up`; raw socket.io-client probe on :3003 vs :81 isolated it. Fix =
+  kill the bun process holding 3003 and restart (`bun run dev` in
+  mini-services/realtime-service). Also re-confirmed the M04 gotcha: testing
+  against :3000 directly silently bypasses socket.io — the gateway (:81) owns
+  `?XTransformPort` routing; browser E2E must go through :81.
+- **UI fixes caught by browser E2E:** CidrListEditor commits typed-but-unentered
+  CIDRs on blur (silent data loss on save before); server fieldErrors matched
+  under `config.config.*` paths too; "just now ago" fmtRelative grammar.
+- **Verified (curl):** 400 peer-missing-publicKey w/ field path, 409 port
+  collision, 400 group pool overlap, 409 ipsec bundle, create → connecting →
+  up (~10 s) → disable down → enable connecting, disconnect idempotent, wg
+  remote bundle appends peer + free-/32 allocator, group CRUD. **Verified
+  (agent-browser via :81):** login → configs 4 tabs render seed mix, status
+  dialog (handshake/DPD/transfer/peer rows), UI create flow (peer chips,
+  port-collision toast, created row flips Connecting → Up LIVE via
+  vpn:status, delete cascade), sessions view w/ realtime byte ticking (same
+  DOM ref, no flash), disconnect → Disconnected, group-pool respawn
+  (10.99.1.138-139/32), filters (status/search/vpnId), User Groups tab,
+  dark mode + 390 px mobile, dashboard regression, zero dev.log errors;
+  lint clean; tsc = 7 pre-existing baseline (0 in M05 files).
+
 ### 2026-11-06 — M02 Network module LIVE (interfaces · routing · multi-WAN)
 - **M02 shipped vertically (ADR-014 order M01→M03→M02→…):** 15 API routes —
   `/interfaces` (list w/ live rx/tx + link/degraded states, create, detail, PUT, DELETE

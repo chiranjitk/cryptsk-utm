@@ -28,6 +28,8 @@ import { RoutingView } from "@/components/views/network/routing-view";
 import { WanView } from "@/components/views/network/wan-view";
 import { PoliciesView } from "@/components/views/ips/policies-view";
 import { EventsView } from "@/components/views/ips/events-view";
+import { ConfigsView } from "@/components/views/vpn/configs-view";
+import { SessionsView } from "@/components/views/vpn/sessions-view";
 import { fetchApi, useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
@@ -241,6 +243,10 @@ export function AppShell() {
               <PoliciesView />
             ) : view.path === "/ips/events" ? (
               <EventsView />
+            ) : view.path === "/vpn/configs" ? (
+              <ConfigsView />
+            ) : view.path === "/vpn/sessions" ? (
+              <SessionsView />
             ) : (
               <PlaceholderView view={view} />
             )}

@@ -72,6 +72,8 @@ export interface VpnTunnelState {
   enabled: boolean;
   status: VpnTunnelStatus;
   dpdTicks: number;
+  /** first peer / remote ip — named in the handshake statusMessage (M05 §5) */
+  peerLabel?: string | null;
 }
 
 export class VpnStateMachine {
@@ -113,7 +115,13 @@ export interface SessionChurnEvent {
 export class SessionChurnMachine {
   constructor(private readonly rand: () => number) {}
 
-  /** Grow byte counters for active sessions; occasionally idle one out. */
+  /**
+   * Grow byte counters for active sessions; occasionally idle one out.
+   * M05 §5: per-session churn timers (group policy) — `idleChanceMul` /
+   * `disconnectChanceMul` shorten the idle path for group members and
+   * `expiresAt` enforces a max session duration (idle → disconnected
+   * sooner than non-member sessions).
+   */
   step(sessions: VpnSessionState[]): SessionChurnEvent[] {
     const diffs: SessionChurnEvent[] = [];
     for (const s of sessions) {
@@ -130,10 +138,19 @@ export class SessionChurnMachine {
         bytesOut,
         lastActivity: s.lastActivity,
       };
-      if (s.status === "active" && this.rand() < 0.006) {
+      // max session duration (VpnUserGroup.maxSessionMin) — hard cut
+      if (s.expiresAt && Date.parse(s.expiresAt) <= Date.now()) {
+        s.status = "disconnected";
+        diff.status = "disconnected";
+        diffs.push(diff);
+        continue;
+      }
+      const idleChance = 0.006 * (s.idleChanceMul ?? 1);
+      const disconnectChance = 0.2 * (s.disconnectChanceMul ?? 1);
+      if (s.status === "active" && this.rand() < idleChance) {
         s.status = "idle";
         diff.status = "idle";
-      } else if (s.status === "idle" && this.rand() < 0.2) {
+      } else if (s.status === "idle" && this.rand() < disconnectChance) {
         s.status = "active";
         diff.status = "active";
       }

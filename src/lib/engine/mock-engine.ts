@@ -20,6 +20,7 @@ import { parseIds } from "@/lib/firewall/refs";
 import type { EvalRule } from "@/lib/firewall/rule-match";
 import { IpsEventGenerator, type IpsPolicyRuntime } from "./generators/ips-events";
 import { loadIpsPolicyStates } from "@/lib/ips/service";
+import { loadVpnRuntime, type VpnGroupRuntime, type VpnRemoteRuntime } from "@/lib/vpn/service";
 import {
   SessionChurnMachine,
   VpnStateMachine,
@@ -34,10 +35,20 @@ export interface VpnSessionState {
   vpnId: number;
   userName: string | null;
   status: string; // active | idle | disconnected
+  assignedIp?: string | null;
   bytesIn: number;
   bytesOut: number;
   lastActivity: string;
+  /** group-policy churn timers (M05 §5) — set at load/spawn */
+  idleChanceMul?: number;
+  disconnectChanceMul?: number;
+  expiresAt?: string | null;
 }
+
+/** Simulated remote-user roster (seed-aligned; identity is M07 scope). */
+const REMOTE_ROSTER = ["c.reyes", "m.okafor", "j.tanaka", "l.novak", "s.patel", "d.kim", "r.almeida", "k.johnson", "a.hassan", "p.muller"];
+const VPN_SESSION_TARGET = 10; // DATA_LIFECYCLE §5: ~10 live rows
+const SPAWN_COOLDOWN_TICKS = 60; // kicked users are not respawned for ~2 min
 
 export interface LogRingEntry {
   kind: "firewall" | "ips";
@@ -88,6 +99,10 @@ class MockEngine {
   private wanProbes = new Map<string, WanProbeState>();
   private tunnels: VpnTunnelState[] = [];
   private vpnSessions: VpnSessionState[] = [];
+  private vpnGroups: VpnGroupRuntime[] = [];
+  private vpnRemote: VpnRemoteRuntime[] = [];
+  private lastVpnLoad = 0;
+  private disconnectedUsers = new Map<string, number>(); // userName → tickNo
   private hitDeltas = new Map<number, number>();
   private natHitDeltas = new Map<number, number>();
 
@@ -143,10 +158,9 @@ class MockEngine {
 
   private async bootstrap(): Promise<void> {
     try {
-      const [ifaces, wans, vpns] = await Promise.all([
+      const [ifaces, wans] = await Promise.all([
         db.networkInterface.findMany({ where: { tenantId: 1 }, select: { name: true, role: true, enabled: true } }),
         db.wanPolicy.findMany({ where: { tenantId: 1 }, include: { interface: { select: { enabled: true } } } }),
-        db.vpnConfig.findMany({ where: { tenantId: 1 }, select: { id: true, name: true, type: true, enabled: true, status: true } }),
       ]);
       this.ifaces = ifaces.map((i) => ({ name: i.name, role: i.role, enabled: i.enabled }));
       await Promise.all([this.reloadPolicy(true), this.reloadIpsPolicies(true)]);
@@ -160,27 +174,8 @@ class MockEngine {
           badProbes: 0,
         });
       }
-      this.tunnels = vpns.map((v) => ({
-        id: v.id,
-        name: v.name,
-        type: v.type,
-        enabled: v.enabled,
-        status: (["up", "down", "connecting", "error"].includes(v.status) ? v.status : "down") as VpnTunnelStatus,
-        dpdTicks: 0,
-      }));
-      const sessions = await db.vpnSession.findMany({
-        where: { tenantId: 1, status: { not: "disconnected" } },
-        select: { id: true, vpnId: true, userName: true, status: true, bytesIn: true, bytesOut: true, lastActivity: true },
-      });
-      this.vpnSessions = sessions.map((s) => ({
-        id: s.id,
-        vpnId: s.vpnId,
-        userName: s.userName,
-        status: s.status,
-        bytesIn: s.bytesIn,
-        bytesOut: s.bytesOut,
-        lastActivity: s.lastActivity.toISOString(),
-      }));
+      // M05: tunnels + sessions + group policies (VpnStateMachine takes over)
+      await this.reloadVpnState(true);
     } catch (err) {
       console.error("[mock-engine] bootstrap failed (will retry):", err instanceof Error ? err.message : err);
       // retry in 5 s — DB may not be ready yet
@@ -266,7 +261,166 @@ class MockEngine {
         void this.reloadIpsPolicies(true);
         break;
       }
+      // M05: tunnel config / user-group / disconnect changes re-sync tunnels
+      // + sessions (API owns the enable/disable edge; the machine walks it up)
+      if (e.type === "config:updated" && e.payload.section === "vpn") {
+        void this.reloadVpnState(true);
+        break;
+      }
     }
+  }
+
+  /**
+   * (Re)load tunnel + session state from the DB (M05 §5): tunnels mirror
+   * enabled/status from the API apply-edge; sessions re-sync counters/status
+   * so API disconnects are honored (no zombie rows persisting over the DB).
+   * Called on bootstrap and on `config:updated {section: vpn}` (3 s throttle).
+   */
+  async reloadVpnState(force = false): Promise<void> {
+    const now = Date.now();
+    if (!force && now - this.lastVpnLoad < 3000) return;
+    this.lastVpnLoad = now;
+    try {
+      const rt = await loadVpnRuntime(1);
+      this.vpnGroups = rt.groups;
+      this.vpnRemote = rt.remote;
+      const byId = new Map(this.tunnels.map((t) => [t.id, t]));
+      this.tunnels = rt.tunnels.map((t) => ({
+        id: t.id,
+        name: t.name,
+        type: t.type,
+        enabled: t.enabled,
+        status: (["up", "down", "connecting", "error"].includes(t.status) ? t.status : "down") as VpnTunnelStatus,
+        dpdTicks: byId.get(t.id)?.dpdTicks ?? 0,
+        peerLabel: t.peerLabel,
+      }));
+      const rows = await db.vpnSession.findMany({
+        where: { tenantId: 1 },
+        select: { id: true, vpnId: true, userName: true, status: true, assignedIp: true, bytesIn: true, bytesOut: true, lastActivity: true, connectedAt: true },
+      });
+      const memById = new Map(this.vpnSessions.map((s) => [s.id, s]));
+      this.vpnSessions = rows.map((s) => {
+        const mem = memById.get(s.id);
+        const churn = this.churnFieldsFor(s.userName);
+        return {
+          id: s.id,
+          vpnId: s.vpnId,
+          userName: s.userName,
+          status: s.status,
+          assignedIp: s.assignedIp,
+          bytesIn: Math.max(s.bytesIn, mem?.bytesIn ?? 0),
+          bytesOut: Math.max(s.bytesOut, mem?.bytesOut ?? 0),
+          lastActivity: s.lastActivity.toISOString(),
+          ...churn,
+          expiresAt: churn.expiresAt(mem?.expiresAt ?? s.connectedAt.toISOString()),
+        };
+      });
+    } catch (err) {
+      console.error("[mock-engine] reloadVpnState failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  /** Group-policy churn timers for a session of `userName` (M05 §5). */
+  private churnFieldsFor(userName: string | null): {
+    idleChanceMul: number;
+    disconnectChanceMul: number;
+    expiresAt: (connectedIso: string) => string | null;
+  } {
+    const group = userName ? this.vpnGroups.find((g) => g.members.includes(userName)) : undefined;
+    if (!group) return { idleChanceMul: 1, disconnectChanceMul: 1, expiresAt: () => null };
+    return {
+      idleChanceMul: group.idleTimeoutMin != null ? 1.5 : 1,
+      disconnectChanceMul: group.idleTimeoutMin != null ? 3 : 1,
+      expiresAt: (connectedIso) =>
+        group.maxSessionMin != null
+          ? new Date(Date.parse(connectedIso) + group.maxSessionMin * 60_000).toISOString()
+          : null,
+    };
+  }
+
+  /**
+   * Spawn one remote-access session to keep ~10 live rows (DATA_LIFECYCLE §5).
+   * assignedIp comes from the matching group pool when the user is a member,
+   * else the config pool; maxSessionsPerUser blocks the connect (M05 §5).
+   */
+  private async spawnVpnSession(): Promise<void> {
+    const live = this.vpnSessions.filter((s) => s.status !== "disconnected");
+    if (live.length >= VPN_SESSION_TARGET) return;
+    const hubs = this.vpnRemote.filter((r) => r.enabled && r.pool);
+    if (hubs.length === 0) return;
+
+    const candidates = REMOTE_ROSTER.filter((u) => {
+      if (live.some((s) => s.userName === u)) return false;
+      const seen = this.disconnectedUsers.get(u);
+      return seen == null || this.tickNo - seen > SPAWN_COOLDOWN_TICKS;
+    });
+    if (candidates.length === 0) return;
+    const userName = candidates[Math.floor(this.rand() * candidates.length)];
+
+    const group = this.vpnGroups.find((g) => g.members.includes(userName));
+    if (group?.maxSessionsPerUser != null) {
+      const held = this.vpnSessions.filter((s) => s.userName === userName && s.status !== "disconnected").length;
+      if (held >= group.maxSessionsPerUser) return; // "session limit reached"
+    }
+
+    const hub = hubs[Math.floor(this.rand() * hubs.length)];
+    const pool = group?.pool ?? hub.pool ?? null;
+    if (!pool) return;
+    const used = new Set(live.map((s) => (s.assignedIp ?? "").split("/")[0]).filter(Boolean));
+    const assigned = this.randomPoolIp(pool, used);
+    if (!assigned) return;
+
+    const now = new Date();
+    const created = await db.vpnSession
+      .create({
+        data: {
+          tenantId: 1,
+          vpnId: hub.id,
+          userName,
+          sourceIp: `198.51.100.${60 + Math.floor(this.rand() * 180)}`,
+          assignedIp: assigned,
+          groupName: group?.name ?? null,
+          bytesIn: 0,
+          bytesOut: 0,
+          connectedAt: now,
+          lastActivity: now,
+          status: "active",
+        },
+      })
+      .catch(() => null);
+    if (!created) return;
+    const churn = this.churnFieldsFor(userName);
+    this.vpnSessions.push({
+      id: created.id,
+      vpnId: hub.id,
+      userName,
+      status: "active",
+      assignedIp: assigned,
+      bytesIn: 0,
+      bytesOut: 0,
+      lastActivity: now.toISOString(),
+      idleChanceMul: churn.idleChanceMul,
+      disconnectChanceMul: churn.disconnectChanceMul,
+      expiresAt: churn.expiresAt(now.toISOString()),
+    });
+  }
+
+  /** First free host under `pool` not in `used` (deterministic scan from .10). */
+  private randomPoolIp(pool: string, used: Set<string>): string | null {
+    const [base, prefixRaw] = pool.split("/");
+    const prefix = Number(prefixRaw);
+    if (!Number.isFinite(prefix) || prefix < 8 || prefix > 32) return null;
+    const octets = base.split(".").map(Number);
+    if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) return null;
+    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+    const network = (((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) & mask) >>> 0;
+    const size = 2 ** (32 - prefix);
+    for (let i = 10; i < size - 1; i++) {
+      const n = network + i;
+      const ip = [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join(".");
+      if (!used.has(ip)) return `${ip}/32`;
+    }
+    return null;
   }
 
   /**
@@ -298,6 +452,10 @@ class MockEngine {
       // instances; re-syncing the profile is idempotent and cheap.
       this.ipsGen.setProfile(this.profile);
 
+      // 0) config:updated watcher — firewall/nat/ips/vpn policy reloads
+      // (API routes emit in another bundle; the global ring bridges them)
+      this.watchPolicyChanges();
+
       // 1) metrics
       const tick = this.metricsGen.tick(this.ifaces, this.tickNo, this.profile.baselines);
       this.metricsRing.push(tick);
@@ -317,8 +475,18 @@ class MockEngine {
         const next = this.vpnMachine.step(t);
         if (next) {
           const msg =
-            next === "up" ? "Tunnel established" : next === "connecting" ? "IKE/DPD negotiation in progress" : "Tunnel down";
+            next === "up"
+              ? `Tunnel established — handshake complete with ${t.peerLabel ?? "peer"}`
+              : next === "connecting"
+                ? "IKE/DPD negotiation in progress"
+                : "Tunnel down";
           emitEvent({ type: "vpn:status", payload: { vpnId: t.id, status: next, statusMessage: msg } });
+          // persist the transition immediately — status reads (list + /status
+          // dialogs) come from the DB and must not lag the state machine by
+          // up to PERSIST_EVERY ticks (M05 §6: badges refetch on vpn:status)
+          void db.vpnConfig
+            .update({ where: { id: t.id }, data: { status: next, statusMessage: msg } })
+            .catch(() => {});
         }
       }
 
@@ -405,10 +573,18 @@ class MockEngine {
 
       // 6) vpn session churn
       const churnDiffs = this.churn.step(this.vpnSessions);
+      for (const d of churnDiffs) {
+        if (d.status === "disconnected" && d.userName) this.disconnectedUsers.set(d.userName, this.tickNo);
+      }
       this.sessionDiffsBacklog.push(...churnDiffs);
       if (this.tickNo % SESSIONS_EMIT_EVERY === 0 && this.sessionDiffsBacklog.length > 0) {
         emitEvent({ type: "sessions:update", payload: { kind: "vpn", diff: this.sessionDiffsBacklog.slice(0, 50) } });
         this.sessionDiffsBacklog = [];
+      }
+
+      // 6b) spawn remote-access sessions to keep ~10 live rows (DATA_LIFECYCLE §5)
+      if (this.tickNo % 5 === 0 && this.rand() < 0.15) {
+        await this.spawnVpnSession();
       }
 
       // 7) periodic persistence

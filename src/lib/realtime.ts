@@ -39,7 +39,16 @@ export type AlertNewPayload = { id: number; type: string; severity: string; titl
 export type VpnStatusPayload = { vpnId: number; status: string; statusMessage?: string | null };
 export type ConfigUpdatedPayload = { section: string };
 export type LogTailPayload = { kind: "firewall" | "ips"; entry: Record<string, unknown> };
-export type SessionsUpdatePayload = { kind: "vpn" | "identity"; count: number };
+export type SessionChurnDiff = {
+  id: number;
+  userName: string | null;
+  status?: string;
+  bytesIn?: number;
+  bytesOut?: number;
+  lastActivity?: string;
+};
+/** Engine emits {kind:"vpn", diff:[...]} every 5 ticks (M05 §6). */
+export type SessionsUpdatePayload = { kind: "vpn" | "identity"; diff: SessionChurnDiff[] };
 
 /**
  * Subscribe to a set of realtime channels while a component is mounted.
