@@ -50,6 +50,10 @@ import { IocsView } from "@/components/views/threat-intel/iocs-view";
 import { AutoBlockView } from "@/components/views/threat-intel/auto-block-view";
 import { AuthoritiesView } from "@/components/views/pki/authorities-view";
 import { CertificatesView } from "@/components/views/pki/certificates-view";
+// Phase 2 views (M15–M17 batch 2)
+import { SslInspectionView } from "@/components/views/ssl-inspection/ssl-inspection-view";
+import { UrlFilterView } from "@/components/views/url-filter/url-filter-view";
+import { WafView } from "@/components/views/waf/waf-view";
 import { HaView } from "@/components/views/ha/ha-view";
 import { SystemView } from "@/components/views/system/system-view";
 import { BackupsView } from "@/components/views/system/backups-view";
@@ -314,6 +318,12 @@ export function AppShell() {
               <AuthoritiesView />
             ) : view.path === "/pki/certificates" ? (
               <CertificatesView />
+            ) : view.path === "/web/ssl-inspection" ? (
+              <SslInspectionView />
+            ) : view.path === "/web/url-filter" ? (
+              <UrlFilterView />
+            ) : view.path === "/web/waf" ? (
+              <WafView />
             ) : view.path === "/ha" ? (
               <HaView />
             ) : view.path === "/system/settings" ? (
