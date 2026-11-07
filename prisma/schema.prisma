@@ -58,6 +58,58 @@ model Tenant {
   webhooks          Webhook[]
   sshKeys           SshKey[]
   directorySources  DirectorySource[]
+  // Phase 2 (M12–M23)
+  savedLogSearches  SavedLogSearch[]
+  complianceTemplates ComplianceTemplate[]
+  reportRuns        ReportRun[]
+  anonymizationRules AnonymizationRule[]
+  threatFeeds       ThreatFeed[]
+  iocs              Ioc[]
+  autoBlockRules    AutoBlockRule[]
+  iocHits           IocHit[]
+  certificateAuthorities CertificateAuthority[]
+  certificates      Certificate[]
+  certRevocations   CertRevocation[]
+  sslInspectionPolicies SslInspectionPolicy[]
+  sslBypassRules    SslBypassRule[]
+  sslInspectionLogs SslInspectionLog[]
+  urlFilterPolicies UrlFilterPolicy[]
+  urlCategoryRules  UrlCategoryRule[]
+  urlCustomLists    UrlCustomList[]
+  urlFilterLogs     UrlFilterLog[]
+  wafVhosts         WafVhost[]
+  wafPolicies       WafPolicy[]
+  wafExclusions     WafExclusion[]
+  wafLogs           WafLog[]
+  appControlPolicies AppControlPolicy[]
+  appControlRules   AppControlRule[]
+  appControlLogs    AppControlLog[]
+  bfdProfiles       BfdProfile[]
+  prefixLists       PrefixList[]
+  routeMaps         RouteMap[]
+  communityLists    CommunityList[]
+  bgpNeighbors      BgpNeighbor[]
+  ospfInterfaces    OspfInterface[]
+  ospfSettings      OspfSettings[]
+  ribRoutes         RibRoute[]
+  slaProfiles       SlaProfile[]
+  sdwanOverlays     SdwanOverlay[]
+  sdwanSites        SdwanSite[]
+  sdwanPaths        SdwanPath[]
+  sdwanPolicies     SdwanPolicy[]
+  ipv6Settings      Ipv6Settings[]
+  nat66Rules        Nat66Rule[]
+  dhcpv6Servers     Dhcpv6Server[]
+  emailGateways     EmailGateway[]
+  emailPolicies     EmailPolicy[]
+  emailRoutingRules EmailRoutingRule[]
+  emailLogs         EmailLog[]
+  federatedIdps     FederatedIdp[]
+  radiusCoaProfiles RadiusCoaProfile[]
+  nacProfiles       NacProfile[]
+  nacDevices        NacDevice[]
+  byodEnrollments   ByodEnrollment[]
+  identityActivityEvents IdentityActivityEvent[]
 
   @@map("tenants")
 }
@@ -291,6 +343,7 @@ model FirewallRule {
   applicationIds String   @default("[]") @map("application_ids") // nDPI app label ids (strings from /network/app-catalog)
   userIds        String   @default("[]") @map("user_ids")
   srcMacs        String   @default("[]") @map("src_macs") // JSON array of MAC strings — MAC filtering rules (spec §1.4)
+  family         String   @default("ipv4") @map("family") // ipv4 | ipv6 | both — Phase 2 (M21) dual-stack
   scheduleId     Int?     @map("schedule_id")
   action         String   @default("deny") // allow | deny | drop | reject
   logging        String   @default("none") @map("logging") // none | summary | detail
@@ -916,4 +969,979 @@ model DirectorySource {
 
   @@unique([tenantId, name])
   @@map("directory_sources")
+}
+
+// ═════════════════════════ PHASE 2 — GROWTH (Enterprise features, M12–M23) ═════════════════════════
+// Owner directive 2026-11-07: full Phase 2 console, production-ready for Debian 13 move.
+// Style: JSON-string logical refs (no heavy FKs) per Phase 1 convention. All additive.
+
+// ───────────────── M12 — Enhanced Logging & Reporting (spec 2.13) ─────────────────
+
+model SavedLogSearch {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  name      String
+  dataset   String   // firewall | ips | audit | dns | email | waf | url | app
+  queryText String   @default("") @map("query_text") // full-text query
+  filters   String   @default("{}") // JSON: severity, action, range, clientIp, ...
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("saved_log_searches")
+}
+
+model ComplianceTemplate {
+  id         Int       @id @default(autoincrement())
+  tenantId   Int       @default(1) @map("tenant_id")
+  name       String
+  framework  String    // PCI | HIPAA | GDPR | ISO27001 | SOC2
+  sections   String    @default("[\"traffic\",\"threats\",\"audit\"]") // JSON array
+  range      String    @default("monthly") // daily | weekly | monthly | quarterly
+  enabled    Boolean   @default(true)
+  lastRunAt  DateTime? @map("last_run_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("compliance_templates")
+}
+
+model ReportRun {
+  id               Int       @id @default(autoincrement())
+  tenantId         Int       @default(1) @map("tenant_id")
+  name             String
+  source           String    @default("ad-hoc") // ad-hoc | schedule | compliance
+  scheduleId       Int?      @map("schedule_id") // logical ref → report_schedules
+  templateId       Int?      @map("template_id") // logical ref → compliance_templates
+  range            String    @default("daily") // daily | weekly | monthly | quarterly
+  format           String    @default("pdf") // pdf | html | csv | json
+  sections         String    @default("[\"traffic\",\"threats\"]") // JSON array
+  status           String    @default("pending") // pending | running | done | failed
+  summary          String    @default("{}") // JSON result rollups (totals, top rows, series)
+  contentHtml      String?   @map("content_html") // rendered report (print-friendly)
+  error            String?
+  startedAt        DateTime? @map("started_at")
+  finishedAt       DateTime? @map("finished_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status])
+  @@map("report_runs")
+}
+
+model AnonymizationRule {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  name      String
+  dataset   String   // firewall | ips | audit | dns | email | waf
+  field     String   // source_ip | user_name | url | email ...
+  strategy  String   @default("hash") // hash | mask | pseudonymize
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("anonymization_rules")
+}
+
+// ───────────────── M13 — Threat Intelligence (spec 2.11) ─────────────────
+
+model ThreatFeed {
+  id              Int       @id @default(autoincrement())
+  tenantId        Int       @default(1) @map("tenant_id")
+  name            String
+  provider        String    @default("abusech") // abusech | otx | spamhaus | custom
+  url             String    // feed URL (sandbox: simulated ingestion)
+  format          String    @default("csv") // csv | json | stix | taxii
+  category        String    @default("botnet") // botnet | malware | phishing | c2 | ransomware | scanner
+  intervalMinutes Int       @default(60) @map("interval_minutes")
+  autoBlock       Boolean   @default(false) @map("auto_block") // create AutoBlockRule per new IOC
+  enabled         Boolean   @default(true)
+  lastSyncAt      DateTime? @map("last_sync_at")
+  lastStatus      String    @default("never") @map("last_status") // ok | error | never
+  lastCount       Int       @default(0) @map("last_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("threat_feeds")
+}
+
+model Ioc {
+  id          Int       @id @default(autoincrement())
+  tenantId    Int       @default(1) @map("tenant_id")
+  feedId      Int?      @map("feed_id") // logical ref → threat_feeds (null = manual)
+  type        String    // ip | cidr | domain | url | hash
+  value       String
+  category    String    @default("malware") // botnet | malware | phishing | c2 | ransomware | scanner
+  severity    String    @default("warning") // info | warning | critical
+  confidence  Int       @default(70) // 0-100
+  reputation  Int       @default(20) // 0-100 (100 = fully benign)
+  source      String    @default("manual") // manual | feed:<name>
+  description String?
+  hits        Int       @default(0) // matched-in-traffic counter
+  enabled     Boolean   @default(true)
+  firstSeen   DateTime  @default(now()) @map("first_seen")
+  lastSeen    DateTime  @default(now()) @map("last_seen")
+  expiresAt   DateTime? @map("expires_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, type, value])
+  @@index([tenantId, severity])
+  @@map("iocs")
+}
+
+model AutoBlockRule {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int      @default(1) @map("tenant_id")
+  name       String
+  iocId      Int?     @map("ioc_id") // logical ref → iocs
+  matchType  String   // ip | cidr | domain | url | hash
+  matchValue String   @map("match_value")
+  action     String   @default("drop") // drop | reject | quarantine_vlan
+  direction  String   @default("both") // in | out | both
+  source     String   @default("manual") // manual | auto-feed
+  hitCount   Int      @default(0) @map("hit_count")
+  enabled    Boolean  @default(true)
+  createdBy  String   @default("admin") @map("created_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, matchType, matchValue])
+  @@map("auto_block_rules")
+}
+
+model IocHit {
+  id      Int      @id @default(autoincrement())
+  tenantId Int     @default(1) @map("tenant_id")
+  iocId   Int      @map("ioc_id") // logical ref → iocs
+  sourceIp String  @map("source_ip")
+  destIp   String? @map("dest_ip")
+  action   String  // allowed | blocked | quarantined
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@map("ioc_hits")
+}
+
+// ───────────────── M14 — PKI (spec 2.12) ─────────────────
+
+model CertificateAuthority {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int      @default(1) @map("tenant_id")
+  name         String
+  type         String   @default("root") // root | subordinate
+  commonName   String   @map("common_name")
+  org          String?  @map("org")
+  keyType      String   @default("rsa2048") @map("key_type") // rsa2048 | rsa4096 | ec256 | ec384
+  validityDays Int      @default(3650) @map("validity_days")
+  parentCaId   Int?     @map("parent_ca_id") // logical self-ref (subordinate signed by root)
+  serial       String   @default("")
+  certPem      String   @default("") @map("cert_pem") // real PEM via node-forge (sandbox PKI is genuine crypto)
+  keyPem       String   @default("") @map("key_pem") // private key PEM — masked in API responses
+  status       String   @default("active") // active | revoked | expired
+  crlUrl       String?  @map("crl_url")
+  ocspUrl      String?  @map("ocsp_url")
+  autoRenew    Boolean  @default(false) @map("auto_renew")
+  notBefore    DateTime? @map("not_before")
+  notAfter     DateTime? @map("not_after")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("certificate_authorities")
+}
+
+model Certificate {
+  id           Int       @id @default(autoincrement())
+  tenantId     Int       @default(1) @map("tenant_id")
+  caId         Int       @map("ca_id") // logical ref → certificate_authorities
+  name         String
+  commonName   String    @map("common_name")
+  sans         String    @default("[]") @map("sans") // JSON array: DNS:x, IP:y
+  type         String    @default("server") // server | client | device | user
+  issuedFor    String    @default("general") @map("issued_for") // ssl_inspect | waf | vpn | email | general
+  keyType      String    @default("rsa2048") @map("key_type")
+  validityDays Int       @default(365) @map("validity_days")
+  serial       String    @default("")
+  certPem      String    @default("") @map("cert_pem")
+  keyPem       String    @default("") @map("key_pem") // masked in responses; reveal endpoint like RADIUS
+  status       String    @default("active") // active | revoked | expired
+  revocationReason String? @map("revocation_reason")
+  autoRenew    Boolean   @default(true) @map("auto_renew")
+  notBefore    DateTime? @map("not_before")
+  notAfter     DateTime? @map("not_after")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("certificates")
+}
+
+model CertRevocation { // CRL/OCSP simulation ledger
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  certId    Int      @map("cert_id") // logical ref → certificates
+  caId      Int      @map("ca_id") // logical ref → certificate_authorities
+  serial    String
+  reason    String   @default("unspecified") // unspecified | keyCompromise | caCompromise | superseded | ceaseOfOperation
+  revokedAt DateTime @default(now()) @map("revoked_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("cert_revocations")
+}
+
+// ───────────────── M15 — SSL/TLS Inspection (spec 2.1) ─────────────────
+
+model SslInspectionPolicy {
+  id                  Int      @id @default(autoincrement())
+  tenantId            Int      @default(1) @map("tenant_id")
+  name                String
+  mode                String   @default("selective") // none | selective | full
+  signingCaId         Int?     @map("signing_ca_id") // logical ref → certificate_authorities
+  hstsHandling        String   @default("honor") @map("hsts_handling") // honor | bypass
+  certPinningAction   String   @default("bypass") @map("cert_pinning_action") // bypass | block
+  invalidCertAction   String   @default("block") @map("invalid_cert_action") // block | warn_bypass
+  minTlsVersion       String   @default("1.2") @map("min_tls_version") // 1.2 | 1.3
+  enabled             Boolean  @default(true)
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("ssl_inspection_policies")
+}
+
+model SslBypassRule {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int      @default(1) @map("tenant_id")
+  policyId   Int      @map("policy_id") // logical ref → ssl_inspection_policies
+  matchType  String   @default("domain") @map("match_type") // domain | wildcard | category | ip | cidr
+  matchValue String   @map("match_value") // e.g. *.bank.example, banking, 10.0.0.0/8
+  reason     String?
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("ssl_bypass_rules")
+}
+
+model SslInspectionLog {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int      @default(1) @map("tenant_id")
+  clientIp   String   @map("client_ip")
+  serverSni  String   @map("server_sni")
+  action     String   // inspected | bypassed | blocked
+  reason     String   // policy | pinning | invalid_cert | bypass_rule | hsts
+  tlsVersion String?  @map("tls_version")
+  cipher     String?
+  policyId   Int?     @map("policy_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@map("ssl_inspection_logs")
+}
+
+// ───────────────── M16 — URL Filtering (spec 2.3) ─────────────────
+
+model UrlFilterPolicy {
+  id                Int      @id @default(autoincrement())
+  tenantId          Int      @default(1) @map("tenant_id")
+  name              String
+  defaultAction     String   @default("allow") @map("default_action") // allow | block
+  safeSearchEnforce Boolean  @default(true) @map("safe_search_enforce")
+  fileTypesBlocked  String   @default("[\"exe\",\"bat\",\"scr\"]") @map("file_types_blocked") // JSON array
+  httpsInspection   Boolean  @default(false) @map("https_inspection") // ties into SSL inspection
+  transparentProxy  Boolean  @default(true) @map("transparent_proxy")
+  enabled           Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("url_filter_policies")
+}
+
+model UrlCategoryRule {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int      @default(1) @map("tenant_id")
+  policyId   Int      @map("policy_id") // logical ref → url_filter_policies
+  category   String   // gambling | adult | social_media | malware | phishing | p2p | streaming | games | news | shopping | weapons | hate | custom
+  action     String   @default("block") // allow | block | warn
+  listSource String   @default("aggregated") @map("list_source") // aggregated | custom
+  enabled    Boolean  @default(true)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, policyId, category])
+  @@map("url_category_rules")
+}
+
+model UrlCustomList {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  policyId  Int      @map("policy_id") // logical ref → url_filter_policies
+  listType  String   @default("block") @map("list_type") // block | allow
+  matchType String   @default("domain") @map("match_type") // domain | wildcard | url
+  value     String
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("url_custom_lists")
+}
+
+model UrlFilterLog {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  clientIp  String   @map("client_ip")
+  method    String   @default("GET")
+  url       String
+  domain    String
+  category  String   @default("uncategorized")
+  action    String   // allowed | blocked | warned
+  reason    String   // category | custom_block | custom_allow | safe_search | file_type | default
+  policyId  Int?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@map("url_filter_logs")
+}
+
+// ───────────────── M17 — WAF (spec 2.4) ─────────────────
+
+model WafVhost {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int      @default(1) @map("tenant_id")
+  name       String
+  hostname   String   // public vhost e.g. app.corp.example
+  backendHost String  @map("backend_host")
+  backendPort Int     @default(8080) @map("backend_port")
+  listenPort Int      @default(443) @map("listen_port")
+  tls        Boolean  @default(true)
+  certId     Int?     @map("cert_id") // logical ref → certificates
+  mode       String   @default("waf") // reverse_proxy | waf
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, hostname])
+  @@map("waf_vhosts")
+}
+
+model WafPolicy {
+  id                    Int      @id @default(autoincrement())
+  tenantId              Int      @default(1) @map("tenant_id")
+  name                  String
+  vhostId               Int      @map("vhost_id") // logical ref → waf_vhosts
+  owaspCrsEnabled       Boolean  @default(true) @map("owasp_crs_enabled")
+  crsVersion            String   @default("4.0") @map("crs_version")
+  paranoiaLevel         Int      @default(1) @map("paranoia_level") // 1-3
+  anomalyInThreshold    Int      @default(5) @map("anomaly_in_threshold")
+  anomalyOutThreshold   Int      @default(4) @map("anomaly_out_threshold")
+  learningMode          Boolean  @default(false) @map("learning_mode") // log-only
+  geoBlockCountries     String   @default("[]") @map("geo_block_countries") // JSON ISO codes
+  rateLimitRpm          Int?     @map("rate_limit_rpm")
+  rateLimitBurst        Int?     @map("rate_limit_burst")
+  apiProtection         Boolean  @default(false) @map("api_protection") // schema validation stub
+  enabled               Boolean  @default(true)
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("waf_policies")
+}
+
+model WafExclusion {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  policyId  Int      @map("policy_id") // logical ref → waf_policies
+  scope     String   @default("rule_id") // rule_id | param | url
+  matchValue String  @map("match_value") // 942100 | arg:password | /api/login
+  ruleId    Int?     @map("rule_id")
+  note      String?
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("waf_exclusions")
+}
+
+model WafLog {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int      @default(1) @map("tenant_id")
+  vhostId       Int?     @map("vhost_id")
+  clientIp      String   @map("client_ip")
+  method        String   @default("GET")
+  url           String
+  ruleId        Int?     @map("rule_id")
+  ruleMsg       String?  @map("rule_msg")
+  anomalyScore  Int      @default(0) @map("anomaly_score")
+  action        String   // pass | log | block
+  payloadSnippet String? @map("payload_snippet")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@map("waf_logs")
+}
+
+// ───────────────── M18 — Enhanced App Control (spec 2.2) ─────────────────
+
+model AppControlPolicy {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int      @default(1) @map("tenant_id")
+  name             String
+  defaultAction    String   @default("allow") @map("default_action") // allow | block
+  unknownAppAction String   @default("log") @map("unknown_app_action") // allow | block | log
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("app_control_policies")
+}
+
+model AppControlRule {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int      @default(1) @map("tenant_id")
+  policyId           Int      @map("policy_id") // logical ref → app_control_policies
+  appName            String   @map("app_name") // nDPI label: youtube, netflix, ssh, rdp, teams, bittorrent...
+  category           String   @default("media") // media | collaboration | remote | filesharing | social | gaming | devops
+  action             String   @default("block") // allow | block | limit
+  bandwidthLimitMbps Int?     @map("bandwidth_limit_mbps") // for action=limit
+  direction          String   @default("both") // both | upload | download
+  userGroupIds       String   @default("[]") @map("user_group_ids") // JSON id array (empty = all)
+  enabled            Boolean  @default(true)
+  hitCount           Int      @default(0) @map("hit_count")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, policyId, appName])
+  @@map("app_control_rules")
+}
+
+model AppControlLog {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  appName   String   @map("app_name")
+  action    String   // allowed | blocked | limited
+  clientIp  String   @map("client_ip")
+  bytes     Int      @default(0)
+  ruleId    Int?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@map("app_control_logs")
+}
+
+// ───────────────── M19 — Dynamic Routing (spec 2.6) ─────────────────
+
+model BfdProfile {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int      @default(1) @map("tenant_id")
+  name             String
+  rxIntervalMs     Int      @default(300) @map("rx_interval_ms")
+  txIntervalMs     Int      @default(300) @map("tx_interval_ms")
+  detectMultiplier Int      @default(3) @map("detect_multiplier")
+  enabled          Boolean  @default(true)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("bfd_profiles")
+}
+
+model PrefixList {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  name      String
+  family    String   @default("ipv4") // ipv4 | ipv6
+  entries   String   @default("[]") // JSON: [{seq, action: permit|deny, prefix, ge?, le?}]
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("prefix_lists")
+}
+
+model RouteMap {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  name      String
+  entries   String   @default("[]") // JSON: [{seq, action, matchPrefixListId?, matchCommunity?, setLocalPref?, setMetric?, setCommunity?}]
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("route_maps")
+}
+
+model CommunityList {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  name      String
+  type      String   @default("standard") // standard | expanded
+  entries   String   @default("[]") // JSON: ["65000:100", ...]
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("community_lists")
+}
+
+model BgpNeighbor {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int      @default(1) @map("tenant_id")
+  name             String
+  remoteAs         Int      @map("remote_as")
+  peerIp           String   @map("peer_ip")
+  peerIface        String?  @map("peer_iface")
+  password         String?  // masked in responses
+  keepaliveSec     Int      @default(60) @map("keepalive_sec")
+  holdtimeSec      Int      @default(180) @map("holdtime_sec")
+  gracefulRestart  Boolean  @default(false) @map("graceful_restart")
+  bfdEnabled       Boolean  @default(false) @map("bfd_enabled")
+  bfdProfileId     Int?     @map("bfd_profile_id")
+  prefixListInId   Int?     @map("prefix_list_in_id")
+  prefixListOutId  Int?     @map("prefix_list_out_id")
+  routeMapInId     Int?     @map("route_map_in_id")
+  routeMapOutId    Int?     @map("route_map_out_id")
+  localAs          Int?     @map("local_as")
+  ebgpMultihop     Boolean  @default(false) @map("ebgp_multihop")
+  enabled          Boolean  @default(true)
+  state            String   @default("idle") // idle | connect | active | opensent | openconfirm | established
+  uptimeSec        Int      @default(0) @map("uptime_sec")
+  prefixesReceived Int      @default(0) @map("prefixes_received")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, peerIp])
+  @@map("bgp_neighbors")
+}
+
+model OspfInterface {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int      @default(1) @map("tenant_id")
+  interfaceName String   @map("interface_name")
+  area          String   @default("0.0.0.0")
+  helloSec      Int      @default(10) @map("hello_sec")
+  deadSec       Int      @default(40) @map("dead_sec")
+  cost          Int      @default(10)
+  networkType   String   @default("broadcast") @map("network_type") // broadcast | p2p | nbma
+  passive       Boolean  @default(false)
+  enabled       Boolean  @default(true)
+  neighborState String   @default("down") @map("neighbor_state") // down | init | 2way | exstart | exchange | loading | full
+  neighborIp    String?  @map("neighbor_ip")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, interfaceName])
+  @@map("ospf_interfaces")
+}
+
+model OspfSettings {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int      @default(1) @map("tenant_id")
+  routerId           String   @map("router_id") // e.g. 10.10.0.1
+  referenceBandwidth Int      @default(100) @map("reference_bandwidth") // Mbps
+  gracefulRestart    Boolean  @default(false) @map("graceful_restart")
+  enabled            Boolean  @default(true)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("ospf_settings")
+}
+
+model RibRoute { // live RIB snapshot (simulated by tick engine; appliance = FRR dump)
+  id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1) @map("tenant_id")
+  protocol       String   // bgp | ospf | static | connected
+  prefix         String   // 10.20.0.0/16
+  nextHop        String   @map("next_hop")
+  interfaceName  String   @map("interface_name")
+  metric         Int      @default(20)
+  localPref      Int?     @map("local_pref")
+  asPath         String?  @map("as_path")
+  communities    String?  // JSON array
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, protocol, prefix])
+  @@map("rib_routes")
+}
+
+// ───────────────── M20 — SD-WAN (spec 2.5) ─────────────────
+
+model SlaProfile {
+  id              Int      @id @default(autoincrement())
+  tenantId        Int      @default(1) @map("tenant_id")
+  name            String
+  latencyMsMax    Int      @default(150) @map("latency_ms_max")
+  jitterMsMax     Int      @default(30) @map("jitter_ms_max")
+  lossPctMax      Float    @default(1.0) @map("loss_pct_max")
+  actionOnBreach  String   @default("switch") @map("action_on_breach") // switch | warn
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("sla_profiles")
+}
+
+model SdwanOverlay {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  name      String
+  topology  String   @default("hub_spoke") // hub_spoke | full_mesh
+  encryption String  @default("wireguard") // wireguard | ipsec
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("sdwan_overlays")
+}
+
+model SdwanSite {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  overlayId Int      @map("overlay_id") // logical ref → sdwan_overlays
+  name      String
+  role      String   @default("spoke") // hub | spoke
+  publicIp  String   @map("public_ip")
+  wgPubKey  String?  @map("wg_pubkey")
+  region    String?
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, overlayId, name])
+  @@map("sdwan_sites")
+}
+
+model SdwanPath {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int      @default(1) @map("tenant_id")
+  siteId       Int      @map("site_id") // logical ref → sdwan_sites
+  wanInterface String   @map("wan_interface") // wan0 | wan1 | wan2
+  label        String   @default("broadband") // mpls | broadband | lte
+  latencyMs    Float    @default(20) @map("latency_ms")
+  jitterMs     Float    @default(3) @map("jitter_ms")
+  lossPct      Float    @default(0) @map("loss_pct")
+  state        String   @default("up") // up | degraded | down
+  lastProbeAt  DateTime @default(now()) @map("last_probe_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, siteId, wanInterface])
+  @@map("sdwan_paths")
+}
+
+model SdwanPolicy {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int      @default(1) @map("tenant_id")
+  name             String
+  overlayId        Int      @map("overlay_id") // logical ref → sdwan_overlays
+  matchApp         String?  @map("match_app") // nDPI app or null = any
+  matchDscp        String?  @map("match_dscp")
+  matchDestCidr    String?  @map("match_dest_cidr")
+  preferredPath    String   @default("latency") @map("preferred_path") // latency | jitter | loss | fixed
+  fixedWanInterface String? @map("fixed_wan_interface")
+  slaProfileId     Int?     @map("sla_profile_id")
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("sdwan_policies")
+}
+
+// ───────────────── M21 — IPv6 Dual-Stack (spec 2.7) ─────────────────
+
+model Ipv6Settings {
+  id                Int      @id @default(autoincrement())
+  tenantId          Int      @default(1) @map("tenant_id")
+  enabled           Boolean  @default(true)
+  dhcpv6Enabled     Boolean  @default(true) @map("dhcpv6_enabled")
+  slaacEnabled      Boolean  @default(true) @map("slaac_enabled")
+  rdnssEnabled      Boolean  @default(true) @map("rdnss_enabled")
+  pdWanInterface    String   @default("wan0") @map("pd_wan_interface")
+  pdPrefixLength    Int      @default(56) @map("pd_prefix_length")
+  raMode            String   @default("slaac_dhcpv6") @map("ra_mode") // disabled | router_only | slaac | slaac_dhcpv6
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("ipv6_settings")
+}
+
+model Nat66Rule {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int      @default(1) @map("tenant_id")
+  name             String
+  type             String   @default("nptv6") // nptv6 | masquerade66 | dnat66
+  sourcePrefix     String?  @map("source_prefix")
+  translatedPrefix String?  @map("translated_prefix")
+  destPort         Int?     @map("dest_port")
+  interfaceName    String   @map("interface_name")
+  enabled          Boolean  @default(true)
+  hitCount         Int      @default(0) @map("hit_count")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("nat66_rules")
+}
+
+model Dhcpv6Server {
+  id                Int      @id @default(autoincrement())
+  tenantId          Int      @default(1) @map("tenant_id")
+  interfaceName     String   @map("interface_name")
+  poolStart         String   @map("pool_start") // 2001:db8:1::100
+  poolEnd           String   @map("pool_end")
+  prefixLength      Int      @default(64) @map("prefix_length")
+  preferredLifetime Int      @default(3600) @map("preferred_lifetime")
+  validLifetime     Int      @default(7200) @map("valid_lifetime")
+  dnsServers        String   @default("[\"2001:db8:1::1\"]") @map("dns_servers") // JSON array
+  domainSearch      String?  @map("domain_search")
+  enabled           Boolean  @default(true)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, interfaceName])
+  @@map("dhcpv6_servers")
+}
+
+// ───────────────── M22 — Email Security (spec 2.8) ─────────────────
+
+model EmailGateway {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1) @map("tenant_id")
+  name           String
+  mode           String   @default("proxy") // proxy | relay
+  listenPort     Int      @default(25) @map("listen_port")
+  relayDomains   String   @default("[]") @map("relay_domains") // JSON array
+  upstreamHost   String?  @map("upstream_host")
+  tlsMode        String   @default("starttls") @map("tls_mode") // none | starttls | wrapper
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("email_gateways")
+}
+
+model EmailPolicy {
+  id                    Int      @id @default(autoincrement())
+  tenantId              Int      @default(1) @map("tenant_id")
+  name                  String
+  spamThreshold         Float    @default(6.0) @map("spam_threshold") // Rspamd-like score
+  blockPhishing         Boolean  @default(true) @map("block_phishing")
+  blockMalware          Boolean  @default(true) @map("block_malware") // ClamAV sim
+  scanArchives          Boolean  @default(true) @map("scan_archives")
+  maxMessageSizeMb      Int      @default(25) @map("max_message_size_mb")
+  blockedExtensions     String   @default("[\"exe\",\"js\",\"vbs\",\"scr\",\"bat\"]") @map("blocked_extensions")
+  spfVerify             Boolean  @default(true) @map("spf_verify")
+  dkimVerify            Boolean  @default(true) @map("dkim_verify")
+  dmarcPolicy           String   @default("quarantine") @map("dmarc_policy") // none | quarantine | reject
+  quarantineRetentionDays Int    @default(14) @map("quarantine_retention_days")
+  enabled               Boolean  @default(true)
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("email_policies")
+}
+
+model EmailRoutingRule {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int      @default(1) @map("tenant_id")
+  name        String
+  matchDomain String   @map("match_domain")
+  action      String   @default("relay") // deliver | relay | reject | quarantine
+  targetHost  String?  @map("target_host")
+  priority    Int      @default(10)
+  enabled     Boolean  @default(true)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("email_routing_rules")
+}
+
+model EmailLog {
+  id                Int      @id @default(autoincrement())
+  tenantId          Int      @default(1) @map("tenant_id")
+  fromAddr          String   @map("from_addr")
+  toAddr            String   @map("to_addr")
+  subject           String?
+  spamScore         Float    @default(0) @map("spam_score")
+  verdict           String   // delivered | quarantined | rejected
+  reasons           String   @default("[]") // JSON: ["spam_score", "blocked_extension", "dmarc_fail"]
+  spfResult         String?  @map("spf_result") // pass | fail | softfail | none
+  dkimResult        String?  @map("dkim_result")
+  dmarcResult       String?  @map("dmarc_result")
+  attachmentsScanned Int     @default(0) @map("attachments_scanned")
+  sizeKb            Int      @default(0) @map("size_kb")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@map("email_logs")
+}
+
+// ───────────────── M23 — Advanced Identity & NAC (spec 2.9 + 2.10) ─────────────────
+
+model FederatedIdp {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int      @default(1) @map("tenant_id")
+  name         String
+  protocol     String   @default("saml2") // saml2 | oidc
+  entityId     String?  @map("entity_id")
+  metadataUrl  String?  @map("metadata_url") // sandbox: simulated metadata fetch
+  ssoUrl       String?  @map("sso_url")
+  clientId     String?  @map("client_id")
+  clientSecret String?  @map("client_secret") // masked in responses
+  idpCertId    Int?     @map("idp_cert_id") // logical ref → certificates
+  redirectUri  String?  @map("redirect_uri")
+  status       String   @default("untested") // untested | ok | error
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("federated_idps")
+}
+
+model RadiusCoaProfile {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int      @default(1) @map("tenant_id")
+  name             String
+  radiusProfileId  Int?     @map("radius_profile_id") // logical ref → radius_profiles
+  coaEnabled       Boolean  @default(true) @map("coa_enabled")
+  dynamicVlan      Boolean  @default(true) @map("dynamic_vlan")
+  vlanPoolStart    Int?     @map("vlan_pool_start")
+  vlanPoolEnd      Int?     @map("vlan_pool_end")
+  sessionTimeoutMin Int     @default(480) @map("session_timeout_min")
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("radius_coa_profiles")
+}
+
+model NacProfile {
+  id              Int      @id @default(autoincrement())
+  tenantId        Int      @default(1) @map("tenant_id")
+  name            String
+  method          String   @default("802.1x") // 802.1x | mab | both
+  eapType         String   @default("peap") @map("eap_type") // peap | ttls | tls
+  dynamicVlan     Boolean  @default(true) @map("dynamic_vlan")
+  guestVlan       Int?     @map("guest_vlan")
+  authFailVlan    Int?     @map("auth_fail_vlan")
+  profiling       Boolean  @default(true)
+  byodOnboarding  Boolean  @default(false) @map("byod_onboarding")
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("nac_profiles")
+}
+
+model NacDevice {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int      @default(1) @map("tenant_id")
+  macAddress String   @map("mac_address")
+  ip         String
+  hostname   String?
+  vendor     String?  // OUI lookup (simulated)
+  deviceType String   @default("unknown") @map("device_type") // printer | phone | camera | workstation | mobile | iot | unknown
+  osGuess    String?  @map("os_guess")
+  nacState   String   @default("pending") @map("nac_state") // authenticated | mab | quarantine | pending | denied
+  vlanId     Int?     @map("vlan_id")
+  riskScore  Int      @default(30) @map("risk_score")
+  nacProfileId Int?   @map("nac_profile_id")
+  firstSeen  DateTime @default(now()) @map("first_seen")
+  lastSeen   DateTime @default(now()) @map("last_seen")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, macAddress])
+  @@index([tenantId, nacState])
+  @@map("nac_devices")
+}
+
+model ByodEnrollment {
+  id        Int       @id @default(autoincrement())
+  tenantId  Int       @default(1) @map("tenant_id")
+  userName  String    @map("user_name")
+  deviceId  Int?      @map("device_id") // logical ref → nac_devices
+  token     String    // one-time enrollment token (one-time secret rule)
+  status    String    @default("pending") // pending | approved | enrolled | expired | revoked
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, token])
+  @@map("byod_enrollments")
+}
+
+model IdentityActivityEvent {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  userName  String   @map("user_name")
+  event     String   // login | logout | portal | vpn | coa | vlan_change | nac_auth | idp_sso
+  sourceIp  String?  @map("source_ip")
+  detail    String   @default("{}") // JSON
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@map("identity_activity_events")
 }
