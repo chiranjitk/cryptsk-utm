@@ -468,17 +468,26 @@ function WebhooksTab() {
     onError: (err) => toastErr(err, "Could not delete the webhook"),
   });
 
+  const [deliveriesFor, setDeliveriesFor] = useState<number | null>(null);
+  const deliveriesQuery = useQuery({
+    queryKey: ["webhooks", "deliveries", deliveriesFor],
+    queryFn: () => apiKeysApi.listWebhookDeliveries(deliveriesFor!),
+    enabled: deliveriesFor !== null,
+  });
+
   const testMut = useMutation({
     mutationFn: (id: number) => apiKeysApi.testWebhook(id),
     onSuccess: (result, id) => {
-      // simulated delivery result — M11 §5.6 {ok, status, latencyMs}
+      // REAL delivery result — M11 §5.6 (divergence closed): signed HTTPS POST + retries
       showToast({
-        title: result.ok ? "Test delivered" : "Test timed out",
-        description: `ok: ${result.ok} · status: ${result.status} · ${result.latencyMs} ms (simulated — no real HTTP egress in sandbox)`,
+        title: result.ok ? "Delivered" : "Delivery failed",
+        description: result.ok
+          ? `HTTP ${result.statusCode} · ${result.attempts} attempt(s) · ${result.durationMs} ms · sig ${result.signaturePrefix ?? "none"}…`
+          : `${result.error ?? "unknown error"} · ${result.attempts} attempt(s)`,
         variant: result.ok ? "default" : "destructive",
       });
       void qc.invalidateQueries({ queryKey: ["webhooks"] });
-      void id;
+      setDeliveriesFor(id); // open ledger so the user sees the attempt
     },
     onError: (err) => toastErr(err, "Test delivery failed"),
   });
@@ -495,8 +504,7 @@ function WebhooksTab() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-zinc-500">
-          Machine-facing change notifications — delivery is <span className="font-medium">simulated</span> in sandbox; the appliance sender signs
-          payloads with your HMAC secret.
+          Machine-facing change notifications — deliveries are <span className="font-medium">real HTTPS POSTs</span> signed with your HMAC secret (X-Cryptsk-Signature), with bounded retries and a per-webhook delivery ledger.
         </p>
         <Button size="sm" className="gap-1.5" onClick={openCreate}>
           <Icons.Webhook className="h-4 w-4" />
@@ -592,6 +600,15 @@ function WebhooksTab() {
                       >
                         <Icons.SendHorizontal className="h-3.5 w-3.5" />
                         {testMut.isPending && testMut.variables === wh.id ? "Testing…" : "Send test"}
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        aria-label={`Delivery history for ${wh.name}`}
+                        onClick={() => setDeliveriesFor(wh.id)}
+                      >
+                        <Icons.History className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         size="icon"
@@ -696,11 +713,53 @@ function WebhooksTab() {
         open={deleteTarget !== null}
         onOpenChange={(o) => (o ? null : setDeleteTarget(null))}
         title={`Delete webhook “${deleteTarget?.name ?? ""}”?`}
-        description="The registration is removed immediately; pending simulated deliveries are discarded."
+        description="The registration is removed immediately; its delivery ledger is discarded."
         confirmLabel="Delete"
         loading={deleteMut.isPending}
         onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
       />
+
+      {/* delivery ledger (real HTTPS attempts) */}
+      <Dialog open={deliveriesFor !== null} onOpenChange={(o) => (o ? null : setDeliveriesFor(null))}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-base">Delivery ledger</DialogTitle>
+            <DialogDescription>
+              Last 50 real HTTPS attempts — signed with X-Cryptsk-Signature, bounded retries.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-96 overflow-y-auto">
+            {deliveriesQuery.isLoading ? (
+              <p className="py-6 text-center text-xs text-zinc-500">Loading…</p>
+            ) : (deliveriesQuery.data ?? []).length === 0 ? (
+              <p className="py-6 text-center text-xs text-zinc-500">No deliveries yet — use “Send test”.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {(deliveriesQuery.data ?? []).map((d) => (
+                  <li key={d.id} className="flex items-center gap-2 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs dark:border-zinc-800">
+                    <span
+                      className={
+                        d.ok
+                          ? "inline-block h-2 w-2 shrink-0 rounded-full bg-blue-600"
+                          : "inline-block h-2 w-2 shrink-0 rounded-full bg-rose-500"
+                      }
+                      aria-hidden
+                    />
+                    <span className="font-mono">{d.event}</span>
+                    <span className="text-zinc-500">
+                      {d.ok ? `HTTP ${d.statusCode}` : (d.error ?? "failed")} · {d.attempts} attempt(s)
+                      {d.durationMs !== null ? ` · ${d.durationMs} ms` : ""}
+                    </span>
+                    <span className="ml-auto shrink-0 text-zinc-400">
+                      {new Date(d.createdAt).toLocaleTimeString()}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

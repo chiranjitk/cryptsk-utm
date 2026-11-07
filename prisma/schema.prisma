@@ -56,6 +56,7 @@ model Tenant {
   netflowTargets    NetflowTarget[]
   reportSchedules   ReportSchedule[]
   webhooks          Webhook[]
+  webhookDeliveries WebhookDelivery[]
   sshKeys           SshKey[]
   directorySources  DirectorySource[]
   // Phase 2 (M12–M23)
@@ -1944,4 +1945,25 @@ model IdentityActivityEvent {
 
   @@index([tenantId, createdAt])
   @@map("identity_activity_events")
+}
+
+/// Phase-1 tail (2026-11-07): real webhook delivery ledger — M11 §5.6 divergence closed.
+model WebhookDelivery {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int      @default(1) @map("tenant_id")
+  webhookId  Int      @map("webhook_id")
+  event      String   @default("alerts.new")
+  payload    String   @default("{}") // JSON body actually POSTed
+  ok         Boolean  @default(false)
+  statusCode Int?     @map("status_code")
+  durationMs Int?     @map("duration_ms")
+  attempts   Int      @default(1) @map("attempts")
+  error      String?  // timeout / DNS / connection-refused detail
+  signature  String?  // HMAC-SHA256 hex prefix (first 16) for audit correlation
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, webhookId, createdAt])
+  @@map("webhook_deliveries")
 }

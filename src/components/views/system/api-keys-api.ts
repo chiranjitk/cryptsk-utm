@@ -7,7 +7,27 @@
 
 import type { ApiKeyDTO, ApiKeyCreatedDTO, WebhookDTO, WebhookTestResult } from "@/lib/api-keys/service";
 
-export type { ApiKeyDTO, ApiKeyCreatedDTO, WebhookDTO, WebhookTestResult };
+export type { ApiKeyDTO, ApiKeyCreatedDTO, WebhookDTO };
+export type WebhookTestResult = {
+  ok: boolean;
+  statusCode: number | null;
+  durationMs: number | null;
+  attempts: number;
+  error: string | null;
+  signaturePrefix: string | null;
+  deliveryId: number;
+};
+export interface WebhookDeliveryRow {
+  id: number;
+  event: string;
+  ok: boolean;
+  statusCode: number | null;
+  durationMs: number | null;
+  attempts: number;
+  error: string | null;
+  signature: string | null;
+  createdAt: string;
+}
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
@@ -62,6 +82,7 @@ export const apiKeysApi = {
   deleteWebhook: (id: number) => fetchJson<{ ok: boolean }>(`/api/v1/webhooks/${id}`, { method: "DELETE" }),
   testWebhook: (id: number) =>
     fetchJson<WebhookTestResult>(`/api/v1/webhooks/${id}/test`, { method: "POST", headers: JSON_HEADERS, body: "{}" }),
+  listWebhookDeliveries: (id: number) => fetchJson<WebhookDeliveryRow[]>(`/api/v1/webhooks/${id}/test`),
 };
 
 // ── formatters ──────────────────────────────────────────────────────────────
