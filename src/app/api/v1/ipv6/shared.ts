@@ -219,9 +219,9 @@ export async function listNat66Rules(tenantId: number): Promise<Nat66RuleDTO[]> 
 
 function validateNat66Values(v: {
   type: string;
-  sourcePrefix: string | null | undefined;
-  translatedPrefix: string | null | undefined;
-  destPort: number | null | undefined;
+  sourcePrefix?: string | null | undefined;
+  translatedPrefix?: string | null | undefined;
+  destPort?: number | null | undefined;
 }): void {
   for (const issue of nat66Issues({
     type: v.type as Nat66Create["type"],
@@ -327,11 +327,12 @@ export async function updateDhcpv6Server(
     validLifetime: body.validLifetime ?? current.validLifetime,
   };
   validateDhcpv6Values(merged);
+  const { dnsServers, ...rest } = body;
   const updated = await db.dhcpv6Server.update({
     where: { id: current.id },
     data: {
-      ...body,
-      ...(body.dnsServers !== undefined ? { dnsServers: JSON.stringify(body.dnsServers) } : {}),
+      ...rest,
+      ...(dnsServers !== undefined ? { dnsServers: JSON.stringify(dnsServers) } : {}),
     },
   });
   return toDhcpv6DTO(updated);
