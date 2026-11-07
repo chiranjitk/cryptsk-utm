@@ -42,6 +42,14 @@ import { AuditView } from "@/components/views/logs/audit-view";
 import { LiveTailView } from "@/components/views/logs/live-tail-view";
 import { ReportsView } from "@/components/views/logs/reports-view";
 import { ApiKeysView } from "@/components/views/system/api-keys-view";
+// Phase 2 views (M12–M14 batch 1)
+import { SearchView } from "@/components/views/logs/search-view";
+import { ComplianceView } from "@/components/views/logs/compliance-view";
+import { FeedsView } from "@/components/views/threat-intel/feeds-view";
+import { IocsView } from "@/components/views/threat-intel/iocs-view";
+import { AutoBlockView } from "@/components/views/threat-intel/auto-block-view";
+import { AuthoritiesView } from "@/components/views/pki/authorities-view";
+import { CertificatesView } from "@/components/views/pki/certificates-view";
 import { HaView } from "@/components/views/ha/ha-view";
 import { SystemView } from "@/components/views/system/system-view";
 import { BackupsView } from "@/components/views/system/backups-view";
@@ -292,6 +300,20 @@ export function AppShell() {
               <ReportsView />
             ) : view.path === "/system/api-keys" ? (
               <ApiKeysView />
+            ) : view.path === "/logs/search" ? (
+              <SearchView />
+            ) : view.path === "/logs/compliance" ? (
+              <ComplianceView />
+            ) : view.path === "/threat-intel/feeds" ? (
+              <FeedsView />
+            ) : view.path === "/threat-intel/iocs" ? (
+              <IocsView />
+            ) : view.path === "/threat-intel/auto-block" ? (
+              <AutoBlockView />
+            ) : view.path === "/pki/authorities" ? (
+              <AuthoritiesView />
+            ) : view.path === "/pki/certificates" ? (
+              <CertificatesView />
             ) : view.path === "/ha" ? (
               <HaView />
             ) : view.path === "/system/settings" ? (
