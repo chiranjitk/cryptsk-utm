@@ -246,6 +246,32 @@
   build order (ADR-014) unchanged; the larger Phase-1 surface raises build effort —
   accepted by the owner. Any future deviation from SPEC.md requires a new ADR.
 
+## ADR-020 — Phase 2 build order: M12→M23 in four parallel batches (owner directive 2026-11-07)
+
+- **Status:** ACCEPTED (build-level; supersedes nothing — extends ADR-014 pattern to Phase 2)
+- **Context:** owner directed "finish all Phase 2 and Phase 1 pending things, 100% production,
+  Debian 13-ready" in one session. 13 spec-Phase-2 workstreams + 2 Phase-1 build divergences.
+- **Decision:** 12 milestones, four parallel sub-agent batches with strict file ownership
+  (each agent owns disjoint validators/routes/views/seed files; coordinator owns schema,
+  shell wiring, RBAC, docs):
+  - M12 enhanced logging & reports (2.13) + closes scheduled-reports/PDF divergence
+  - M13 threat intelligence (2.11)
+  - M14 PKI (2.12) — **real X.509 via node-forge** (not simulated PEM)
+  - M15 SSL inspection (2.1) · M16 URL filtering (2.3) · M17 WAF (2.4)
+  - M18 app control (2.2) · M19 dynamic routing (2.6) · M20 SD-WAN (2.5)
+  - M21 IPv6 dual-stack (2.7) · M22 email security (2.8) · M23 identity/NAC (2.9+2.10)
+  - M11-tail: real webhook delivery (HMAC-SHA256, retries, ledger) — closes webhook divergence
+- **Consequences:** 17 new hash views (29→46); 47 new models; 12 new RBAC capability areas;
+  simulated decision engines mirror the exact appliance services (Squid/Coraza/FRR/Kea/...) so
+  AgentAdapter wiring is a 1:1 mapping (`deploy/AGENT_ADAPTER_CHECKLIST.md`). Production
+  packaging shipped alongside (DEPLOYMENT.md, systemd, Caddyfile, .env.example).
+  Every milestone committed+pushed on completion per HARD RULE §11.16.
+- **Sandbox ops learnings (recorded in Gotchas §13):** OOM killer reaps next-server when
+  tsc/lint run alongside the dev server (4 GB box) — use memory-capped restarts, close the
+  browser when idle; Next.js dynamic segments at the same path level must share one slug name.
+
+---
+
 ## ADR-019 — Enterprise white & blue theme (owner request; supersedes ADR-013 palette)
 
 - **Status:** ACCEPTED (2026-11-06, owner-directed)

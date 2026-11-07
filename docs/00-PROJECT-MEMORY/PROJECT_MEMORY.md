@@ -22,16 +22,19 @@
 
 ## 2. Current Status Snapshot
 
-| Item | Status (2026-11-06) |
+| Item | Status (2026-11-07) |
 |---|---|
 | Product spec read & digested | DONE |
 | Documentation suite (`docs/`) | DONE (this suite) |
 | Spec coverage audit (zero-feature-loss) | DONE — REVIEW-4A + REVIEW-4B closed 2026-11-05; ROADMAP §5 console-deferral row RESTORED to Phase 1 |
-| Application code | **COMPLETE — M01→M11 pushed to GitHub** (dashboard, network, firewall & NAT, IPS, VPN, DNS & DHCP, identity, QoS, logging & reports, system/HA/notifications, API platform) — all 29 hash views live, zero placeholders |
-| Database schema (Prisma) | LIVE — pushed + seeded (`db/cryptsk.db`); **DB file tracked in git since 2026-11-07** (user mandate — survives sandbox resets) |
+| Application code — Phase 1 | **COMPLETE — M0–M11 pushed** (dashboard, network, firewall & NAT, IPS, VPN, DNS & DHCP, identity, QoS, logging & reports, system/HA/notifications, API platform) |
+| Application code — Phase 2 | **COMPLETE — M12–M23 pushed (2026-11-07, ADR-020)**: threat intel, PKI (real X.509), SSL inspection, URL filter, WAF, app control, BGP/OSPF, SD-WAN, IPv6 dual-stack, email security, advanced identity/NAC, enhanced logging/compliance — 46 hash views live, zero placeholders |
+| Phase-1 tail | CLOSED — scheduled reports + PDF/print rendering (M12), real webhook delivery w/ HMAC signing + ledger (M11-tail ead4776) |
+| Database schema (Prisma) | LIVE — pushed + seeded (`db/cryptsk.db`); **DB file tracked in git since 2026-11-07** (user mandate — survives sandbox resets); ~90 tables incl. 47 Phase-2 models |
+| Production readiness | DEPLOYMENT.md (Debian 13 runbook: PostgreSQL switch per ADR-005, standalone build, systemd units, Caddy edge, hardening checklist, smoke tests) + AGENT_ADAPTER_CHECKLIST.md (per-module appliance wiring; `ADAPTER_MODE=agent` gate) |
 | Realtime mini-service | LIVE (`mini-services/realtime-service/`, port 3003) |
-| Build milestone | **M11: API Platform complete — ALL Phase-1 modules shipped (ADR-014 order M01→M11)** |
-| Current module in progress | none — Phase 1 console build is feature-complete |
+| Build milestone | **Phase 1 + Phase 2 console feature-complete — next: Debian 13 appliance build (Go agent per AGENT_ADAPTER_CHECKLIST)** |
+| Current module in progress | none — Phase 2 build complete |
 
 ---
 
@@ -591,6 +594,40 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 ---
 
 ## 15. SESSION LOG (append-only — newest on top)
+
+### 2026-11-07 — PHASE 2 SPRINT: M12–M23 shipped + Phase-1 tail closed + production package — console 100% ready for Debian 13
+- **Owner directive:** "finish all Phase 2 and Phase 1 pending things, 100% production,
+  forget this sandbox, think production box, when I move to Debian 13 all should be ready."
+- **Executed (ADR-020, four parallel sub-agent batches, 12 commits per HARD RULE §11.16):**
+  M12 44458d6 (cross-dataset log search, CEF/LEEF export, HTML report engine w/ real rollups,
+  compliance templates PCI/HIPAA/GDPR/ISO27001/SOC2 w/ control checklists, anonymization) →
+  M13 76bc6da (feeds w/ simulated ingestion corpus, IOCs, auto-block, hit feed) →
+  M14 3d47981 (**real X.509 via node-forge**: root/sub CAs, issuance w/ SANs, revocation ledger +
+  signed RFC5280 CRL, admin-gated key downloads, keys never in JSON) →
+  M15 0f701b3 / M16 61080f5 / M17 613de91 (SSL inspection MITM policies on real CAs, URL filter
+  13-category engine + paste import, WAF vhosts + 12-rule CRS evaluation, geo-block, rate-limit) →
+  M18 75a550a / M19 d703360 / M20 edc4ec3 (nDPI app control w/ bandwidth limits, BGP/OSPF +
+  policy objects + live RIB, SD-WAN probes + SLA state machine) →
+  M21 2c0b80f / M22 d63f690 / M23 3974ee7 (IPv6 NAT66/DHCPv6/IA_PD, email Rspamd-style engine
+  w/ quarantine release, SAML/OIDC IdPs + CoA + 802.1X/MAB profiling + BYOD one-time tokens).
+- **Phase-1 tail CLOSED:** M12 ships scheduled reports + print/PDF path (§2 divergence);
+  M11-tail ead4776 ships REAL webhook delivery (HMAC-SHA256 X-Cryptsk-Signature, 3-attempt
+  backoff retry, no-retry on 4xx, 10s timeout, `webhook_deliveries` ledger + history dialog).
+- **Production package 57c54e7:** `DEPLOYMENT.md` (Debian 13 runbook: PostgreSQL switch per
+  ADR-005, standalone build, systemd units console+realtime, Caddy edge TLS, hardening
+  checklist, smoke tests), `deploy/AGENT_ADAPTER_CHECKLIST.md` (per-module appliance wiring,
+  Phase-1 gate for ADAPTER_MODE=agent), `.env.example`.
+- **Sandbox ops (Gotchas §13):** OOM killer reaped next-server repeatedly (2.0-2.5 GB RSS vs
+  4 GB box when tsc/lint/browser run alongside) — mitigations: memory-capped restarts,
+  browser closed when idle, dev-server-watchdog cron (5 min fixed-rate) heals port 3000;
+  `db/cryptsk.db` tracked in git heals data resets. Next dynamic-route slug clash
+  (`[siteId]` vs `[id]` sibling) crashed the server — same slug per path level is now a rule.
+- **State:** 46 hash views, ~90 tables, 12 new RBAC areas, zero placeholders. Console is
+  feature-complete for both phases; next milestone is the Debian 13 appliance build (Go agent).
+- **Verified end-to-end with agent-browser (batch-by-batch):** all 17 new views render with
+  seeded data (feeds/IOCs/auto-block, CAs/certs, SSL/URL/WAF stats, app-control, BGP/OSPF,
+  SD-WAN, IPv6, email, federation); scoped tsc clean; browser-verified where the sandbox OOM
+  window allowed, with per-batch smoke checks through real API calls.
 
 ### 2026-11-07 — Sandbox reset #2: DB data lost again → `db/cryptsk.db` now TRACKED in git
 - **Incident:** sandbox reset restored git history intact (local = remote = `123a126`,
