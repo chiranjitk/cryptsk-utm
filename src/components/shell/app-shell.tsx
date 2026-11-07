@@ -58,6 +58,10 @@ import { WafView } from "@/components/views/waf/waf-view";
 import { AppControlView } from "@/components/views/app-control/app-control-view";
 import { DynamicRoutingView } from "@/components/views/dynamic-routing/dynamic-routing-view";
 import { SdwanView } from "@/components/views/sdwan/sdwan-view";
+// Phase 2 views (M21–M23 batch 4)
+import { Ipv6View } from "@/components/views/ipv6/ipv6-view";
+import { EmailSecurityView } from "@/components/views/email-security/email-security-view";
+import { IdentityAdvancedView } from "@/components/views/identity-advanced/identity-advanced-view";
 import { HaView } from "@/components/views/ha/ha-view";
 import { SystemView } from "@/components/views/system/system-view";
 import { BackupsView } from "@/components/views/system/backups-view";
@@ -334,6 +338,12 @@ export function AppShell() {
               <DynamicRoutingView />
             ) : view.path === "/routing/sdwan" ? (
               <SdwanView />
+            ) : view.path === "/network/ipv6" ? (
+              <Ipv6View />
+            ) : view.path === "/email/security" ? (
+              <EmailSecurityView />
+            ) : view.path === "/identity/federation" || view.path === "/identity/nac" ? (
+              <IdentityAdvancedView />
             ) : view.path === "/ha" ? (
               <HaView />
             ) : view.path === "/system/settings" ? (
