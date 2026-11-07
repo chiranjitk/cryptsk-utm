@@ -552,6 +552,14 @@ for envelope shape. Do not add console.log spam; remove temp logs after.
 
 ## 13. Gotchas (learned-the-hard-way section — keep appending)
 
+- **Next standalone + Prisma SQLite (found 2026-11-08):** the traced
+  `.next/standalone/node_modules/.prisma/client` does NOT resolve `env("DATABASE_URL")`
+  from `process.env` at runtime (dev client does; same bytes) → SQLite "Error code 14:
+  Unable to open the database file" even with a correct absolute URL exported. Fix shipped
+  in `src/lib/db.ts`: resolve the URL explicitly and pass it as the constructor
+  `datasourceUrl` (env → repo `.env` parse → schema fallback; `file:` URLs only trusted
+  when the target exists, which also guards stale session envs pointing at
+  `db/custom.db`). Never "fix" this by copying files into `.next/standalone` by hand.
 - Next 16 + React 19: keep `"use client"` on every interactive component; server components
   cannot use zustand/socket hooks.
 - recharts + React 19: use the `ui/chart.tsx` shadcn wrapper patterns; avoid dynamic
