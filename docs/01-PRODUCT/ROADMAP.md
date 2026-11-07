@@ -210,18 +210,19 @@ column changes without a matching session-log entry are considered doc drift.
 | Milestone | Status | Docs | Notes |
 |---|---|---|---|
 | Docs suite (memory, architecture, database, API, frontend, modules, security, operations) | DONE | `docs/README.md` + tree | Authored before any code; contracts locked in PROJECT_MEMORY |
-| M0 Bootstrap | NOT STARTED | `../00-PROJECT-MEMORY/PROJECT_MEMORY.md` §5/§10, `../03-DATABASE/SCHEMA.md`, `../08-OPERATIONS/DEVELOPMENT_GUIDE.md` | Current `prisma/schema.prisma` is scaffold placeholder; deps `socket.io`/`jose`/`bcryptjs` not yet installed |
-| M01 Dashboard | NOT STARTED | `../06-MODULES/M01-DASHBOARD.md` | Needs M0 |
-| M02 Network | NOT STARTED | `../06-MODULES/M02-NETWORK.md` | Built after M03 (ADR-014) |
-| M03 Firewall | NOT STARTED | `../06-MODULES/M03-FIREWALL.md` | Largest module; objects + rules + NAT |
-| M04 IPS | NOT STARTED | `../06-MODULES/M04-IPS.md` | Depends on M03 objects for correlated drops |
-| M05 VPN | NOT STARTED | `../06-MODULES/M05-VPN.md` | WireGuard first, then IPSec, then OpenVPN |
-| M06 DNS+DHCP | NOT STARTED | `../06-MODULES/M06-DNS-DHCP.md` | One module, two services |
-| M07 Identity | NOT STARTED | `../06-MODULES/M07-IDENTITY.md` | Captive portal + vouchers simulated |
-| M08 QoS | NOT STARTED | `../06-MODULES/M08-QOS.md` | Simulation honors caps in metrics |
-| M09 Logging | NOT STARTED | `../06-MODULES/M09-LOGGING.md` | Built before identity so audit views exist early |
-| M10 System+HA | NOT STARTED | `../06-MODULES/M10-SYSTEM.md` | Backups, versions, notifications, HA |
-| M11 API Platform | NOT STARTED | `../06-MODULES/M11-API-PLATFORM.md` | Keys, rate limits, OpenAPI, webhooks stub |
+| M0 Bootstrap | DONE | PROJECT_MEMORY §5/§10 | Prisma 6 + SQLite live, schema seeded, AppShell + auth + realtime (`e5871a6`→M0 sprint) |
+| M01 Dashboard | DONE | `../06-MODULES/M01-DASHBOARD.md` | Live gauges, throughput via realtime ticks, WAN strip, threat feed |
+| M02 Network | DONE | `../06-MODULES/M02-NETWORK.md` | Interfaces/VLAN/bond/GRE, routing + PBR, multi-WAN probes (built after M03 per ADR-014) |
+| M03 Firewall | DONE | `../06-MODULES/M03-FIREWALL.md` | Zones, objects 5 tabs, rules + hit counters, NAT 4 types, validation engine |
+| M04 IPS | DONE | `../06-MODULES/M04-IPS.md` | Policies, profile-aware event engine, exceptions/suppression, categories |
+| M05 VPN | DONE | `../06-MODULES/M05-VPN.md` | WireGuard/IPSec/OpenVPN configs, session state machine, user groups |
+| M06 DNS+DHCP | DONE | `../06-MODULES/M06-DNS-DHCP.md` | Resolver, RPZ policies, records, query log, subnets, reservations, leases, relay |
+| M07 Identity | DONE | `../06-MODULES/M07-IDENTITY.md` | Users/groups, auth policy, RADIUS, directory sources, captive portal + vouchers, live sessions |
+| M08 QoS | DONE | `../06-MODULES/M08-QOS.md` | Shaper policies, priority classes, DSCP, hard limits, cap-clamped metrics |
+| M09 Logging | DONE | `../06-MODULES/M09-LOGGING.md` | FW/IPS/audit logs server-pagination + CSV, live tail socket, reports, syslog/NetFlow |
+| M10 System+HA | DONE | `../06-MODULES/M10-SYSTEM.md` | HA pair, settings 12 cards, backups w/ typed restore, firmware staged upgrade, SSH keys, policy templates, wizard, notification center |
+| M11 API Platform | DONE | `../06-MODULES/M11-API-PLATFORM.md` | Key lifecycle (one-time secret, sha256, soft revoke, scopes), webhooks + simulated delivery, OpenAPI 3.1 artifact (126 paths) |
+| Phase 2 console (M12–M23) | IN PROGRESS | PROJECT_MEMORY §15 (2026-11-07 entry) | Owner directive: full Phase 2 + Phase-1 tail, production-ready for Debian 13 appliance move — 13 workstreams → 12 milestones |
 
 Product phases (appliance-side work beyond this repo) are tracked outside this tracker;
 this table tracks the console only.
