@@ -265,7 +265,6 @@ const refineCommunityEntries = (type: "standard" | "expanded", entries: string[]
       if (!/^\d{1,10}:\d{1,10}$/.test(e)) return false;
     } else {
       try {
-        // eslint-disable-next-line no-new
         new RegExp(e);
       } catch {
         return false;

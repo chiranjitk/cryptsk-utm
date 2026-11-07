@@ -269,10 +269,14 @@ function CategoriesTab({ policyId }: { policyId: number }) {
     queryFn: () => urlFilterApi.listCategoryRules(policyId),
   });
 
-  // local draft for snappy inline edits; reset whenever server rows arrive
-  const [draft, setDraft] = useState<CategoryRuleDTO[] | null>(null);
+  // local draft for snappy inline edits; keyed by server rows so new data resets it
+  const [draftState, setDraftState] = useState<{ key: unknown; draft: CategoryRuleDTO[] | null }>({
+    key: null,
+    draft: null,
+  });
+  const draft = draftState.key === rulesQuery.data ? draftState.draft : null;
   const rules = draft ?? rulesQuery.data ?? [];
-  useEffect(() => setDraft(null), [rulesQuery.data]);
+  const setDraft = (d: CategoryRuleDTO[] | null) => setDraftState({ key: rulesQuery.data, draft: d });
 
   const save = useMutation({
     mutationFn: (next: CategoryRuleDTO[]) =>
