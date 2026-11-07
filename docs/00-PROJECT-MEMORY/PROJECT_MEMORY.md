@@ -28,7 +28,7 @@
 | Documentation suite (`docs/`) | DONE (this suite) |
 | Spec coverage audit (zero-feature-loss) | DONE — REVIEW-4A + REVIEW-4B closed 2026-11-05; ROADMAP §5 console-deferral row RESTORED to Phase 1 |
 | Application code | **COMPLETE — M01→M11 pushed to GitHub** (dashboard, network, firewall & NAT, IPS, VPN, DNS & DHCP, identity, QoS, logging & reports, system/HA/notifications, API platform) — all 29 hash views live, zero placeholders |
-| Database schema (Prisma) | LIVE — pushed + seeded (`db/cryptsk.db`) |
+| Database schema (Prisma) | LIVE — pushed + seeded (`db/cryptsk.db`); **DB file tracked in git since 2026-11-07** (user mandate — survives sandbox resets) |
 | Realtime mini-service | LIVE (`mini-services/realtime-service/`, port 3003) |
 | Build milestone | **M11: API Platform complete — ALL Phase-1 modules shipped (ADR-014 order M01→M11)** |
 | Current module in progress | none — Phase 1 console build is feature-complete |
@@ -501,9 +501,14 @@ QoS, Logs & Reports, HA, System. Full layouts per view: `docs/05-FRONTEND/PAGE_M
     batching across phases. Verify with `git ls-remote origin main` that the remote SHA
     matches local HEAD. Auth: GitHub PAT supplied per-session by the user (the sandbox
     does not persist tokens; never write the token to any file).
-17. **Never commit runtime artifacts** (`.env`, `.next/`, `db/`, `dev.log`, `upload/`,
+17. **Never commit runtime artifacts** (`.env`, `.next/`, `dev.log`, `upload/`,
     `.zscripts/` logs) — the `.gitignore` guards these; if a sandbox checkpoint clobbers
     it, restore it before pushing (gotcha: it happened once, 2026-11-06).
+    **EXCEPTION (user-mandated 2026-11-07):** `db/cryptsk.db` IS tracked — the seeded
+    SQLite snapshot ships in git so a sandbox reset can be healed with
+    `git checkout -- db/cryptsk.db` instead of a full re-seed. Sidecar files
+    (`*.db-journal/-wal/-shm`) stay ignored; re-run `bun prisma/seed.ts` only if the
+    tracked snapshot is older than the latest schema change.
 
 ---
 
@@ -586,6 +591,21 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 ---
 
 ## 15. SESSION LOG (append-only — newest on top)
+
+### 2026-11-07 — Sandbox reset #2: DB data lost again → `db/cryptsk.db` now TRACKED in git
+- **Incident:** sandbox reset restored git history intact (local = remote = `123a126`,
+  nothing lost) but reverted `.gitignore` AND restored `db/cryptsk.db` as an empty
+  schema-only snapshot (46 tables, 0 users, 0 tenants) → login 401 again.
+- **Fix (same session):** restored `.gitignore` from HEAD; re-ran `bun prisma/seed.ts`
+  (8 users / 5,256 fw logs / 300 IPS events / 25 leases / 10 vpn sessions); verified
+  end-to-end with agent-browser (login → live dashboard w/ realtime throughput →
+  firewall rules from DB → mobile 390px + desktop 1440px, zero page errors).
+- **Root-cause fix (user mandate):** `db/cryptsk.db` is now COMMITTED to git
+  (`.gitignore` `db/` rule replaced with sidecar-only ignores) so future resets are
+  healed with `git checkout -- db/cryptsk.db`. §11.17 updated with the exception.
+- **Recovery recipe (updated):** after sandbox reset →
+  `git checkout -- .gitignore` (if clobbered) → `git checkout -- db/cryptsk.db` →
+  restart dev server. Full re-seed (`bun prisma/seed.ts`) only after schema changes.
 
 ### 2026-11-06 — M08→M11 FINAL SPRINT (QoS · Logging & Reports · System/HA/Notifications · API Platform) — Phase 1 console COMPLETE
 - **Four modules shipped in one session, each committed + pushed immediately on phase

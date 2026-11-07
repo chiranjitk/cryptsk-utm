@@ -53,7 +53,11 @@ server.log
 # Skills directory
 /skills/
 # local runtime artifacts
-db/
+# db/ is TRACKED since 2026-11-07 (user mandate): seeded SQLite snapshot survives
+# sandbox resets via git. Sidecar files stay local-only:
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm
 .zscripts/
 download/
 agent-ctx/
