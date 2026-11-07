@@ -1,0 +1,20 @@
+# /etc/caddy/Caddyfile — public edge for the Cryptsk appliance.
+# Terminates TLS (ACME), proxies console + realtime websocket.
+console.corp.example {
+	encode gzip
+	# console (loopback-only upstream)
+	reverse_proxy 127.0.0.1:3000
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+# realtime socket path — explicit upstream (appliance replaces the sandbox
+# XTransformPort gateway pattern with this static route)
+rt.console.corp.example {
+	reverse_proxy 127.0.0.1:3003
+}

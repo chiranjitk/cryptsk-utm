@@ -1,0 +1,24 @@
+# /etc/systemd/system/cryptsk-realtime.service — realtime socket.io mini-service
+[Unit]
+Description=Cryptsk Realtime (socket.io, port 3003)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cryptsk
+Group=cryptsk
+WorkingDirectory=/opt/cryptsk/console/mini-services/realtime-service
+EnvironmentFile=/opt/cryptsk/console/.env
+ExecStart=/usr/local/bin/bun run dev
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+LimitNOFILE=32768
+MemoryMax=400M
+
+[Install]
+WantedBy=multi-user.target

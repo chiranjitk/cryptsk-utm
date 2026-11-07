@@ -1,0 +1,30 @@
+# /etc/systemd/system/cryptsk-console.service — Cryptsk Console (Next standalone)
+[Unit]
+Description=Cryptsk UTM/NGFW Console (Next.js)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cryptsk
+Group=cryptsk
+WorkingDirectory=/opt/cryptsk/console
+EnvironmentFile=/opt/cryptsk/console/.env
+Environment=PORT=3000
+Environment=HOSTNAME=127.0.0.1
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /opt/cryptsk/console/.next/standalone/server.js
+Restart=always
+RestartSec=3
+# hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/cryptsk
+PrivateTmp=yes
+LimitNOFILE=65536
+# appliance box: console should not eat all RAM — cap and restart on breach
+MemoryMax=1500M
+
+[Install]
+WantedBy=multi-user.target
