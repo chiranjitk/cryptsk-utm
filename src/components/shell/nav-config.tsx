@@ -40,6 +40,24 @@ export const VIEWS: ViewDef[] = [
   { path: "/system/settings", title: "System Settings", icon: "Settings" },
   { path: "/system/backups", title: "Backups", icon: "DatabaseBackup" },
   { path: "/system/api-keys", title: "API Platform", icon: "KeyRound" },
+  // ── Phase 2 (M12–M23) — Growth: enterprise features ──
+  { path: "/logs/search", title: "Log Search", icon: "FileSearch" },
+  { path: "/logs/compliance", title: "Compliance", icon: "FileCheck" },
+  { path: "/threat-intel/feeds", title: "Threat Feeds", icon: "Rss" },
+  { path: "/threat-intel/iocs", title: "IOCs", icon: "Bug" },
+  { path: "/threat-intel/auto-block", title: "Auto-Block", icon: "ShieldBan" },
+  { path: "/pki/authorities", title: "Certificate Authorities", icon: "Building2" },
+  { path: "/pki/certificates", title: "Certificates", icon: "FileKey" },
+  { path: "/web/ssl-inspection", title: "SSL Inspection", icon: "LockKeyhole" },
+  { path: "/web/url-filter", title: "URL Filtering", icon: "Filter" },
+  { path: "/web/waf", title: "WAF", icon: "ShieldHalf" },
+  { path: "/web/app-control", title: "App Control", icon: "AppWindow" },
+  { path: "/routing/dynamic", title: "BGP & OSPF", icon: "GitBranch" },
+  { path: "/routing/sdwan", title: "SD-WAN", icon: "Share2" },
+  { path: "/network/ipv6", title: "IPv6", icon: "Binary" },
+  { path: "/email/security", title: "Email Security", icon: "MailWarning" },
+  { path: "/identity/federation", title: "Federation (SSO)", icon: "BadgeCheck" },
+  { path: "/identity/nac", title: "NAC & Profiling", icon: "ScanLine" },
 ];
 
 export const SETUP_VIEW: ViewDef = { path: "/setup", title: "Setup Wizard", icon: "Sparkles" };
@@ -51,10 +69,14 @@ export const NAV_GROUPS: Array<{ label: string; paths: string[] }> = [
   { label: "Intrusion Prevention", paths: ["/ips/policies", "/ips/events"] },
   { label: "VPN", paths: ["/vpn/configs", "/vpn/sessions"] },
   { label: "DNS & DHCP", paths: ["/dns-dhcp/dns", "/dns-dhcp/dhcp"] },
-  { label: "Identity", paths: ["/identity/users", "/identity/sessions", "/identity/portal"] },
+  { label: "Identity", paths: ["/identity/users", "/identity/sessions", "/identity/portal", "/identity/federation", "/identity/nac"] },
   { label: "QoS", paths: ["/qos/policies"] },
-  { label: "Logs & Reports", paths: ["/logs/firewall", "/logs/ips", "/logs/audit", "/logs/live", "/logs/reports"] },
-  { label: "System", paths: ["/ha", "/system/settings", "/system/backups", "/system/api-keys"] },
+  { label: "Logs & Reports", paths: ["/logs/firewall", "/logs/ips", "/logs/audit", "/logs/live", "/logs/search", "/logs/reports", "/logs/compliance"] },
+  { label: "Threat Intelligence", paths: ["/threat-intel/feeds", "/threat-intel/iocs", "/threat-intel/auto-block"] },
+  { label: "PKI", paths: ["/pki/authorities", "/pki/certificates"] },
+  { label: "Web Security", paths: ["/web/ssl-inspection", "/web/url-filter", "/web/waf", "/web/app-control"] },
+  { label: "Advanced Routing", paths: ["/routing/dynamic", "/routing/sdwan"] },
+  { label: "System", paths: ["/ha", "/network/ipv6", "/email/security", "/system/settings", "/system/backups", "/system/api-keys"] },
 ];
 
 export function viewFor(path: string): ViewDef | undefined {

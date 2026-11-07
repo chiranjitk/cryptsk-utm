@@ -38,7 +38,20 @@ export type CapabilityArea =
   | "system"
   | "backups"
   | "api_keys"
-  | "notifications";
+  | "notifications"
+  // Phase 2 (M12–M23)
+  | "threat_intel"
+  | "pki"
+  | "ssl_inspection"
+  | "url_filter"
+  | "waf"
+  | "app_control"
+  | "dynamic_routing"
+  | "sdwan"
+  | "ipv6"
+  | "email_security"
+  | "nac"
+  | "federation";
 
 /** Interactive roles allowed per operation. `auditor`/`api_service` are handled specially below. */
 const MATRIX: Record<CapabilityArea, { read: Role[]; write: Role[]; admin?: Role[] }> = {
@@ -67,6 +80,19 @@ const MATRIX: Record<CapabilityArea, { read: Role[]; write: Role[]; admin?: Role
     read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst", "helpdesk"],
     write: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst", "helpdesk"],
   },
+  // Phase 2 — security-flavored surfaces (analyst can act on IOCs/blocks; read for network staff)
+  threat_intel: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin", "soc_analyst"] },
+  pki: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin"], write: ["super_admin", "tenant_admin", "security_admin"], admin: ["super_admin"] },
+  ssl_inspection: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin"] },
+  url_filter: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin"] },
+  waf: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin"] },
+  app_control: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin"] },
+  dynamic_routing: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "network_admin"] },
+  sdwan: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "network_admin"] },
+  ipv6: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "network_admin"] },
+  email_security: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin"] },
+  nac: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin"], write: ["super_admin", "tenant_admin", "network_admin"] },
+  federation: { read: ["super_admin", "tenant_admin", "security_admin"], write: ["super_admin", "tenant_admin", "security_admin"] },
 };
 
 export interface AuthContext {
