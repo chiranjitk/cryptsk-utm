@@ -54,6 +54,10 @@ import { CertificatesView } from "@/components/views/pki/certificates-view";
 import { SslInspectionView } from "@/components/views/ssl-inspection/ssl-inspection-view";
 import { UrlFilterView } from "@/components/views/url-filter/url-filter-view";
 import { WafView } from "@/components/views/waf/waf-view";
+// Phase 2 views (M18–M20 batch 3)
+import { AppControlView } from "@/components/views/app-control/app-control-view";
+import { DynamicRoutingView } from "@/components/views/dynamic-routing/dynamic-routing-view";
+import { SdwanView } from "@/components/views/sdwan/sdwan-view";
 import { HaView } from "@/components/views/ha/ha-view";
 import { SystemView } from "@/components/views/system/system-view";
 import { BackupsView } from "@/components/views/system/backups-view";
@@ -324,6 +328,12 @@ export function AppShell() {
               <UrlFilterView />
             ) : view.path === "/web/waf" ? (
               <WafView />
+            ) : view.path === "/web/app-control" ? (
+              <AppControlView />
+            ) : view.path === "/routing/dynamic" ? (
+              <DynamicRoutingView />
+            ) : view.path === "/routing/sdwan" ? (
+              <SdwanView />
             ) : view.path === "/ha" ? (
               <HaView />
             ) : view.path === "/system/settings" ? (
