@@ -37,14 +37,15 @@ echo "══ T5  dashboard real telemetry (HostAdapter)"
 sum=$(curl -s -b $CJ $API/dashboard/summary)
 code=$(curl -s -o /dev/null -w '%{http_code}' -b $CJ $API/dashboard/summary)
 ck "dashboard/summary → 200" 200 "$code"
-has "summary contains cpu metrics" "$sum" '"cpu'
-has "summary contains ram metrics" "$sum" '"ram'
+has "summary contains throughput telemetry" "$sum" '"throughput"'
+has "summary contains health block" "$sum" '"health"'
+has "summary contains wan status" "$sum" '"wanStatus"'
 
-echo "══ T6  system APIs"
+echo "══ T6  system APIs + admin action"
 code=$(curl -s -o /dev/null -w '%{http_code}' -b $CJ $API/system/status)
 ck "system/status → 200" 200 "$code"
-code=$(curl -s -o /dev/null -w '%{http_code}' -b $CJ $API/system/services)
-ck "system/services → 200" 200 "$code"
+code=$(curl -s -o /dev/null -w '%{http_code}' -b $CJ -X POST $API/system/services/dnsmasq/restart -H 'Content-Type: application/json' -d '{}')
+ck "service restart action (admin) → 200" 200 "$code"
 
 echo "══ T7  realtime (socket.io on :3003, gateway :81)"
 sid=$(curl -s --max-time 5 "http://127.0.0.1:3003/socket.io/?EIO=4&transport=polling" | head -c 60)
@@ -71,10 +72,11 @@ echo "══ T10 audit trail in SQLite"
 aud=$(sqlite3 /opt/cryptsk/console/db/cryptsk.db "select action from audit_log order by created_at desc limit 5" 2>/dev/null | tr '\n' ' ')
 has "audit_log captured auth.login" "$aud" "auth.login"
 has "audit_log captured webhook.create" "$aud" "webhook.create"
+has "audit_log captured service.restart" "$aud" "service.restart"
 
 echo "══ T11 UTM stack binaries (apt provisioning)"
-for b in nft wg suricata clamdscan ipsec openvpn squid nginx haproxy keepalived \
-         named dnsmasq conntrack tcpdump tc iperf3 vnstat rsyslogd fail2ban-server; do
+for b in nft wg suricata clamdtop clamd clamscan ipsec openvpn squid nginx haproxy keepalived \
+         named dnsmasq conntrack tcpdump tc iperf3 vnstat rsyslogd fail2ban-server freeradius; do
   if command -v "$b" >/dev/null 2>&1; then echo "PASS — binary $b"; PASS=$((PASS+1)); else echo "FAIL — binary $b missing"; FAIL=$((FAIL+1)); fi
 done
 
