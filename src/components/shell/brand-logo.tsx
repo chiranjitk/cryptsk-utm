@@ -1,11 +1,15 @@
 "use client";
 
 /**
- * BrandLogo — the Cryptsk brand mark (gradient shield + keyhole).
- * Single source of truth for every logo surface: sidebar, login, setup
- * wizard and the console boot screen. `src/app/icon.svg` mirrors it for
- * the favicon (Next.js file convention) and `public/logo.svg` for
- * bookmark/og use. Sized via className (h-8 w-8, h-12 w-12, …).
+ * BrandLogo — the Cryptsk brand mark (v3: rounded hexagon badge + ring
+ * keyhole, defense-in-depth inner outline). Single source of truth for
+ * every logo surface: sidebar, login, setup wizard and the console boot
+ * screen. `src/app/icon.svg` mirrors it for the favicon (Next.js file
+ * convention) and `public/logo.svg` for bookmark/og use. Sized via
+ * className (h-8 w-8, h-12 w-12, …).
+ *
+ * Palette (LOCKED, owner-directed white/red/dark-red brand):
+ *   #ef4444 → #c81e1e → #7f1d1d
  */
 
 export function BrandLogo({ className }: { className?: string }) {
@@ -18,27 +22,32 @@ export function BrandLogo({ className }: { className?: string }) {
       className={className}
     >
       <defs>
-        <linearGradient id="ck-brand-gradient" x1="7" y1="3" x2="57" y2="61" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#dc2626" />
+        <linearGradient id="ck-brand-gradient" x1="12" y1="4" x2="52" y2="60" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#ef4444" />
+          <stop offset="0.55" stopColor="#c81e1e" />
           <stop offset="1" stopColor="#7f1d1d" />
         </linearGradient>
       </defs>
-      {/* shield */}
+      {/* hexagon badge — stroke shares the gradient to soften the corners */}
       <path
-        d="M32 3 L57 12.5 V29 C57 46.5 46.8 57.6 32 61.5 C17.2 57.6 7 46.5 7 29 V12.5 Z"
+        d="M32 5 L55 18 V46 L32 59 L9 46 V18 Z"
         fill="url(#ck-brand-gradient)"
+        stroke="url(#ck-brand-gradient)"
+        strokeWidth="6"
+        strokeLinejoin="round"
       />
-      {/* inner outline */}
+      {/* inner defense-in-depth outline */}
       <path
-        d="M32 9.5 L51 16.8 V29.2 C51 42.4 43.2 51.4 32 55.2 C20.8 51.4 13 42.4 13 29.2 V16.8 Z"
+        d="M32 14 L47.5 22.9 V40.9 L32 49.8 L16.5 40.9 V22.9 Z"
+        fill="none"
         stroke="#ffffff"
         strokeOpacity="0.35"
-        strokeWidth="2"
-        fill="none"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
       />
-      {/* keyhole */}
-      <circle cx="32" cy="26.5" r="7.2" fill="#ffffff" />
-      <path d="M32 30.5 L27.4 44.6 Q32 47.4 36.6 44.6 Z" fill="#ffffff" />
+      {/* ring keyhole */}
+      <circle cx="32" cy="27.5" r="6" fill="none" stroke="#ffffff" strokeWidth="3.4" />
+      <path d="M32 31.5 L27.6 44 Q32 46.4 36.4 44 Z" fill="#ffffff" />
     </svg>
   );
 }

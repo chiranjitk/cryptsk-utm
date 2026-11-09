@@ -648,6 +648,25 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-09 — Logo v3 (hexagon ring-keyhole) + informative dashboard v2
+
+- Owner direction: "make the dashboard page more informative, change the logo, push to GitHub".
+- **Logo v3**: rounded hexagon badge + defense-in-depth inner hex outline + ring keyhole
+  (replaces the shield mark). Gradient LOCKED to `#ef4444 → #c81e1e (55%) → #7f1d1d`.
+  Mirrored in `src/components/shell/brand-logo.tsx` (id `ck-brand-gradient`), `src/app/icon.svg`
+  and `public/logo.svg` (id `ckg`) — three surfaces stay in lockstep.
+- **Dashboard v2** (`dashboard-view.tsx`): status banner (verdict ok/attention/critical computed
+  from health + alerts + WAN; KPI chips Sessions/Alerts/WAN/VPN/Uptime; 24 h severity stacked bar
+  + legend); live RX/TX speeds in the throughput header + approx window traffic totals; top
+  talkers get relative traffic bars; dedicated VPN tunnels panel (status badges, session counts);
+  new "Needs attention" card fed by GET /api/v1/pki/certificates/expiring?days=30 (expired/≤7 d
+  rose, ≤30 d amber, "View all →" link); quick actions extended to 6 (+ Certificates, Auto-Block);
+  system panel (uptime, local time, telemetry facts). Loading skeleton includes the banner.
+- **Realtime verified via the gateway path** (:81 → Caddy → `XTransformPort=3003`): last tick,
+  conntrack counter and live RX/TX all update. NOTE: a direct `:3000` origin bypasses Caddy, so
+  `/socket.io/?XTransformPort=3003` 404s there — expected; the user path is the gateway and works.
+- Verified: login (new logo), dashboard light + dark, sticky footer, lint clean on touched files.
+
 ### 2026-11-09 — Rebrand v2: white / red / dark-red theme (ADR-019 rev)
 
 - Owner direction: brand colors are white/red/dark red — replace the blue/white theme.

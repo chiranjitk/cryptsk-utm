@@ -1,12 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="ckg" x1="7" y1="3" x2="57" y2="61" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#dc2626"/>
+    <linearGradient id="ckg" x1="12" y1="4" x2="52" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ef4444"/>
+      <stop offset="0.55" stop-color="#c81e1e"/>
       <stop offset="1" stop-color="#7f1d1d"/>
     </linearGradient>
   </defs>
-  <path d="M32 3 L57 12.5 V29 C57 46.5 46.8 57.6 32 61.5 C17.2 57.6 7 46.5 7 29 V12.5 Z" fill="url(#ckg)"/>
-  <path d="M32 9.5 L51 16.8 V29.2 C51 42.4 43.2 51.4 32 55.2 C20.8 51.4 13 42.4 13 29.2 V16.8 Z" stroke="#ffffff" stroke-opacity="0.35" stroke-width="2" fill="none"/>
-  <circle cx="32" cy="26.5" r="7.2" fill="#ffffff"/>
-  <path d="M32 30.5 L27.4 44.6 Q32 47.4 36.6 44.6 Z" fill="#ffffff"/>
+  <path d="M32 5 L55 18 V46 L32 59 L9 46 V18 Z" fill="url(#ckg)" stroke="url(#ckg)" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M32 14 L47.5 22.9 V40.9 L32 49.8 L16.5 40.9 V22.9 Z" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.8" stroke-linejoin="round"/>
+  <circle cx="32" cy="27.5" r="6" fill="none" stroke="#ffffff" stroke-width="3.4"/>
+  <path d="M32 31.5 L27.6 44 Q32 46.4 36.4 44 Z" fill="#ffffff"/>
 </svg>
