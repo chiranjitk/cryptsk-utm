@@ -7,7 +7,7 @@
 import { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/envelope";
 import { eventsSince } from "@/lib/engine/events";
-import { getMockEngine } from "@/lib/engine/mock-engine";
+import { getEngine } from "@/lib/engine";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   if (token !== expected) {
     return fail("UNAUTHORIZED", "Internal endpoint");
   }
-  await getMockEngine().start().catch(() => {});
+  await getEngine().start().catch(() => {});
   const cursor = Number(req.nextUrl.searchParams.get("cursor") ?? "0");
   const { events, cursor: next } = eventsSince(Number.isFinite(cursor) ? cursor : 0);
   return ok({ events, cursor: next });

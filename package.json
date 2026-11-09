@@ -5,14 +5,17 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
+    "start": "NODE_ENV=production bun .next/standalone/server.js",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "db:setup": "prisma db push --accept-data-loss && bun prisma/seed.ts",
-    "seed": "bun prisma/seed.ts"
+    "db:setup:production": "prisma db push --accept-data-loss && bun prisma/seed.ts --production",
+    "seed": "bun prisma/seed.ts",
+    "seed:production": "bun prisma/seed.ts --production",
+    "purge:mock": "bun scripts/purge-mock-data.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

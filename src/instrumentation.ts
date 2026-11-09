@@ -1,14 +1,17 @@
 /**
- * Next.js instrumentation hook — boots the MockEngine tick loop with the
- * server process so metrics/logs flow before the first API hit.
+ * Next.js instrumentation hook — boots the data-plane engine with the server
+ * process. ADAPTER_MODE=host (default, ADR-021) starts the HostCollector:
+ * real /proc telemetry, gateway probes, and appliance source tails.
+ * ADAPTER_MODE=simulated boots the legacy MockEngine demo plane.
  */
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   try {
-    const { getMockEngine } = await import("@/lib/engine/mock-engine");
-    await getMockEngine().start();
+    const { getEngine, getDataPlaneMode } = await import("@/lib/engine");
+    console.log(`[instrumentation] data plane: ${getDataPlaneMode()}`);
+    await getEngine().start();
   } catch (err) {
-    console.error("[instrumentation] mock engine boot deferred:", err instanceof Error ? err.message : err);
+    console.error("[instrumentation] engine boot deferred:", err instanceof Error ? err.message : err);
   }
 }

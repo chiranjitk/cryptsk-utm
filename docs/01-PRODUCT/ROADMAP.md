@@ -223,6 +223,7 @@ column changes without a matching session-log entry are considered doc drift.
 | M10 System+HA | DONE | `../06-MODULES/M10-SYSTEM.md` | HA pair, settings 12 cards, backups w/ typed restore, firmware staged upgrade, SSH keys, policy templates, wizard, notification center |
 | M11 API Platform | DONE | `../06-MODULES/M11-API-PLATFORM.md` | Key lifecycle (one-time secret, sha256, soft revoke, scopes), webhooks + simulated delivery, OpenAPI 3.1 artifact (126 paths) |
 | Phase 2 console (M12–M23) | DONE | PROJECT_MEMORY §15 (2026-11-07 sprint entry) + ADR-020 | 12 milestones shipped in one session, each committed+pushed per HARD RULE §11.16: M12 44458d6 · M13 76bc6da · M14 3d47981 (real X.509 via node-forge) · M15 0f701b3 · M16 61080f5 · M17 613de91 · M18 75a550a · M19 d703360 · M20 edc4ec3 · M21 2c0b80f · M22 d63f690 · M23 3974ee7; Phase-1 tail closed (M11-tail real webhook delivery ead4776); production package 57c54e7 (DEPLOYMENT.md, systemd, AgentAdapter checklist) |
+| M24 Real data plane (host mode) | DONE | ADR-021 + DEPLOYMENT.md §8 source map | ADAPTER_MODE=host default: HostCollector replaces MockEngine (real /proc/sysfs/systemctl/Suricata/wg/Kea/unbound sources, honest degradation); production seed + purge:mock; pm2 prod ecosystem; deploy/install-debian13.sh + update.sh; sandbox DB purged of 16.7k mock rows |
 
 Product phases (appliance-side work beyond this repo) are tracked outside this tracker;
 this table tracks the console only.

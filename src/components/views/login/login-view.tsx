@@ -49,7 +49,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
           <ShieldCheck className="h-7 w-7" />
         </div>
         <h1 className="text-xl font-semibold">Cryptsk Console</h1>
-        <p className="text-sm text-zinc-500">UTM / NGFW management — simulated appliance</p>
+        <p className="text-sm text-zinc-500">UTM / NGFW management — real-host telemetry</p>
       </div>
 
       <Card className="w-full max-w-sm">

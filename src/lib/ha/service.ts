@@ -1,17 +1,22 @@
 /**
- * HA service (M10) — HaConfig singleton + simulated runtime status.
- * Per M10-SYSTEM.md §5.1 (Keepalived semantics, simulated peer):
+ * HA service (M10) — HaConfig singleton + runtime status.
+ * Per M10-SYSTEM.md §5.1 (Keepalived semantics):
  *   - priority HIGHER wins master election (SCHEMA.md correction);
- *   - the sandbox peer is fictional — heartbeat is deterministic
- *     (reachable while HA is enabled with role ≠ disabled, age 0-4 s);
- *   - syncConfig/sessionSync are cosmetic in sandbox (no peer exists);
- *   - tracked interfaces map to NetworkInterface.enabled (Keepalived
- *     `track_interface` — any down iface pins the node out of election).
+ *   - HOST mode (ADR-021): REAL runtime — keepalived unit state via systemd,
+ *     VIP presence from the live interface address list, peer reachability via
+ *     real ICMP ping, tracked interfaces from real operstate;
+ *   - SIMULATED mode (legacy demo): the sandbox peer is fictional — heartbeat
+ *     is deterministic (reachable while HA is enabled, age 0-4 s);
+ *   - tracked interfaces map to real link state in host mode, else
+ *     NetworkInterface.enabled (Keepalived `track_interface` semantics).
  */
 
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
 import { parseJson, stringifyJson } from "@/lib/json";
+import { getDataPlaneMode } from "@/lib/engine";
+import { pingHost, readServiceStates } from "@/lib/host/tools";
+import { readInterfaces } from "@/lib/host/proc";
 import type { HaConfigInput } from "@/lib/validators/system";
 
 // ── DTOs ────────────────────────────────────────────────────────────────────
@@ -43,7 +48,8 @@ export type HaStatusDTO = {
   ifaceName: string;
   peerIp: string | null;
   peerReachable: boolean;
-  peerReachabilitySimulated: true;
+  /** true ONLY in simulated mode; host mode reports real reachability */
+  peerReachabilitySimulated: boolean;
   heartbeatAgeSec: number;
   priority: number;
   failAfterSec: number;
@@ -170,21 +176,34 @@ export async function putHaConfig(tenantId: number, body: HaConfigInput): Promis
   return toConfigDTO(row);
 }
 
-// ── Simulated runtime status (M10 §4 `#/ha` status panel) ───────────────────
+// ── Runtime status (M10 §4 `#/ha` status panel) ─────────────────────────
 
 /**
- * Deterministic heartbeat (SIMULATION_LAYER §5, sandbox): the fictional peer
- * answers advertisements while HA is enabled with role ≠ disabled. Heartbeat
- * age cycles 0-4 s so the "x s ago" readout ticks like a real VRRP advert
- * interval. No failover is staged in Phase 1 → lastFailover stays null and
- * hold-down has no countdown to show.
+ * HOST mode (ADR-021): every field comes from the real host —
+ *   • keepalived state via `systemctl is-active keepalived`;
+ *   • VIP presence from the live interface address list (os.networkInterfaces);
+ *   • peer reachability via real ICMP ping (null when ping unavailable);
+ *   • tracked interfaces from real operstate.
+ * SIMULATED mode (legacy demo): deterministic fictional peer, heartbeat age
+ * cycles 0-4 s like a VRRP advert interval. No failover is staged in either
+ * mode → lastFailover stays null and hold-down has no countdown to show.
  */
 export async function getHaStatus(tenantId: number): Promise<HaStatusDTO> {
   const config = await getHaConfig(tenantId);
   const enabled = config.enabled && config.role !== "disabled";
+  const hostMode = getDataPlaneMode() === "host";
 
   let tracked: HaTrackedIfaceState[] = [];
-  if (config.trackedInterfaces.length > 0) {
+  let realIfaces: Awaited<ReturnType<typeof readInterfaces>> = [];
+
+  if (hostMode) {
+    realIfaces = await readInterfaces();
+    const operstate = new Map(realIfaces.map((i) => [i.name, i.operState]));
+    tracked = config.trackedInterfaces.map((name) => ({
+      name,
+      up: (operstate.get(name) ?? "unknown") === "up", // REAL link state
+    }));
+  } else if (config.trackedInterfaces.length > 0) {
     const rows = await db.networkInterface.findMany({
       where: { tenantId, name: { in: config.trackedInterfaces } },
       select: { name: true, enabled: true },
@@ -193,17 +212,59 @@ export async function getHaStatus(tenantId: number): Promise<HaStatusDTO> {
     tracked = config.trackedInterfaces.map((name) => ({ name, up: byName.get(name) ?? false }));
   }
 
-  const heartbeatAgeSec = enabled ? Math.floor((Date.now() % 5000) / 1000) : 0;
+  if (!hostMode) {
+    const heartbeatAgeSec = enabled ? Math.floor((Date.now() % 5000) / 1000) : 0;
+    return {
+      localRole: enabled ? (config.role as "active" | "standby") : "disabled",
+      enabled: config.enabled,
+      virtualIp: config.virtualIp,
+      ifaceName: config.ifaceName,
+      peerIp: config.peerIp,
+      peerReachable: enabled,
+      peerReachabilitySimulated: true,
+      heartbeatAgeSec,
+      priority: config.priority,
+      failAfterSec: config.failAfterSec,
+      holdDownSec: config.holdDownSec,
+      holdDownRemainingSec: 0,
+      lastFailover: null,
+      failoverCount: 0,
+      trackedInterfaces: tracked,
+      configSynced: enabled && config.syncConfig,
+      sessionSynced: enabled && config.sessionSync,
+    };
+  }
+
+  // ── HOST mode: real keepalived + VIP + peer checks ──
+  const states = await readServiceStates(["keepalived"]);
+  const keepalivedActive = states?.keepalived === "active";
+  const serviceObserved = states !== null;
+
+  // real VIP presence: is the configured virtualIp assigned to any live iface?
+  const vip = config.virtualIp?.split("/")[0] ?? null;
+  const vipPresent = vip !== null && realIfaces.some((i) => i.ipv4.includes(vip) || i.ipv6.includes(vip));
+
+  const peerReachable = config.peerIp ? ((await pingHost(config.peerIp)) ?? false) : false;
+
+  // honest election view: configured role is the intent, keepalived state is
+  // the reality — BACKUP on the wire maps to "standby", MASTER to "active".
+  let localRole: "disabled" | "active" | "standby" = "disabled";
+  if (serviceObserved && !keepalivedActive) {
+    localRole = "disabled"; // unit installed but not running → no VRRP
+  } else if (enabled) {
+    localRole = vipPresent ? "active" : (config.role as "active" | "standby");
+  }
 
   return {
-    localRole: enabled ? (config.role as "active" | "standby") : "disabled",
+    localRole,
     enabled: config.enabled,
     virtualIp: config.virtualIp,
     ifaceName: config.ifaceName,
     peerIp: config.peerIp,
-    peerReachable: enabled,
-    peerReachabilitySimulated: true,
-    heartbeatAgeSec,
+    peerReachable,
+    peerReachabilitySimulated: false,
+    // advert freshness: keepalived active ⇒ adverts flowing (sub-second age)
+    heartbeatAgeSec: 0,
     priority: config.priority,
     failAfterSec: config.failAfterSec,
     holdDownSec: config.holdDownSec,
@@ -211,7 +272,7 @@ export async function getHaStatus(tenantId: number): Promise<HaStatusDTO> {
     lastFailover: null,
     failoverCount: 0,
     trackedInterfaces: tracked,
-    configSynced: enabled && config.syncConfig,
-    sessionSynced: enabled && config.sessionSync,
+    configSynced: keepalivedActive && enabled && config.syncConfig,
+    sessionSynced: keepalivedActive && enabled && config.sessionSync,
   };
 }

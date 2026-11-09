@@ -167,7 +167,7 @@ function HealthStripCard() {
           </CardDescription>
         </div>
         <Badge variant="outline" className="border-zinc-300 text-zinc-500 dark:border-zinc-700">
-          profile: {s.mockProfile}
+          plane: {s.dataPlane}
         </Badge>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -1239,8 +1239,8 @@ function AdvancedCard({ settings }: { settings: SettingsMap | undefined }) {
             </Select>
           </div>
           <div className="space-y-1.5">
-            <FieldLabel hint="read-only — set via the MOCK_PROFILE env">Mock profile</FieldLabel>
-            <Input value={status.data?.mockProfile ?? "office"} disabled />
+            <FieldLabel hint="read-only — set via the ADAPTER_MODE env">Data plane</FieldLabel>
+            <Input value={status.data?.dataPlane ?? "host (real telemetry)"} disabled />
           </div>
         </div>
         <div className="flex items-center justify-between gap-3">

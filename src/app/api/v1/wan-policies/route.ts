@@ -8,7 +8,7 @@
 import { route } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
-import { getMockEngine } from "@/lib/engine/mock-engine";
+import { getEngine } from "@/lib/engine";
 import { netListQuery, wanPolicyBodySchema } from "@/lib/validators/network";
 import { assertIfacesExist } from "@/lib/network/iface-service";
 import { shapeWanPolicy } from "@/lib/network/shapes";
@@ -16,7 +16,7 @@ import { shapeWanPolicy } from "@/lib/network/shapes";
 export const dynamic = "force-dynamic";
 
 export const GET = route({ area: "network", querySchema: netListQuery }, async ({ auth }) => {
-  const live = new Map(getMockEngine().wanStates.map((w) => [w.iface, w.state]));
+  const live = new Map(getEngine().wanStates.map((w) => [w.iface, w.state]));
   const rows = await db.wanPolicy.findMany({
     where: { tenantId: auth.tenantId },
     orderBy: [{ priority: "asc" }, { id: "asc" }],
@@ -34,8 +34,8 @@ export const POST = route(
     });
     if (existing) throw ApiError.conflict(`A WAN policy for ${body.interfaceName} already exists`);
 
-    // NOTE: engine bootstrap() seeds its probe map once at start — policies
-    // created here stay DB-only (state "unknown") until a restart, by design.
+    // NOTE: the host collector re-reads WAN policies every probe cycle, so new
+    // policies start probing within ~10 s; until then the state stays "unknown".
     const created = await db.wanPolicy.create({
       data: {
         tenantId: auth.tenantId,

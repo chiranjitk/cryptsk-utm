@@ -1,17 +1,20 @@
 /**
- * Adapter factory (ADR-004) — ADAPTER_MODE=simulated|agent (default simulated).
- * AgentAdapter is a Phase-2 stub that fails fast with a clear error.
+ * Adapter factory (ADR-004 + ADR-021) — ADAPTER_MODE:
+ *   • "host"      (default) → HostAdapter  : real host data plane (HostCollector)
+ *   • "simulated"           → SimulatedAdapter : MockEngine demo plane
+ *   • "agent"               → HostAdapter for now; the HTTP transport to the
+ *                             remote Go agent (:8080) replaces it at appliance
+ *                             integration (deploy/AGENT_ADAPTER_CHECKLIST.md).
  */
 
 import type { SystemAdapter } from "./types";
 import { SimulatedAdapter } from "./simulated";
+import { HostAdapter } from "./host";
 
 export function getAdapter(): SystemAdapter {
-  const mode = process.env.ADAPTER_MODE ?? "simulated";
-  if (mode === "agent") {
-    throw new Error("AgentAdapter arrives with the appliance build (Phase 2) — set ADAPTER_MODE=simulated");
-  }
-  return new SimulatedAdapter();
+  const mode = (process.env.ADAPTER_MODE ?? "host").toLowerCase();
+  if (mode === "simulated") return new SimulatedAdapter();
+  return new HostAdapter();
 }
 
 export type { SystemAdapter, DashboardSummary } from "./types";

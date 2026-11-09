@@ -22,19 +22,21 @@
 
 ## 2. Current Status Snapshot
 
-| Item | Status (2026-11-07) |
+| Item | Status (2026-11-09) |
 |---|---|
 | Product spec read & digested | DONE |
 | Documentation suite (`docs/`) | DONE (this suite) |
 | Spec coverage audit (zero-feature-loss) | DONE — REVIEW-4A + REVIEW-4B closed 2026-11-05; ROADMAP §5 console-deferral row RESTORED to Phase 1 |
 | Application code — Phase 1 | **COMPLETE — M0–M11 pushed** (dashboard, network, firewall & NAT, IPS, VPN, DNS & DHCP, identity, QoS, logging & reports, system/HA/notifications, API platform) |
-| Application code — Phase 2 | **COMPLETE — M12–M23 pushed (2026-11-07, ADR-020)**: threat intel, PKI (real X.509), SSL inspection, URL filter, WAF, app control, BGP/OSPF, SD-WAN, IPv6 dual-stack, email security, advanced identity/NAC, enhanced logging/compliance — 46 hash views live, zero placeholders |
+| Application code — Phase 2 | **COMPLETE — M12–M23 pushed (2026-11-07, ADR-020)**: threat intel, PKI (real X.509), SSL inspection, URL filter, WAF, app control, BGP/OSPF, SD-WAN, IPv6 dual-stack, email security, advanced identity/NAC, enhanced logging/compliance — 46 hash views, zero placeholders |
+| Real data plane — M24 | **COMPLETE (2026-11-09, ADR-021)**: `ADAPTER_MODE=host` is the DEFAULT — HostCollector (`src/lib/engine/host-collector.ts`) feeds the same engine surface from REAL sources (/proc/net.dev·stat·meminfo·tcp, sysfs, gateway TCP probes, systemctl, Suricata eve.json → ips_events, nftables kernel logs → firewall_logs, `wg show` → vpn_sessions, Kea leases → dhcp_leases, unbound log → dns ring); honest empty degradation, NO fabricated values; MockEngine only via explicit `ADAPTER_MODE=simulated` |
+| Data hygiene | sandbox DB purged of all demo/mock rows (16.7k) via `scripts/purge-mock-data.ts`; production seed = `bun prisma/seed.ts --production` (identity/RBAC + defaults only, wizard gate); fresh Debian installs never ship mock data |
+| Production packaging | `deploy/install-debian13.sh` (one-shot fresh Debian 13: apt → Node/bun/pm2 → clone → secrets → schema+seed → build → pm2 → boot hook → smoke check) + `deploy/update.sh` + `ecosystem.prod.config.cjs`; **pm2 is the appliance process manager (owner mandate)** — DEPLOYMENT.md rewritten |
 | Phase-1 tail | CLOSED — scheduled reports + PDF/print rendering (M12), real webhook delivery w/ HMAC signing + ledger (M11-tail ead4776) |
-| Database schema (Prisma) | LIVE — pushed + seeded (`db/cryptsk.db`); **DB file tracked in git since 2026-11-07** (user mandate — survives sandbox resets); ~90 tables incl. 47 Phase-2 models |
-| Production readiness | DEPLOYMENT.md (Debian 13 runbook: PostgreSQL switch per ADR-005, standalone build, systemd units, Caddy edge, hardening checklist, smoke tests) + AGENT_ADAPTER_CHECKLIST.md (per-module appliance wiring; `ADAPTER_MODE=agent` gate) |
+| Database schema (Prisma) | LIVE — pushed + seeded (`db/cryptsk.db`); DB file tracked in git since 2026-11-07 (user mandate — survives sandbox resets); ~90 tables incl. 47 Phase-2 models; tracked DB now holds the CLEAN production baseline |
 | Realtime mini-service | LIVE (`mini-services/realtime-service/`, port 3003) |
-| Build milestone | **Phase 1 + Phase 2 console feature-complete — next: Debian 13 appliance build (Go agent per AGENT_ADAPTER_CHECKLIST)** |
-| Current module in progress | none — Phase 2 build complete |
+| Build milestone | **Phase 1 + Phase 2 + real data plane complete — next: Debian 13 appliance run (install script) / Go agent (AGENT_ADAPTER_CHECKLIST) if remote sensors ever needed** |
+| Current module in progress | none — M24 shipped 2026-11-09 |
 
 ---
 
@@ -644,6 +646,18 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 ---
 
 ## 15. SESSION LOG (append-only — newest on top)
+
+### 2026-11-09 — M24: REAL data plane shipped (ADR-021) — no mock anywhere
+
+**Owner directive:** "move everything to real data plane so i can move the full project to debian 13 no mock or simulated data… create a deploy script from debian 13… the project should live with pm2."
+
+- **Engine swap (ADR-021):** new `HostCollector` (`src/lib/engine/host-collector.ts`) + `getEngine()` factory (`src/lib/engine/index.ts`); `ADAPTER_MODE=host` DEFAULT. Real sources: /proc (netdev deltas→throughput, stat→cpu, meminfo, tcp/udp sessions, nf_conntrack), sysfs (interfaces, operstate, carrier, MTU, MAC, thermal), real gateway TCP probes (WAN states + probe-now; removed the Math.random() probe fallback), systemctl is-active batch, Suricata eve.json tail → real `ips_events`, nftables kernel logs (journalctl -k) → real `firewall_logs`, `wg show all dump` → real `vpn_sessions` + status events, Kea leases CSV → real `dhcp_leases`, unbound query log → dns ring, real interfaces auto-discovered/upserted into `interfaces`. Absent sources → honest empty (never fabricated).
+- **Consumers migrated to `getEngine()`:** instrumentation, internal events, dashboard summary, wan-policies + probe, iface stats (real error/drop/packet counters replace hash fakes), iface-service live rates, dns query-logs, system status (real `os.hostname`, real systemd states, `dataPlane` label replaces `mockProfile`). `HostAdapter` added; HA status real in host mode (keepalived unit + VIP presence + ICMP ping; `peerReachabilitySimulated:false`).
+- **UI honesty:** topbar badge Simulated→**Live** (green) via `dataPlane` in /auth/me; sidebar footer "appliance — real telemetry"; system view "Data plane" field; login subtitle.
+- **Data hygiene:** `prisma/seed.ts --production` (tenant+8 users+groups+settings+config v1 ONLY, wizard gate completed=false); `scripts/purge-mock-data.ts` purged 16,734 mock/demo rows from the tracked sandbox DB (verified: users 8, ifaces 3 real, fwlogs/ipsev/vpnsess/leases/notifs 0); `bun run purge:mock`.
+- **pm2 production:** `ecosystem.prod.config.cjs` (next start :3000 + bun realtime :3003, portable paths, logs/ dir). Sandbox keeps dev ecosystem.
+- **Debian deploy:** `deploy/install-debian13.sh` (flags --with-ips/--with-dns/--with-dhcp/--db postgres; apt→Node22/bun/pm2→clone /opt/cryptsk/console→generated .env→fresh DB+production seed→next build→pm2 start+save+startup→smoke 200) + `deploy/update.sh`. Docs: DEPLOYMENT.md rewritten (pm2 mandate, §8 real-source map), ADR-021, ROADMAP §4 M24 row, §2 snapshot.
+- **Verification:** tsc clean, lint clean; pm2 restart → login 8/8 unaffected; dashboard curl shows REAL telemetry (eth0/dummy0 real rates, cpu/mem/disk real, conntrack real); agent-browser: login → dashboard renders Live badge + real gauges + real throughput spikes; interfaces view shows discovered eth0 with live rates; dev.log clean.
 
 ### 2026-11-09 — GitHub sync + login fix (post-sandbox-reset #3)
 - **Incident:** after sandbox reset + `git pull` (`123a126..bfc5060`), login returned

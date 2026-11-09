@@ -6,6 +6,7 @@
 import { route } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
+import { getDataPlaneMode } from "@/lib/engine";
 import { permissionsFor } from "../login/route";
 
 export const GET = route({}, async ({ auth }) => {
@@ -17,6 +18,7 @@ export const GET = route({}, async ({ auth }) => {
         tenantId: auth.tenantId,
         scopes: auth.scopes ?? [],
         permissions: permissionsFor("api_service", auth.scopes),
+        dataPlane: getDataPlaneMode(),
       },
     };
   }
@@ -30,6 +32,7 @@ export const GET = route({}, async ({ auth }) => {
       kind: "user" as const,
       ...user,
       permissions: permissionsFor(user.role),
+      dataPlane: getDataPlaneMode(),
     },
   };
 });

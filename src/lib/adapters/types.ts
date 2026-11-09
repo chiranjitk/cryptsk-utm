@@ -1,8 +1,9 @@
 /**
- * SystemAdapter — the dual-mode boundary (ADR-004, ARCHITECTURE §4).
- * All UI/API code is written once against this interface; SimulatedAdapter
- * backs it with the MockEngine (sandbox), AgentAdapter with the Go agent
- * (appliance, Phase 2+).
+ * SystemAdapter — the dual-mode boundary (ADR-004, extended by ADR-021).
+ * All UI/API code is written once against this interface:
+ *   HostAdapter      → REAL host telemetry via HostCollector (default, ADR-021)
+ *   SimulatedAdapter → MockEngine demo plane (ADAPTER_MODE=simulated)
+ *   AgentAdapter     → remote Go agent on the appliance (Phase 2+)
  */
 
 import type { MetricsTick, IpsEventEntry } from "@/lib/engine/events";
@@ -40,6 +41,6 @@ export interface DashboardSummary {
 }
 
 export interface SystemAdapter {
-  readonly mode: "simulated" | "agent";
+  readonly mode: "simulated" | "host" | "agent";
   getDashboardSummary(tenantId: number): Promise<DashboardSummary>;
 }

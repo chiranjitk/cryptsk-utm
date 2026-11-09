@@ -8,7 +8,7 @@ import { z } from "zod";
 import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { parseJson } from "@/lib/json";
-import { getMockEngine } from "@/lib/engine/mock-engine";
+import { getEngine } from "@/lib/engine";
 import {
   bondConfigPatch,
   bridgeConfigPatch,
@@ -173,7 +173,7 @@ export function shapeIface(
 
 /** Latest metrics ring tick → per-iface rx/tx map (M02 §6 — engine is the source). */
 export function liveIfaceRates(): Map<string, IfaceLiveRates> {
-  const ring = getMockEngine().metricsRing;
+  const ring = getEngine().metricsRing;
   const tick = ring.length ? ring[ring.length - 1] : undefined;
   return new Map((tick?.ifaces ?? []).map((i) => [i.name, { rxKbps: i.rxKbps, txKbps: i.txKbps }]));
 }

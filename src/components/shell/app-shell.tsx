@@ -76,6 +76,7 @@ type Me = {
   role?: string;
   tenantId: number;
   permissions: { read: string[]; write: string[]; admin: string[] };
+  dataPlane?: "host" | "simulated";
 };
 
 function useHashRoute(): string {
@@ -195,7 +196,7 @@ export function AppShell() {
         <SidebarNav current={routePath} onNavigate={() => setMobileOpen(false)} />
       </ScrollArea>
       <div className="border-t border-zinc-200 px-4 py-3 text-[11px] text-zinc-500 dark:border-zinc-800">
-        Tenant #{me.tenantId} · simulated appliance
+        Tenant #{me.tenantId} · {me.dataPlane === "simulated" ? "simulated appliance" : "appliance — real telemetry"}
       </div>
     </div>
   );
@@ -225,8 +226,16 @@ export function AppShell() {
             </Sheet>
 
             <h1 className="truncate text-sm font-semibold">{view.title}</h1>
-            <Badge variant="outline" className="hidden border-blue-500/40 bg-blue-500/10 text-blue-600 sm:inline-flex dark:text-blue-400">
-              Simulated
+            <Badge
+              variant="outline"
+              className={cn(
+                "hidden sm:inline-flex",
+                me.dataPlane === "simulated"
+                  ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                  : "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+              )}
+            >
+              {me.dataPlane === "simulated" ? "Simulated" : "Live"}
             </Badge>
 
             <div className="ml-auto flex items-center gap-1.5">
@@ -358,8 +367,8 @@ export function AppShell() {
           {/* sticky footer — pushes down naturally on overflow (min-h-screen + mt-auto) */}
           <footer className="mt-auto border-t border-zinc-200 px-4 py-3 text-xs text-zinc-500 dark:border-zinc-800">
             <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-1 sm:flex-row">
-              <p>Cryptsk UTM/NGFW — Phase 1 console (simulation mode)</p>
-              <p>docs first · code second · v0.1.0-m0</p>
+              <p>Cryptsk UTM/NGFW — {me.dataPlane === "simulated" ? "demo console (simulation mode)" : "real data plane (ADR-021)"}</p>
+              <p>docs first · code second · v0.24.0-m24</p>
             </div>
           </footer>
         </div>

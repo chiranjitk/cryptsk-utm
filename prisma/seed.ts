@@ -50,6 +50,10 @@ function sha256(s: string) {
 }
 
 async function main() {
+  if (process.argv.includes("--production") || process.env.SEED_MODE === "production") {
+    await seedProduction();
+    return;
+  }
   console.log("Seeding Cryptsk sandbox data (tenant 1 'Default')…");
 
   // ── Tenant ────────────────────────────────────────────────────────────────
@@ -863,6 +867,105 @@ async function upsertSetting(category: string, key: string, value: unknown) {
     update: { value: JSON.stringify(value) },
     create: { tenantId: 1, category, key, value: JSON.stringify(value) },
   });
+}
+
+/**
+ * PRODUCTION baseline seed (ADR-021) — `bun prisma/seed.ts --production`.
+ * Seeds ONLY real identity/RBAC + default settings. NO demo config objects,
+ * NO mock operational rows (no fake logs/events/leases/sessions/notifications).
+ * The first-time setup wizard (`system/setup.completed = false`) builds the
+ * initial LAN/WAN configuration from factory defaults.
+ */
+async function seedProduction() {
+  console.log("Seeding PRODUCTION baseline (ADR-021 — zero demo/mock rows)…");
+
+  await prisma.tenant.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      id: 1,
+      name: "Default",
+      company: "My Company",
+      contactEmail: "admin@localhost",
+      status: "active",
+    },
+  });
+
+  const users: Array<[string, string, string]> = [
+    ["admin", "admin123", "super_admin"],
+    ["tadmin", "tadmin123", "tenant_admin"],
+    ["secops", "secops123", "security_admin"],
+    ["netops", "netops123", "network_admin"],
+    ["socuser", "socuser123", "soc_analyst"],
+    ["helpdesk", "helpdesk123", "helpdesk"],
+    ["viewer", "viewer123", "auditor"],
+    ["svcapi", "svcapi123", "api_service"],
+  ];
+  const userIds: Record<string, number> = {};
+  for (const [username, pw, role] of users) {
+    const passwordHash = await hashPassword(pw);
+    const u = await prisma.user.upsert({
+      where: { tenantId_username: { tenantId: 1, username } },
+      update: { passwordHash, role, isActive: true },
+      create: {
+        tenantId: 1,
+        username,
+        passwordHash,
+        role,
+        email: `${username}@localhost`,
+      },
+    });
+    userIds[username] = u.id;
+  }
+
+  const itStaff = await prisma.userGroup.upsert({
+    where: { tenantId_name: { tenantId: 1, name: "IT Staff" } },
+    update: {},
+    create: { tenantId: 1, name: "IT Staff", description: "Platform administrators and network ops" },
+  });
+  const security = await prisma.userGroup.upsert({
+    where: { tenantId_name: { tenantId: 1, name: "Security" } },
+    update: {},
+    create: { tenantId: 1, name: "Security", description: "Security operations team" },
+  });
+  await prisma.userGroupMember.upsert({ where: { groupId_userId: { groupId: itStaff.id, userId: userIds.admin } }, update: {}, create: { groupId: itStaff.id, userId: userIds.admin } });
+  await prisma.userGroupMember.upsert({ where: { groupId_userId: { groupId: itStaff.id, userId: userIds.netops } }, update: {}, create: { groupId: itStaff.id, userId: userIds.netops } });
+  await prisma.userGroupMember.upsert({ where: { groupId_userId: { groupId: security.id, userId: userIds.secops } }, update: {}, create: { groupId: security.id, userId: userIds.secops } });
+
+  // Default settings (same catalog as the demo seed; setup NOT completed —
+  // the first-time wizard produces the initial LAN/WAN config).
+  await upsertSetting("auth", "passwordPolicy", { minLength: 8, complexity: "letters_digits", expiryDays: 0, history: 0 });
+  await upsertSetting("auth", "lockout", { maxFailures: 5, lockoutMinutes: 15 });
+  await upsertSetting("auth", "totp", { required: false });
+  await upsertSetting("auth", "sessionLimits", { maxConcurrentPerUser: 4 });
+  await upsertSetting("logging", "retention", { firewallLogDays: 30, ipsEventDays: 30, auditDays: 365 });
+  await upsertSetting("logging", "disk_quota", { diskQuotaMb: 2048 });
+  await upsertSetting("logging", "syslog", { enabled: false });
+  await upsertSetting("notifications", "email", { enabled: false });
+  await upsertSetting("notifications", "thresholds", { cpuPct: 90, memPct: 90, diskPct: 85, tempC: 80 });
+  await upsertSetting("ips", "auto_update", { enabled: true, interval: "daily", time: "03:00", source: "et_free", lastUpdateAt: null, nextUpdateAt: null });
+  await upsertSetting("advanced", "hardening", { sshPasswordAuth: true, managementAllowlist: [], stopUnusedServices: true });
+  await upsertSetting("advanced", "snmp", { enabled: false, version: "v2c", port: 161 });
+  await upsertSetting("advanced", "firmware", { current: "1.0.0", channel: "stable", history: [{ version: "1.0.0", appliedAt: new Date().toISOString() }] });
+  await upsertSetting("system", "setup", { completed: false });
+
+  const sections = ["firewall", "nat", "interfaces", "routing", "dns", "dhcp", "vpn", "ips", "qos", "ha", "identity", "system"];
+  for (const section of sections) {
+    const existing = await prisma.configVersion.findFirst({ where: { tenantId: 1, section, version: 1 } });
+    if (!existing) {
+      await prisma.configVersion.create({
+        data: {
+          tenantId: 1, version: 1, section,
+          configSnapshot: JSON.stringify({ seeded: true, section }),
+          changeSummary: "Production baseline",
+          createdBy: userIds.admin,
+        },
+      });
+    }
+  }
+
+  console.log("Production baseline seeded.");
+  console.log("DEFAULT PASSWORDS MUST BE CHANGED: admin/tadmin/secops/netops/socuser/helpdesk/viewer/svcapi → <user>123. Change under Settings → Auth after first login.");
 }
 
 const APPS = ["HTTPS", "YouTube", "Netflix", "SIP", "DNS", "SSH", "RDP", "Windows-Update", "BitTorrent", "Teams", "Slack", "Facebook"];

@@ -8,13 +8,15 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
 import { parseJson, stringifyJson } from "@/lib/json";
 import { ulid } from "@/lib/ulid";
 import { emitEvent } from "@/lib/engine/events";
-import { getMockEngine } from "@/lib/engine/mock-engine";
+import { getEngine, getDataPlaneMode, dataPlaneLabel } from "@/lib/engine";
+import { getHostCollector } from "@/lib/engine/host-collector";
 import { MASK } from "@/lib/identity/service";
 import type { SettingsEntry, BackupCreateInput, SshKeyCreateInput } from "@/lib/validators/system";
 import { RETENTION_HARD_CAPS } from "@/lib/validators/system";
@@ -94,7 +96,8 @@ export type SystemStatusDTO = {
   uptimeSec: number;
   hostname: string;
   firmwareVersion: string;
-  mockProfile: string;
+  /** active data plane: "host (real telemetry)" | "simulated (MockEngine)" (ADR-021) */
+  dataPlane: string;
   conntrackCount: number;
   services: ServiceStateDTO[];
 };
@@ -138,6 +141,17 @@ export async function restartService(tenantId: number, name: string): Promise<Se
   });
   const svc = catalog.find((s) => s.name === name);
   if (!svc) throw ApiError.notFound(`Unknown service "${name}"`);
+
+  if (getDataPlaneMode() === "host") {
+    // REAL restart — systemctl on the appliance. In rootless sandboxes this
+    // fails with the actual systemd error (honest, no simulated restart).
+    const result = await getHostCollector().restartService(name);
+    if (!result.restarted) {
+      throw ApiError.internal(`systemctl restart ${name} failed: ${result.error ?? "unknown error"}`);
+    }
+    return { name: svc.name, label: svc.label, state: "restarting" };
+  }
+
   restartingUntil.set(name, Date.now() + RESTART_MS);
   // simulated 2 s apply — status flips back to "running" on the next read
   setTimeout(() => restartingUntil.delete(name), RESTART_MS + 250).unref?.();
@@ -145,18 +159,23 @@ export async function restartService(tenantId: number, name: string): Promise<Se
 }
 
 export async function getSystemStatus(tenantId: number): Promise<SystemStatusDTO> {
-  await getMockEngine().start().catch(() => {});
-  const engine = getMockEngine();
+  await getEngine().start().catch(() => {});
+  const engine = getEngine();
   const latest = engine.metricsRing[engine.metricsRing.length - 1];
   const vitals = engine.systemVitals();
 
-  const [hostname, firmware, ntp, snmp, haConfig] = await Promise.all([
-    getHostname(tenantId),
+  const [firmware, ntp, snmp, haConfig] = await Promise.all([
     getSetting<{ current?: string }>(tenantId, "advanced", "firmware", {}),
     getSetting<{ enabled?: boolean }>(tenantId, "general", "ntp", {}),
     getSetting<{ enabled?: boolean }>(tenantId, "advanced", "snmp", {}),
     db.haConfig.findFirst({ where: { tenantId } }).catch(() => null),
   ]);
+
+  // REAL hostname in host mode (os.hostname wins over the stored setting)
+  const hostname = getDataPlaneMode() === "host" ? os.hostname() : await getHostname(tenantId);
+
+  // REAL systemd states in host mode; config-derived catalog as fallback
+  const realStates = getDataPlaneMode() === "host" ? getHostCollector().serviceStates : null;
 
   const now = Date.now();
   const services: ServiceStateDTO[] = serviceCatalog({
@@ -166,6 +185,18 @@ export async function getSystemStatus(tenantId: number): Promise<SystemStatusDTO
   }).map((s) => {
     const until = restartingUntil.get(s.name);
     if (until && now < until) return { name: s.name, label: s.label, state: "restarting" as const };
+    if (realStates) {
+      const sysState = realStates[s.name];
+      if (sysState !== undefined) {
+        return { name: s.name, label: s.label, state: sysState === "active" ? ("running" as const) : ("stopped" as const) };
+      }
+    }
+    if (getDataPlaneMode() === "host") {
+      // No systemd observable on this host (e.g. rootless container): the
+      // services are NOT running as units — report honestly instead of the
+      // demo-plane optimistic default.
+      return { name: s.name, label: s.label, state: "stopped" as const };
+    }
     return { name: s.name, label: s.label, state: s.running ? ("running" as const) : ("stopped" as const) };
   });
 
@@ -177,7 +208,7 @@ export async function getSystemStatus(tenantId: number): Promise<SystemStatusDTO
     uptimeSec: engine.uptimeSec,
     hostname,
     firmwareVersion: firmware.current ?? "1.0.0",
-    mockProfile: process.env.MOCK_PROFILE ?? "office", // read-only label (DATA_LIFECYCLE §3)
+    dataPlane: dataPlaneLabel(),
     conntrackCount: latest?.conntrackCount ?? 0,
     services,
   };
