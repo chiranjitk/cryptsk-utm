@@ -47,7 +47,7 @@ export const POST = route(
     isPublic: true,
     bodySchema: loginBody,
   },
-  async ({ body, ip }) => {
+  async ({ body, ip, req }) => {
     const requestId = ulid();
     const { username, password, totpCode } = body;
 
@@ -118,12 +118,18 @@ export const POST = route(
       undefined,
       requestId,
     );
+    // Mark the cookie Secure only when the request actually arrived over HTTPS
+    // (directly or via a TLS-terminating proxy). Gating on NODE_ENV breaks
+    // plain-HTTP deployments: browsers silently drop Secure cookies on non-https
+    // origins, so the session never sticks and login appears to do nothing.
+    const xfProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+    const isHttps = xfProto ? xfProto === "https" : new URL(req.url).protocol === "https:";
     res.cookies.set(SESSION_COOKIE, token, {
       httpOnly: true,
       sameSite: "lax",
       path: "/",
       maxAge: SESSION_TTL_SEC,
-      secure: process.env.NODE_ENV === "production",
+      secure: isHttps,
     });
     return res;
   },
