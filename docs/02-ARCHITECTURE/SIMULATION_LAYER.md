@@ -26,9 +26,11 @@ Related: ARCHITECTURE.md §4 · ../03-DATABASE/DATA_LIFECYCLE.md (volumes/seeds)
 ```
 src/lib/adapters/
 ├── types.ts          SystemAdapter interface + ConfigSection + result types
-├── simulated.ts      SimulatedAdapter (ACTIVE in sandbox)
-├── agent.ts          AgentAdapter (stub; throws NOT_IMPLEMENTED → returns 501)
-└── index.ts          getAdapter(): reads env ADAPTER_MODE=simulated|agent (default simulated)
+├── host.ts           HostAdapter (ACTIVE default — real telemetry, ADR-021)
+├── simulated.ts      SimulatedAdapter (opt-in demo plane; FORBIDDEN in production)
+├── agent.ts          AgentAdapter (shipped — remote sensor transport, checklist contract)
+└── index.ts          getAdapter(): ADAPTER_MODE=host (default) | agent | simulated
+                      (simulated + NODE_ENV=production throws — no-mock mandate)
 
 src/lib/engine/
 ├── mock-engine.ts    TickLoop + PRNG (mulberry32), MOSEED env, singleton per process

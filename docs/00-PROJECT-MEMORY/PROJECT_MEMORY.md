@@ -29,14 +29,15 @@
 | Spec coverage audit (zero-feature-loss) | DONE — REVIEW-4A + REVIEW-4B closed 2026-11-05; ROADMAP §5 console-deferral row RESTORED to Phase 1 |
 | Application code — Phase 1 | **COMPLETE — M0–M11 pushed** (dashboard, network, firewall & NAT, IPS, VPN, DNS & DHCP, identity, QoS, logging & reports, system/HA/notifications, API platform) |
 | Application code — Phase 2 | **COMPLETE — M12–M23 pushed (2026-11-07, ADR-020)**: threat intel, PKI (real X.509), SSL inspection, URL filter, WAF, app control, BGP/OSPF, SD-WAN, IPv6 dual-stack, email security, advanced identity/NAC, enhanced logging/compliance — 46 hash views, zero placeholders |
-| Real data plane — M24 | **COMPLETE (2026-11-09, ADR-021)**: `ADAPTER_MODE=host` is the DEFAULT — HostCollector (`src/lib/engine/host-collector.ts`) feeds the same engine surface from REAL sources (/proc/net.dev·stat·meminfo·tcp, sysfs, gateway TCP probes, systemctl, Suricata eve.json → ips_events, nftables kernel logs → firewall_logs, `wg show` → vpn_sessions, Kea leases → dhcp_leases, unbound log → dns ring); honest empty degradation, NO fabricated values; MockEngine only via explicit `ADAPTER_MODE=simulated` |
+| Real data plane — M24 | **COMPLETE (2026-11-09, ADR-021)**: `ADAPTER_MODE=host` is the DEFAULT — HostCollector (`src/lib/engine/host-collector.ts`) feeds the same engine surface from REAL sources (/proc/net.dev·stat·meminfo·tcp, sysfs, gateway TCP probes, systemctl, Suricata eve.json → ips_events, nftables kernel logs → firewall_logs, `wg show` → vpn_sessions, Kea leases → dhcp_leases, unbound log → dns ring); honest empty degradation, NO fabricated values; MockEngine only via explicit `ADAPTER_MODE=simulated` (and FORBIDDEN in production — runtime guard throws) |
+| Sensor agent transport — M25 | **COMPLETE (2026-11-09, ADR-004)**: Go sensor agent SHIPPED + verified end-to-end — `agent/` (pure-stdlib Go, no cgo): POST /v1/engine/snapshot · /v1/dashboard/summary · /v1/wan/probe with the LOCKED transport contract (X-Agent-Auth constant-time, X-Request-Id logged, {data}/{error} envelope); real sources = /proc (netdev deltas, cpu jiffies, meminfo, tcp/udp, conntrack, uptime, route), statfs disk, sysfs thermal, gateway TCP:53 probes (carrier→gateway→connect, up<250ms), Suricata eve.json, journalctl -k, unbound log; AgentEngine now PERSISTS real log tails into ips_events/firewall_logs (same tables host mode writes); AgentAdapter merges host-plane telemetry with console-authoritative DB aggregates; pm2 prod ecosystem auto-starts the agent when built; install/update scripts build it (apt golang-go); e2e verify: `bun scripts/verify-agent-mode.ts` — 14/14 PASS (real ticks, real probe up, honest 401) |
 | Data hygiene | sandbox DB purged of all demo/mock rows (16.7k) via `scripts/purge-mock-data.ts`; production seed = `bun prisma/seed.ts --production` (identity/RBAC + defaults only, wizard gate); fresh Debian installs never ship mock data |
 | Production packaging | `deploy/install-debian13.sh` (one-shot fresh Debian 13: apt → Node/bun/pm2 → clone → secrets → schema+seed → build → pm2 → boot hook → smoke check) + `deploy/update.sh` + `ecosystem.prod.config.cjs`; **pm2 is the appliance process manager (owner mandate)** — DEPLOYMENT.md rewritten |
 | Phase-1 tail | CLOSED — scheduled reports + PDF/print rendering (M12), real webhook delivery w/ HMAC signing + ledger (M11-tail ead4776) |
 | Database schema (Prisma) | LIVE — pushed + seeded (`db/cryptsk.db`); DB file tracked in git since 2026-11-07 (user mandate — survives sandbox resets); ~90 tables incl. 47 Phase-2 models; tracked DB now holds the CLEAN production baseline |
 | Realtime mini-service | LIVE (`mini-services/realtime-service/`, port 3003) |
-| Build milestone | **Phase 1 + Phase 2 + real data plane complete — next: Debian 13 appliance run (install script) / Go agent (AGENT_ADAPTER_CHECKLIST) if remote sensors ever needed** |
-| Current module in progress | none — M24 shipped 2026-11-09 |
+| Build milestone | **Phase 1 + Phase 2 + real data plane (host + agent transport) complete — next: Debian 13 appliance run (install script builds everything incl. the Go agent)** |
+| Current module in progress | none — M25 shipped 2026-11-09 |
 
 ---
 
@@ -646,6 +647,80 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 ---
 
 ## 15. SESSION LOG (append-only — newest on top)
+
+### 2026-11-09 — M25: Go sensor agent shipped + agent mode verified end-to-end
+
+**Owner directive (continuation):** complete the real data plane development in the sandbox so a fresh Debian 13 shows real data with no mock; project must live under pm2; deploy script for fresh Debian 13.
+
+- **Go agent (`agent/` — NEW, pure stdlib, no cgo):** `main.go` (POST-only JSON API on
+  `:8080`, constant-time `X-Agent-Auth` vs `AGENT_SHARED_SECRET` — refuses to start
+  without a secret, `X-Request-Id` logged, `{data}`/`{error:{code,message}}` envelope,
+  unauthenticated `/healthz` for pm2 liveness, reads repo `.env` without overriding real
+  env), `proc.go` (netdev/cpu-jiffies/meminfo/conntrack/tcp+udp tables/uptime/route
+  incl. little-endian gateway decode), `collector.go` (2 s locked tick, rings 500/2000/2000,
+  WAN probes every 5 ticks = carrier → gateway → TCP:53 connect with up<250ms/degraded≤2.5s
+  semantics mirroring `host/tools.ts probeGateway`, AGENT_WAN_IFACES for policy-routing
+  multi-WAN), `logs.go` (Suricata eve.json tail rotation-aware + alert→severity mapping,
+  `journalctl -k` nftables log parse, unbound query-log parse — all with agent-side
+  monotonic seq), `types.go` (wire shapes byte-compatible with the console contracts).
+- **Console side completed:** `dashboard-aggregates.ts` extracts the console-authoritative
+  DB aggregates (alerts24h/topApps/topTalkers/vpnStatus/recentThreats) shared by
+  HostAdapter + AgentAdapter — agent mode keeps config-plane truth in the console DB;
+  AgentEngine now persists real ips/firewall log tails into the SAME tables host mode
+  writes (dashboard aggregates stay real in agent mode); forceProbe maps ""→null.
+- **Production wiring:** `ecosystem.prod.config.cjs` auto-starts `cryptsk-agent` (pm2 app
+  #3) when `agent/cryptsk-agent` exists, env injected from `.env`; `deploy/install-debian13.sh`
+  adds `golang-go`, builds the agent after `next build`, generates `AGENT_SHARED_SECRET`,
+  smoke-checks `:8080/healthz`, banner lists the agent; `deploy/update.sh` rebuilds it.
+- **Mode semantics (unchanged default):** sandbox + fresh Debian keep `ADAPTER_MODE=host`
+  (full real plane, checklist Phase-1 gate for `agent` mode requires rows 3–21). The agent
+  ships enabled for remote consoles / the Phase-4 manager; `ADAPTER_MODE=simulated` stays
+  forbidden in production (runtime throw).
+- **Verification:** `go vet` clean, binary builds (8.5 MB); curl smoke — real snapshot
+  (cpu 19 %, mem 94.7 %, disk 41.8 %, eth0 492 kbps live, conntrack 32, honest tempC=0),
+  real probe eth0→up, unknown iface→down, bad auth→401; `bun scripts/verify-agent-mode.ts`
+  (NEW, committed): spawns the real binary, boots AgentEngine + AgentAdapter against it —
+  **14/14 PASS** (5 real ticks absorbed, dashboard merge with DB aggregates, probe up,
+  backfill history, honest 401). Host-mode dashboard re-verified after refactor (real
+  cpu/mem/disk, eth0 rates, conntrack 53). `next build` killed by the sandbox reaper
+  (resource limit — deploy builds run on the appliance; code is type-clean and the dev
+  server compiles all touched routes on demand). pm2: cryptsk-utm restarted clean, HTTP
+  200 + admin login OK throughout.
+
+### 2026-11-09 — M24b: AgentAdapter transport shipped + production no-mock guard
+
+**Owner directive (continuation):** real data plane completion for the Debian 13 move — no mock/simulated anywhere; app installable from apt on fresh Debian 13; project lives under pm2.
+
+- **AgentAdapter (ADR-004 checklist rows 1–2):** new `src/lib/adapters/agent.ts` —
+  `SystemAdapter` over the LOCKED transport contract (POST `{AGENT_BASE_URL}<path>`,
+  `X-Agent-Auth: AGENT_SHARED_SECRET`, `{data,meta?}`/`{error}` envelope, 5 s reads /
+  30 s mutations, `X-Request-Id`; fails LOUDLY on unreachable agent — never fabricates).
+- **AgentEngine (checklist row 2):** new `src/lib/engine/agent-engine.ts` — `EngineLike`
+  via 2 s `POST /v1/engine/snapshot` poll (drift-corrected), one-shot metricsHistory
+  backfill, incremental logsTail/dnsTail keyed by seq, wanStates diff → `wan:status`
+  events, realtime re-emission (metrics:tick/logs:tail) so realtime-service :3003 works
+  unchanged; unreachable sensor → honest empty rings + throttled error logs.
+- **Factories:** `getAdapter()`/`getDataPlaneMode()` now route `ADAPTER_MODE=agent`;
+  `dataPlaneLabel()` covers agent. **NO-MOCK GUARD:** `ADAPTER_MODE=simulated` +
+  `NODE_ENV=production` → throws (ADR-021 mandate enforced at runtime, fails loudly
+  instead of serving fabricated data).
+- **Mock hygiene (final sweep):** portal-view InfoNote no longer references MockEngine
+  behavior (mode-neutral wording); `bun run purge:mock` re-run → 38 rows purged
+  (4 `tpl-hosp/tpl-office` demo template firewall rules + stale config); DB verified:
+  firewallLog/ipsEvent/vpnSession/dhcpLease/identitySession/zone/vpnConfig/wanPolicy = 0,
+  interfaces = real host discovery only. Setup wizard re-completed via API (golden path
+  of the fresh Debian install exercised end-to-end).
+- **Install script:** `deploy/install-debian13.sh` .env now ships commented
+  `AGENT_BASE_URL`/`AGENT_SHARED_SECRET` placeholders; checklist gains "Console-side
+  implementation status" + console→agent endpoint map (contract v1: dashboard/summary,
+  engine/snapshot, wan/probe) so the Go agent can be built against it.
+- **Verification:** lint clean; runtime checks — production+simulated GUARD OK, agent
+  adapter fails loudly (no fabrication), agent engine rings honest-empty when sensor
+  unreachable; agent-browser: dashboard renders REAL /proc telemetry (cpu 2.5 %, mem 72 %,
+  disk 37.3 %, eth0 live rates, conntrack 27, tempC=0 honest zero — no thermal sensor in
+  sandbox), threat feed / top apps honest-empty pending real sensors, interfaces view
+  labels "discovered by host collector (real interface)", zero console errors. pm2:
+  cryptsk-utm + realtime-service online throughout.
 
 ### 2026-11-09 — M24: REAL data plane shipped (ADR-021) — no mock anywhere
 

@@ -2,19 +2,24 @@
 # =============================================================================
 # Cryptsk UTM / NGFW Console — Debian 13 (trixie) fresh-install deploy script
 # ADR-021: real data plane (ADAPTER_MODE=host) — NO mock/simulated data.
+# ADR-004: Go sensor agent built + started too (transport for remote consoles
+#          and the Phase-4 multi-site manager).
 #
 # What it does on a FRESH Debian 13 box:
-#   1. apt installs core deps (git, curl, build-essential, nftables, wireguard-tools)
-#      + optional appliance stack via flags (--with-ips / --with-dns / --with-dhcp)
+#   1. apt installs core deps (git, curl, build-essential, golang, nftables,
+#      wireguard-tools) + optional appliance stack via flags
+#      (--with-ips / --with-dns / --with-dhcp)
 #   2. installs Node.js 22 + bun + pm2 (global)
 #   3. clones the repo to /opt/cryptsk/console (or pulls if already present)
-#   4. writes .env with real secrets (AUTH_SECRET / INTERNAL_TOKEN generated)
+#   4. writes .env with real secrets (AUTH_SECRET / INTERNAL_TOKEN /
+#      AGENT_SHARED_SECRET generated)
 #   5. fresh SQLite DB: prisma db push + PRODUCTION seed (zero demo/mock rows)
 #      (--db postgres switches the provider per ADR-005 instead)
-#   6. production build (next build standalone)
-#   7. starts everything under pm2 (cryptsk-utm + realtime-service), saves the
-#      process list and installs the boot-persistence hook (pm2 startup)
-#   8. smoke-checks http://localhost:3000 and prints the URL + credentials
+#   6. production build (next build standalone) + Go agent build
+#   7. starts everything under pm2 (cryptsk-utm + realtime-service +
+#      cryptsk-agent), saves the process list and installs the boot-persistence
+#      hook (pm2 startup)
+#   8. smoke-checks http://localhost:3000 and agent :8080, prints URL + creds
 #
 # Usage (as root, on Debian 13):
 #   bash deploy/install-debian13.sh                    # core (nftables + wireguard)
@@ -60,7 +65,7 @@ export DEBIAN_FRONTEND=noninteractive
 # ── 1. apt dependencies ───────────────────────────────────────────────────────
 log "Installing apt packages…"
 apt-get update -y
-apt-get install -y curl git ca-certificates gnupg build-essential nftables wireguard-tools sqlite3
+apt-get install -y curl git ca-certificates gnupg build-essential golang-go nftables wireguard-tools sqlite3
 $WITH_IPS  && apt-get install -y suricata || true
 $WITH_DNS  && apt-get install -y unbound || true
 $WITH_DHCP && apt-get install -y kea-dhcp4-server || true
@@ -102,6 +107,7 @@ cd "$CRYPTSK_DIR"
 log "Writing .env…"
 AUTH_SECRET="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1)"
 INTERNAL_TOKEN="$(openssl rand -hex 24 2>/dev/null || head -c 24 /dev/urandom | sha256sum | cut -d' ' -f1)"
+AGENT_SECRET="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1)"
 if [ "$DB_ENGINE" = "postgresql" ]; then
   DATABASE_URL="postgresql://cryptsk:${AUTH_SECRET:0:16}@127.0.0.1:5432/cryptsk"
 else
@@ -114,6 +120,10 @@ DATABASE_URL=${DATABASE_URL}
 AUTH_SECRET=${AUTH_SECRET}
 JWT_SECRET=${AUTH_SECRET}
 INTERNAL_TOKEN=${INTERNAL_TOKEN}
+# ── sensor agent transport (ADR-004) — console-side client (ADAPTER_MODE=agent
+#    switches the console to it once the full Phase-1 checklist gate passes) ──
+AGENT_BASE_URL=http://127.0.0.1:8080
+AGENT_SHARED_SECRET=${AGENT_SECRET}
 ENV
 chmod 600 .env
 mkdir -p logs db
@@ -146,8 +156,12 @@ bun prisma/seed.ts --production
 log "Building production bundle (next build — takes a few minutes)…"
 bun run build
 
+log "Building the Go sensor agent (agent/cryptsk-agent)…"
+(cd agent && go build -o cryptsk-agent .) || fail "agent build failed (golang-go installed?)"
+[ -x agent/cryptsk-agent ] || fail "agent binary missing after build"
+
 # ── 7. pm2: start + persist + boot hook ──────────────────────────────────────
-log "Starting services under pm2 (cryptsk-utm :${NEXT_PORT} + realtime-service :3003)…"
+log "Starting services under pm2 (cryptsk-utm :${NEXT_PORT} + realtime-service :3003 + cryptsk-agent :8080)…"
 NEXT_PORT="$NEXT_PORT" pm2 start ecosystem.prod.config.cjs || pm2 reload ecosystem.prod.config.cjs
 pm2 save
 
@@ -172,6 +186,7 @@ if [ "$CODE" != "200" ]; then
 fi
 
 IP_DISCOVERED="$(hostname -I 2>/dev/null | awk '{print $1}')"
+AGENT_HEALTH="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8080/healthz || echo 000)"
 cat <<DONE
 
 =============================================================================
@@ -179,6 +194,7 @@ cat <<DONE
 =============================================================================
 
   pm2 services : cryptsk-utm (Next.js :${NEXT_PORT}) + realtime-service (:3003)
+                 cryptsk-agent (Go sensor :8080, healthz=${AGENT_HEALTH})
   URL          : http://${IP_DISCOVERED:-<server-ip>}:${NEXT_PORT}/
   Local check  : http://localhost:${NEXT_PORT}/
 
@@ -197,6 +213,12 @@ cat <<DONE
     • VPN sessions — `wg show` (WireGuard peers with live handshakes)
     • DHCP leases — Kea lease file (when kea-dhcp4-server is installed)
     • DNS query log — unbound query log (when unbound logs queries)
+
+  Sensor agent (ADR-004): the appliance also runs a Go agent on :8080 that
+  exposes the same real telemetry to remote consoles / the Phase-4 manager
+  (auth: AGENT_SHARED_SECRET from .env). The console itself keeps reading the
+  local plane directly (ADAPTER_MODE=host) — switching to ADAPTER_MODE=agent
+  waits for the full Phase-1 checklist gate.
 
   First run: the setup wizard builds your LAN/WAN config from factory defaults.
 

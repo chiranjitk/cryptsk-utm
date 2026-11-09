@@ -230,7 +230,7 @@ function PortalForm({ initial }: { initial: CaptivePortalDTO }) {
         </div>
 
         <div className="flex items-center justify-between gap-3">
-          <InfoNote>In credentials mode the MockEngine occasionally self-registers a guest (display-only behavior).</InfoNote>
+          <InfoNote>Guest sessions appear here in real time once visitors authenticate against the active identity data plane.</InfoNote>
           <Button onClick={() => void save.mutateAsync()} disabled={save.isPending}>
             {save.isPending ? "Saving…" : "Save portal settings"}
           </Button>

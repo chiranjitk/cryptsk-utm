@@ -36,6 +36,9 @@ bunx prisma db push --accept-data-loss
 log "Building…"
 bun run build
 
+log "Rebuilding the Go sensor agent…"
+(cd agent && go build -o cryptsk-agent .) || fail "agent build failed (golang-go installed?)"
+
 log "Reloading pm2 services…"
 pm2 start ecosystem.prod.config.cjs --update-env || pm2 reload ecosystem.prod.config.cjs || pm2 restart all
 pm2 save

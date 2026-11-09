@@ -69,3 +69,5 @@ tool-results/
 dev.pid
 dev.log
 db/backups/
+agent/cryptsk-agent
+.tools/
