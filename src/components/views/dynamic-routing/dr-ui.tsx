@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 // ── BGP session state badge (established=blue, connect=amber, idle=zinc, active=red) ──
 
 const BGP_STATE_CLS: Record<string, string> = {
-  established: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  established: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   connect: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   opensent: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   openconfirm: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
@@ -41,7 +41,7 @@ export function OspfStateBadge({ state, className }: { state: string; className?
       className={cn(
         "gap-1 font-medium",
         full
-          ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+          ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
           : "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
         className,
       )}
@@ -55,7 +55,7 @@ export function OspfStateBadge({ state, className }: { state: string; className?
 // ── protocol badge (bgp=blue, ospf=amber, static=zinc, connected=outline) ────
 
 const RIB_PROTO_CLS: Record<string, string> = {
-  bgp: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  bgp: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   ospf: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   static: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
 };
@@ -84,7 +84,7 @@ export function NetTypeChip({ type }: { type: string }) {
 
 export function FamilyBadge({ family }: { family: "ipv4" | "ipv6" }) {
   return (
-    <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500">
+    <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300">
       {family}
     </Badge>
   );
@@ -111,7 +111,7 @@ export function PassiveChip({ passive }: { passive: boolean }) {
 export function BfdFlagChip({ enabled, profileName }: { enabled: boolean; profileName?: string | null }) {
   if (!enabled) return <span className="text-xs text-zinc-400">—</span>;
   return (
-    <Badge variant="outline" className="gap-1 border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500">
+    <Badge variant="outline" className="gap-1 border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300">
       <Icons.Activity className="h-3 w-3" />
       BFD{profileName ? ` · ${profileName}` : ""}
     </Badge>

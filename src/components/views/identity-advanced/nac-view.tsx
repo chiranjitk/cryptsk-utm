@@ -105,8 +105,8 @@ function useDebounced(value: string, ms = 400): string {
 // ── badge + icon recipes (ADR-019 — blue/zinc/rose/amber only) ──────────────
 
 const STATE_META: Record<NacState, { cls: string; icon: React.ComponentType<{ className?: string }> }> = {
-  authenticated: { cls: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500", icon: Icons.ShieldCheck },
-  mab: { cls: "border-red-600/40 bg-transparent text-red-700 dark:text-red-500", icon: Icons.KeyRound },
+  authenticated: { cls: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300", icon: Icons.ShieldCheck },
+  mab: { cls: "border-zinc-500/30 bg-transparent text-zinc-600 dark:text-zinc-300", icon: Icons.KeyRound },
   quarantine: { cls: "border-transparent bg-rose-600 text-white", icon: Icons.ShieldAlert },
   pending: { cls: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400", icon: Icons.Clock },
   denied: { cls: "border-rose-600/60 bg-transparent text-rose-500", icon: Icons.Ban },
@@ -123,15 +123,15 @@ const TYPE_ICON: Record<DeviceType, React.ComponentType<{ className?: string }>>
 };
 
 const METHOD_CLS: Record<NacMethod, string> = {
-  "802.1x": "border-red-600/40 bg-red-600/10 font-mono text-red-700 dark:text-red-500",
+  "802.1x": "border-zinc-500/30 bg-zinc-500/10 font-mono text-zinc-600 dark:text-zinc-300",
   mab: "border-zinc-300 bg-zinc-100 font-mono text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  both: "border-red-600/40 bg-transparent font-mono text-red-700 dark:text-red-500",
+  both: "border-zinc-500/30 bg-transparent font-mono text-zinc-600 dark:text-zinc-300",
 };
 
 const BYOD_META: Record<ByodStatus, { cls: string; icon: React.ComponentType<{ className?: string }> }> = {
   pending: { cls: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400", icon: Icons.Clock },
-  approved: { cls: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500", icon: Icons.ShieldCheck },
-  enrolled: { cls: "border-transparent bg-red-700 text-white", icon: Icons.CheckCircle2 },
+  approved: { cls: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300", icon: Icons.ShieldCheck },
+  enrolled: { cls: "border-transparent bg-zinc-600 text-white", icon: Icons.CheckCircle2 },
   expired: { cls: "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400", icon: Icons.Timer },
   revoked: { cls: "border-rose-600/60 bg-transparent text-rose-500", icon: Icons.Ban },
 };
@@ -203,7 +203,7 @@ function StatsStrip() {
         label="Profiled devices"
         value={devicesQuery.isLoading ? "—" : devices.length}
         sub={devices.length >= PAGE_SIZE ? `showing first ${PAGE_SIZE}` : "in inventory"}
-        tone="text-red-700 dark:text-red-500"
+        tone="text-zinc-500 dark:text-zinc-400"
         icon={<Icons.ScanLine className="h-4 w-4" />}
       />
       <StatCard
@@ -217,14 +217,14 @@ function StatsStrip() {
         label="802.1X profiled"
         value={devicesQuery.isLoading ? "—" : dot1x}
         sub="EAP profiles (incl. both)"
-        tone="text-red-700 dark:text-red-500"
+        tone="text-zinc-500 dark:text-zinc-400"
         icon={<Icons.KeyRound className="h-4 w-4" />}
       />
       <StatCard
         label="MAB profiled"
         value={devicesQuery.isLoading ? "—" : mab}
         sub="MAC auth bypass endpoints"
-        tone="text-red-700 dark:text-red-500"
+        tone="text-zinc-500 dark:text-zinc-400"
         icon={<Icons.Cpu className="h-4 w-4" />}
       />
     </div>
@@ -431,7 +431,7 @@ function ProfilesCard() {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Fingerprint className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Fingerprint className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           NAC Profiles
           <span className="text-xs font-normal text-zinc-400">{rows.length} configured</span>
         </CardTitle>
@@ -486,7 +486,7 @@ function ProfilesCard() {
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {p.dynamicVlan && (
-                          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
+                          <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-300">
                             dynamic
                           </Badge>
                         )}
@@ -508,12 +508,12 @@ function ProfilesCard() {
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {p.profiling && (
-                          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
+                          <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-300">
                             profiling
                           </Badge>
                         )}
                         {p.byodOnboarding && (
-                          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
+                          <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-300">
                             byod
                           </Badge>
                         )}
@@ -534,7 +534,7 @@ function ProfilesCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600"
                           aria-label={`Edit ${p.name}`}
                           onClick={() => setEditing(p)}
                         >
@@ -652,7 +652,7 @@ function DevicesCard() {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.ScanLine className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.ScanLine className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Device Inventory
           <span className="text-xs font-normal text-zinc-400">{rows.length} shown</span>
         </CardTitle>
@@ -882,8 +882,8 @@ function EnrollDialog(props: { onClose: () => void }) {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-2">
-              <div className="rounded-lg border border-red-600/40 bg-red-600/5 p-4 text-center">
-                <p className="font-mono text-lg font-semibold tracking-widest text-red-700 dark:text-red-500">{created.token}</p>
+              <div className="rounded-lg border border-zinc-500/30 bg-zinc-500/10 p-4 text-center">
+                <p className="font-mono text-lg font-semibold tracking-widest text-zinc-700 dark:text-zinc-300">{created.token}</p>
                 <p className="mt-1 text-[11px] text-zinc-400">expires {fmtRelative(created.expiresAt)}</p>
               </div>
             </div>
@@ -984,7 +984,7 @@ function ByodCard() {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Smartphone className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Smartphone className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           BYOD Onboarding
           <span className="text-xs font-normal text-zinc-400">{rows.length} enrollment{rows.length === 1 ? "" : "s"}</span>
         </CardTitle>
@@ -1027,7 +1027,7 @@ function ByodCard() {
                   <TableRow key={b.id}>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-600/10 text-[10px] font-semibold text-red-700 dark:text-red-500">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-500/10 text-[10px] font-semibold text-zinc-600 dark:text-zinc-400">
                           {b.userName.slice(0, 2).toUpperCase()}
                         </span>
                         <span className="font-mono text-xs font-medium">{b.userName}</span>
@@ -1045,7 +1045,7 @@ function ByodCard() {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-7 gap-1 border-red-600/40 px-2 text-[11px] text-red-700 hover:bg-red-600/10 dark:text-red-500"
+                              className="h-7 gap-1 border-zinc-500/30 px-2 text-[11px] text-zinc-600 hover:bg-zinc-500/10 dark:text-zinc-300"
                               disabled={approve.isPending && approve.variables === b.id}
                               aria-label={`Approve enrollment for ${b.userName}`}
                               onClick={() => approve.mutate(b.id)}

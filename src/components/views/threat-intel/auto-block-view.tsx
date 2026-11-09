@@ -184,8 +184,8 @@ function RecentMatches() {
         </CardTitle>
         <span className="inline-flex items-center gap-1.5 text-[11px] text-zinc-400">
           <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-red-600" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-zinc-500 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-zinc-500" />
           </span>
           refreshes every 10s
         </span>

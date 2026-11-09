@@ -2,8 +2,10 @@
 
 /**
  * Chart wrappers — ADR-019 (supersedes ADR-013 palette): all charts go through
- * components/charts/ using the LOCKED brand palette (red, amber, rose, orange,
- * zinc, slate). Owner-directed white/red/dark-red theme, 2026-11-09.
+ * components/charts/ using the LOCKED brand palette. Owner-directed white/red/
+ * dark-red theme, 2026-11-09 (rev 2: red is a BRAND ACCENT, not a paint job —
+ * data series lead with neutral zinc and use ONE brand-red series max so red
+ * keeps its alarm value. Categorical charts vary: red family + amber + neutrals).
  */
 
 import {
@@ -19,12 +21,14 @@ import {
 } from "recharts";
 
 export const PALETTE = {
+  /** brand series — the ONLY red series a chart should use */
   blue: "#b91c1c",
-  sky: "#ef4444",
+  /** neutral series — upload/secondary data */
+  sky: "#71717a",
   amber: "#f59e0b",
   rose: "#f43f5e",
   orange: "#f97316",
-  violet: "#71717a",
+  violet: "#a1a1aa",
   slate: "#64748b",
 } as const;
 
@@ -46,7 +50,7 @@ export function ThroughputAreaChart({
             <stop offset="100%" stopColor={PALETTE.blue} stopOpacity={0.02} />
           </linearGradient>
           <linearGradient id="gradTx" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={PALETTE.sky} stopOpacity={0.3} />
+            <stop offset="0%" stopColor={PALETTE.sky} stopOpacity={0.22} />
             <stop offset="100%" stopColor={PALETTE.sky} stopOpacity={0.02} />
           </linearGradient>
         </defs>
@@ -58,13 +62,13 @@ export function ThroughputAreaChart({
           contentStyle={{ borderRadius: 8, fontSize: 12 }}
         />
         <Area type="monotone" dataKey="rx" stroke={PALETTE.blue} strokeWidth={2} fill="url(#gradRx)" isAnimationActive={false} />
-        <Area type="monotone" dataKey="tx" stroke={PALETTE.sky} strokeWidth={2} fill="url(#gradTx)" isAnimationActive={false} />
+        <Area type="monotone" dataKey="tx" stroke={PALETTE.sky} strokeWidth={1.8} fill="url(#gradTx)" isAnimationActive={false} />
       </AreaChart>
     </ResponsiveContainer>
   );
 }
 
-const DONUT_COLORS = [PALETTE.blue, PALETTE.sky, PALETTE.amber, PALETTE.rose, PALETTE.orange, PALETTE.violet, PALETTE.slate];
+const DONUT_COLORS = [PALETTE.blue, PALETTE.amber, PALETTE.sky, PALETTE.rose, PALETTE.violet, PALETTE.orange, PALETTE.slate];
 
 export function AppsDonut({ data, height = 220 }: { data: Array<{ app: string; bytes: number }>; height?: number }) {
   const total = data.reduce((s, d) => s + d.bytes, 0) || 1;

@@ -241,7 +241,7 @@ export function AuditView() {
                 className={cn(
                   "rounded-full border px-2.5 py-1 text-xs transition-colors",
                   active
-                    ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+                    ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                     : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
                 )}
               >
@@ -292,7 +292,7 @@ export function AuditView() {
                     <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtTs(r.createdAt)}</TableCell>
                     <TableCell>
                       <span className="flex items-center gap-2">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-600/10 text-[10px] font-semibold text-red-700 dark:text-red-500">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-500/10 text-[10px] font-semibold text-zinc-600 dark:text-zinc-400">
                           {initialsOf(r.username)}
                         </span>
                         <span className="text-xs">{r.username ?? "(deleted user)"}</span>

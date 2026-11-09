@@ -243,7 +243,7 @@ export function AppShell() {
               className={cn(
                 "hidden sm:inline-flex",
                 me.dataPlane === "simulated"
-                  ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+                  ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
                   : "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
               )}
             >

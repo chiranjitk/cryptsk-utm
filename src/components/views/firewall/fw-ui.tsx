@@ -80,7 +80,7 @@ export function useFwConfigInvalidation(): void {
 
 const ACTION_BADGE: Record<FwAction, { cls: string; icon: React.ComponentType<{ className?: string }>; label: string }> = {
   allow: {
-    cls: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+    cls: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
     icon: Icons.ShieldCheck,
     label: "allow",
   },
@@ -241,7 +241,7 @@ export function EmptyBlock(props: {
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-600/10 text-red-700 dark:text-red-500">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-500/10 text-zinc-600 dark:text-zinc-400">
         {props.icon}
       </div>
       <p className="text-sm font-medium">{props.title}</p>
@@ -304,7 +304,7 @@ export function MultiChips({
             className={cn(
               "rounded-full border px-2.5 py-1 text-xs transition-colors",
               active
-                ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+                ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                 : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
             )}
           >
@@ -341,7 +341,7 @@ export function PopoverMulti({
           {icon}
           {triggerLabel}
           {selected.length > 0 && (
-            <Badge variant="outline" className="ml-1 border-red-600/40 bg-red-600/10 px-1.5 text-[10px] text-red-700 dark:text-red-500">
+            <Badge variant="outline" className="ml-1 border-zinc-500/30 bg-zinc-500/10 px-1.5 text-[10px] text-zinc-600 dark:text-zinc-300">
               {selected.length}
             </Badge>
           )}
@@ -361,7 +361,7 @@ export function PopoverMulti({
                     value={o.label}
                     onSelect={() => onChange(active ? selected.filter((s) => s !== o.id) : [...selected, o.id])}
                   >
-                    <Icons.Check className={cn("mr-1.5 h-4 w-4", active ? "text-red-700 dark:text-red-500" : "opacity-0")} />
+                    <Icons.Check className={cn("mr-1.5 h-4 w-4", active ? "text-zinc-500 dark:text-zinc-400" : "opacity-0")} />
                     <span className="text-sm">{o.label}</span>
                     {o.sub ? <span className="ml-auto text-[10px] text-zinc-400">{o.sub}</span> : null}
                   </CommandItem>
@@ -401,10 +401,10 @@ export function ObjectPicker(props: {
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button type="button" variant="outline" size="sm" className="gap-1.5">
-            <Icons.ListPlus className="h-4 w-4 text-red-700 dark:text-red-500" />
+            <Icons.ListPlus className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             {props.triggerLabel}
             {props.value.length > 0 && (
-              <Badge variant="outline" className="ml-1 border-red-600/40 bg-red-600/10 px-1.5 text-[10px] text-red-700 dark:text-red-500">
+              <Badge variant="outline" className="ml-1 border-zinc-500/30 bg-zinc-500/10 px-1.5 text-[10px] text-zinc-600 dark:text-zinc-300">
                 {props.value.length}
               </Badge>
             )}
@@ -427,7 +427,7 @@ export function ObjectPicker(props: {
                           props.onChange(active ? props.value.filter((v) => v !== g.id) : [...props.value, g.id])
                         }
                       >
-                        <Icons.Check className={cn("mr-1.5 h-4 w-4", active ? "text-red-700 dark:text-red-500" : "opacity-0")} />
+                        <Icons.Check className={cn("mr-1.5 h-4 w-4", active ? "text-zinc-500 dark:text-zinc-400" : "opacity-0")} />
                         <Icons.FolderOpen className="mr-1 h-3.5 w-3.5 text-zinc-400" />
                         <span className="text-sm font-medium">{g.name}</span>
                         <span className="ml-auto text-[10px] text-zinc-400">+{g.memberCount}</span>
@@ -447,7 +447,7 @@ export function ObjectPicker(props: {
                         props.onChange(active ? props.value.filter((v) => v !== o.id) : [...props.value, o.id])
                       }
                     >
-                      <Icons.Check className={cn("mr-1.5 h-4 w-4", active ? "text-red-700 dark:text-red-500" : "opacity-0")} />
+                      <Icons.Check className={cn("mr-1.5 h-4 w-4", active ? "text-zinc-500 dark:text-zinc-400" : "opacity-0")} />
                       <span className="text-sm">{o.name}</span>
                       <span className="ml-auto max-w-28 truncate font-mono text-[10px] text-zinc-400">{o.sub}</span>
                     </CommandItem>
@@ -543,7 +543,7 @@ export function TransferList({
                       key={item.id}
                       type="button"
                       onClick={() => move(item.id, col.dir)}
-                      className="flex w-full items-center justify-between gap-1 rounded-md px-2 py-1.5 text-left text-xs hover:bg-red-600/10"
+                      className="flex w-full items-center justify-between gap-1 rounded-md px-2 py-1.5 text-left text-xs hover:bg-zinc-500/10"
                     >
                       <span className="truncate font-medium">{item.label}</span>
                       <span className="shrink-0 font-mono text-[10px] text-zinc-400">{item.sub}</span>

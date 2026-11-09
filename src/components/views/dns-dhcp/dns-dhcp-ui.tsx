@@ -91,7 +91,7 @@ export function FamilyChip({ family }: { family: string }) {
         "px-1.5 py-0 text-[10px] uppercase tracking-wide",
         v6
           ? "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-400"
-          : "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400",
+          : "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
       )}
     >
       {v6 ? "v6" : "v4"}
@@ -114,7 +114,7 @@ export function CategoryChips({ categories }: { categories: string[] }) {
   return (
     <span className="flex flex-wrap gap-1">
       {categories.map((c) => (
-        <Badge key={c} variant="outline" className="border-red-600/40 bg-red-600/10 px-1.5 py-0 text-[10px] text-red-700 dark:text-red-500">
+        <Badge key={c} variant="outline" className="border-zinc-500/30 bg-zinc-500/10 px-1.5 py-0 text-[10px] text-zinc-600 dark:text-zinc-300">
           {c}
         </Badge>
       ))}

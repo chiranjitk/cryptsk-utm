@@ -170,7 +170,7 @@ function ReportsTab() {
               className={cn(
                 "px-3 py-1.5 text-xs font-medium transition-colors",
                 range === r
-                  ? "bg-red-700 text-white"
+                  ? "bg-zinc-700 text-white"
                   : "bg-transparent text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800",
               )}
             >
@@ -217,7 +217,7 @@ function ReportsTab() {
               value={derived.total.toLocaleString()}
               sub={`window ${range}`}
               icon={<Icons.Waves className="h-5 w-5" />}
-              tone="bg-red-600/10 text-red-700 dark:text-red-500"
+              tone="bg-zinc-500/10 text-zinc-600 dark:text-zinc-400"
             />
             <StatCard
               label="Blocked"
@@ -558,7 +558,7 @@ function ScheduledTab() {
                 <TableRow key={s.id}>
                   <TableCell className="text-sm font-medium">{s.name}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[11px] capitalize text-red-700 dark:text-red-500">
+                    <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[11px] capitalize text-zinc-600 dark:text-zinc-300">
                       <Icons.CalendarClock className="mr-1 h-3 w-3" />
                       {s.range}
                     </Badge>
@@ -888,7 +888,7 @@ function ForwardingTab() {
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0 p-4 md:p-6">
           <CardTitle className="flex items-center gap-2 text-sm font-medium">
-            <Icons.FileText className="h-4 w-4 text-red-700 dark:text-red-500" />
+            <Icons.FileText className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             Syslog targets
           </CardTitle>
           <Button
@@ -929,7 +929,7 @@ function ForwardingTab() {
                       {t.host}:{t.port}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[11px] uppercase text-red-700 dark:text-red-500">
+                      <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[11px] uppercase text-zinc-600 dark:text-zinc-300">
                         {t.protocol}
                       </Badge>
                     </TableCell>
@@ -971,7 +971,7 @@ function ForwardingTab() {
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0 p-4 md:p-6">
           <CardTitle className="flex items-center gap-2 text-sm font-medium">
-            <Icons.Network className="h-4 w-4 text-red-700 dark:text-red-500" />
+            <Icons.Network className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             NetFlow / IPFIX targets
           </CardTitle>
           <Button

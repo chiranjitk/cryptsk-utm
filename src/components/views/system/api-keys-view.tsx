@@ -294,7 +294,7 @@ function KeysTab() {
                     className={cn(
                       "flex cursor-pointer items-start gap-2.5 rounded-md border p-3 transition-colors",
                       form.scopesIdx === i
-                        ? "border-red-600/40 bg-red-600/10 dark:border-red-600/40"
+                        ? "border-zinc-500/30 bg-zinc-500/10 dark:border-zinc-500/30"
                         : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900",
                     )}
                   >
@@ -340,7 +340,7 @@ function KeysTab() {
         <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Icons.ShieldCheck className="h-4 w-4 text-red-700 dark:text-red-500" />
+              <Icons.ShieldCheck className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
               Save your API key now
             </DialogTitle>
             <DialogDescription>
@@ -556,7 +556,7 @@ function WebhooksTab() {
                         <Badge
                           key={ev}
                           variant="outline"
-                          className="border-red-600/40 bg-red-600/10 font-mono text-[10px] text-red-700 dark:text-red-500"
+                          className="border-zinc-500/30 bg-zinc-500/10 font-mono text-[10px] text-zinc-600 dark:text-zinc-300"
                         >
                           {ev}
                         </Badge>
@@ -594,7 +594,7 @@ function WebhooksTab() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 gap-1 px-2 text-red-700 hover:bg-red-600/10 dark:text-red-500"
+                        className="h-7 gap-1 px-2 text-zinc-500 hover:bg-zinc-500/10 dark:text-zinc-400"
                         disabled={testMut.isPending}
                         onClick={() => testMut.mutate(wh.id)}
                       >
@@ -666,7 +666,7 @@ function WebhooksTab() {
                       className={cn(
                         "flex cursor-pointer items-start gap-2 rounded-md border p-2 text-xs transition-colors",
                         active
-                          ? "border-red-600/40 bg-red-600/10 dark:border-red-600/40"
+                          ? "border-zinc-500/30 bg-zinc-500/10 dark:border-zinc-500/30"
                           : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900",
                       )}
                     >
@@ -740,7 +740,7 @@ function WebhooksTab() {
                     <span
                       className={
                         d.ok
-                          ? "inline-block h-2 w-2 shrink-0 rounded-full bg-red-700"
+                          ? "inline-block h-2 w-2 shrink-0 rounded-full bg-zinc-500"
                           : "inline-block h-2 w-2 shrink-0 rounded-full bg-rose-500"
                       }
                       aria-hidden

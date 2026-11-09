@@ -519,7 +519,7 @@ function SortableNatRow(props: {
               className={cn(
                 "max-w-32 truncate font-normal",
                 info?.isGroup
-                  ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+                  ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
                   : "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
               )}
             >
@@ -534,7 +534,7 @@ function SortableNatRow(props: {
     <TableRow
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(!r.enabled && "opacity-55", isDragging && "z-50 relative bg-red-600/5")}
+      className={cn(!r.enabled && "opacity-55", isDragging && "z-50 relative bg-zinc-500/5")}
     >
       <TableCell className="w-10 pl-2 pr-0">
         <button
@@ -559,7 +559,7 @@ function SortableNatRow(props: {
       <TableCell className="min-w-40">
         <span className="block max-w-48 truncate text-sm font-medium">{r.name ?? `#${r.id}`}</span>
         {isOneToOnePair(r.comment) && (
-          <Badge variant="outline" className="mt-0.5 border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
+          <Badge variant="outline" className="mt-0.5 border-zinc-500/30 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-300">
             <Icons.Link2 className="mr-1 h-3 w-3" /> 1:1 pair
           </Badge>
         )}
@@ -803,7 +803,7 @@ function NatEditor(props: {
                 </Label>
               </RadioGroup>
               {form.snatMode === "masq" && (
-                <p className="rounded-md bg-red-600/10 px-3 py-2 text-xs text-red-800 dark:text-red-500">
+                <p className="rounded-md bg-zinc-500/10 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300">
                   Stores translatedSrc = <span className="font-mono">masq</span> — the egress interface address is used per flow.
                 </p>
               )}

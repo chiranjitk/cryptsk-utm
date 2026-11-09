@@ -75,10 +75,10 @@ export function RadiusTab() {
     <Card className="gap-4">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.Server className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Server className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           RADIUS Profiles
           {listQ.data ? (
-            <Badge variant="outline" className="border-red-600/40 bg-red-600/10 px-1.5 text-[10px] text-red-700 dark:text-red-500">
+            <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 px-1.5 text-[10px] text-zinc-600 dark:text-zinc-300">
               {listQ.data.length}
             </Badge>
           ) : null}
@@ -344,7 +344,7 @@ export function DirectoryTab() {
     <Card className="gap-4">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.DatabaseZap className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.DatabaseZap className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Directory Sources
           <span className="text-[11px] font-normal text-zinc-400">LDAP / AD connectors</span>
         </CardTitle>
@@ -639,7 +639,7 @@ function AuthSettingsForm({ initial }: { initial: AuthSettings }) {
       <Card className="gap-4">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Icons.KeyRound className="h-4 w-4 text-red-700 dark:text-red-500" />
+            <Icons.KeyRound className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             Password Policy
           </CardTitle>
         </CardHeader>
@@ -685,7 +685,7 @@ function AuthSettingsForm({ initial }: { initial: AuthSettings }) {
       <Card className="gap-4">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Icons.LockKeyhole className="h-4 w-4 text-red-700 dark:text-red-500" />
+            <Icons.LockKeyhole className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             Lockout &amp; Sessions
           </CardTitle>
         </CardHeader>

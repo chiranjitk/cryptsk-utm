@@ -111,25 +111,25 @@ function useDebounced(value: string, ms = 400): string {
 // ── badge recipes (ADR-019 — blue/zinc/rose/amber only) ─────────────────────
 
 const PROTOCOL_CLS: Record<IdpProtocol, string> = {
-  saml2: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  saml2: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   oidc: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
 };
 
 const STATUS_CLS: Record<IdpStatus, string> = {
-  ok: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  ok: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   error: "border-rose-600/60 bg-transparent text-rose-500",
   untested: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
 };
 
 const EVENT_CLS: Record<ActivityEvent, string> = {
-  login: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  login: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   logout: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  portal: "border-red-600/40 bg-transparent text-red-700 dark:text-red-500",
-  vpn: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  portal: "border-zinc-500/30 bg-transparent text-zinc-600 dark:text-zinc-300",
+  vpn: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   coa: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   vlan_change: "border-rose-600/40 bg-transparent text-rose-500",
-  nac_auth: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
-  idp_sso: "border-transparent bg-red-700 text-white",
+  nac_auth: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  idp_sso: "border-transparent bg-zinc-600 text-white",
 };
 
 function ProtocolBadge({ protocol }: { protocol: IdpProtocol }) {
@@ -660,7 +660,7 @@ function SendCoaDialog(props: { profile: CoaProfileDTO; onClose: () => void }) {
 
           {send.data && (
             <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-              <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-red-700 dark:text-red-500">
+              <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
                 <Icons.ShieldCheck className="h-3.5 w-3.5" />
                 {send.data.packet.code} accepted
               </p>
@@ -734,7 +734,7 @@ function IdpsCard() {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.KeyRound className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.KeyRound className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Identity Providers
           <span className="text-xs font-normal text-zinc-400">{rows.length} configured</span>
         </CardTitle>
@@ -809,7 +809,7 @@ function IdpsCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600"
                           aria-label={`Test ${idp.name}`}
                           disabled={test.isPending && test.variables === idp.id}
                           onClick={() => test.mutate(idp.id)}
@@ -823,7 +823,7 @@ function IdpsCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600"
                           aria-label={`Edit ${idp.name}`}
                           onClick={() => setEditing(idp)}
                         >
@@ -900,7 +900,7 @@ function CoaCard() {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Radio className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Radio className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           RADIUS CoA Profiles
           <span className="text-xs font-normal text-zinc-400">{rows.length} configured</span>
         </CardTitle>
@@ -946,7 +946,7 @@ function CoaCard() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-semibold">{p.name}</span>
                         {p.coaEnabled ? (
-                          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
+                          <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-300">
                             CoA on
                           </Badge>
                         ) : (
@@ -972,7 +972,7 @@ function CoaCard() {
                       {p.dynamicVlan ? (
                         <Badge
                           variant="outline"
-                          className="border-red-600/40 bg-red-600/10 font-mono text-[10px] text-red-700 dark:text-red-500"
+                          className="border-zinc-500/30 bg-zinc-500/10 font-mono text-[10px] text-zinc-600 dark:text-zinc-300"
                         >
                           {p.vlanPoolStart != null && p.vlanPoolEnd != null ? `pool ${p.vlanPoolStart}–${p.vlanPoolEnd}` : "dynamic"}
                         </Badge>
@@ -994,7 +994,7 @@ function CoaCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600"
                           aria-label={`Send CoA via ${p.name}`}
                           disabled={!p.enabled || !p.coaEnabled}
                           title={!p.enabled || !p.coaEnabled ? "Enable the profile and CoA first" : "Send CoA packet"}
@@ -1005,7 +1005,7 @@ function CoaCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600"
                           aria-label={`Edit ${p.name}`}
                           onClick={() => setEditing(p)}
                         >
@@ -1086,12 +1086,12 @@ function ActivityCard() {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.History className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.History className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           User Activity Timeline
           <span className="flex items-center gap-1 text-xs font-normal text-zinc-400">
             <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-600 opacity-60" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-700" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-zinc-500 opacity-60" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-zinc-500" />
             </span>
             live · 10s
           </span>
@@ -1195,7 +1195,7 @@ function ActivityRow({ row }: { row: ActivityDTO }) {
     <TableRow>
       <TableCell>
         <div className="flex items-center gap-2">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-600/10 text-[10px] font-semibold text-red-700 dark:text-red-500">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-500/10 text-[10px] font-semibold text-zinc-600 dark:text-zinc-400">
             {row.userName.slice(0, 2).toUpperCase()}
           </span>
           <span className="truncate font-mono text-xs font-medium" title={row.userName}>

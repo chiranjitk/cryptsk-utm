@@ -277,7 +277,7 @@ export function PolicyObjectsTab() {
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center justify-between gap-2 text-base">
             <span className="flex items-center gap-2">
-              <Icons.ListFilter className="h-4 w-4 text-red-700 dark:text-red-500" />
+              <Icons.ListFilter className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
               Prefix lists
             </span>
             <Button
@@ -362,7 +362,7 @@ export function PolicyObjectsTab() {
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center justify-between gap-2 text-base">
             <span className="flex items-center gap-2">
-              <Icons.GitBranch className="h-4 w-4 text-red-700 dark:text-red-500" />
+              <Icons.GitBranch className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
               Route maps
             </span>
             <Button
@@ -443,7 +443,7 @@ export function PolicyObjectsTab() {
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center justify-between gap-2 text-base">
             <span className="flex items-center gap-2">
-              <Icons.Tags className="h-4 w-4 text-red-700 dark:text-red-500" />
+              <Icons.Tags className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
               Community lists
             </span>
             <Button

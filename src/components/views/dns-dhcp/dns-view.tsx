@@ -553,7 +553,7 @@ function PolicyEditor({
                   }
                   className={cn(
                     "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-xs font-medium capitalize transition-colors",
-                    on ? "border-red-600/40 bg-red-600/5 text-red-700 dark:text-red-500" : "border-zinc-200 text-zinc-600 dark:border-zinc-800 dark:text-zinc-300",
+                    on ? "border-zinc-500/30 bg-zinc-500/5 text-zinc-600 dark:text-zinc-300" : "border-zinc-200 text-zinc-600 dark:border-zinc-800 dark:text-zinc-300",
                   )}
                 >
                   {c}
@@ -998,7 +998,7 @@ function QueryLogTab() {
 
   return (
     <div className="space-y-3">
-      <Alert className="border-red-600/40 bg-red-600/10 text-red-800 dark:text-red-300">
+      <Alert className="border-zinc-500/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300">
         <Icons.Info className="h-4 w-4" />
         <AlertTitle>Derived view</AlertTitle>
         <AlertDescription>

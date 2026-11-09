@@ -329,7 +329,7 @@ export function BgpTab() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-8 gap-1 text-red-700 hover:bg-red-600/10 dark:text-red-500"
+                          className="h-8 gap-1 text-zinc-600 hover:bg-zinc-500/10 dark:text-zinc-300"
                           disabled={sessionMut.isPending || !n.enabled}
                           onClick={() => sessionMut.mutate({ id: n.id, name: n.name, action: "start" })}
                         >

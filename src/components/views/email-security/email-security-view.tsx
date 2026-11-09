@@ -97,7 +97,7 @@ function useEmailSecurityInvalidation(): void {
 // ── badge recipes ───────────────────────────────────────────────────────────
 
 const VERDICT_CLS: Record<EmailVerdict, string> = {
-  delivered: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  delivered: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   quarantined: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   rejected: "border-transparent bg-rose-600 text-white",
 };
@@ -124,7 +124,7 @@ function ModeBadge({ mode }: { mode: GatewayMode }) {
       variant="outline"
       className={
         mode === "proxy"
-          ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+          ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
           : "border-zinc-300 bg-zinc-100 font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
       }
     >
@@ -146,7 +146,7 @@ function TlsChip({ tlsMode }: { tlsMode: TlsMode }) {
 }
 
 const ACTION_CLS: Record<RoutingAction, string> = {
-  deliver: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  deliver: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   relay: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
   reject: "border-transparent bg-rose-600 text-white",
   quarantine: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
@@ -172,7 +172,7 @@ function ActionBadge({ action }: { action: RoutingAction }) {
 function AuthChip({ label, result }: { label: string; result: AuthResult | null }) {
   const cls =
     result === "pass"
-      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+      ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
       : result === "fail"
         ? "border-rose-600/60 bg-rose-600/5 text-rose-500"
         : result === "softfail"
@@ -198,7 +198,7 @@ const HARD_REASONS = new Set(["malware", "phishing", "blocked_extension", "size"
 
 function ReasonChip({ reason }: { reason: string }) {
   const cls = reason.startsWith("released:")
-    ? "border-red-600/40 bg-red-600/10 font-mono text-[10px] text-red-700 dark:text-red-500"
+    ? "border-zinc-500/30 bg-zinc-500/10 font-mono text-[10px] text-zinc-600 dark:text-zinc-300"
     : HARD_REASONS.has(reason)
       ? "border-rose-600/40 bg-rose-600/5 font-mono text-[10px] text-rose-500"
       : "border-amber-500/40 bg-amber-500/5 font-mono text-[10px] text-amber-600 dark:text-amber-400";
@@ -240,14 +240,14 @@ function StatsStrip() {
       <StatCard
         label="Processed (24h)"
         value={processed ?? "—"}
-        tone="text-red-700 dark:text-red-500"
+        tone="text-zinc-500 dark:text-zinc-400"
         icon={<Icons.Mail className="h-4 w-4" />}
         sub={<p className="text-[11px] text-zinc-400">all verdicts, last 24 hours</p>}
       />
       <StatCard
         label="Delivered (24h)"
         value={stats?.delivered24h ?? "—"}
-        tone="text-red-700 dark:text-red-500"
+        tone="text-zinc-500 dark:text-zinc-400"
         icon={<Icons.MailCheck className="h-4 w-4" />}
       />
       <StatCard
@@ -475,7 +475,7 @@ function GatewaysCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Server className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Server className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Gateways
           <span className="text-xs font-normal text-zinc-400">
             {gateways.length} listener{gateways.length === 1 ? "" : "s"}
@@ -557,7 +557,7 @@ function GatewaysCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600"
                           aria-label={`Edit ${g.name}`}
                           onClick={() => setEditing(g)}
                         >
@@ -851,7 +851,7 @@ function PolicyCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Shield className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Shield className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Content policy
           {policy && <span className="text-xs font-normal text-zinc-400">{policy.name}</span>}
         </CardTitle>
@@ -1038,7 +1038,7 @@ function RoutingRulesCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Route className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Route className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Routing rules
           <span className="text-xs font-normal text-zinc-400">
             {rules.length} rule{rules.length === 1 ? "" : "s"}
@@ -1106,7 +1106,7 @@ function RoutingRulesCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600"
                           aria-label={`Edit ${rule.name}`}
                           onClick={() => setEditing(rule)}
                         >
@@ -1199,13 +1199,13 @@ function TestMessageCard() {
         ? "bg-amber-500"
         : result.spamScore > threshold
           ? "bg-amber-500"
-          : "bg-red-600";
+          : "bg-zinc-500";
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.FlaskConical className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.FlaskConical className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Test message
           <span className="text-xs font-normal text-zinc-400">simulated Rspamd + ClamAV scan</span>
         </CardTitle>
@@ -1356,7 +1356,7 @@ function MailLogCard() {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.ScrollText className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.ScrollText className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Mail log
         </CardTitle>
         <div className="flex items-center gap-2">

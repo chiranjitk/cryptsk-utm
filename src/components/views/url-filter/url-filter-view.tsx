@@ -70,7 +70,7 @@ function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
 // ── badge recipes (UI_DESIGN_SYSTEM: allow=blue soft, block=rose, warn=amber) ──
 
 const DECISION_CLS: Record<UrlLogAction, string> = {
-  allowed: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  allowed: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   blocked: "border-transparent bg-rose-600 text-white",
   warned: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
 };
@@ -98,7 +98,7 @@ function DefaultActionBadge({ action }: { action: PolicyAction }) {
       className={
         action === "block"
           ? "gap-1 border-transparent bg-rose-600 font-medium text-white"
-          : "gap-1 border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+          : "gap-1 border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
       }
     >
       {action === "block" ? <Icons.Ban className="h-3 w-3" /> : <Icons.ShieldCheck className="h-3 w-3" />}
@@ -114,7 +114,7 @@ function ListTypeBadge({ type }: { type: ListType }) {
       className={
         type === "block"
           ? "border-rose-600/60 bg-transparent text-rose-500"
-          : "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+          : "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
       }
     >
       {type}
@@ -683,7 +683,7 @@ function TestUrlCard({ policy }: { policy: UrlPolicyDTO }) {
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Globe className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Globe className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Test URL
           <span className="text-xs font-normal text-zinc-400">simulated decision for “{policy.name}”</span>
         </CardTitle>
@@ -762,7 +762,7 @@ function StatsStrip() {
       <StatCard
         label="Allowed (24h)"
         value={stats?.allowed24h ?? "—"}
-        tone="text-red-700 dark:text-red-500"
+        tone="text-zinc-500 dark:text-zinc-400"
         icon={<Icons.ShieldCheck className="h-4 w-4" />}
       />
       <StatCard
@@ -820,7 +820,7 @@ function LogsCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.ScrollText className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.ScrollText className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Recent URL filter activity
         </CardTitle>
         <div className="flex items-center gap-2">
@@ -938,7 +938,7 @@ function PolicyCard(props: {
       aria-pressed={props.selected}
       className={`w-full cursor-pointer rounded-xl border p-4 text-left transition-colors ${
         props.selected
-          ? "border-red-600/50 bg-red-600/5 ring-1 ring-red-600/30"
+          ? "border-zinc-500/50 bg-zinc-500/5 ring-1 ring-zinc-500/30"
           : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50"
       }`}
     >
@@ -953,7 +953,7 @@ function PolicyCard(props: {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-zinc-400 hover:text-red-700"
+            className="h-7 w-7 text-zinc-400 hover:text-zinc-600"
             aria-label={`Edit ${policy.name}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -987,12 +987,12 @@ function PolicyCard(props: {
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {policy.safeSearchEnforce && (
-          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
+          <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-300">
             safe-search
           </Badge>
         )}
         {policy.httpsInspection && (
-          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
+          <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-300">
             https-inspect
           </Badge>
         )}
@@ -1112,7 +1112,7 @@ export function UrlFilterView() {
               <Card>
                 <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
                   <CardTitle className="flex items-center gap-2 text-sm">
-                    <Icons.Shield className="h-4 w-4 text-red-700 dark:text-red-500" />
+                    <Icons.Shield className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
                     {selected.name}
                     {!selected.enabled && (
                       <Badge variant="outline" className="border-zinc-300 text-[10px] uppercase text-zinc-400 dark:border-zinc-700">

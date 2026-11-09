@@ -179,7 +179,7 @@ export function GroupsPanel() {
                       <span className="font-mono text-xs tabular-nums">{g.maxSessionsPerUser ?? "—"}</span>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500">
+                      <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300">
                         <Icons.User className="mr-1 h-3 w-3" />
                         {g.memberUsernames.length}
                       </Badge>

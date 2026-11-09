@@ -102,7 +102,7 @@ export function SourceBadge({ source }: { source: string }) {
       className={cn(
         "gap-1 font-medium",
         isAuto
-          ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+          ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
           : "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
       )}
     >
@@ -114,7 +114,7 @@ export function SourceBadge({ source }: { source: string }) {
 
 export function CategoryChip({ category }: { category: string }) {
   return (
-    <Badge variant="outline" className="border-red-600/30 bg-red-600/5 text-xs font-normal capitalize text-zinc-600 dark:text-zinc-300">
+    <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/5 text-xs font-normal capitalize text-zinc-600 dark:text-zinc-300">
       {category}
     </Badge>
   );
@@ -128,7 +128,7 @@ export function Meter({ value, label, tone = "blue" }: { value: number; label: s
     <div className="flex items-center gap-2" title={`${label}: ${clamped}%`}>
       <div className="h-1.5 w-16 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
         <div
-          className={cn("h-full rounded-full transition-[width]", tone === "blue" ? "bg-red-700" : "bg-red-500")}
+          className={cn("h-full rounded-full transition-[width]", tone === "blue" ? "bg-zinc-500" : "bg-red-500")}
           style={{ width: `${clamped}%` }}
         />
       </div>

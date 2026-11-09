@@ -32,7 +32,7 @@ export function useQosConfigInvalidation(): void {
 // ── badges ──────────────────────────────────────────────────────────────────
 
 const TEMPLATE_CLS: Record<QosTemplateName, string> = {
-  voip: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  voip: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   video: "border-teal-500/40 bg-teal-500/10 text-teal-600 dark:text-teal-400",
   gaming: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   bulk: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
@@ -59,7 +59,7 @@ export function TemplateBadge({ template }: { template: string | null }) {
 export function PriorityBadge({ priority }: { priority: number }) {
   const cls =
     priority <= 1
-      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+      ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
       : priority >= 6
         ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
         : "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
@@ -71,7 +71,7 @@ export function PriorityBadge({ priority }: { priority: number }) {
 }
 
 const DSCP_CLS: Record<string, string> = {
-  blue: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  blue: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   teal: "border-teal-500/40 bg-teal-500/10 text-teal-600 dark:text-teal-400",
   amber: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   zinc: "border-zinc-300 bg-zinc-50 px-1.5 py-0 font-mono text-[10px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300",
@@ -133,7 +133,7 @@ export function MatcherChips({
   return (
     <span className="flex flex-wrap items-center gap-1">
       {apps.map((a) => (
-        <Badge key={`app-${a}`} variant="outline" className="border-red-600/40 bg-red-600/10 px-1.5 py-0 text-[10px] text-red-700 dark:text-red-500">
+        <Badge key={`app-${a}`} variant="outline" className="border-zinc-500/30 bg-zinc-500/10 px-1.5 py-0 text-[10px] text-zinc-600 dark:text-zinc-300">
           {a}
         </Badge>
       ))}

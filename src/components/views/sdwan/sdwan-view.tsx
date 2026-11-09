@@ -86,7 +86,7 @@ function TopologyBadge({ topology }: { topology: Topology }) {
       variant="outline"
       className={
         topology === "hub_spoke"
-          ? "gap-1 border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+          ? "gap-1 border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
           : "gap-1 border-amber-500/40 bg-amber-500/10 font-medium text-amber-600 dark:text-amber-400"
       }
     >
@@ -107,7 +107,7 @@ function EncryptionChip({ encryption }: { encryption: string }) {
 
 function RoleBadge({ role }: { role: SiteRole }) {
   return role === "hub" ? (
-    <Badge className="gap-1 border-transparent bg-red-700 font-medium text-white">
+    <Badge className="gap-1 border-transparent bg-zinc-600 font-medium text-white">
       <Icons.Server className="h-3 w-3" /> hub
     </Badge>
   ) : (
@@ -120,7 +120,7 @@ function RoleBadge({ role }: { role: SiteRole }) {
 function LabelChip({ label }: { label: PathLabel }) {
   const cls =
     label === "mpls"
-      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+      ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
       : label === "lte"
         ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
         : "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
@@ -144,7 +144,7 @@ function StateBadge({ state }: { state: PathState }) {
       variant="outline"
       className={
         state === "up"
-          ? "gap-1 border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+          ? "gap-1 border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
           : "gap-1 border-amber-500/40 bg-amber-500/10 font-medium text-amber-600 dark:text-amber-400"
       }
     >
@@ -165,7 +165,7 @@ function PreferredPathBadge({ policy }: { policy: PolicyDTO }) {
           : Icons.ArrowRightLeft;
   const Icon = icon;
   return (
-    <Badge variant="outline" className="gap-1 border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500">
+    <Badge variant="outline" className="gap-1 border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300">
       <Icon className="h-3 w-3" />
       {policy.preferredPath}
       {policy.preferredPath === "fixed" && policy.fixedWanInterface ? (
@@ -215,7 +215,7 @@ function MiniMeter(props: { label: string; value: number; max: number; unit: str
         </span>
       </div>
       <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-        <div className="h-full rounded-full bg-red-700" style={{ width: `${pct}%` }} />
+        <div className="h-full rounded-full bg-zinc-500" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -241,7 +241,7 @@ function StatCard(props: { label: string; value: number | string; icon: React.Re
 function StatePill(props: { state: PathState; count: number }) {
   const cls =
     props.state === "up"
-      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+      ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
       : props.state === "degraded"
         ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
         : "border-rose-500/40 bg-rose-500/10 text-rose-500";
@@ -262,19 +262,19 @@ function StatsStrip() {
       <StatCard
         label="Overlays"
         value={stats?.overlays ?? "—"}
-        tone="text-red-700 dark:text-red-500"
+        tone="text-zinc-500 dark:text-zinc-400"
         icon={<Icons.Network className="h-4 w-4" />}
       />
       <StatCard
         label="Sites"
         value={stats?.sites ?? "—"}
-        tone="text-red-700 dark:text-red-500"
+        tone="text-zinc-500 dark:text-zinc-400"
         icon={<Icons.Building2 className="h-4 w-4" />}
       />
       <StatCard
         label="WAN paths"
         value={stats ? totalPaths : "—"}
-        tone="text-red-700 dark:text-red-500"
+        tone="text-zinc-500 dark:text-zinc-400"
         icon={<Icons.Route className="h-4 w-4" />}
         sub={
           stats ? (
@@ -289,7 +289,7 @@ function StatsStrip() {
       <StatCard
         label="Average latency"
         value={stats ? `${stats.avgLatencyMs.toFixed(1)} ms` : "—"}
-        tone="text-red-700 dark:text-red-500"
+        tone="text-zinc-500 dark:text-zinc-400"
         icon={<Icons.Gauge className="h-4 w-4" />}
         sub={
           stats?.worstPath ? (
@@ -995,7 +995,7 @@ function OverlayCard(props: {
       aria-pressed={props.selected}
       className={`w-full cursor-pointer rounded-xl border p-4 text-left transition-colors ${
         props.selected
-          ? "border-red-600/50 bg-red-600/5 ring-1 ring-red-600/30"
+          ? "border-zinc-500/50 bg-zinc-500/5 ring-1 ring-zinc-500/30"
           : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50"
       }`}
     >
@@ -1011,7 +1011,7 @@ function OverlayCard(props: {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-zinc-400 hover:text-red-700"
+            className="h-7 w-7 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
             aria-label={`Edit ${overlay.name}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -1075,7 +1075,7 @@ function SitesCard(props: {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Building2 className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Building2 className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Sites
         </CardTitle>
         <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
@@ -1145,7 +1145,7 @@ function SitesCard(props: {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
                           aria-label={`Edit ${site.name}`}
                           onClick={() => props.onEdit(site)}
                         >
@@ -1198,7 +1198,7 @@ function PathsCard(props: {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Route className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Route className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           WAN paths
         </CardTitle>
         <span className="text-[11px] text-zinc-400">meters relative to the overlay SLA</span>
@@ -1267,7 +1267,7 @@ function PathsCard(props: {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                              className="h-7 w-7 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
                               aria-label={`Edit ${path.wanInterface} on ${path.siteName}`}
                               onClick={() => props.onEdit(path)}
                             >
@@ -1320,7 +1320,7 @@ function PoliciesCard(props: {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.GitBranch className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.GitBranch className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Path-selection policies
         </CardTitle>
         <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
@@ -1393,7 +1393,7 @@ function PoliciesCard(props: {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
                           aria-label={`Edit ${policy.name}`}
                           onClick={() => props.onEdit(policy)}
                         >
@@ -1435,7 +1435,7 @@ function SlaProfilesCard(props: {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Target className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Target className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           SLA profiles
         </CardTitle>
         <Button size="sm" variant="outline" className="h-8" onClick={props.onAdd}>
@@ -1488,7 +1488,7 @@ function SlaProfilesCard(props: {
                         variant="outline"
                         className={
                           profile.actionOnBreach === "switch"
-                            ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+                            ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
                             : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
                         }
                       >
@@ -1503,7 +1503,7 @@ function SlaProfilesCard(props: {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
                           aria-label={`Edit ${profile.name}`}
                           onClick={() => props.onEdit(profile)}
                         >
@@ -1735,7 +1735,7 @@ export function SdwanView() {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Icons.Network className="h-4 w-4 text-red-700 dark:text-red-500" />
+              <Icons.Network className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
               <h2 className="text-sm font-semibold">{selected.name}</h2>
               <TopologyBadge topology={selected.topology} />
               <EncryptionChip encryption={selected.encryption} />

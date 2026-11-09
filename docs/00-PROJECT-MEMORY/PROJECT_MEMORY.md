@@ -648,6 +648,32 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-09 — Rev 2: red discipline (owner-rejected the all-red look) + dashboard polish
+
+- Owner feedback on rev 1: brand is white/red but "I did not say make everything red" — the
+  blanket blue→red sweep made the app read as one giant alarm (all-red charts, all-red badges).
+- **New hard rule (UI_DESIGN_SYSTEM §2, Hard rule 2): red is for brand surfaces (primary
+  buttons, active nav, focus ring, logo, links) + danger semantics ONLY.** Informational and
+  decorative accents (header icons, tinted chips, info badges, count pills, data meters,
+  upload/secondary chart series) are neutral zinc. Emerald still health-only; rose still
+  destructive/critical; amber/orange warnings.
+- **Charts** (`charts/palette.tsx`): throughput rx/download = brand red-700 `#b91c1c`,
+  tx/upload = zinc-500 `#71717a` (was BOTH red); donut order red → amber → zinc → rose →
+  zinc-400 → orange → slate; PALETTE.sky/violet are now neutrals.
+- **Sweep**: ~310 red→zinc transform sites across ~55 view/shell files (3 parallel agents):
+  decorative `text-red-700` icons → `text-zinc-500`, tinted chips → zinc-500/10 family, info
+  alerts → zinc, data-meter fills → `bg-zinc-500`, hover tints → zinc, segmented active states
+  → zinc-700. KEPT red: all solid `bg-red-700 text-white` primaries (~100+), firewall
+  deny/drop, IPS/WAF/email block+severity semantics, quarantine/revoked/expired states,
+  stopped-service dots, brand boot animation + sidebar active + login button.
+- **Dashboard v2 polish**: gauge icon chips zinc; health bars emerald(<65)/amber/rose(>85)
+  (was red at healthy); KPI chip icons zinc; "0 alerts" badge neutral zinc; talker traffic
+  bars zinc; quick-action icons zinc; ↓RX stays brand red, ↑TX zinc.
+- fw rule-action matrix updated: `allow` = zinc soft (was red soft — conflicted with deny=rose).
+- Verified in browser (gateway :81): dashboard light+dark, firewall rules, system settings —
+  red only where it means something; zero console errors; lint clean (no new issues).
+- Red usage after sweep: 1,359 → 444 hits (remaining = primaries + danger semantics).
+
 ### 2026-11-09 — Logo v3 (hexagon ring-keyhole) + informative dashboard v2
 
 - Owner direction: "make the dashboard page more informative, change the logo, push to GitHub".

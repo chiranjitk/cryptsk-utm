@@ -213,7 +213,7 @@ function SubnetsTab({ goToReservations }: { goToReservations: () => void }) {
                   <button
                     type="button"
                     onClick={goToReservations}
-                    className="text-[11px] text-zinc-400 underline-offset-2 hover:text-red-700 hover:underline dark:hover:text-red-500"
+                    className="text-[11px] text-zinc-400 underline-offset-2 hover:text-zinc-600 hover:underline dark:hover:text-zinc-300"
                   >
                     {s.reservationCount} reservation{s.reservationCount === 1 ? "" : "s"}
                   </button>
@@ -742,7 +742,7 @@ function LeasesTab() {
               className={cn(
                 "rounded-full border px-3 py-1 text-[11px] font-medium transition-colors",
                 state === c.key
-                  ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+                  ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
                   : "border-zinc-200 text-zinc-500 hover:text-zinc-700 dark:border-zinc-800 dark:text-zinc-400",
               )}
             >
@@ -905,7 +905,7 @@ function RelayForm({
   return (
     <Card>
       <CardContent className="space-y-5 pt-6">
-        <Alert className="border-red-600/40 bg-red-600/10 text-red-800 dark:text-red-300">
+        <Alert className="border-zinc-500/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300">
           <Icons.Info className="h-4 w-4" />
           <AlertTitle>DHCP relay (ip-helper)</AlertTitle>
           <AlertDescription>
@@ -934,13 +934,13 @@ function RelayForm({
                       key={i.id}
                       className={cn(
                         "flex cursor-pointer items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors",
-                        on ? "border-red-600/30 bg-red-600/5" : "border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/60",
+                        on ? "border-zinc-500/30 bg-zinc-500/5" : "border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/60",
                       )}
                     >
                       <span className="font-mono">{i.name}</span>
                       <span className="flex items-center gap-2 text-[10px] text-zinc-400">
                         {i.role}
-                        <input type="checkbox" checked={on} onChange={() => toggleIface(i.name)} aria-label={`Relay interface ${i.name}`} className="accent-red-700" />
+                        <input type="checkbox" checked={on} onChange={() => toggleIface(i.name)} aria-label={`Relay interface ${i.name}`} className="accent-zinc-600" />
                       </span>
                     </label>
                   );

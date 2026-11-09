@@ -107,7 +107,7 @@ function ObjectChips({ ids, map }: { ids: number[]; map: Map<number, ObjectInfo>
             className={cn(
               "max-w-36 gap-1 truncate font-normal",
               info?.isGroup
-                ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+                ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
                 : "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
             )}
           >
@@ -548,7 +548,7 @@ function PbrTab() {
 
   return (
     <div className="space-y-3">
-      <Alert className="border-red-600/40 bg-red-600/10 text-red-800 dark:text-red-300">
+      <Alert className="border-zinc-500/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300">
         <Icons.Info className="h-4 w-4" />
         <AlertTitle>Policy-based routing</AlertTitle>
         <AlertDescription>

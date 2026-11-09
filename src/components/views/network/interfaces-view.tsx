@@ -128,7 +128,7 @@ function ScrollWrap({ children }: { children: React.ReactNode }) {
 
 function InfoBanner(props: { title: string; children: React.ReactNode }) {
   return (
-    <Alert className="border-red-600/40 bg-red-600/10 text-red-800 dark:text-red-300">
+    <Alert className="border-zinc-500/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300">
       <Icons.Info className="h-4 w-4" />
       <AlertTitle>{props.title}</AlertTitle>
       <AlertDescription>{props.children}</AlertDescription>
@@ -354,14 +354,14 @@ export function InterfacesView() {
                           <TableCell className="tabular-nums">
                             {iface.mtu}
                             {iface.mssClamp != null ? (
-                              <span className="ml-1 text-[10px] font-medium text-red-700 dark:text-red-500">MSS</span>
+                              <span className="ml-1 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">MSS</span>
                             ) : null}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <div className="w-24 shrink-0 text-right tabular-nums">
                                 <span className="block text-xs text-red-700 dark:text-red-500">↓ {fmtKbps(liveRates.rxKbps)}</span>
-                                <span className="block text-xs text-red-600 dark:text-red-400">↑ {fmtKbps(liveRates.txKbps)}</span>
+                                <span className="block text-xs text-zinc-500 dark:text-zinc-400">↑ {fmtKbps(liveRates.txKbps)}</span>
                               </div>
                               <Sparkline points={liveSparks} />
                             </div>
@@ -876,7 +876,7 @@ function IfaceEditor(props: {
                   onChange={setMembers}
                   triggerLabel="Pick members"
                   placeholder="Filter interfaces…"
-                  icon={<Icons.Network className="h-4 w-4 text-red-700 dark:text-red-500" />}
+                  icon={<Icons.Network className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />}
                 />
               </div>
               <div className="flex flex-wrap items-center gap-4">
@@ -917,7 +917,7 @@ function IfaceEditor(props: {
                   onChange={setMembers}
                   triggerLabel="Pick members"
                   placeholder="Filter interfaces…"
-                  icon={<Icons.Link2 className="h-4 w-4 text-red-700 dark:text-red-500" />}
+                  icon={<Icons.Link2 className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />}
                 />
               </div>
               <div>
@@ -1171,7 +1171,7 @@ function IfaceStatsDialog(props: { iface: Iface | null; onOpenChange: (open: boo
       <DialogContent className="w-[calc(100vw-1rem)] max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-mono">
-            <Icons.Activity className="h-4 w-4 text-red-700 dark:text-red-500" />
+            <Icons.Activity className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             {props.iface?.name ?? "Interface"} — stats
           </DialogTitle>
           <DialogDescription>Per-interface counters from the engine — auto-refreshes every 5 s while open.</DialogDescription>
@@ -1196,7 +1196,7 @@ function IfaceStatsDialog(props: { iface: Iface | null; onOpenChange: (open: boo
               </span>
               <span className="ml-auto tabular-nums">
                 <span className="text-red-700 dark:text-red-500">↓ {fmtKbps(stats.rates.rxKbps)}</span>
-                <span className="ml-3 text-red-600 dark:text-red-400">↑ {fmtKbps(stats.rates.txKbps)}</span>
+                <span className="ml-3 text-zinc-500 dark:text-zinc-400">↑ {fmtKbps(stats.rates.txKbps)}</span>
               </span>
             </div>
 
@@ -1224,7 +1224,7 @@ function IfaceStatsDialog(props: { iface: Iface | null; onOpenChange: (open: boo
                   <span className="inline-block h-1.5 w-3 rounded-full bg-red-700" /> rx
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="inline-block h-1.5 w-3 rounded-full bg-red-500" /> tx
+                  <span className="inline-block h-1.5 w-3 rounded-full bg-zinc-500" /> tx
                 </span>
               </div>
             </div>
@@ -1456,7 +1456,7 @@ function MacTab({ ifaces }: { ifaces: Iface[] }) {
                       <TableCell className="font-mono text-xs">{r.iface}</TableCell>
                       <TableCell>
                         {r.type === "static" ? (
-                          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] font-medium text-red-700 dark:text-red-500">
+                          <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[10px] font-medium text-zinc-600 dark:text-zinc-300">
                             static
                           </Badge>
                         ) : (

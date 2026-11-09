@@ -342,7 +342,7 @@ export function RuleEditor(props: {
               <FieldLabel hint="Enter or comma to add">Tags</FieldLabel>
               <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
                 {form.tags.map((t) => (
-                  <Badge key={t} variant="outline" className="gap-1 border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500">
+                  <Badge key={t} variant="outline" className="gap-1 border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300">
                     {t}
                     <button type="button" aria-label={`Remove tag ${t}`} onClick={() => set("tags", form.tags.filter((x) => x !== t))}>
                       <Icons.X className="h-3 w-3" />
@@ -372,7 +372,7 @@ export function RuleEditor(props: {
                         key={t}
                         type="button"
                         onClick={() => addTag(t)}
-                        className="rounded-full border border-dashed border-zinc-300 px-2 py-0.5 text-[11px] text-zinc-500 hover:border-red-600/40 hover:text-red-700 dark:border-zinc-700 dark:hover:text-red-500"
+                        className="rounded-full border border-dashed border-zinc-300 px-2 py-0.5 text-[11px] text-zinc-500 hover:border-zinc-500/40 hover:text-zinc-600 dark:border-zinc-700 dark:hover:text-zinc-300"
                       >
                         + {t}
                       </button>
@@ -446,7 +446,7 @@ export function RuleEditor(props: {
                   onChange={(v) => set("applicationIds", v)}
                   placeholder="Search apps…"
                   triggerLabel="Pick applications"
-                  icon={<Icons.AppWindow className="h-4 w-4 text-red-700 dark:text-red-500" />}
+                  icon={<Icons.AppWindow className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />}
                 />
               </div>
               <div>
@@ -457,7 +457,7 @@ export function RuleEditor(props: {
                   onChange={(v) => set("userIds", v.map(Number))}
                   placeholder="Search users…"
                   triggerLabel="Pick users"
-                  icon={<Icons.UserRound className="h-4 w-4 text-red-700 dark:text-red-500" />}
+                  icon={<Icons.UserRound className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />}
                 />
               </div>
               <div>
@@ -511,7 +511,7 @@ export function RuleEditor(props: {
                   key={a}
                   className={cn(
                     "flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-2.5 text-sm",
-                    form.action === a && "border-red-600/50 bg-red-600/5",
+                    form.action === a && "border-zinc-500/50 bg-zinc-500/5",
                   )}
                 >
                   <RadioGroupItem value={a} className="sr-only" />
@@ -608,7 +608,7 @@ export function RuleEditor(props: {
               className={cn(
                 "space-y-2 rounded-lg border p-3",
                 conflicts.length === 0
-                  ? "border-red-600/30 bg-red-600/5"
+                  ? "border-zinc-500/30 bg-zinc-500/5"
                   : blocking
                     ? "border-rose-500/40 bg-rose-500/5"
                     : "border-amber-500/40 bg-amber-500/5",

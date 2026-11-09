@@ -79,7 +79,7 @@ function GaugeCard({ label, value, unit, pct, icon, tone }: { label: string; val
           </p>
           <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
             <div
-              className={cn("h-full rounded-full transition-all", pct > 85 ? "bg-rose-500" : pct > 65 ? "bg-amber-500" : "bg-red-600")}
+              className={cn("h-full rounded-full transition-all", pct > 85 ? "bg-rose-500" : pct > 65 ? "bg-amber-500" : "bg-emerald-500")}
               style={{ width: `${Math.min(100, Math.max(2, pct))}%` }}
             />
           </div>
@@ -92,7 +92,7 @@ function GaugeCard({ label, value, unit, pct, icon, tone }: { label: string; val
 function StatChip({ icon: Icon, label, value, valueTone }: { icon: Icons.LucideIcon; label: string; value: string; valueTone?: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white/70 px-2.5 py-1.5 text-xs dark:border-zinc-800 dark:bg-zinc-900/70">
-      <Icon className="h-3.5 w-3.5 text-red-700 dark:text-red-500" />
+      <Icon className="h-3.5 w-3.5 text-zinc-400" />
       <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
       <span className={cn("font-semibold tabular-nums text-zinc-800 dark:text-zinc-100", valueTone)}>{value}</span>
     </span>
@@ -285,10 +285,10 @@ export function DashboardView() {
 
       {/* ── health gauges ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <GaugeCard label="CPU" value={String(h.cpuPct)} unit="%" pct={h.cpuPct} icon={<Icons.Cpu className="h-5 w-5" />} tone="bg-red-600/10 text-red-700 dark:text-red-500" />
-        <GaugeCard label="Memory" value={String(h.memPct)} unit="%" pct={h.memPct} icon={<Icons.MemoryStick className="h-5 w-5" />} tone="bg-red-500/10 text-red-600 dark:text-red-400" />
+        <GaugeCard label="CPU" value={String(h.cpuPct)} unit="%" pct={h.cpuPct} icon={<Icons.Cpu className="h-5 w-5" />} tone="bg-zinc-500/10 text-zinc-600 dark:text-zinc-400" />
+        <GaugeCard label="Memory" value={String(h.memPct)} unit="%" pct={h.memPct} icon={<Icons.MemoryStick className="h-5 w-5" />} tone="bg-zinc-500/10 text-zinc-600 dark:text-zinc-400" />
         <GaugeCard label="Disk" value={String(h.diskPct)} unit="%" pct={h.diskPct} icon={<Icons.HardDrive className="h-5 w-5" />} tone="bg-zinc-500/10 text-zinc-600 dark:text-zinc-400" />
-        <GaugeCard label="Temperature" value={String(h.tempC)} unit="°C" pct={h.tempC} icon={<Icons.Thermometer className="h-5 w-5" />} tone="bg-amber-500/10 text-amber-600 dark:text-amber-400" />
+        <GaugeCard label="Temperature" value={String(h.tempC)} unit="°C" pct={h.tempC} icon={<Icons.Thermometer className="h-5 w-5" />} tone="bg-zinc-500/10 text-zinc-600 dark:text-zinc-400" />
       </div>
 
       {/* ── throughput + sessions/WAN ─────────────────────────────────── */}
@@ -298,7 +298,7 @@ export function DashboardView() {
             <CardTitle className="text-sm font-medium">Throughput (live)</CardTitle>
             <div className="flex items-center gap-3 text-xs">
               <span className="flex items-center gap-1.5 tabular-nums font-semibold text-red-700 dark:text-red-500">↓ {fmtSpeed(curRx)}</span>
-              <span className="flex items-center gap-1.5 tabular-nums font-semibold text-red-600/80 dark:text-red-400/80">↑ {fmtSpeed(curTx)}</span>
+              <span className="flex items-center gap-1.5 tabular-nums font-semibold text-zinc-500 dark:text-zinc-400">↑ {fmtSpeed(curTx)}</span>
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-0 md:p-6 md:pt-0">
@@ -380,9 +380,11 @@ export function DashboardView() {
                   {highAlerts} high
                 </Badge>
               )}
-              <Badge variant="outline" className="border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                {s.alerts24h.total} alerts
-              </Badge>
+              {s.alerts24h.total === 0 ? (
+                <Badge variant="outline" className="border-zinc-500/20 bg-zinc-500/10 text-zinc-500 dark:text-zinc-400">0 alerts</Badge>
+              ) : (
+                <Badge variant="outline" className="border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400">{s.alerts24h.total} alerts</Badge>
+              )}
             </div>
           </CardHeader>
           <CardContent className="max-h-72 space-y-2 overflow-y-auto p-4 pt-0 md:p-6 md:pt-0">
@@ -440,7 +442,7 @@ export function DashboardView() {
                     </div>
                     <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
                       <div
-                        className="h-full rounded-full bg-red-600/70 transition-all dark:bg-red-500/60"
+                        className="h-full rounded-full bg-zinc-400 transition-all dark:bg-zinc-500"
                         style={{ width: `${Math.max(2, (t.bytes / maxTalkerBytes) * 100)}%` }}
                       />
                     </div>
@@ -544,7 +546,7 @@ export function DashboardView() {
                     </div>
                   );
                 })}
-                <Button asChild variant="ghost" size="sm" className="h-8 w-full justify-center text-xs text-red-700 dark:text-red-500">
+                <Button asChild variant="ghost" size="sm" className="h-8 w-full justify-center text-xs text-red-700 hover:text-red-800 dark:text-red-500 dark:hover:text-red-400">
                   <a href="#/pki/certificates">View all certificates →</a>
                 </Button>
               </div>
@@ -560,7 +562,7 @@ export function DashboardView() {
             {quickActions.map((a) => (
               <Button key={a.hash} asChild variant="outline" className="h-auto justify-start gap-2 py-2.5">
                 <a href={a.hash}>
-                  <a.icon className="h-4 w-4 text-red-700 dark:text-red-500" />
+                  <a.icon className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
                   <span className="text-xs">{a.label}</span>
                 </a>
               </Button>

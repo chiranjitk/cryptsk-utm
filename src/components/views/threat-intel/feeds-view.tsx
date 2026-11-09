@@ -64,7 +64,7 @@ const PROVIDER_LABEL: Record<FeedProvider, string> = {
 function SyncStatusPill({ status, at }: { status: string; at: string | null }) {
   const cls =
     status === "ok"
-      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+      ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
       : status === "error"
         ? "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"
         : "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800";
@@ -253,14 +253,14 @@ function StatsStrip({ stats }: { stats: ThreatStats | undefined }) {
     { label: "Total IOCs", value: stats?.totalIocs ?? 0, icon: <Icons.Database className="h-4 w-4 text-red-700 dark:text-red-500" /> },
     { label: "Critical", value: stats?.bySeverity.critical ?? 0, icon: <Icons.Siren className="h-4 w-4 text-red-500" />, tone: "red" },
     { label: "Hits (24h)", value: stats?.hits24h ?? 0, icon: <Icons.Activity className="h-4 w-4 text-red-700 dark:text-red-500" /> },
-    { label: "Active feeds", value: stats?.activeFeeds ?? 0, icon: <Icons.Rss className="h-4 w-4 text-red-700 dark:text-red-500" /> },
+    { label: "Active feeds", value: stats?.activeFeeds ?? 0, icon: <Icons.Rss className="h-4 w-4 text-zinc-500 dark:text-zinc-400" /> },
   ];
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {items.map((it) => (
         <Card key={it.label} className="p-4">
           <CardContent className="flex items-center gap-3 p-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-600/10">{it.icon}</div>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-500/10">{it.icon}</div>
             <div className="min-w-0">
               <p className={cn("text-xl font-semibold tabular-nums", it.tone === "red" && (it.value ?? 0) > 0 ? "text-red-600 dark:text-red-400" : undefined)}>
                 {it.value.toLocaleString()}
@@ -377,7 +377,7 @@ export function FeedsView() {
                 <div className="min-w-0">
                   <CardTitle className="truncate text-sm font-medium">{feed.name}</CardTitle>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] font-semibold text-red-700 dark:text-red-500">
+                    <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[10px] font-semibold text-zinc-600 dark:text-zinc-300">
                       {PROVIDER_LABEL[feed.provider] ?? feed.provider}
                     </Badge>
                     <Badge variant="outline" className="border-zinc-300 bg-zinc-100 font-mono text-[10px] uppercase text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">

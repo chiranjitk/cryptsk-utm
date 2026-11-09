@@ -148,7 +148,7 @@ export function IdentitySessionsView() {
                   className={cn(
                     "rounded-full border px-2.5 py-1 text-xs transition-colors",
                     method === f.key
-                      ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+                      ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                       : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
                   )}
                 >

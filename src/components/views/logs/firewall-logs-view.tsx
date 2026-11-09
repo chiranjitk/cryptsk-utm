@@ -184,7 +184,7 @@ export function FirewallLogsView() {
           className="w-56 text-xs"
           aria-label="Until"
         />
-        <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500">
+        <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300">
           <Icons.Filter className="mr-0.5 h-3 w-3" />
           {activeCount} active
         </Badge>
@@ -208,8 +208,8 @@ export function FirewallLogsView() {
       )}
 
       {/* retention banner */}
-      <Alert className="border-red-600/20 bg-red-600/5">
-        <Icons.Database className="h-4 w-4 text-red-700 dark:text-red-500" />
+      <Alert className="border-zinc-500/20 bg-zinc-500/5">
+        <Icons.Database className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
         <AlertDescription className="text-xs text-zinc-600 dark:text-zinc-400">
           Rolling 50 000-row window — oldest flows are pruned by the retention job (DATA_LIFECYCLE §4). Exports cap at 10 000 rows.
         </AlertDescription>

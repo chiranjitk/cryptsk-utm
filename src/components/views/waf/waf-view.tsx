@@ -62,7 +62,7 @@ const SCROLLY =
 // ── badges ──────────────────────────────────────────────────────────────────
 
 const ACTION_BADGE: Record<WafAction, string> = {
-  pass: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  pass: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   log: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   block: "border-transparent bg-red-600 text-white",
 };
@@ -85,7 +85,7 @@ function ModeBadge({ mode }: { mode: string }) {
       className={cn(
         "text-[10px] font-semibold uppercase",
         waf
-          ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+          ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
           : "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
       )}
     >
@@ -501,7 +501,7 @@ function PolicyEditor(props: {
                     className={cn(
                       "h-9 min-w-9 rounded-md border px-3 text-xs font-medium transition-colors",
                       paranoiaLevel === lvl
-                        ? "border-red-700 bg-red-700 text-white"
+                        ? "border-zinc-700 bg-zinc-700 text-white"
                         : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800",
                     )}
                   >
@@ -747,7 +747,7 @@ function PolicyCard(props: {
           <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-medium">
             {p.name}
             {p.owaspCrsEnabled ? (
-              <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] font-semibold text-red-700 dark:text-red-500">
+              <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[10px] font-semibold text-zinc-600 dark:text-zinc-300">
                 CRS {p.crsVersion}
               </Badge>
             ) : (
@@ -780,7 +780,7 @@ function PolicyCard(props: {
                   className={cn(
                     "inline-flex h-7 min-w-7 items-center justify-center rounded-full border px-2 text-[11px] font-semibold",
                     lvl === p.paranoiaLevel
-                      ? "border-red-700 bg-red-700 text-white"
+                      ? "border-zinc-700 bg-zinc-700 text-white"
                       : "border-zinc-200 text-zinc-400 dark:border-zinc-800",
                   )}
                 >
@@ -813,7 +813,7 @@ function PolicyCard(props: {
             geo-block: {p.geoBlockCountries.length} countr{p.geoBlockCountries.length === 1 ? "y" : "ies"}
           </span>
           {p.apiProtection && (
-            <span className="inline-flex items-center gap-1 font-medium text-red-700 dark:text-red-500">
+            <span className="inline-flex items-center gap-1 font-medium text-zinc-500 dark:text-zinc-400">
               <Icons.Braces className="h-3.5 w-3.5" /> API protection
             </span>
           )}
@@ -955,7 +955,7 @@ function TestRequestCard({ policy }: { policy: PolicyDTO }) {
     <Card className="p-0">
       <CardHeader className="flex-row items-center justify-between space-y-0 p-4 pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <Icons.FlaskConical className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.FlaskConical className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Test request
           <Badge variant="outline" className="border-zinc-300 bg-zinc-100 text-[10px] font-normal text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800">
             simulated CRS
@@ -1042,7 +1042,7 @@ function TestRequestCard({ policy }: { policy: PolicyDTO }) {
             </div>
             <div className="relative mt-3 h-2 w-full rounded-full bg-zinc-100 dark:bg-zinc-800" role="img" aria-label={`Anomaly score ${result.anomalyScore} of threshold ${result.threshold}`}>
               <div
-                className={cn("h-2 rounded-full transition-all", score >= threshold ? "bg-red-600" : score > 0 ? "bg-amber-500" : "bg-red-700")}
+                className={cn("h-2 rounded-full transition-all", score >= threshold ? "bg-red-600" : score > 0 ? "bg-amber-500" : "bg-zinc-500")}
                 style={{ width: `${pct}%` }}
               />
               <div className="absolute top-[-3px] h-3.5 w-0.5 bg-zinc-500" style={{ left: `${thresholdPct}%` }} title={`in-threshold ${threshold}`} />
@@ -1073,7 +1073,7 @@ function TestRequestCard({ policy }: { policy: PolicyDTO }) {
               </div>
             ) : (
               <p className="mt-3 flex items-center gap-1.5 text-[11px] text-zinc-500">
-                <Icons.CheckCircle2 className="h-3.5 w-3.5 text-red-700 dark:text-red-500" /> No CRS rule matched.
+                <Icons.CheckCircle2 className="h-3.5 w-3.5 text-zinc-500 dark:text-zinc-400" /> No CRS rule matched.
               </p>
             )}
           </div>
@@ -1114,7 +1114,7 @@ function StatsStrip({ stats }: { stats: WafStats | undefined }) {
       tone: (stats?.blocked24h ?? 0) > 0 ? "red" : undefined,
     },
     { label: "Logged (24h)", value: stats?.logged24h ?? 0, icon: <Icons.Eye className="h-4 w-4 text-amber-500" /> },
-    { label: "Passed (24h)", value: stats?.passed24h ?? 0, icon: <Icons.ShieldCheck className="h-4 w-4 text-red-700 dark:text-red-500" /> },
+    { label: "Passed (24h)", value: stats?.passed24h ?? 0, icon: <Icons.ShieldCheck className="h-4 w-4 text-zinc-500 dark:text-zinc-400" /> },
     {
       label: top ? `Top rule ${top.ruleId} · ${top.count} hits` : "Top attacked rule",
       value: top?.count ?? 0,
@@ -1128,7 +1128,7 @@ function StatsStrip({ stats }: { stats: WafStats | undefined }) {
         {items.map((it) => (
           <Card key={it.label} className="p-4">
             <CardContent className="flex items-center gap-3 p-0">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-600/10">{it.icon}</div>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-500/10">{it.icon}</div>
               <div className="min-w-0">
                 <p className={cn("text-xl font-semibold tabular-nums", it.tone === "red" ? "text-red-600 dark:text-red-400" : undefined)}>
                   {it.value.toLocaleString()}
@@ -1279,7 +1279,7 @@ export function WafView() {
               }}
               className={cn(
                 "flex cursor-pointer flex-col p-4 transition-colors",
-                vhost?.id === v.id ? "border-red-700 ring-1 ring-red-700" : "hover:border-red-600/40",
+                vhost?.id === v.id ? "border-zinc-700 ring-1 ring-zinc-700" : "hover:border-zinc-500/40",
               )}
             >
               <CardHeader className="flex-row items-start justify-between space-y-0 p-0 pb-3">
@@ -1302,7 +1302,7 @@ export function WafView() {
                 <div className="flex flex-wrap items-center gap-1.5">
                   <ModeBadge mode={v.mode} />
                   {v.tls ? (
-                    <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
+                    <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-300">
                       <Icons.Lock className="mr-1 h-3 w-3" />
                       TLS{v.certName ? ` · ${v.certName}` : " · no cert"}
                     </Badge>
@@ -1316,7 +1316,7 @@ export function WafView() {
                     :{v.listenPort}
                   </Badge>
                   {v.policy ? (
-                    <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
+                    <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-300">
                       <Icons.Shield className="mr-1 h-3 w-3" />
                       {v.policy.name}
                     </Badge>
@@ -1375,7 +1375,7 @@ export function WafView() {
       <Card className="p-0">
         <CardHeader className="flex-row items-center justify-between space-y-0 p-4 pb-3">
           <CardTitle className="text-sm font-medium">
-            <Icons.ScrollText className="mr-1.5 inline h-4 w-4 text-red-700 dark:text-red-500" />
+            <Icons.ScrollText className="mr-1.5 inline h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             WAF log
             <span className="ml-2 text-[11px] font-normal text-zinc-400">last 24h feed</span>
           </CardTitle>

@@ -201,7 +201,7 @@ export function BackupsView() {
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <h2 className="flex items-center gap-2 text-base font-semibold">
-                <Icons.DatabaseBackup className="h-4.5 w-4.5 text-red-700 dark:text-red-500" />
+                <Icons.DatabaseBackup className="h-4.5 w-4.5 text-zinc-500 dark:text-zinc-400" />
                 Backup snapshots
               </h2>
               <p className="text-xs text-zinc-500">JSON files under db/backups — restore replays config rows through validation (audited)</p>

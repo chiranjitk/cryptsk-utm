@@ -159,7 +159,7 @@ export function ZonesView() {
                         </TooltipProvider>
                       )}
                     </CardTitle>
-                    <Badge variant="outline" className="mt-1 w-fit border-red-600/40 bg-red-600/10 text-[10px] font-semibold text-red-700 dark:text-red-500">
+                    <Badge variant="outline" className="mt-1 w-fit border-zinc-500/30 bg-zinc-500/10 text-[10px] font-semibold text-zinc-600 dark:text-zinc-300">
                       {z.type}
                     </Badge>
                   </div>

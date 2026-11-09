@@ -157,10 +157,10 @@ function UsersCard() {
     <Card className="gap-4">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.Users className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Users className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Users
           {usersQ.data ? (
-            <Badge variant="outline" className="border-red-600/40 bg-red-600/10 px-1.5 text-[10px] text-red-700 dark:text-red-500">
+            <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 px-1.5 text-[10px] text-zinc-600 dark:text-zinc-300">
               {usersQ.data.length}
             </Badge>
           ) : null}
@@ -227,7 +227,7 @@ function UsersCard() {
                       ) : (
                         <span className="flex flex-wrap gap-1">
                           {u.groups.map((g) => (
-                            <Badge key={g.id} variant="outline" className="border-red-600/40 bg-red-600/10 px-1.5 py-0 text-[10px] text-red-700 dark:text-red-500">
+                            <Badge key={g.id} variant="outline" className="border-zinc-500/30 bg-zinc-500/10 px-1.5 py-0 text-[10px] text-zinc-600 dark:text-zinc-300">
                               {g.name}
                             </Badge>
                           ))}
@@ -466,7 +466,7 @@ function UserEditorForm(props: { user: UserDTO | null; onClose: () => void; onEn
             <Table>
               <TableBody>
                 {ROLE_DESCRIPTIONS.map(([r, d]) => (
-                  <TableRow key={r} className={cn(r === role && "bg-red-600/5")}>
+                  <TableRow key={r} className={cn(r === role && "bg-zinc-500/10")}>
                     <TableCell className="w-32 py-1.5 align-top">
                       <code className="text-[11px] font-medium">{r}</code>
                     </TableCell>
@@ -608,7 +608,7 @@ function GroupsCard() {
     <Card className="gap-4">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.UsersRound className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.UsersRound className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           User Groups
         </CardTitle>
         <Button size="sm" variant="outline" className="h-9" onClick={() => setEditor({ open: true, group: null })}>

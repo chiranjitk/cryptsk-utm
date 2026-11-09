@@ -208,7 +208,7 @@ export function OspfTab() {
       <Card>
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Icons.Cog className="h-4 w-4 text-red-700 dark:text-red-500" />
+            <Icons.Cog className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             OSPF process
           </CardTitle>
           <CardDescription>Single process per appliance — router-id and SPF costs.</CardDescription>

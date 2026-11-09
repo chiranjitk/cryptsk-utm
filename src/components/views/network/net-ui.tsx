@@ -55,7 +55,7 @@ export function TypeBadge({ type, className }: { type: IfaceType; className?: st
 // ── role badge (config label — blue for WAN, zinc otherwise, amber DMZ) ─────
 
 const ROLE_CLS: Record<IfaceRole, string> = {
-  wan: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  wan: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   lan: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
   dmz: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   vpn: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
@@ -220,7 +220,7 @@ export function Sparkline({
       ) : (
         <>
           <polyline points={toPoints((p) => p.rxKbps)} fill="none" strokeWidth={1.5} vectorEffect="non-scaling-stroke" className="stroke-red-700 dark:stroke-red-500" />
-          <polyline points={toPoints((p) => p.txKbps)} fill="none" strokeWidth={1.5} vectorEffect="non-scaling-stroke" className="stroke-red-500" />
+          <polyline points={toPoints((p) => p.txKbps)} fill="none" strokeWidth={1.5} vectorEffect="non-scaling-stroke" className="stroke-zinc-500 dark:stroke-zinc-400" />
         </>
       )}
     </svg>

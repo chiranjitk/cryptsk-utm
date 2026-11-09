@@ -106,7 +106,7 @@ function useLoadErrorToast(query: { isError: boolean; error: unknown }, label: s
 // ── badge recipes (UI_DESIGN_SYSTEM: nptv6=blue, masquerade=amber, dnat=zinc) ──
 
 const NAT66_BADGE: Record<Nat66Type, string> = {
-  nptv6: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  nptv6: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   masquerade66: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   dnat66: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
 };
@@ -127,7 +127,7 @@ function FlagPill({ label, on }: { label: string; on: boolean }) {
       className={cn(
         "text-[10px]",
         on
-          ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+          ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
           : "border-zinc-300 text-zinc-400 dark:border-zinc-700",
       )}
     >
@@ -144,7 +144,7 @@ function StatCard(props: { label: string; value: React.ReactNode; icon: React.Re
       <CardContent className="p-4">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-medium text-zinc-500">{props.label}</span>
-          <span className="text-red-700 dark:text-red-500">{props.icon}</span>
+          <span className="text-zinc-500 dark:text-zinc-400">{props.icon}</span>
         </div>
         <div className="mt-1">{props.value}</div>
         {props.sub ? <div className="mt-1">{props.sub}</div> : null}
@@ -175,7 +175,7 @@ function StatusStrip() {
               className={cn(
                 "gap-1 font-medium",
                 status.enabled
-                  ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+                  ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
                   : "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800",
               )}
             >
@@ -201,7 +201,7 @@ function StatusStrip() {
         value={
           status ? (
             <span
-              className="block truncate font-mono text-lg font-semibold text-red-700 dark:text-red-500"
+              className="block truncate font-mono text-lg font-semibold text-zinc-700 dark:text-zinc-300"
               title={status.delegatedPrefix}
             >
               {status.delegatedPrefix}
@@ -217,7 +217,7 @@ function StatusStrip() {
         label="Router advertisements"
         value={
           status ? (
-            <Badge variant="outline" className="border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500">
+            <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300">
               <Icons.Rss className="h-3 w-3" />
               {raModeLabel(status.raMode)}
             </Badge>
@@ -246,7 +246,7 @@ function StatusStrip() {
                 onClick={() => {
                   window.location.hash = "#/firewall/rules";
                 }}
-                className="inline-flex items-center gap-1 rounded-full border border-red-600/40 bg-red-600/10 px-2.5 py-1 text-[11px] font-medium text-red-700 transition-colors hover:bg-red-600/20 dark:text-red-500"
+                className="inline-flex items-center gap-1 rounded-full border border-zinc-500/30 bg-zinc-500/10 px-2.5 py-1 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-500/20 dark:text-zinc-300"
               >
                 <Icons.ShieldCheck className="h-3 w-3" />
                 Open v6 rules
@@ -290,7 +290,7 @@ function PrefixDelegationCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.ArrowDownToLine className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.ArrowDownToLine className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Prefix delegation (IA_PD)
         </CardTitle>
         <Button
@@ -319,7 +319,7 @@ function PrefixDelegationCard() {
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="truncate rounded-lg border border-red-600/30 bg-red-600/5 px-4 py-3 font-mono text-2xl font-semibold text-red-700 dark:text-red-500" title={lease.prefix}>
+            <p className="truncate rounded-lg border border-zinc-500/30 bg-zinc-500/5 px-4 py-3 font-mono text-2xl font-semibold text-zinc-700 dark:text-zinc-300" title={lease.prefix}>
               {lease.prefix}
             </p>
             <div>
@@ -428,7 +428,7 @@ function SettingsCard(props: { ifaces: string[] }) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Settings2 className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Settings2 className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Dual-stack settings
         </CardTitle>
         {draft ? (
@@ -508,7 +508,7 @@ function SettingsCard(props: { ifaces: string[] }) {
                         className={cn(
                           "min-h-9 rounded-full border px-3 text-xs transition-colors",
                           active
-                            ? "border-red-600/40 bg-red-600/10 font-semibold text-red-700 dark:text-red-500"
+                            ? "border-zinc-500/30 bg-zinc-500/10 font-semibold text-zinc-600 dark:text-zinc-300"
                             : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
                         )}
                       >
@@ -568,7 +568,7 @@ function TranslationCell({ rule }: { rule: Nat66RuleDTO }) {
       <span className="flex flex-wrap items-center gap-1.5 font-mono text-xs" title={`${rule.sourcePrefix ?? ""} → ${rule.translatedPrefix ?? ""}`}>
         <span className="max-w-36 truncate">{rule.sourcePrefix}</span>
         <Icons.ArrowRight className="h-3 w-3 shrink-0 text-zinc-400" />
-        <span className="max-w-36 truncate text-red-700 dark:text-red-500">{rule.translatedPrefix}</span>
+        <span className="max-w-36 truncate text-zinc-600 dark:text-zinc-300">{rule.translatedPrefix}</span>
       </span>
     );
   }
@@ -577,7 +577,7 @@ function TranslationCell({ rule }: { rule: Nat66RuleDTO }) {
       <span className="flex items-center gap-1.5 font-mono text-xs">
         <span className="text-zinc-400">dnat</span>
         <Icons.ArrowRight className="h-3 w-3 shrink-0 text-zinc-400" />
-        <span className="text-red-700 dark:text-red-500">:{rule.destPort}</span>
+        <span className="text-zinc-600 dark:text-zinc-300">:{rule.destPort}</span>
       </span>
     );
   }
@@ -585,7 +585,7 @@ function TranslationCell({ rule }: { rule: Nat66RuleDTO }) {
     <span className="flex items-center gap-1.5 font-mono text-xs">
       <span className="text-zinc-400">all sources</span>
       <Icons.ArrowRight className="h-3 w-3 shrink-0 text-zinc-400" />
-      <span className="text-red-700 dark:text-red-500">iface address</span>
+      <span className="text-zinc-600 dark:text-zinc-300">iface address</span>
     </span>
   );
 }
@@ -807,7 +807,7 @@ function Nat66Card(props: {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.ArrowLeftRight className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.ArrowLeftRight className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           NAT66 rules
         </CardTitle>
         <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
@@ -877,7 +877,7 @@ function Nat66Card(props: {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
                           aria-label={`Simulate traffic for ${rule.name}`}
                           title="Simulate traffic (+1–5 hits)"
                           disabled={simulate.isPending && simulate.variables?.id === rule.id}
@@ -888,7 +888,7 @@ function Nat66Card(props: {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
                           aria-label={`Edit ${rule.name}`}
                           onClick={() => props.onEdit(rule)}
                         >
@@ -1039,7 +1039,7 @@ function Dhcpv6Editor(props: { server: Dhcpv6ServerDTO | null; ifaces: string[];
                       className={cn(
                         "min-h-9 flex-1 rounded-full border px-3 text-xs transition-colors",
                         active
-                          ? "border-red-600/40 bg-red-600/10 font-semibold text-red-700 dark:text-red-500"
+                          ? "border-zinc-500/30 bg-zinc-500/10 font-semibold text-zinc-600 dark:text-zinc-300"
                           : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
                       )}
                     >
@@ -1181,7 +1181,7 @@ function Dhcpv6Card(props: {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Server className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Server className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           DHCPv6 servers
         </CardTitle>
         <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
@@ -1260,7 +1260,7 @@ function Dhcpv6Card(props: {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
+                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
                           aria-label={`Edit DHCPv6 on ${server.interfaceName}`}
                           onClick={() => props.onEdit(server)}
                         >

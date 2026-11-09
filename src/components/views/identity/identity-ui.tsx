@@ -36,7 +36,7 @@ export function useIdentityConfigInvalidation(): void {
 
 const ROLE_STYLES: Record<string, string> = {
   super_admin: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
-  tenant_admin: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  tenant_admin: "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-400",
   security_admin: "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-400",
   network_admin: "border-teal-500/40 bg-teal-500/10 text-teal-600 dark:text-teal-400",
   soc_analyst: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",

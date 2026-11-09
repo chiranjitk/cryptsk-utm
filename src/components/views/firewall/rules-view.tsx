@@ -152,7 +152,7 @@ function IdChips({ ids, map }: { ids: number[]; map: NameMaps["addrById"] }) {
                   className={cn(
                     "max-w-36 cursor-default gap-1 truncate font-normal",
                     info?.isGroup
-                      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+                      ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
                       : "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
                   )}
                 >
@@ -195,7 +195,7 @@ function HitsCell({ rule }: { rule: FwRule }) {
         <button
           type="button"
           aria-label={`Hit counters for ${rule.name}`}
-          className="rounded-md px-1.5 py-0.5 text-right tabular-nums hover:bg-red-600/10"
+          className="rounded-md px-1.5 py-0.5 text-right tabular-nums hover:bg-zinc-500/10"
         >
           <span className="text-sm font-medium tabular-nums">{rule.hitCount.toLocaleString()}</span>
           <span className="block text-[10px] text-zinc-400">{fmtDateTime(rule.lastHitAt)}</span>
@@ -242,7 +242,7 @@ function SortableRow(props: {
     <TableRow
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(!r.enabled && "opacity-55", isDragging && "z-50 relative bg-red-600/5")}
+      className={cn(!r.enabled && "opacity-55", isDragging && "z-50 relative bg-zinc-500/5")}
     >
       <TableCell className="w-10 pl-2 pr-0">
         <button
@@ -470,7 +470,7 @@ function ImportDialog(props: { open: boolean; onOpenChange: (open: boolean) => v
             htmlFor="import-file"
             className="flex cursor-pointer flex-col items-center gap-1 text-xs text-zinc-500"
           >
-            <Icons.Upload className="h-4 w-4 text-red-700 dark:text-red-500" />
+            <Icons.Upload className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             {fileName ? (
               <span className="font-medium text-zinc-700 dark:text-zinc-300">{fileName}</span>
             ) : (
@@ -720,7 +720,7 @@ export function RulesView() {
             className={cn(
               "rounded-full border px-2.5 py-1 text-xs transition-colors",
               zoneFilter === null
-                ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+                ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                 : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800",
             )}
           >
@@ -735,7 +735,7 @@ export function RulesView() {
               className={cn(
                 "rounded-full border px-2.5 py-1 text-xs transition-colors",
                 zoneFilter === z.id
-                  ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+                  ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                   : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800",
               )}
             >
@@ -757,7 +757,7 @@ export function RulesView() {
                     className={cn(
                       "rounded-full border px-2.5 py-1 text-xs transition-colors",
                       active
-                        ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+                        ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                         : "border-dashed border-zinc-300 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800",
                     )}
                   >

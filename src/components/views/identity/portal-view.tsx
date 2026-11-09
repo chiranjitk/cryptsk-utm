@@ -133,7 +133,7 @@ function PortalForm({ initial }: { initial: CaptivePortalDTO }) {
     <Card className="gap-4">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.Wifi className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Wifi className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Portal Settings
         </CardTitle>
       </CardHeader>
@@ -286,7 +286,7 @@ function VouchersCard({ mode, voucherTtlHours }: { mode: string; voucherTtlHours
     <Card className="gap-4">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.Ticket className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Ticket className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Guest Vouchers
           <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 px-1.5 py-0 text-[10px] text-amber-600 dark:text-amber-400">
             volatile in sandbox
@@ -333,7 +333,7 @@ function VouchersCard({ mode, voucherTtlHours }: { mode: string; voucherTtlHours
                   className={cn(
                     "rounded-full border px-2.5 py-1 text-xs transition-colors",
                     stateFilter === f
-                      ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+                      ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                       : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
                   )}
                 >

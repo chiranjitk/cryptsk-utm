@@ -149,7 +149,7 @@ export function CertificatesView() {
               "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
               expiringOnly
                 ? "border-rose-600/40 bg-rose-600/10 text-rose-600 dark:text-rose-400"
-                : "border-red-600/40 bg-red-600/10 text-red-700 hover:bg-red-600/20 dark:text-red-500",
+                : "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 hover:bg-zinc-500/20 dark:text-zinc-300",
             )}
           >
             <Icons.CalendarClock className="h-3.5 w-3.5" />
@@ -462,12 +462,12 @@ function IssueCertDialog(props: { open: boolean; onOpenChange: (open: boolean) =
             {form.sans.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {form.sans.map((s) => (
-                  <Badge key={s} variant="outline" className="gap-1 border-red-600/40 bg-red-600/10 font-mono text-[10px] font-normal text-red-700 dark:text-red-500">
+                  <Badge key={s} variant="outline" className="gap-1 border-zinc-500/30 bg-zinc-500/10 font-mono text-[10px] font-normal text-zinc-600 dark:text-zinc-300">
                     {s}
                     <button
                       type="button"
                       aria-label={`Remove ${s}`}
-                      className="rounded-sm p-0.5 hover:bg-red-600/20"
+                      className="rounded-sm p-0.5 hover:bg-zinc-500/20"
                       onClick={() => set("sans", form.sans.filter((x) => x !== s))}
                     >
                       <Icons.X className="h-3 w-3" />
@@ -526,7 +526,7 @@ function IssueCertDialog(props: { open: boolean; onOpenChange: (open: boolean) =
           <div>
             <div className="mb-1.5 flex items-baseline justify-between gap-2">
               <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">Validity</span>
-              <span className="text-xs font-medium text-red-700 dark:text-red-500">{form.validityDays} days</span>
+              <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{form.validityDays} days</span>
             </div>
             <Slider
               value={[form.validityDays]}

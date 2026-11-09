@@ -72,7 +72,7 @@ const IPS_ACTIONS = ["alert", "drop", "reject", "bypass", "suppressed"] as const
 const SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
 
 const DATASET_BADGE: Record<SearchDataset, string> = {
-  firewall: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  firewall: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   ips: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
   audit: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
 };
@@ -262,8 +262,8 @@ export function SearchView() {
                   "flex min-h-9 items-center gap-1.5 px-3 text-xs font-medium transition-colors",
                   i > 0 && "border-l border-zinc-200 dark:border-zinc-800",
                   active
-                    ? "bg-red-700 text-white hover:bg-red-800"
-                    : "bg-white text-zinc-600 hover:bg-red-600/10 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-red-600/10",
+                    ? "bg-zinc-700 text-white hover:bg-zinc-800"
+                    : "bg-white text-zinc-600 hover:bg-zinc-500/10 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-500/10",
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -407,9 +407,9 @@ export function SearchView() {
         <Card className="hidden lg:block">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-1.5 text-sm">
-              <Icons.Bookmark className="h-4 w-4 text-red-700 dark:text-red-500" />
+              <Icons.Bookmark className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
               Saved searches
-              <Badge variant="outline" className="ml-auto border-red-600/40 bg-red-600/10 px-1.5 text-[10px] text-red-700 dark:text-red-500">
+              <Badge variant="outline" className="ml-auto border-zinc-500/30 bg-zinc-500/10 px-1.5 text-[10px] text-zinc-600 dark:text-zinc-300">
                 {savedRows.length}
               </Badge>
             </CardTitle>
@@ -430,7 +430,7 @@ export function SearchView() {
                 <div
                   key={s.id}
                   className={cn(
-                    "group flex items-center gap-1 rounded-md border px-2 py-1.5 transition-colors hover:bg-red-600/10",
+                    "group flex items-center gap-1 rounded-md border px-2 py-1.5 transition-colors hover:bg-zinc-500/10",
                     "border-zinc-200 dark:border-zinc-800",
                   )}
                 >

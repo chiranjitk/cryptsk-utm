@@ -384,7 +384,7 @@ export function ObjectsView() {
                     <TableRow key={g.id}>
                       <TableCell className="font-medium">{g.name}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="border-red-600/40 bg-red-600/10 font-normal text-red-700 tabular-nums dark:text-red-500">
+                        <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 font-normal text-zinc-600 tabular-nums dark:text-zinc-300">
                           {g.memberIds.length} members
                         </Badge>
                       </TableCell>
@@ -482,7 +482,7 @@ export function ObjectsView() {
                     <TableRow key={g.id}>
                       <TableCell className="font-medium">{g.name}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="border-red-600/40 bg-red-600/10 font-normal text-red-700 tabular-nums dark:text-red-500">
+                        <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 font-normal text-zinc-600 tabular-nums dark:text-zinc-300">
                           {g.memberIds.length} members
                         </Badge>
                       </TableCell>
@@ -1090,7 +1090,7 @@ function ScheduleDialog(props: { state: ScheduleDialogState; onOpenChange: (open
                         className={cn(
                           "rounded-md border px-2.5 py-1.5 text-xs transition-colors",
                           on
-                            ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+                            ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                             : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800",
                         )}
                       >

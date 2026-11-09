@@ -3,12 +3,15 @@
 > **TL;DR:** An enterprise, light-first, dense-but-breathable security-operations console
 > built from the existing shadcn/ui set in `src/components/ui`. Colors are LOCKED: neutrals
 > are **zinc**, brand primary is **dark red** (red-800 light / red-500 dark — white surfaces
-> + red chrome — ADR-019 rev, owner-directed 2026-11-09), and **emerald/teal are forbidden
-> as brand/UI-chrome colors** (buttons, active nav, badges, charts). Emerald remains
-> reserved ONLY for true health semantics (up/online/healthy dots + badges). All charts use
-> the ordered palette red → red-light → amber → rose → orange → zinc → slate. No custom
-> color names — only shadcn semantic variables and the small registry of shared components
-> defined in §5.
+> + red chrome — ADR-019 rev, owner-directed 2026-11-09). **Red discipline (ADR-019 rev 2,
+> owner directive after the rev-1 blanket sweep looked like an alarm): red is reserved for
+> (1) brand surfaces — primary buttons, active nav, focus ring, logo, links — and (2) danger
+> semantics — deny/drop/block/critical/destructive. Informational and decorative accents
+> (header icons, info chips, data meters, count badges, upload/secondary chart series) are
+> neutral zinc.** Emerald remains reserved ONLY for true health semantics (up/online/healthy
+> dots + badges); rose stays destructive/critical. Charts lead with neutral series and use
+> at most ONE brand-red series. No custom color names — only shadcn semantic variables and
+> the small registry of shared components defined in §5.
 
 Related: [PROJECT_MEMORY §8–9 (view map + tokens, LOCKED)](../00-PROJECT-MEMORY/PROJECT_MEMORY.md) ·
 [DECISIONS.md (ADRs)](../00-PROJECT-MEMORY/DECISIONS.md) ·
@@ -30,8 +33,9 @@ Related: [PROJECT_MEMORY §8–9 (view map + tokens, LOCKED)](../00-PROJECT-MEMO
   (`space-y-4`/`space-y-6`). Never cram two data tables side by side below `lg`.
 - **Icons:** lucide-react only (bundled with shadcn). One glyph size language: `size-4`
   inline, `size-5` in buttons/nav. Never mix other icon sets.
-- **Logo:** `BrandLogo` SVG mark (`components/shell/brand-logo.tsx`) — gradient shield +
-  keyhole, red-600 → red-900. Mirrored by `src/app/icon.svg` (favicon) and
+- **Logo:** `BrandLogo` SVG mark (`components/shell/brand-logo.tsx`) — rounded hexagon
+  badge + defense-in-depth inner hex outline + ring keyhole, gradient `#ef4444 → #c81e1e
+  (55%) → #7f1d1d` (v3, 2026-11-09). Mirrored by `src/app/icon.svg` (favicon) and
   `public/logo.svg`. No image assets.
 - **Voice:** short, factual labels ("Block", "Suppress 24h", "Force probe"). Sentence case
   everywhere; no exclamation marks; toasts state what happened, not enthusiasm.
@@ -40,9 +44,17 @@ Related: [PROJECT_MEMORY §8–9 (view map + tokens, LOCKED)](../00-PROJECT-MEMO
 
 **Hard rule: NO emerald/teal as brand or UI-chrome color — any `emerald-*`/`teal-*` class
 used for buttons, active nav, badges, charts, or decorative accents is a bug.** Emerald is
-reserved exclusively for health semantics (§2.4 up/healthy rows). Red is the brand color
-(ADR-019 rev, owner request 2026-11-09): white surfaces + red/dark-red chrome. Rose stays
-reserved for destructive/critical semantics; `info` uses neutral zinc so red never dilutes.
+reserved exclusively for health semantics (§2.4 up/healthy rows).
+
+**Hard rule 2 (rev 2 — red discipline): RED IS NOT A PAINT JOB.** Red (`red-*`) appears ONLY
+as (1) brand surfaces: solid primary buttons (`bg-red-700 text-white`), active sidebar item,
+focus ring, logo glyph, brand links; and (2) danger semantics: deny/drop/block/reject-adjacent
+danger labels, destructive confirmations, security warnings. Everything informational or
+decorative — section-header icons, tinted icon chips, info chips/badges, count pills, data
+meters/progress fills, upload/secondary chart series — is **zinc** (`bg-zinc-500/10
+text-zinc-600 dark:text-zinc-300` family). Rose stays reserved for destructive/critical;
+`info` uses neutral zinc. Rationale: in a security console red must keep its alarm value —
+the 2026-11-09 rev-1 blanket red sweep destroyed that and was owner-rejected.
 
 ### 2.1 Base palette roles
 
@@ -50,14 +62,14 @@ reserved for destructive/critical semantics; `info` uses neutral zinc so red nev
 |---|---|---|
 | Neutrals (bg, surfaces, borders, text) | `zinc-50…zinc-950` | light base white, sidebar white w/ faint warm tint (`--sidebar` token), dark cards `zinc-900` |
 | Brand primary | red (`red-800` light / `red-500` dark) | primary buttons, active nav, focus ring, logo glyph, links |
-| Accent (charts secondary, TX/upload) | red-500 (light series) | secondary series, TX labels/legend |
+| Accent (charts secondary, TX/upload) | zinc-500 (`#71717a`) | secondary series, TX labels/legend — NOT red (rev 2) |
 | Destructive | rose-600 | delete confirms, destructive buttons (`--destructive`) |
 
 ### 2.2 Semantic meanings → tokens (canonical mapping)
 
 | Meaning | Color | Typical surface |
 |---|---|---|
-| Allow rule, success toast, permitted | red-700 | soft badge, shield glyph, chart series 1 |
+| Allow rule, success toast, permitted | zinc soft (neutral-permit) | soft badge — calm permit; red is danger-only (rev 2) |
 | UP/online/healthy state (true health only) | emerald-600 | soft badge, green dot — the ONLY allowed emerald usage |
 | Degraded / warning / "needs attention" | amber-500 | soft badge, gauge >80% |
 | Secondary warning (distinct from amber when both shown) | orange-500 | reject action, medium severity |
@@ -69,7 +81,7 @@ reserved for destructive/critical semantics; `info` uses neutral zinc so red nev
 
 | `firewall_rules.action` | Variant | Class recipe | Icon |
 |---|---|---|---|
-| `allow` | red soft | `border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500` | `ShieldCheck` |
+| `allow` | zinc soft | `border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300` | `ShieldCheck` |
 | `deny` | rose solid | `border-transparent bg-rose-600 text-white` | `Ban` |
 | `drop` | rose outline | `border-rose-600/60 bg-transparent text-rose-500` | `CircleX` |
 | `reject` | orange soft | `border-orange-500/40 bg-orange-500/10 text-orange-500` | `CircleMinus` |
@@ -106,17 +118,18 @@ Defined once as CSS variables in `globals.css` (`--chart-1`…`--chart-7`), cons
 
 | Slot | Color | Hex (light) |
 |---|---|---|
-| `--chart-1` | red-700 | `#b91c1c` |
-| `--chart-2` | red-500 | `#ef4444` |
+| `--chart-1` | red-700 (the ONLY brand-red series) | `#b91c1c` |
+| `--chart-2` | zinc-500 | `#71717a` |
 | `--chart-3` | amber-500 | `#f59e0b` |
-| `--chart-4` | red-800 | `#991b1b` |
+| `--chart-4` | rose-500 | `#f43f5e` |
 | `--chart-5` | orange-500 | `#f97316` |
-| `--chart-6` | zinc-500 | `#71717a` |
+| `--chart-6` | zinc-400 | `#a1a1aa` |
 | `--chart-7` | slate-500 | `#64748b` |
 
-Series pick slots strictly in order (1st series = red, 2nd = red-light, …). Named series
-keep a fixed slot everywhere (throughput rx = red-700, tx = red-500) for cross-view muscle
-memory. The concrete implementation lives in `src/components/charts/palette.tsx`
+Series pick slots strictly in order (1st series = brand red, 2nd = zinc, …). Named series
+keep a fixed slot everywhere (**throughput rx/download = red-700, tx/upload = zinc-500** —
+rev 2: the second series is neutral so the chart never reads as an alarm) for cross-view
+muscle memory. The concrete implementation lives in `src/components/charts/palette.tsx`
 (`PALETTE` — mirrors this table; dark mode uses the `.dark` `--chart-*` variables).
 
 ## 3. Theme Tokens (Tailwind 4 + shadcn variables)

@@ -338,7 +338,7 @@ function PolicyCard({
     <Card
       className={cn(
         "cursor-pointer transition-colors",
-        active ? "border-red-600/40 bg-red-600/[0.04] ring-1 ring-red-600/30" : "hover:border-zinc-300 dark:hover:border-zinc-700",
+        active ? "border-zinc-500/40 bg-zinc-500/[0.04] ring-1 ring-zinc-500/30" : "hover:border-zinc-300 dark:hover:border-zinc-700",
         !policy.enabled && "opacity-70",
       )}
       onClick={onSelect}
@@ -358,7 +358,7 @@ function PolicyCard({
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 px-1.5 py-0 font-mono text-[10px] text-red-700 dark:text-red-500">
+          <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 px-1.5 py-0 font-mono text-[10px] text-zinc-600 dark:text-zinc-300">
             {humanizeKbps(policy.bandwidthKbps)}
           </Badge>
           {policy.ifaceName ? (
@@ -566,7 +566,7 @@ function EffectPanel({ policy, rules }: { policy: QosPolicyDTO; rules: QosRuleDT
     <Card>
       <CardContent className="space-y-3 pt-5">
         <div className="flex items-center gap-2">
-          <Icons.Terminal className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Terminal className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           <p className="text-sm font-medium">Effect — what tc does with this</p>
         </div>
         <ol className="space-y-1.5 font-mono text-[11px] text-zinc-600 dark:text-zinc-300">
@@ -656,7 +656,7 @@ function UtilizationSparkline({ policy, ifaces }: { policy: QosPolicyDTO; ifaces
       <CardContent className="space-y-2 pt-5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Icons.Activity className="h-4 w-4 text-red-700 dark:text-red-500" />
+            <Icons.Activity className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             <p className="text-sm font-medium">Utilization — egress tx</p>
           </div>
           <p className="text-[11px] text-zinc-400">
@@ -1124,7 +1124,7 @@ function RuleDialog({
                   onChange={(next) => set("matchApps", next)}
                   placeholder="Filter apps…"
                   triggerLabel="Apps"
-                  icon={<Icons.AppWindow className="h-4 w-4 text-red-700 dark:text-red-500" />}
+                  icon={<Icons.AppWindow className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />}
                 />
                 {err("matchApps") && <p className="text-[11px] text-rose-500">{err("matchApps")}</p>}
               </div>
@@ -1136,7 +1136,7 @@ function RuleDialog({
                   onChange={(next) => set("matchUsers", next)}
                   placeholder="Filter users…"
                   triggerLabel="Users"
-                  icon={<Icons.User className="h-4 w-4 text-red-700 dark:text-red-500" />}
+                  icon={<Icons.User className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />}
                 />
                 {err("matchUsers") && <p className="text-[11px] text-rose-500">{err("matchUsers")}</p>}
               </div>
@@ -1148,7 +1148,7 @@ function RuleDialog({
                   onChange={(next) => set("matchAddresses", next)}
                   placeholder="Filter addresses…"
                   triggerLabel="Addresses"
-                  icon={<Icons.MapPin className="h-4 w-4 text-red-700 dark:text-red-500" />}
+                  icon={<Icons.MapPin className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />}
                 />
                 {err("matchAddresses") && <p className="text-[11px] text-rose-500">{err("matchAddresses")}</p>}
               </div>

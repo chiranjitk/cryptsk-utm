@@ -79,7 +79,7 @@ const SSL_KEY = ["ssl-inspection"] as const;
 
 const DECISION_BADGE: Record<SslDecision, { cls: string; icon: React.ComponentType<{ className?: string }>; label: string }> = {
   inspected: {
-    cls: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+    cls: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
     icon: ShieldCheck,
     label: "inspected",
   },
@@ -110,7 +110,7 @@ function DecisionBadge({ decision, big }: { decision: SslDecision; big?: boolean
 function ModeBadge({ mode }: { mode: SslMode }) {
   const cls =
     mode === "selective"
-      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+      ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
       : mode === "full"
         ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
         : "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
@@ -147,7 +147,7 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 
 function StatsStrip({ stats }: { stats: SslStatsDTO | undefined }) {
   const items: Array<{ label: string; value: number; icon: React.ReactNode; tone: "blue" | "zinc" | "red" }> = [
-    { label: "Inspected (24h)", value: stats?.inspected24h ?? 0, icon: <ShieldCheck className="h-4 w-4 text-red-700 dark:text-red-500" />, tone: "blue" },
+    { label: "Inspected (24h)", value: stats?.inspected24h ?? 0, icon: <ShieldCheck className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />, tone: "blue" },
     { label: "Bypassed (24h)", value: stats?.bypassed24h ?? 0, icon: <CircleSlash className="h-4 w-4 text-zinc-500" />, tone: "zinc" },
     { label: "Blocked (24h)", value: stats?.blocked24h ?? 0, icon: <Ban className="h-4 w-4 text-red-500" />, tone: "red" },
   ];
@@ -158,7 +158,7 @@ function StatsStrip({ stats }: { stats: SslStatsDTO | undefined }) {
       {items.map((it) => (
         <Card key={it.label} className="p-4">
           <CardContent className="flex items-center gap-3 p-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-600/10">{it.icon}</div>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-500/10">{it.icon}</div>
             <div className="min-w-0">
               <p className={cn("text-xl font-semibold tabular-nums", it.tone === "red" && it.value > 0 && "text-red-600 dark:text-red-400")}>
                 {it.value.toLocaleString()}
@@ -173,10 +173,10 @@ function StatsStrip({ stats }: { stats: SslStatsDTO | undefined }) {
           <div
             className={cn(
               "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-              expiring > 0 ? "bg-amber-500/10" : "bg-red-600/10",
+              expiring > 0 ? "bg-amber-500/10" : "bg-zinc-500/10",
             )}
           >
-            <CalendarClock className={cn("h-4 w-4", expiring > 0 ? "text-amber-600 dark:text-amber-400" : "text-red-700 dark:text-red-500")} />
+            <CalendarClock className={cn("h-4 w-4", expiring > 0 ? "text-amber-600 dark:text-amber-400" : "text-zinc-500 dark:text-zinc-400")} />
           </div>
           <div className="min-w-0">
             <TooltipProvider delayDuration={100}>
@@ -550,7 +550,7 @@ function TestConnectionCard({ policyId, policyName }: { policyId: number | null;
     <Card className="p-0">
       <CardHeader className="p-4 pb-0">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <Play className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Play className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Test a connection
         </CardTitle>
         <CardDescription className="text-xs">
@@ -585,7 +585,7 @@ function TestConnectionCard({ policyId, policyName }: { policyId: number | null;
               key={p}
               type="button"
               onClick={() => setSni(p)}
-              className="rounded-full border border-zinc-200 px-2 py-0.5 font-mono text-[10px] text-zinc-500 transition-colors hover:bg-red-600/10 hover:text-red-700 dark:border-zinc-800 dark:text-zinc-400 dark:hover:text-red-500"
+              className="rounded-full border border-zinc-200 px-2 py-0.5 font-mono text-[10px] text-zinc-500 transition-colors hover:bg-zinc-500/10 hover:text-zinc-600 dark:border-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-300"
             >
               {p}
             </button>
@@ -598,7 +598,7 @@ function TestConnectionCard({ policyId, policyName }: { policyId: number | null;
               <DecisionBadge decision={result.decision} big />
               <span className="font-mono text-xs text-zinc-500">reason: {result.reason}</span>
               {result.matchedRule && (
-                <span className="font-mono text-xs text-red-700 dark:text-red-500">rule: {result.matchedRule}</span>
+                <span className="font-mono text-xs text-zinc-500 dark:text-zinc-400">rule: {result.matchedRule}</span>
               )}
               <span className="ml-auto text-[11px] text-zinc-400">
                 {result.policyName ? `policy: ${result.policyName}` : "no active policy"}
@@ -736,7 +736,7 @@ export function SslInspectionView() {
         <Card className="p-0">
           <CardHeader className="flex-row items-center justify-between space-y-0 border-b border-zinc-100 p-4 dark:border-zinc-800">
             <CardTitle className="flex items-center gap-2 text-sm font-medium">
-              <LockKeyhole className="h-4 w-4 text-red-700 dark:text-red-500" />
+              <LockKeyhole className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
               Inspection policies
             </CardTitle>
             <Button
@@ -787,11 +787,11 @@ export function SslInspectionView() {
                       className={cn(
                         "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors",
                         selected?.id === p.id
-                          ? "bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+                          ? "bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                           : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
                       )}
                     >
-                      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", p.enabled ? "bg-red-600" : "bg-zinc-300 dark:bg-zinc-600")} />
+                      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", p.enabled ? "bg-zinc-500" : "bg-zinc-300 dark:bg-zinc-600")} />
                       <span className="min-w-0 flex-1 truncate">{p.name}</span>
                       <ModeBadge mode={p.mode} />
                     </button>
@@ -842,7 +842,7 @@ export function SslInspectionView() {
                             <TooltipProvider delayDuration={100}>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Badge variant="outline" className="gap-1 border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500">
+                                  <Badge variant="outline" className="gap-1 border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300">
                                     <KeyRound className="h-3 w-3" />
                                     {selected.signingCaName}
                                   </Badge>
@@ -959,7 +959,7 @@ export function SslInspectionView() {
         <CardHeader className="flex-row items-center justify-between space-y-0 border-b border-zinc-100 p-4 dark:border-zinc-800">
           <div>
             <CardTitle className="flex items-center gap-2 text-sm font-medium">
-              <Globe className="h-4 w-4 text-red-700 dark:text-red-500" />
+              <Globe className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
               Recent inspection log
             </CardTitle>
             <CardDescription className="text-xs">Latest simulated decisions — persisted as inspection logs.</CardDescription>
