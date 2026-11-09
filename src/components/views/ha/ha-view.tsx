@@ -87,7 +87,7 @@ function StatusCard({ status }: { status: HaStatusDTO }) {
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Icons.Network className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" />
+            <Icons.Network className="h-4.5 w-4.5 text-red-700 dark:text-red-500" />
             HA status
           </CardTitle>
           <CardDescription>Keepalived/VRRP pair — the sandbox peer is fictional</CardDescription>
@@ -283,7 +283,7 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Icons.Settings2 className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" />
+            <Icons.Settings2 className="h-4.5 w-4.5 text-red-700 dark:text-red-500" />
             HA configuration
           </CardTitle>
           <CardDescription>Pair settings — saved as a single audited apply (section ha)</CardDescription>
@@ -428,7 +428,7 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
                       className={cn(
                         "rounded-full border px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60",
                         active
-                          ? "border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
+                          ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
                           : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800",
                       )}
                     >

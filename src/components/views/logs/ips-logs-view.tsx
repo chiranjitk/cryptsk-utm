@@ -193,7 +193,7 @@ export function IpsLogsView() {
               className={cn(
                 "rounded-full border px-2.5 py-1 text-xs transition-colors",
                 active
-                  ? "border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
+                  ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
                   : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
               )}
             >

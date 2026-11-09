@@ -147,7 +147,7 @@ export function LiveTailView() {
               className={cn(
                 "rounded-full border px-2.5 py-1 text-xs transition-colors",
                 kind === k
-                  ? "border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
+                  ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
                   : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
               )}
             >
@@ -193,14 +193,14 @@ export function LiveTailView() {
         ) : (
           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
             {visible.map((e) => (
-              <li key={e.key} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-blue-500/5">
+              <li key={e.key} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-red-600/5">
                 <span className="w-36 shrink-0 font-mono tabular-nums text-zinc-400">{fmtTs(e.ts)}</span>
                 <Badge
                   variant="outline"
                   className={cn(
                     "w-16 justify-center shrink-0 text-[10px] uppercase",
                     e.kind === "firewall"
-                      ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
                       : "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800",
                   )}
                 >

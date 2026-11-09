@@ -18,7 +18,7 @@ import { fmtDate } from "./pki-api";
 export function PkiStatusBadge({ status, className }: { status: "active" | "revoked" | "expired"; className?: string }) {
   if (status === "active") {
     return (
-      <Badge variant="outline" className={cn("gap-1 border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400", className)}>
+      <Badge variant="outline" className={cn("gap-1 border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500", className)}>
         <Icons.ShieldCheck className="h-3 w-3" /> active
       </Badge>
     );
@@ -39,7 +39,7 @@ export function PkiStatusBadge({ status, className }: { status: "active" | "revo
 
 export function CaTypeBadge({ type }: { type: "root" | "subordinate" }) {
   return type === "root" ? (
-    <Badge className="bg-blue-600 text-white hover:bg-blue-600">
+    <Badge className="bg-red-700 text-white hover:bg-red-700">
       <Icons.Landmark className="mr-1 h-3 w-3" /> root
     </Badge>
   ) : (
@@ -50,10 +50,10 @@ export function CaTypeBadge({ type }: { type: "root" | "subordinate" }) {
 }
 
 const CERT_TYPE_CLS: Record<string, string> = {
-  server: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  server: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
   client: "border-zinc-300 bg-transparent text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
   device: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  user: "border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  user: "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400",
 };
 
 export function CertTypeBadge({ type }: { type: string }) {
@@ -92,7 +92,7 @@ export function ExpiryPill({
       ? "border-rose-600/40 bg-rose-600/10 text-rose-600 dark:text-rose-400"
       : daysUntilExpiry <= 90
         ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-        : "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400";
+        : "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500";
   const label = expired ? "expired" : daysUntilExpiry === null ? "no expiry" : `${daysUntilExpiry}d left`;
   return (
     <TooltipProvider delayDuration={150}>
@@ -123,7 +123,7 @@ export function SansChips({ sans, max = 2 }: { sans: string[]; max?: number }) {
   return (
     <div className="flex flex-wrap items-center gap-1">
       {shown.map((s) => (
-        <Badge key={s} variant="outline" className="max-w-40 truncate border-blue-500/40 bg-blue-500/10 font-mono text-[10px] font-normal text-blue-600 dark:text-blue-400">
+        <Badge key={s} variant="outline" className="max-w-40 truncate border-red-600/40 bg-red-600/10 font-mono text-[10px] font-normal text-red-700 dark:text-red-500">
           {s}
         </Badge>
       ))}

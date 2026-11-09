@@ -79,19 +79,19 @@ const ID_BY_SECTION: Record<string, number> = { traffic: 1, threats: 2, audit: 3
 
 const SOURCE_BADGE: Record<string, string> = {
   "ad-hoc": "border-zinc-300 text-zinc-500 dark:border-zinc-700",
-  schedule: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  schedule: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
   compliance: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
 };
 
 const STATUS_BADGE: Record<string, string> = {
-  done: "border-transparent bg-blue-600 text-white",
+  done: "border-transparent bg-red-700 text-white",
   failed: "border-transparent bg-rose-600 text-white",
   pending: "border-zinc-300 text-zinc-500 dark:border-zinc-700",
   running: "border-zinc-300 text-zinc-500 dark:border-zinc-700",
 };
 
 const STRATEGY_BADGE: Record<string, string> = {
-  hash: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  hash: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
   mask: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   pseudonymize: "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
 };
@@ -130,10 +130,10 @@ function PassRing({ pct }: { pct: number }) {
     <div className="relative h-16 w-16 shrink-0" role="img" aria-label={noData ? "No runs yet" : `${pct}% pass rate`}>
       <div
         className="h-full w-full rounded-full"
-        style={{ background: noData ? "#e4e4e7" : `conic-gradient(#2563eb ${pct}%, #e4e4e7 0)` }}
+        style={{ background: noData ? "#e4e4e7" : `conic-gradient(#b91c1c ${pct}%, #e4e4e7 0)` }}
       />
       <div className="absolute inset-[6px] flex items-center justify-center rounded-full bg-white dark:bg-zinc-950">
-        <span className={cn("text-xs font-semibold", noData ? "text-zinc-400" : "text-blue-600 dark:text-blue-400")}>
+        <span className={cn("text-xs font-semibold", noData ? "text-zinc-400" : "text-red-700 dark:text-red-500")}>
           {noData ? "n/a" : `${pct}%`}
         </span>
       </div>
@@ -163,7 +163,7 @@ function StringChips({
             className={cn(
               "rounded-full border px-2.5 py-1 text-xs transition-colors",
               active
-                ? "border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
+                ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
                 : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
             )}
           >
@@ -406,7 +406,7 @@ export function ComplianceView() {
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="flex items-center gap-1.5 text-sm">
-            <Icons.FileCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <Icons.FileCheck className="h-4 w-4 text-red-700 dark:text-red-500" />
             Compliance templates
           </CardTitle>
           <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => openTplEditor(null)}>
@@ -439,7 +439,7 @@ export function ComplianceView() {
                   <TableRow key={t.id}>
                     <TableCell className="max-w-48 truncate text-xs font-medium">{t.name}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 font-semibold text-blue-600 dark:text-blue-400">
+                      <Badge variant="outline" className="border-red-600/40 bg-red-600/10 font-semibold text-red-700 dark:text-red-500">
                         {t.framework}
                       </Badge>
                     </TableCell>
@@ -466,7 +466,7 @@ export function ComplianceView() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-blue-600 dark:text-blue-400"
+                          className="h-8 w-8 text-red-700 dark:text-red-500"
                           aria-label={`Run ${t.name}`}
                           disabled={runTemplateMut.isPending}
                           onClick={() => runTemplateMut.mutate(t.id)}
@@ -499,15 +499,15 @@ export function ComplianceView() {
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="flex items-center gap-1.5 text-sm">
-            <Icons.FileBarChart className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <Icons.FileBarChart className="h-4 w-4 text-red-700 dark:text-red-500" />
             Report runs
-            <Badge variant="outline" className="ml-1 border-blue-500/40 bg-blue-500/10 px-1.5 text-[10px] text-blue-600 dark:text-blue-400">
+            <Badge variant="outline" className="ml-1 border-red-600/40 bg-red-600/10 px-1.5 text-[10px] text-red-700 dark:text-red-500">
               {runs.length}
             </Badge>
           </CardTitle>
           <Button
             size="sm"
-            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+            className="h-8 gap-1.5 bg-red-700 text-white hover:bg-red-800"
             onClick={() => {
               setNewErr({});
               setNewOpen(true);
@@ -528,7 +528,7 @@ export function ComplianceView() {
               title="No report runs yet"
               description="Run a compliance template or create an ad-hoc report — the rendered document opens right here."
               action={
-                <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => setNewOpen(true)}>
+                <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setNewOpen(true)}>
                   New report
                 </Button>
               }
@@ -567,7 +567,7 @@ export function ComplianceView() {
                       <TableCell className="whitespace-nowrap text-xs text-zinc-500">{fmtTs(r.createdAt)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-0.5">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 dark:text-blue-400" aria-label={`View ${r.name}`} onClick={() => setViewingId(r.id)}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-700 dark:text-red-500" aria-label={`View ${r.name}`} onClick={() => setViewingId(r.id)}>
                             <Icons.Eye className="h-4 w-4" />
                           </Button>
                           <Button
@@ -594,7 +594,7 @@ export function ComplianceView() {
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="flex items-center gap-1.5 text-sm">
-            <Icons.EyeOff className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <Icons.EyeOff className="h-4 w-4 text-red-700 dark:text-red-500" />
             Anonymization rules
           </CardTitle>
           <div className="flex gap-1.5">
@@ -610,7 +610,7 @@ export function ComplianceView() {
               <Icons.Search className="h-3.5 w-3.5" />
               Preview
             </Button>
-            <Button size="sm" className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700" onClick={() => openRuleEditor(null)}>
+            <Button size="sm" className="h-8 gap-1.5 bg-red-700 text-white hover:bg-red-800" onClick={() => openRuleEditor(null)}>
               <Icons.Plus className="h-3.5 w-3.5" />
               Add rule
             </Button>
@@ -745,7 +745,7 @@ export function ComplianceView() {
               Cancel
             </Button>
             <Button
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-red-700 text-white hover:bg-red-800"
               disabled={saveTplMut.isPending || tplForm.name.trim().length === 0 || tplForm.sections.length === 0}
               onClick={() => saveTplMut.mutate()}
             >
@@ -821,7 +821,7 @@ export function ComplianceView() {
               Cancel
             </Button>
             <Button
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-red-700 text-white hover:bg-red-800"
               disabled={newRunMut.isPending || newForm.name.trim().length === 0 || newForm.sections.length === 0}
               onClick={() => newRunMut.mutate()}
             >
@@ -845,18 +845,18 @@ export function ComplianceView() {
           </DialogHeader>
           {runDetail.isLoading ? (
             <div className="flex items-center justify-center py-10">
-              <Icons.Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+              <Icons.Loader2 className="h-6 w-6 animate-spin text-red-700" />
             </div>
           ) : runDetail.isError ? (
             <QueryError error={runDetail.error} onRetry={() => void runDetail.refetch()} />
           ) : (
             <>
               {pdfHint && (
-                <div className="flex items-center justify-between gap-2 rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2">
+                <div className="flex items-center justify-between gap-2 rounded-md border border-red-600/30 bg-red-600/5 px-3 py-2">
                   <p className="text-xs text-zinc-600 dark:text-zinc-400">
                     PDF-format report — use your browser’s print dialog to save it as a PDF file.
                   </p>
-                  <Button size="sm" className="h-8 shrink-0 gap-1.5 bg-blue-600 text-white hover:bg-blue-700" onClick={() => window.print()}>
+                  <Button size="sm" className="h-8 shrink-0 gap-1.5 bg-red-700 text-white hover:bg-red-800" onClick={() => window.print()}>
                     <Icons.Printer className="h-3.5 w-3.5" />
                     Print
                   </Button>
@@ -945,7 +945,7 @@ export function ComplianceView() {
               Cancel
             </Button>
             <Button
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-red-700 text-white hover:bg-red-800"
               disabled={saveRuleMut.isPending || ruleForm.name.trim().length === 0}
               onClick={() => saveRuleMut.mutate()}
             >
@@ -979,11 +979,11 @@ export function ComplianceView() {
                 ))}
               </SelectContent>
             </Select>
-            {previewQuery.isFetching && <Icons.Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
+            {previewQuery.isFetching && <Icons.Loader2 className="h-4 w-4 animate-spin text-red-700" />}
           </div>
           {previewQuery.isLoading ? (
             <div className="flex items-center justify-center py-10">
-              <Icons.Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+              <Icons.Loader2 className="h-6 w-6 animate-spin text-red-700" />
             </div>
           ) : previewQuery.isError ? (
             <QueryError error={previewQuery.error} onRetry={() => void previewQuery.refetch()} />
@@ -1023,7 +1023,7 @@ export function ComplianceView() {
                                 key={c}
                                 className={cn(
                                   "max-w-32 truncate px-2 py-1.5 font-mono text-[11px]",
-                                  changed && "font-medium text-blue-600 dark:text-blue-400",
+                                  changed && "font-medium text-red-700 dark:text-red-500",
                                 )}
                               >
                                 {String(val)}

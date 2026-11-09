@@ -2,8 +2,8 @@
 
 /**
  * Chart wrappers — ADR-019 (supersedes ADR-013 palette): all charts go through
- * components/charts/ using the LOCKED enterprise palette (blue, sky, amber, rose,
- * orange, violet, slate). Owner-directed white & blue theme, 2026-11-06.
+ * components/charts/ using the LOCKED brand palette (red, amber, rose, orange,
+ * zinc, slate). Owner-directed white/red/dark-red theme, 2026-11-09.
  */
 
 import {
@@ -19,12 +19,12 @@ import {
 } from "recharts";
 
 export const PALETTE = {
-  blue: "#2563eb",
-  sky: "#0ea5e9",
+  blue: "#b91c1c",
+  sky: "#ef4444",
   amber: "#f59e0b",
   rose: "#f43f5e",
   orange: "#f97316",
-  violet: "#8b5cf6",
+  violet: "#71717a",
   slate: "#64748b",
 } as const;
 

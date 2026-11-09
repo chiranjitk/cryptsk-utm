@@ -110,7 +110,7 @@ export function ZonesView() {
         <p className="mr-auto text-xs text-zinc-500">
           Zones group interfaces for zone-based policy. WAN and LAN are protected — they cannot be deleted or renamed.
         </p>
-        <Button size="sm" onClick={openCreate} className="bg-blue-600 text-white hover:bg-blue-700">
+        <Button size="sm" onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
           <Icons.Plus className="mr-1 h-4 w-4" /> Add zone
         </Button>
       </div>
@@ -131,7 +131,7 @@ export function ZonesView() {
               title="No zones yet"
               description="Create a zone (L3, L2 or VPN) and assign interfaces so firewall rules can match on it."
               action={
-                <Button onClick={openCreate} className="bg-blue-600 text-white hover:bg-blue-700">
+                <Button onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add zone
                 </Button>
               }
@@ -159,7 +159,7 @@ export function ZonesView() {
                         </TooltipProvider>
                       )}
                     </CardTitle>
-                    <Badge variant="outline" className="mt-1 w-fit border-blue-500/40 bg-blue-500/10 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                    <Badge variant="outline" className="mt-1 w-fit border-red-600/40 bg-red-600/10 text-[10px] font-semibold text-red-700 dark:text-red-500">
                       {z.type}
                     </Badge>
                   </div>
@@ -342,7 +342,7 @@ function ZoneEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
             {mut.isPending ? "Saving…" : editing ? "Save changes" : "Create zone"}
           </Button>
         </DialogFooter>

@@ -168,7 +168,7 @@ export function SetupWizard(props: { onFinished: () => void }) {
             <p className="text-base font-semibold">Cryptsk UTM / NGFW</p>
             <p className="text-xs text-zinc-500">First-time setup — step {step + 1} of {STEPS.length}</p>
           </div>
-          <Badge variant="outline" className="ml-auto border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400">
+          <Badge variant="outline" className="ml-auto border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500">
             simulated appliance
           </Badge>
         </div>
@@ -177,8 +177,8 @@ export function SetupWizard(props: { onFinished: () => void }) {
         <div className="mb-5 flex items-center gap-1.5">
           {STEPS.map((label, i) => (
             <div key={label} className="flex flex-1 flex-col gap-1">
-              <div className={cn("h-1.5 rounded-full", i <= step ? "bg-blue-600" : "bg-zinc-200 dark:bg-zinc-800")} />
-              <p className={cn("text-[10px]", i === step ? "font-medium text-blue-600 dark:text-blue-400" : "text-zinc-400")}>
+              <div className={cn("h-1.5 rounded-full", i <= step ? "bg-red-700" : "bg-zinc-200 dark:bg-zinc-800")} />
+              <p className={cn("text-[10px]", i === step ? "font-medium text-red-700 dark:text-red-500" : "text-zinc-400")}>
                 {label}
               </p>
             </div>
@@ -282,7 +282,7 @@ function WelcomeStep(props: {
           You can revisit everything later in the console.
         </p>
       </div>
-      <div className="rounded-lg border border-blue-500/40 bg-blue-500/10 p-3 text-xs text-blue-700 dark:text-blue-400">
+      <div className="rounded-lg border border-red-600/40 bg-red-600/10 p-3 text-xs text-red-800 dark:text-red-500">
         <p className="flex items-start gap-2">
           <Icons.KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
@@ -467,7 +467,7 @@ function TemplateStep(props: {
             key={t.id}
             className={cn(
               "flex flex-col rounded-lg border p-3",
-              props.applied === t.id ? "border-blue-500/60 bg-blue-500/5" : "border-zinc-200 dark:border-zinc-800",
+              props.applied === t.id ? "border-red-600/60 bg-red-600/5" : "border-zinc-200 dark:border-zinc-800",
             )}
           >
             <p className="text-sm font-semibold">{t.name}</p>

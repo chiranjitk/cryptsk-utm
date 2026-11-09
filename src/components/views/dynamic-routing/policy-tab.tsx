@@ -277,7 +277,7 @@ export function PolicyObjectsTab() {
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center justify-between gap-2 text-base">
             <span className="flex items-center gap-2">
-              <Icons.ListFilter className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <Icons.ListFilter className="h-4 w-4 text-red-700 dark:text-red-500" />
               Prefix lists
             </span>
             <Button
@@ -362,7 +362,7 @@ export function PolicyObjectsTab() {
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center justify-between gap-2 text-base">
             <span className="flex items-center gap-2">
-              <Icons.GitBranch className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <Icons.GitBranch className="h-4 w-4 text-red-700 dark:text-red-500" />
               Route maps
             </span>
             <Button
@@ -443,7 +443,7 @@ export function PolicyObjectsTab() {
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center justify-between gap-2 text-base">
             <span className="flex items-center gap-2">
-              <Icons.Tags className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <Icons.Tags className="h-4 w-4 text-red-700 dark:text-red-500" />
               Community lists
             </span>
             <Button
@@ -671,7 +671,7 @@ export function PolicyObjectsTab() {
               Cancel
             </Button>
             <Button
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-red-700 text-white hover:bg-red-800"
               disabled={savePl.isPending}
               onClick={() =>
                 plEditor && savePl.mutate(plEditor.mode === "edit" ? { mode: "edit", id: plEditor.list.id } : { mode: "create" })
@@ -828,7 +828,7 @@ export function PolicyObjectsTab() {
               Cancel
             </Button>
             <Button
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-red-700 text-white hover:bg-red-800"
               disabled={saveRm.isPending}
               onClick={() =>
                 rmEditor && saveRm.mutate(rmEditor.mode === "edit" ? { mode: "edit", id: rmEditor.map.id } : { mode: "create" })
@@ -920,7 +920,7 @@ export function PolicyObjectsTab() {
               Cancel
             </Button>
             <Button
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-red-700 text-white hover:bg-red-800"
               disabled={saveCl.isPending}
               onClick={() =>
                 clEditor && saveCl.mutate(clEditor.mode === "edit" ? { mode: "edit", id: clEditor.list.id } : { mode: "create" })

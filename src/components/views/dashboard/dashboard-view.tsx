@@ -62,7 +62,7 @@ function GaugeCard({ label, value, unit, pct, icon, tone }: { label: string; val
           </p>
           <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
             <div
-              className={cn("h-full rounded-full transition-all", pct > 85 ? "bg-rose-500" : pct > 65 ? "bg-amber-500" : "bg-blue-500")}
+              className={cn("h-full rounded-full transition-all", pct > 85 ? "bg-rose-500" : pct > 65 ? "bg-amber-500" : "bg-red-600")}
               style={{ width: `${Math.min(100, Math.max(2, pct))}%` }}
             />
           </div>
@@ -148,9 +148,9 @@ export function DashboardView() {
     <div className="grid gap-4">
       {/* health row */}
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <GaugeCard label="CPU" value={String(s.health.cpuPct)} unit="%" pct={s.health.cpuPct} icon={<Icons.Cpu className="h-5 w-5" />} tone="bg-blue-500/10 text-blue-600 dark:text-blue-400" />
-        <GaugeCard label="Memory" value={String(s.health.memPct)} unit="%" pct={s.health.memPct} icon={<Icons.MemoryStick className="h-5 w-5" />} tone="bg-sky-500/10 text-sky-600 dark:text-sky-400" />
-        <GaugeCard label="Disk" value={String(s.health.diskPct)} unit="%" pct={s.health.diskPct} icon={<Icons.HardDrive className="h-5 w-5" />} tone="bg-violet-500/10 text-violet-600 dark:text-violet-400" />
+        <GaugeCard label="CPU" value={String(s.health.cpuPct)} unit="%" pct={s.health.cpuPct} icon={<Icons.Cpu className="h-5 w-5" />} tone="bg-red-600/10 text-red-700 dark:text-red-500" />
+        <GaugeCard label="Memory" value={String(s.health.memPct)} unit="%" pct={s.health.memPct} icon={<Icons.MemoryStick className="h-5 w-5" />} tone="bg-red-500/10 text-red-600 dark:text-red-400" />
+        <GaugeCard label="Disk" value={String(s.health.diskPct)} unit="%" pct={s.health.diskPct} icon={<Icons.HardDrive className="h-5 w-5" />} tone="bg-zinc-500/10 text-zinc-600 dark:text-zinc-400" />
         <GaugeCard label="Temperature" value={String(s.health.tempC)} unit="°C" pct={s.health.tempC} icon={<Icons.Thermometer className="h-5 w-5" />} tone="bg-amber-500/10 text-amber-600 dark:text-amber-400" />
       </div>
 
@@ -160,8 +160,8 @@ export function DashboardView() {
           <CardHeader className="flex-row items-center justify-between space-y-0 p-4 md:p-6">
             <CardTitle className="text-sm font-medium">Throughput (live)</CardTitle>
             <div className="flex items-center gap-3 text-xs text-zinc-500">
-              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue-500" /> download</span>
-              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-sky-500" /> upload</span>
+              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-600" /> download</span>
+              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" /> upload</span>
             </div>
           </CardHeader>
           <CardContent className="p-4 pt-0 md:p-6 md:pt-0">
@@ -294,7 +294,7 @@ export function DashboardView() {
               {quickActions.map((a) => (
                 <Button key={a.hash} asChild variant="outline" className="h-auto justify-start gap-2 py-2.5">
                   <a href={a.hash}>
-                    <a.icon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <a.icon className="h-4 w-4 text-red-700 dark:text-red-500" />
                     <span className="text-xs">{a.label}</span>
                   </a>
                 </Button>

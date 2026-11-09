@@ -9,7 +9,7 @@
  * match→action table), Mail Logs (paged verdict-filtered table with
  * quarantine release) and Test (simulated Rspamd+ClamAV scan with an
  * attachment type selector). Stats + logs poll every 10 s via TanStack Query.
- * Theme: white + enterprise blue-600; blue/zinc/amber/rose badges only
+ * Theme: white + enterprise red-700; blue/zinc/amber/rose badges only
  * (delivered=blue clean, quarantined/spam=amber, phishing/malware=rose).
  */
 
@@ -97,7 +97,7 @@ function useEmailSecurityInvalidation(): void {
 // ── badge recipes ───────────────────────────────────────────────────────────
 
 const VERDICT_CLS: Record<EmailVerdict, string> = {
-  delivered: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  delivered: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
   quarantined: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   rejected: "border-transparent bg-rose-600 text-white",
 };
@@ -124,7 +124,7 @@ function ModeBadge({ mode }: { mode: GatewayMode }) {
       variant="outline"
       className={
         mode === "proxy"
-          ? "border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
+          ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
           : "border-zinc-300 bg-zinc-100 font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
       }
     >
@@ -146,7 +146,7 @@ function TlsChip({ tlsMode }: { tlsMode: TlsMode }) {
 }
 
 const ACTION_CLS: Record<RoutingAction, string> = {
-  deliver: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  deliver: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
   relay: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
   reject: "border-transparent bg-rose-600 text-white",
   quarantine: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
@@ -172,7 +172,7 @@ function ActionBadge({ action }: { action: RoutingAction }) {
 function AuthChip({ label, result }: { label: string; result: AuthResult | null }) {
   const cls =
     result === "pass"
-      ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
       : result === "fail"
         ? "border-rose-600/60 bg-rose-600/5 text-rose-500"
         : result === "softfail"
@@ -198,7 +198,7 @@ const HARD_REASONS = new Set(["malware", "phishing", "blocked_extension", "size"
 
 function ReasonChip({ reason }: { reason: string }) {
   const cls = reason.startsWith("released:")
-    ? "border-blue-500/40 bg-blue-500/10 font-mono text-[10px] text-blue-600 dark:text-blue-400"
+    ? "border-red-600/40 bg-red-600/10 font-mono text-[10px] text-red-700 dark:text-red-500"
     : HARD_REASONS.has(reason)
       ? "border-rose-600/40 bg-rose-600/5 font-mono text-[10px] text-rose-500"
       : "border-amber-500/40 bg-amber-500/5 font-mono text-[10px] text-amber-600 dark:text-amber-400";
@@ -240,14 +240,14 @@ function StatsStrip() {
       <StatCard
         label="Processed (24h)"
         value={processed ?? "—"}
-        tone="text-blue-600 dark:text-blue-400"
+        tone="text-red-700 dark:text-red-500"
         icon={<Icons.Mail className="h-4 w-4" />}
         sub={<p className="text-[11px] text-zinc-400">all verdicts, last 24 hours</p>}
       />
       <StatCard
         label="Delivered (24h)"
         value={stats?.delivered24h ?? "—"}
-        tone="text-blue-600 dark:text-blue-400"
+        tone="text-red-700 dark:text-red-500"
         icon={<Icons.MailCheck className="h-4 w-4" />}
       />
       <StatCard
@@ -271,7 +271,7 @@ function StatsStrip() {
         <CardContent className="p-4">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-zinc-500">Avg spam score (24h)</span>
-            <Icons.Gauge className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <Icons.Gauge className="h-4 w-4 text-red-700 dark:text-red-500" />
           </div>
           <p className="mt-1 text-2xl font-semibold tabular-nums">
             {stats ? stats.avgSpamScore.toFixed(1) : "—"}
@@ -437,7 +437,7 @@ function GatewayEditor(props: { gateway: EmailGatewayDTO | null; onClose: () => 
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-blue-600 text-white hover:bg-blue-700" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create gateway"}
           </Button>
         </DialogFooter>
@@ -475,13 +475,13 @@ function GatewaysCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Server className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.Server className="h-4 w-4 text-red-700 dark:text-red-500" />
           Gateways
           <span className="text-xs font-normal text-zinc-400">
             {gateways.length} listener{gateways.length === 1 ? "" : "s"}
           </span>
         </CardTitle>
-        <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" onClick={() => setAddOpen(true)}>
+        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
         </Button>
       </CardHeader>
@@ -498,7 +498,7 @@ function GatewaysCard() {
             title="No gateways yet"
             description="Add a proxy or relay listener to accept and scan SMTP traffic."
             action={
-              <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => setAddOpen(true)}>
+              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New gateway
               </Button>
             }
@@ -557,7 +557,7 @@ function GatewaysCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
                           aria-label={`Edit ${g.name}`}
                           onClick={() => setEditing(g)}
                         >
@@ -835,7 +835,7 @@ function PolicyFormBody({ policy }: { policy: EmailPolicyDTO }) {
       {err && <p className="text-xs text-rose-600">{err}</p>}
 
       <div className="flex justify-end">
-        <Button className="bg-blue-600 text-white hover:bg-blue-700" disabled={save.isPending} onClick={submit}>
+        <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending} onClick={submit}>
           {save.isPending ? "Saving…" : "Save policy"}
         </Button>
       </div>
@@ -851,7 +851,7 @@ function PolicyCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Shield className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.Shield className="h-4 w-4 text-red-700 dark:text-red-500" />
           Content policy
           {policy && <span className="text-xs font-normal text-zinc-400">{policy.name}</span>}
         </CardTitle>
@@ -1000,7 +1000,7 @@ function RuleEditor(props: { rule: EmailRoutingRuleDTO | null; onClose: () => vo
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-blue-600 text-white hover:bg-blue-700" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create rule"}
           </Button>
         </DialogFooter>
@@ -1038,13 +1038,13 @@ function RoutingRulesCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Route className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.Route className="h-4 w-4 text-red-700 dark:text-red-500" />
           Routing rules
           <span className="text-xs font-normal text-zinc-400">
             {rules.length} rule{rules.length === 1 ? "" : "s"}
           </span>
         </CardTitle>
-        <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" onClick={() => setAddOpen(true)}>
+        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
         </Button>
       </CardHeader>
@@ -1106,7 +1106,7 @@ function RoutingRulesCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
                           aria-label={`Edit ${rule.name}`}
                           onClick={() => setEditing(rule)}
                         >
@@ -1199,13 +1199,13 @@ function TestMessageCard() {
         ? "bg-amber-500"
         : result.spamScore > threshold
           ? "bg-amber-500"
-          : "bg-blue-500";
+          : "bg-red-600";
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.FlaskConical className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.FlaskConical className="h-4 w-4 text-red-700 dark:text-red-500" />
           Test message
           <span className="text-xs font-normal text-zinc-400">simulated Rspamd + ClamAV scan</span>
         </CardTitle>
@@ -1251,7 +1251,7 @@ function TestMessageCard() {
 
         <div className="flex items-center gap-2">
           <Button
-            className="h-9 bg-blue-600 px-5 text-white hover:bg-blue-700"
+            className="h-9 bg-red-700 px-5 text-white hover:bg-red-800"
             disabled={run.isPending || !from.trim() || !to.trim()}
             onClick={() => run.mutate()}
           >
@@ -1356,7 +1356,7 @@ function MailLogCard() {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.ScrollText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.ScrollText className="h-4 w-4 text-red-700 dark:text-red-500" />
           Mail log
         </CardTitle>
         <div className="flex items-center gap-2">

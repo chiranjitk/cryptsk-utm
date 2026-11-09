@@ -19,8 +19,8 @@ export function BrandLogo({ className }: { className?: string }) {
     >
       <defs>
         <linearGradient id="ck-brand-gradient" x1="7" y1="3" x2="57" y2="61" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#3b82f6" />
-          <stop offset="1" stopColor="#7c3aed" />
+          <stop stopColor="#dc2626" />
+          <stop offset="1" stopColor="#7f1d1d" />
         </linearGradient>
       </defs>
       {/* shield */}

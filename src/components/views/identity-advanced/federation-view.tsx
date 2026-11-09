@@ -5,7 +5,7 @@
  * sections: Federated IdPs (SAML2/OIDC table + create/edit/delete + simulated
  * connectivity test), RADIUS CoA profiles (table + CRUD + simulated CoA packet
  * send) and the user activity timeline (paged table, 10s polling).
- * Theme (ADR-019): blue-600 enterprise accents, zinc neutrals, rose-600
+ * Theme (ADR-019): red-700 enterprise accents, zinc neutrals, rose-600
  * danger, amber-500 warning. Secrets are write-only — the UI never renders a
  * stored client secret, only the "•••••••• (stored)" placeholder.
  */
@@ -111,25 +111,25 @@ function useDebounced(value: string, ms = 400): string {
 // ── badge recipes (ADR-019 — blue/zinc/rose/amber only) ─────────────────────
 
 const PROTOCOL_CLS: Record<IdpProtocol, string> = {
-  saml2: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  saml2: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
   oidc: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
 };
 
 const STATUS_CLS: Record<IdpStatus, string> = {
-  ok: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  ok: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
   error: "border-rose-600/60 bg-transparent text-rose-500",
   untested: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
 };
 
 const EVENT_CLS: Record<ActivityEvent, string> = {
-  login: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  login: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
   logout: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  portal: "border-blue-500/40 bg-transparent text-blue-600 dark:text-blue-400",
-  vpn: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  portal: "border-red-600/40 bg-transparent text-red-700 dark:text-red-500",
+  vpn: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
   coa: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   vlan_change: "border-rose-600/40 bg-transparent text-rose-500",
-  nac_auth: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  idp_sso: "border-transparent bg-blue-600 text-white",
+  nac_auth: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  idp_sso: "border-transparent bg-red-700 text-white",
 };
 
 function ProtocolBadge({ protocol }: { protocol: IdpProtocol }) {
@@ -392,7 +392,7 @@ function IdpEditor(props: { idp: IdpDTO | null; onClose: () => void }) {
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-blue-600 text-white hover:bg-blue-700" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create IdP"}
           </Button>
         </DialogFooter>
@@ -575,7 +575,7 @@ function CoaEditor(props: { profile: CoaProfileDTO | null; onClose: () => void }
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-blue-600 text-white hover:bg-blue-700" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create profile"}
           </Button>
         </DialogFooter>
@@ -660,7 +660,7 @@ function SendCoaDialog(props: { profile: CoaProfileDTO; onClose: () => void }) {
 
           {send.data && (
             <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-              <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400">
+              <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-red-700 dark:text-red-500">
                 <Icons.ShieldCheck className="h-3.5 w-3.5" />
                 {send.data.packet.code} accepted
               </p>
@@ -679,7 +679,7 @@ function SendCoaDialog(props: { profile: CoaProfileDTO; onClose: () => void }) {
             Close
           </Button>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-red-700 text-white hover:bg-red-800"
             disabled={send.isPending || !userName.trim()}
             onClick={submit}
           >
@@ -734,11 +734,11 @@ function IdpsCard() {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.KeyRound className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.KeyRound className="h-4 w-4 text-red-700 dark:text-red-500" />
           Identity Providers
           <span className="text-xs font-normal text-zinc-400">{rows.length} configured</span>
         </CardTitle>
-        <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" onClick={() => setAddOpen(true)}>
+        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add IdP
         </Button>
       </CardHeader>
@@ -755,7 +755,7 @@ function IdpsCard() {
             title="No federated IdPs"
             description="Add a SAML 2.0 or OpenID Connect provider to enable single sign-on against the console and captive portal."
             action={
-              <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => setAddOpen(true)}>
+              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New IdP
               </Button>
             }
@@ -809,7 +809,7 @@ function IdpsCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
                           aria-label={`Test ${idp.name}`}
                           disabled={test.isPending && test.variables === idp.id}
                           onClick={() => test.mutate(idp.id)}
@@ -823,7 +823,7 @@ function IdpsCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
                           aria-label={`Edit ${idp.name}`}
                           onClick={() => setEditing(idp)}
                         >
@@ -900,11 +900,11 @@ function CoaCard() {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Radio className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.Radio className="h-4 w-4 text-red-700 dark:text-red-500" />
           RADIUS CoA Profiles
           <span className="text-xs font-normal text-zinc-400">{rows.length} configured</span>
         </CardTitle>
-        <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" onClick={() => setAddOpen(true)}>
+        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add profile
         </Button>
       </CardHeader>
@@ -921,7 +921,7 @@ function CoaCard() {
             title="No CoA profiles"
             description="RADIUS Change-of-Authorization profiles let the firewall push session updates (VLAN, re-auth, disconnect) to NAS devices."
             action={
-              <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => setAddOpen(true)}>
+              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New profile
               </Button>
             }
@@ -946,7 +946,7 @@ function CoaCard() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-semibold">{p.name}</span>
                         {p.coaEnabled ? (
-                          <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 text-[10px] text-blue-600 dark:text-blue-400">
+                          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
                             CoA on
                           </Badge>
                         ) : (
@@ -972,7 +972,7 @@ function CoaCard() {
                       {p.dynamicVlan ? (
                         <Badge
                           variant="outline"
-                          className="border-blue-500/40 bg-blue-500/10 font-mono text-[10px] text-blue-600 dark:text-blue-400"
+                          className="border-red-600/40 bg-red-600/10 font-mono text-[10px] text-red-700 dark:text-red-500"
                         >
                           {p.vlanPoolStart != null && p.vlanPoolEnd != null ? `pool ${p.vlanPoolStart}–${p.vlanPoolEnd}` : "dynamic"}
                         </Badge>
@@ -994,7 +994,7 @@ function CoaCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
                           aria-label={`Send CoA via ${p.name}`}
                           disabled={!p.enabled || !p.coaEnabled}
                           title={!p.enabled || !p.coaEnabled ? "Enable the profile and CoA first" : "Send CoA packet"}
@@ -1005,7 +1005,7 @@ function CoaCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
                           aria-label={`Edit ${p.name}`}
                           onClick={() => setEditing(p)}
                         >
@@ -1086,12 +1086,12 @@ function ActivityCard() {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.History className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.History className="h-4 w-4 text-red-700 dark:text-red-500" />
           User Activity Timeline
           <span className="flex items-center gap-1 text-xs font-normal text-zinc-400">
             <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500 opacity-60" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-600" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-600 opacity-60" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-700" />
             </span>
             live · 10s
           </span>
@@ -1195,7 +1195,7 @@ function ActivityRow({ row }: { row: ActivityDTO }) {
     <TableRow>
       <TableCell>
         <div className="flex items-center gap-2">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-600/10 text-[10px] font-semibold text-red-700 dark:text-red-500">
             {row.userName.slice(0, 2).toUpperCase()}
           </span>
           <span className="truncate font-mono text-xs font-medium" title={row.userName}>

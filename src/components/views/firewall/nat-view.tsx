@@ -365,7 +365,7 @@ export function NatView() {
             setEditing(null);
             setEditorOpen(true);
           }}
-          className="bg-blue-600 text-white hover:bg-blue-700"
+          className="bg-red-700 text-white hover:bg-red-800"
         >
           <Icons.Plus className="mr-1 h-4 w-4" /> Add NAT rule
         </Button>
@@ -387,7 +387,7 @@ export function NatView() {
               title="No NAT rules yet"
               description="Without NAT, internal hosts cannot reach the internet through the WAN interfaces. Add a masquerade SNAT to get started."
               action={
-                <Button onClick={() => setEditorOpen(true)} className="bg-blue-600 text-white hover:bg-blue-700">
+                <Button onClick={() => setEditorOpen(true)} className="bg-red-700 text-white hover:bg-red-800">
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add NAT rule
                 </Button>
               }
@@ -519,7 +519,7 @@ function SortableNatRow(props: {
               className={cn(
                 "max-w-32 truncate font-normal",
                 info?.isGroup
-                  ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                  ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
                   : "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
               )}
             >
@@ -534,7 +534,7 @@ function SortableNatRow(props: {
     <TableRow
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(!r.enabled && "opacity-55", isDragging && "z-50 relative bg-blue-500/5")}
+      className={cn(!r.enabled && "opacity-55", isDragging && "z-50 relative bg-red-600/5")}
     >
       <TableCell className="w-10 pl-2 pr-0">
         <button
@@ -559,7 +559,7 @@ function SortableNatRow(props: {
       <TableCell className="min-w-40">
         <span className="block max-w-48 truncate text-sm font-medium">{r.name ?? `#${r.id}`}</span>
         {isOneToOnePair(r.comment) && (
-          <Badge variant="outline" className="mt-0.5 border-blue-500/40 bg-blue-500/10 text-[10px] text-blue-600 dark:text-blue-400">
+          <Badge variant="outline" className="mt-0.5 border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
             <Icons.Link2 className="mr-1 h-3 w-3" /> 1:1 pair
           </Badge>
         )}
@@ -803,7 +803,7 @@ function NatEditor(props: {
                 </Label>
               </RadioGroup>
               {form.snatMode === "masq" && (
-                <p className="rounded-md bg-blue-500/10 px-3 py-2 text-xs text-blue-700 dark:text-blue-400">
+                <p className="rounded-md bg-red-600/10 px-3 py-2 text-xs text-red-800 dark:text-red-500">
                   Stores translatedSrc = <span className="font-mono">masq</span> — the egress interface address is used per flow.
                 </p>
               )}
@@ -940,7 +940,7 @@ function NatEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={saveMut.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+          <Button onClick={submit} disabled={saveMut.isPending} className="bg-red-700 text-white hover:bg-red-800">
             {saveMut.isPending ? "Saving…" : editing ? "Save changes" : "Create NAT rule"}
           </Button>
         </DialogFooter>
@@ -1024,7 +1024,7 @@ function OneToOneDialog(props: { open: boolean; onOpenChange: (open: boolean) =>
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
             {mut.isPending ? "Creating…" : "Create 1:1 pair"}
           </Button>
         </DialogFooter>
@@ -1190,7 +1190,7 @@ function PortForwardDialog(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
             {mut.isPending ? "Creating…" : "Create forward"}
           </Button>
         </DialogFooter>

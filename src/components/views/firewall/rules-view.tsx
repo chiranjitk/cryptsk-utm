@@ -152,7 +152,7 @@ function IdChips({ ids, map }: { ids: number[]; map: NameMaps["addrById"] }) {
                   className={cn(
                     "max-w-36 cursor-default gap-1 truncate font-normal",
                     info?.isGroup
-                      ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
                       : "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
                   )}
                 >
@@ -195,7 +195,7 @@ function HitsCell({ rule }: { rule: FwRule }) {
         <button
           type="button"
           aria-label={`Hit counters for ${rule.name}`}
-          className="rounded-md px-1.5 py-0.5 text-right tabular-nums hover:bg-blue-500/10"
+          className="rounded-md px-1.5 py-0.5 text-right tabular-nums hover:bg-red-600/10"
         >
           <span className="text-sm font-medium tabular-nums">{rule.hitCount.toLocaleString()}</span>
           <span className="block text-[10px] text-zinc-400">{fmtDateTime(rule.lastHitAt)}</span>
@@ -242,7 +242,7 @@ function SortableRow(props: {
     <TableRow
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(!r.enabled && "opacity-55", isDragging && "z-50 relative bg-blue-500/5")}
+      className={cn(!r.enabled && "opacity-55", isDragging && "z-50 relative bg-red-600/5")}
     >
       <TableCell className="w-10 pl-2 pr-0">
         <button
@@ -470,7 +470,7 @@ function ImportDialog(props: { open: boolean; onOpenChange: (open: boolean) => v
             htmlFor="import-file"
             className="flex cursor-pointer flex-col items-center gap-1 text-xs text-zinc-500"
           >
-            <Icons.Upload className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <Icons.Upload className="h-4 w-4 text-red-700 dark:text-red-500" />
             {fileName ? (
               <span className="font-medium text-zinc-700 dark:text-zinc-300">{fileName}</span>
             ) : (
@@ -523,7 +523,7 @@ function ImportDialog(props: { open: boolean; onOpenChange: (open: boolean) => v
           <Button
             onClick={() => importMut.mutate()}
             disabled={importMut.isPending || !payload.trim()}
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-red-700 text-white hover:bg-red-800"
           >
             {importMut.isPending ? "Importing…" : "Import"}
           </Button>
@@ -687,7 +687,7 @@ export function RulesView() {
             />
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={openCreate} className="bg-blue-600 text-white hover:bg-blue-700">
+            <Button size="sm" onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
               <Icons.Plus className="mr-1 h-4 w-4" /> Add rule
             </Button>
             <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
@@ -720,7 +720,7 @@ export function RulesView() {
             className={cn(
               "rounded-full border px-2.5 py-1 text-xs transition-colors",
               zoneFilter === null
-                ? "border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
+                ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
                 : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800",
             )}
           >
@@ -735,7 +735,7 @@ export function RulesView() {
               className={cn(
                 "rounded-full border px-2.5 py-1 text-xs transition-colors",
                 zoneFilter === z.id
-                  ? "border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
+                  ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
                   : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800",
               )}
             >
@@ -757,7 +757,7 @@ export function RulesView() {
                     className={cn(
                       "rounded-full border px-2.5 py-1 text-xs transition-colors",
                       active
-                        ? "border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
+                        ? "border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
                         : "border-dashed border-zinc-300 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800",
                     )}
                   >
@@ -800,7 +800,7 @@ export function RulesView() {
               title="No firewall rules yet"
               description="All traffic falls through to the implicit deny — every unmatched flow is dropped and logged as deny. Add your first rule to start allowing traffic."
               action={
-                <Button onClick={openCreate} className="bg-blue-600 text-white hover:bg-blue-700">
+                <Button onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add rule
                 </Button>
               }

@@ -46,7 +46,7 @@ import { logsApi, type LogStats, type NetflowTargetDTO, type ReportScheduleDTO, 
 import { fmtTs } from "./logs-ui";
 
 // ADR-019 chart series palette (locked: blue, teal, emerald, amber, rose, zinc — no indigo)
-const CHART = { blue: "#2563eb", teal: "#14b8a6", emerald: "#10b981", amber: "#f59e0b", rose: "#f43f5e", zinc: "#71717a" } as const;
+const CHART = { blue: "#b91c1c", teal: "#14b8a6", emerald: "#10b981", amber: "#f59e0b", rose: "#f43f5e", zinc: "#71717a" } as const;
 const ACTION_COLOR: Record<string, string> = { allow: CHART.blue, deny: CHART.rose, drop: CHART.amber, reject: CHART.zinc };
 const SEV_COLOR: Record<string, string> = { critical: CHART.rose, high: CHART.amber, medium: CHART.blue, low: CHART.teal, info: CHART.zinc };
 
@@ -170,7 +170,7 @@ function ReportsTab() {
               className={cn(
                 "px-3 py-1.5 text-xs font-medium transition-colors",
                 range === r
-                  ? "bg-blue-600 text-white"
+                  ? "bg-red-700 text-white"
                   : "bg-transparent text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800",
               )}
             >
@@ -217,7 +217,7 @@ function ReportsTab() {
               value={derived.total.toLocaleString()}
               sub={`window ${range}`}
               icon={<Icons.Waves className="h-5 w-5" />}
-              tone="bg-blue-500/10 text-blue-600 dark:text-blue-400"
+              tone="bg-red-600/10 text-red-700 dark:text-red-500"
             />
             <StatCard
               label="Blocked"
@@ -558,7 +558,7 @@ function ScheduledTab() {
                 <TableRow key={s.id}>
                   <TableCell className="text-sm font-medium">{s.name}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 text-[11px] capitalize text-blue-600 dark:text-blue-400">
+                    <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[11px] capitalize text-red-700 dark:text-red-500">
                       <Icons.CalendarClock className="mr-1 h-3 w-3" />
                       {s.range}
                     </Badge>
@@ -888,7 +888,7 @@ function ForwardingTab() {
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0 p-4 md:p-6">
           <CardTitle className="flex items-center gap-2 text-sm font-medium">
-            <Icons.FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <Icons.FileText className="h-4 w-4 text-red-700 dark:text-red-500" />
             Syslog targets
           </CardTitle>
           <Button
@@ -929,7 +929,7 @@ function ForwardingTab() {
                       {t.host}:{t.port}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 text-[11px] uppercase text-blue-600 dark:text-blue-400">
+                      <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[11px] uppercase text-red-700 dark:text-red-500">
                         {t.protocol}
                       </Badge>
                     </TableCell>
@@ -971,7 +971,7 @@ function ForwardingTab() {
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0 p-4 md:p-6">
           <CardTitle className="flex items-center gap-2 text-sm font-medium">
-            <Icons.Network className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <Icons.Network className="h-4 w-4 text-red-700 dark:text-red-500" />
             NetFlow / IPFIX targets
           </CardTitle>
           <Button

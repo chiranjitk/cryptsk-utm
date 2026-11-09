@@ -648,6 +648,26 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-09 — Rebrand v2: white / red / dark-red theme (ADR-019 rev)
+
+- Owner direction: brand colors are white/red/dark red — replace the blue/white theme.
+- **Tokens** (`globals.css`): `--primary` red-800 light / red-500 dark; ring, accent,
+  sidebar tint, chart vars re-hued (hue 262/250 → 25/27 or neutralized to zinc).
+- **Class sweep** (63 files, 1288 hits): `blue-N` → red family with one-step deepening
+  (500→600, 600→700, 700→800, 400→500, lights same-depth); `sky-N` → same-depth `red-N`
+  (TX/upload + info-adjacent chips); `violet-N` → same-depth `zinc-N` (info severity +
+  role chips — avoids collisions with amber=warn / rose=critical). Semantic colors
+  (emerald health, amber warn, orange medium, rose critical) untouched.
+- **Charts**: `PALETTE` hexes → red-700 / red-500 / amber / rose / orange / zinc / slate;
+  rx = red-700, tx = red-500. Hard-coded hexes in reports-view, compliance-view and the
+  HTML report engine rebranded (#2563eb→#b91c1c family).
+- **Brand mark**: `BrandLogo`/`icon.svg`/`public/logo.svg` gradient → red-600→red-900.
+- Docs synced: UI_DESIGN_SYSTEM §1–2 (logo, palette, matrices, chart table) +
+  DECISIONS ADR-019 REVISION block.
+- Verified in browser: login, dashboard (light + dark), firewall logs, IPS events —
+  red chrome everywhere, semantics intact, zero console errors, lint clean on all
+  touched files (pre-existing baseline unchanged).
+
 ### 2026-11-09 — Rebrand: favicon + logo mark + boot animation
 
 - Replaced the Z.ai placeholder favicon (external `z-cdn.chatglm.cn` URL in layout

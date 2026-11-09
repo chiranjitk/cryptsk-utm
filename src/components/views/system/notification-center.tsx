@@ -55,7 +55,7 @@ export function useUnreadCount(): { count: number; hasCritical: boolean; hasWarn
 
 // ── popover ─────────────────────────────────────────────────────────────────
 
-const UNREAD_TINT = "bg-blue-500/5";
+const UNREAD_TINT = "bg-red-600/5";
 
 export function NotificationCenter() {
   const [open, setOpen] = useState(false);
@@ -171,7 +171,7 @@ export function NotificationCenter() {
                       <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-zinc-400">
                         {n.sourceModule ? <span className="rounded bg-zinc-100 px-1 py-0.5 dark:bg-zinc-800">{n.sourceModule}</span> : null}
                         {fmtRelative(n.createdAt)}
-                        {!n.isRead ? <span className="h-1.5 w-1.5 rounded-full bg-blue-600" aria-label="unread" /> : null}
+                        {!n.isRead ? <span className="h-1.5 w-1.5 rounded-full bg-red-700" aria-label="unread" /> : null}
                       </span>
                     </span>
                   </button>

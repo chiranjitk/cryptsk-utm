@@ -107,7 +107,7 @@ function ObjectChips({ ids, map }: { ids: number[]; map: Map<number, ObjectInfo>
             className={cn(
               "max-w-36 gap-1 truncate font-normal",
               info?.isGroup
-                ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
                 : "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
             )}
           >
@@ -202,7 +202,7 @@ function StaticRoutesTab() {
             setEditing(null);
             setEditorOpen(true);
           }}
-          className="bg-blue-600 text-white hover:bg-blue-700"
+          className="bg-red-700 text-white hover:bg-red-800"
         >
           <Icons.Plus className="mr-1 h-4 w-4" /> Add route
         </Button>
@@ -229,7 +229,7 @@ function StaticRoutesTab() {
                     setEditing(null);
                     setEditorOpen(true);
                   }}
-                  className="bg-blue-600 text-white hover:bg-blue-700"
+                  className="bg-red-700 text-white hover:bg-red-800"
                 >
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add route
                 </Button>
@@ -466,7 +466,7 @@ function RouteEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create route"}
           </Button>
         </DialogFooter>
@@ -548,7 +548,7 @@ function PbrTab() {
 
   return (
     <div className="space-y-3">
-      <Alert className="border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300">
+      <Alert className="border-red-600/40 bg-red-600/10 text-red-800 dark:text-red-300">
         <Icons.Info className="h-4 w-4" />
         <AlertTitle>Policy-based routing</AlertTitle>
         <AlertDescription>
@@ -557,7 +557,7 @@ function PbrTab() {
       </Alert>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button size="sm" onClick={openCreate} className="bg-blue-600 text-white hover:bg-blue-700">
+        <Button size="sm" onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
           <Icons.Plus className="mr-1 h-4 w-4" /> Add policy route
         </Button>
       </div>
@@ -578,7 +578,7 @@ function PbrTab() {
               title="No policy routes"
               description="PBR rules steer matching connections to a specific WAN interface or gateway before multi-WAN mode selection applies."
               action={
-                <Button onClick={openCreate} className="bg-blue-600 text-white hover:bg-blue-700">
+                <Button onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add policy route
                 </Button>
               }
@@ -871,7 +871,7 @@ function PbrEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create policy route"}
           </Button>
         </DialogFooter>

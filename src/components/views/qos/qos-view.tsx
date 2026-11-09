@@ -161,7 +161,7 @@ export function QosView() {
         </p>
         <Button
           size="sm"
-          className="bg-blue-600 text-white hover:bg-blue-700"
+          className="bg-red-700 text-white hover:bg-red-800"
           onClick={() => {
             setEditing(null);
             setEditorOpen(true);
@@ -195,7 +195,7 @@ export function QosView() {
               action={
                 <Button
                   size="sm"
-                  className="bg-blue-600 text-white hover:bg-blue-700"
+                  className="bg-red-700 text-white hover:bg-red-800"
                   onClick={() => {
                     setEditing(null);
                     setEditorOpen(true);
@@ -282,7 +282,7 @@ export function QosView() {
               <div className="flex flex-wrap gap-1.5">
                 {deleteConflict.refs.map((r, i) => (
                   <a key={`${r.ruleName}-${i}`} href="#/firewall/rules" className="inline-flex">
-                    <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 dark:text-blue-400">
+                    <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-red-700 hover:bg-red-600/20 dark:text-red-500">
                       <Icons.ShieldCheck className="mr-1 h-3 w-3" />
                       {r.ruleName}
                       <span className="ml-1 text-[10px] uppercase text-zinc-400">{r.ruleType}</span>
@@ -295,7 +295,7 @@ export function QosView() {
           <AlertDialogFooter>
             <AlertDialogCancel>Close</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-600"
+              className="bg-red-700 text-white hover:bg-red-800 focus-visible:ring-red-700"
               onClick={(e) => {
                 e.preventDefault();
                 window.location.hash = "#/firewall/rules";
@@ -338,7 +338,7 @@ function PolicyCard({
     <Card
       className={cn(
         "cursor-pointer transition-colors",
-        active ? "border-blue-500/40 bg-blue-500/[0.04] ring-1 ring-blue-500/30" : "hover:border-zinc-300 dark:hover:border-zinc-700",
+        active ? "border-red-600/40 bg-red-600/[0.04] ring-1 ring-red-600/30" : "hover:border-zinc-300 dark:hover:border-zinc-700",
         !policy.enabled && "opacity-70",
       )}
       onClick={onSelect}
@@ -358,7 +358,7 @@ function PolicyCard({
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 px-1.5 py-0 font-mono text-[10px] text-blue-600 dark:text-blue-400">
+          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 px-1.5 py-0 font-mono text-[10px] text-red-700 dark:text-red-500">
             {humanizeKbps(policy.bandwidthKbps)}
           </Badge>
           {policy.ifaceName ? (
@@ -456,7 +456,7 @@ function PolicyDetail({
               <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => openEditor(null, { mode: "app" })}>
                 <Icons.AppWindow className="mr-1 h-3.5 w-3.5" /> Limit application…
               </Button>
-              <Button size="sm" className="h-8 bg-blue-600 text-xs text-white hover:bg-blue-700" onClick={() => openEditor(null)}>
+              <Button size="sm" className="h-8 bg-red-700 text-xs text-white hover:bg-red-800" onClick={() => openEditor(null)}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add Rule
               </Button>
             </div>
@@ -476,7 +476,7 @@ function PolicyDetail({
               title="No rules in this policy"
               description="Add a class with matchers and rates — or use the quick limit actions above."
               action={
-                <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => openEditor(null)}>
+                <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => openEditor(null)}>
                   Add Rule
                 </Button>
               }
@@ -566,7 +566,7 @@ function EffectPanel({ policy, rules }: { policy: QosPolicyDTO; rules: QosRuleDT
     <Card>
       <CardContent className="space-y-3 pt-5">
         <div className="flex items-center gap-2">
-          <Icons.Terminal className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.Terminal className="h-4 w-4 text-red-700 dark:text-red-500" />
           <p className="text-sm font-medium">Effect — what tc does with this</p>
         </div>
         <ol className="space-y-1.5 font-mono text-[11px] text-zinc-600 dark:text-zinc-300">
@@ -656,7 +656,7 @@ function UtilizationSparkline({ policy, ifaces }: { policy: QosPolicyDTO; ifaces
       <CardContent className="space-y-2 pt-5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Icons.Activity className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <Icons.Activity className="h-4 w-4 text-red-700 dark:text-red-500" />
             <p className="text-sm font-medium">Utilization — egress tx</p>
           </div>
           <p className="text-[11px] text-zinc-400">
@@ -877,7 +877,7 @@ function PolicyDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
             {save.isPending ? "Saving…" : editing ? "Save changes" : "Create policy"}
           </Button>
         </DialogFooter>
@@ -1124,7 +1124,7 @@ function RuleDialog({
                   onChange={(next) => set("matchApps", next)}
                   placeholder="Filter apps…"
                   triggerLabel="Apps"
-                  icon={<Icons.AppWindow className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                  icon={<Icons.AppWindow className="h-4 w-4 text-red-700 dark:text-red-500" />}
                 />
                 {err("matchApps") && <p className="text-[11px] text-rose-500">{err("matchApps")}</p>}
               </div>
@@ -1136,7 +1136,7 @@ function RuleDialog({
                   onChange={(next) => set("matchUsers", next)}
                   placeholder="Filter users…"
                   triggerLabel="Users"
-                  icon={<Icons.User className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                  icon={<Icons.User className="h-4 w-4 text-red-700 dark:text-red-500" />}
                 />
                 {err("matchUsers") && <p className="text-[11px] text-rose-500">{err("matchUsers")}</p>}
               </div>
@@ -1148,7 +1148,7 @@ function RuleDialog({
                   onChange={(next) => set("matchAddresses", next)}
                   placeholder="Filter addresses…"
                   triggerLabel="Addresses"
-                  icon={<Icons.MapPin className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                  icon={<Icons.MapPin className="h-4 w-4 text-red-700 dark:text-red-500" />}
                 />
                 {err("matchAddresses") && <p className="text-[11px] text-rose-500">{err("matchAddresses")}</p>}
               </div>
@@ -1168,7 +1168,7 @@ function RuleDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending || !canSave} className="bg-blue-600 text-white hover:bg-blue-700">
+          <Button onClick={() => save.mutate()} disabled={save.isPending || !canSave} className="bg-red-700 text-white hover:bg-red-800">
             {save.isPending ? "Saving…" : editing ? "Save changes" : "Create rule"}
           </Button>
         </DialogFooter>

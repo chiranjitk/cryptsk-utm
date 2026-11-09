@@ -275,7 +275,7 @@ function ResolverForm({ initial }: { initial: ResolverSettingsDTO }) {
         </EditorSection>
 
         <div className="flex justify-end">
-          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
             {save.isPending ? "Saving…" : "Save resolver settings"}
           </Button>
         </div>
@@ -325,7 +325,7 @@ function PoliciesTab() {
         </p>
         <Button
           size="sm"
-          className="bg-blue-600 text-white hover:bg-blue-700"
+          className="bg-red-700 text-white hover:bg-red-800"
           onClick={() => {
             setEditing(null);
             setEditorOpen(true);
@@ -353,7 +353,7 @@ function PoliciesTab() {
               action={
                 <Button
                   size="sm"
-                  className="bg-blue-600 text-white hover:bg-blue-700"
+                  className="bg-red-700 text-white hover:bg-red-800"
                   onClick={() => {
                     setEditing(null);
                     setEditorOpen(true);
@@ -553,7 +553,7 @@ function PolicyEditor({
                   }
                   className={cn(
                     "flex items-center justify-between rounded-md border px-2.5 py-1.5 text-xs font-medium capitalize transition-colors",
-                    on ? "border-blue-500/40 bg-blue-500/5 text-blue-600 dark:text-blue-400" : "border-zinc-200 text-zinc-600 dark:border-zinc-800 dark:text-zinc-300",
+                    on ? "border-red-600/40 bg-red-600/5 text-red-700 dark:text-red-500" : "border-zinc-200 text-zinc-600 dark:border-zinc-800 dark:text-zinc-300",
                   )}
                 >
                   {c}
@@ -603,7 +603,7 @@ function PolicyEditor({
         <Button variant="outline" onClick={() => onOpenChange(false)}>
           Cancel
         </Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create policy"}
         </Button>
       </DialogFooter>
@@ -707,7 +707,7 @@ function RecordsTab() {
         </Select>
         <Button
           size="sm"
-          className="ml-auto bg-blue-600 text-white hover:bg-blue-700"
+          className="ml-auto bg-red-700 text-white hover:bg-red-800"
           onClick={() => {
             setEditing(null);
             setEditorOpen(true);
@@ -733,7 +733,7 @@ function RecordsTab() {
               title="No DNS records"
               description="Local A/AAAA/CNAME/MX/TXT/SRV/PTR records answered by the resolver."
               action={
-                <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => { setEditing(null); setEditorOpen(true); }}>
+                <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => { setEditing(null); setEditorOpen(true); }}>
                   Add Record
                 </Button>
               }
@@ -926,7 +926,7 @@ function RecordEditor({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create record"}
         </Button>
       </DialogFooter>
@@ -998,7 +998,7 @@ function QueryLogTab() {
 
   return (
     <div className="space-y-3">
-      <Alert className="border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300">
+      <Alert className="border-red-600/40 bg-red-600/10 text-red-800 dark:text-red-300">
         <Icons.Info className="h-4 w-4" />
         <AlertTitle>Derived view</AlertTitle>
         <AlertDescription>

@@ -289,6 +289,14 @@
 - **Consequences:** All existing and future views must follow UI_DESIGN_SYSTEM §2 (blue
   chrome, emerald health-only). M03+ module views authored after this ADR use blue for
   `allow` action badges. Dark mode remains fully supported.
+- **REVISION (2026-11-09, owner-directed):** brand pivots to **white / red / dark red**
+  (owner brand colors). Brand primary = **red-800** (light) / **red-500** (dark);
+  chart palette LOCKED to red-700 → red-500 → amber → rose → orange → zinc → slate
+  (throughput rx = red-700, tx = red-500); `info` severity moves violet → **zinc** so red
+  never dilutes critical semantics; rose stays destructive/critical-only. Same emerald
+  health-only rule carries over. `PALETTE`, `globals.css` tokens, `BrandLogo` mark
+  (red-600 → red-900 gradient), favicon `src/app/icon.svg` and `public/logo.svg` all
+  rebranded in the same pass; UI_DESIGN_SYSTEM §2 is the updated color law.
 
 ## ADR-021 — Real host data plane (ADAPTER_MODE=host); simulation demoted to opt-in demo
 

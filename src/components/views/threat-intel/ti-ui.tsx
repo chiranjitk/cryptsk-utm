@@ -44,7 +44,7 @@ export function SeverityDot({ severity }: { severity: string }) {
 const ACTION_CLS: Record<string, string> = {
   drop: "border-red-500/50 bg-transparent text-red-500",
   reject: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  quarantine_vlan: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  quarantine_vlan: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
 };
 
 export function ActionChip({ action, className }: { action: string; className?: string }) {
@@ -102,7 +102,7 @@ export function SourceBadge({ source }: { source: string }) {
       className={cn(
         "gap-1 font-medium",
         isAuto
-          ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+          ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
           : "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
       )}
     >
@@ -114,7 +114,7 @@ export function SourceBadge({ source }: { source: string }) {
 
 export function CategoryChip({ category }: { category: string }) {
   return (
-    <Badge variant="outline" className="border-blue-500/30 bg-blue-500/5 text-xs font-normal capitalize text-zinc-600 dark:text-zinc-300">
+    <Badge variant="outline" className="border-red-600/30 bg-red-600/5 text-xs font-normal capitalize text-zinc-600 dark:text-zinc-300">
       {category}
     </Badge>
   );
@@ -128,7 +128,7 @@ export function Meter({ value, label, tone = "blue" }: { value: number; label: s
     <div className="flex items-center gap-2" title={`${label}: ${clamped}%`}>
       <div className="h-1.5 w-16 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
         <div
-          className={cn("h-full rounded-full transition-[width]", tone === "blue" ? "bg-blue-600" : "bg-red-500")}
+          className={cn("h-full rounded-full transition-[width]", tone === "blue" ? "bg-red-700" : "bg-red-500")}
           style={{ width: `${clamped}%` }}
         />
       </div>

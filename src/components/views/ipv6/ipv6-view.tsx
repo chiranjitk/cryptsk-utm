@@ -8,7 +8,7 @@
  * lease panel next to the dual-stack settings card (toggles + PD WAN select +
  * PD prefix-length pills + RA mode), then the NAT66 rules table (per-type
  * translation cell, deterministic "simulate traffic" hit bumps) and the
- * DHCPv6 servers table. Theme: blue-600 for active/primary, amber for
+ * DHCPv6 servers table. Theme: red-700 for active/primary, amber for
  * masquerade, zinc for DNAT/disabled.
  */
 
@@ -106,7 +106,7 @@ function useLoadErrorToast(query: { isError: boolean; error: unknown }, label: s
 // ── badge recipes (UI_DESIGN_SYSTEM: nptv6=blue, masquerade=amber, dnat=zinc) ──
 
 const NAT66_BADGE: Record<Nat66Type, string> = {
-  nptv6: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  nptv6: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
   masquerade66: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   dnat66: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
 };
@@ -127,7 +127,7 @@ function FlagPill({ label, on }: { label: string; on: boolean }) {
       className={cn(
         "text-[10px]",
         on
-          ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+          ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
           : "border-zinc-300 text-zinc-400 dark:border-zinc-700",
       )}
     >
@@ -144,7 +144,7 @@ function StatCard(props: { label: string; value: React.ReactNode; icon: React.Re
       <CardContent className="p-4">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-medium text-zinc-500">{props.label}</span>
-          <span className="text-blue-600 dark:text-blue-400">{props.icon}</span>
+          <span className="text-red-700 dark:text-red-500">{props.icon}</span>
         </div>
         <div className="mt-1">{props.value}</div>
         {props.sub ? <div className="mt-1">{props.sub}</div> : null}
@@ -175,7 +175,7 @@ function StatusStrip() {
               className={cn(
                 "gap-1 font-medium",
                 status.enabled
-                  ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                  ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
                   : "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800",
               )}
             >
@@ -201,7 +201,7 @@ function StatusStrip() {
         value={
           status ? (
             <span
-              className="block truncate font-mono text-lg font-semibold text-blue-600 dark:text-blue-400"
+              className="block truncate font-mono text-lg font-semibold text-red-700 dark:text-red-500"
               title={status.delegatedPrefix}
             >
               {status.delegatedPrefix}
@@ -217,7 +217,7 @@ function StatusStrip() {
         label="Router advertisements"
         value={
           status ? (
-            <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400">
+            <Badge variant="outline" className="border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500">
               <Icons.Rss className="h-3 w-3" />
               {raModeLabel(status.raMode)}
             </Badge>
@@ -246,7 +246,7 @@ function StatusStrip() {
                 onClick={() => {
                   window.location.hash = "#/firewall/rules";
                 }}
-                className="inline-flex items-center gap-1 rounded-full border border-blue-500/40 bg-blue-500/10 px-2.5 py-1 text-[11px] font-medium text-blue-600 transition-colors hover:bg-blue-500/20 dark:text-blue-400"
+                className="inline-flex items-center gap-1 rounded-full border border-red-600/40 bg-red-600/10 px-2.5 py-1 text-[11px] font-medium text-red-700 transition-colors hover:bg-red-600/20 dark:text-red-500"
               >
                 <Icons.ShieldCheck className="h-3 w-3" />
                 Open v6 rules
@@ -290,7 +290,7 @@ function PrefixDelegationCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.ArrowDownToLine className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.ArrowDownToLine className="h-4 w-4 text-red-700 dark:text-red-500" />
           Prefix delegation (IA_PD)
         </CardTitle>
         <Button
@@ -319,7 +319,7 @@ function PrefixDelegationCard() {
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="truncate rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3 font-mono text-2xl font-semibold text-blue-600 dark:text-blue-400" title={lease.prefix}>
+            <p className="truncate rounded-lg border border-red-600/30 bg-red-600/5 px-4 py-3 font-mono text-2xl font-semibold text-red-700 dark:text-red-500" title={lease.prefix}>
               {lease.prefix}
             </p>
             <div>
@@ -428,7 +428,7 @@ function SettingsCard(props: { ifaces: string[] }) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Settings2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.Settings2 className="h-4 w-4 text-red-700 dark:text-red-500" />
           Dual-stack settings
         </CardTitle>
         {draft ? (
@@ -508,7 +508,7 @@ function SettingsCard(props: { ifaces: string[] }) {
                         className={cn(
                           "min-h-9 rounded-full border px-3 text-xs transition-colors",
                           active
-                            ? "border-blue-500/40 bg-blue-500/10 font-semibold text-blue-600 dark:text-blue-400"
+                            ? "border-red-600/40 bg-red-600/10 font-semibold text-red-700 dark:text-red-500"
                             : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
                         )}
                       >
@@ -546,7 +546,7 @@ function SettingsCard(props: { ifaces: string[] }) {
               ) : null}
               <Button
                 size="sm"
-                className="min-h-9 bg-blue-600 px-5 text-white hover:bg-blue-700"
+                className="min-h-9 bg-red-700 px-5 text-white hover:bg-red-800"
                 disabled={!draft || save.isPending}
                 onClick={() => draft && save.mutate(draft)}
               >
@@ -568,7 +568,7 @@ function TranslationCell({ rule }: { rule: Nat66RuleDTO }) {
       <span className="flex flex-wrap items-center gap-1.5 font-mono text-xs" title={`${rule.sourcePrefix ?? ""} → ${rule.translatedPrefix ?? ""}`}>
         <span className="max-w-36 truncate">{rule.sourcePrefix}</span>
         <Icons.ArrowRight className="h-3 w-3 shrink-0 text-zinc-400" />
-        <span className="max-w-36 truncate text-blue-600 dark:text-blue-400">{rule.translatedPrefix}</span>
+        <span className="max-w-36 truncate text-red-700 dark:text-red-500">{rule.translatedPrefix}</span>
       </span>
     );
   }
@@ -577,7 +577,7 @@ function TranslationCell({ rule }: { rule: Nat66RuleDTO }) {
       <span className="flex items-center gap-1.5 font-mono text-xs">
         <span className="text-zinc-400">dnat</span>
         <Icons.ArrowRight className="h-3 w-3 shrink-0 text-zinc-400" />
-        <span className="text-blue-600 dark:text-blue-400">:{rule.destPort}</span>
+        <span className="text-red-700 dark:text-red-500">:{rule.destPort}</span>
       </span>
     );
   }
@@ -585,7 +585,7 @@ function TranslationCell({ rule }: { rule: Nat66RuleDTO }) {
     <span className="flex items-center gap-1.5 font-mono text-xs">
       <span className="text-zinc-400">all sources</span>
       <Icons.ArrowRight className="h-3 w-3 shrink-0 text-zinc-400" />
-      <span className="text-blue-600 dark:text-blue-400">iface address</span>
+      <span className="text-red-700 dark:text-red-500">iface address</span>
     </span>
   );
 }
@@ -762,7 +762,7 @@ function Nat66Editor(props: { rule: Nat66RuleDTO | null; ifaces: string[]; onClo
             Cancel
           </Button>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-red-700 text-white hover:bg-red-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -807,10 +807,10 @@ function Nat66Card(props: {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.ArrowLeftRight className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.ArrowLeftRight className="h-4 w-4 text-red-700 dark:text-red-500" />
           NAT66 rules
         </CardTitle>
-        <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" onClick={props.onAdd}>
+        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add rule
         </Button>
       </CardHeader>
@@ -827,7 +827,7 @@ function Nat66Card(props: {
             title="No NAT66 rules yet"
             description="Create a rule to translate IPv6 prefixes, masquerade outbound traffic or forward a WAN port."
             action={
-              <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={props.onAdd}>
+              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add rule
               </Button>
             }
@@ -877,7 +877,7 @@ function Nat66Card(props: {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
                           aria-label={`Simulate traffic for ${rule.name}`}
                           title="Simulate traffic (+1–5 hits)"
                           disabled={simulate.isPending && simulate.variables?.id === rule.id}
@@ -888,7 +888,7 @@ function Nat66Card(props: {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
                           aria-label={`Edit ${rule.name}`}
                           onClick={() => props.onEdit(rule)}
                         >
@@ -1039,7 +1039,7 @@ function Dhcpv6Editor(props: { server: Dhcpv6ServerDTO | null; ifaces: string[];
                       className={cn(
                         "min-h-9 flex-1 rounded-full border px-3 text-xs transition-colors",
                         active
-                          ? "border-blue-500/40 bg-blue-500/10 font-semibold text-blue-600 dark:text-blue-400"
+                          ? "border-red-600/40 bg-red-600/10 font-semibold text-red-700 dark:text-red-500"
                           : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
                       )}
                     >
@@ -1126,7 +1126,7 @@ function Dhcpv6Editor(props: { server: Dhcpv6ServerDTO | null; ifaces: string[];
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-blue-600 text-white hover:bg-blue-700" disabled={save.isPending} onClick={submit}>
+          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create server"}
           </Button>
         </DialogFooter>
@@ -1181,10 +1181,10 @@ function Dhcpv6Card(props: {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Server className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.Server className="h-4 w-4 text-red-700 dark:text-red-500" />
           DHCPv6 servers
         </CardTitle>
-        <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" onClick={props.onAdd}>
+        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add server
         </Button>
       </CardHeader>
@@ -1201,7 +1201,7 @@ function Dhcpv6Card(props: {
             title="No DHCPv6 servers yet"
             description="Create a server to hand out stateful IPv6 addresses on an interface."
             action={
-              <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={props.onAdd}>
+              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add server
               </Button>
             }
@@ -1260,7 +1260,7 @@ function Dhcpv6Card(props: {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
                           aria-label={`Edit DHCPv6 on ${server.interfaceName}`}
                           onClick={() => props.onEdit(server)}
                         >

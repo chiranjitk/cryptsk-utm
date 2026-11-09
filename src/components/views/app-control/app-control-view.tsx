@@ -6,7 +6,7 @@
  * per-policy nDPI app rules table (inline action/bandwidth/direction editing,
  * user-group scoping), a simulated "Test app" decision card and a 24h stats
  * strip + recent decision log table. Theme: allow = blue, block = rose,
- * limited = amber (blue-600 enterprise).
+ * limited = amber (red-700 enterprise).
  */
 
 import { useMemo, useState } from "react";
@@ -92,7 +92,7 @@ function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
 // ── badge recipes (UI_DESIGN_SYSTEM: allow=blue soft, block=rose, limit=amber) ──
 
 const DECISION_CLS: Record<AppLogAction, string> = {
-  allowed: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  allowed: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
   blocked: "border-transparent bg-rose-600 text-white",
   limited: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
 };
@@ -121,7 +121,7 @@ function DefaultActionBadge({ action }: { action: PolicyAction }) {
       className={
         action === "block"
           ? "gap-1 border-transparent bg-rose-600 font-medium text-white"
-          : "gap-1 border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
+          : "gap-1 border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
       }
     >
       {action === "block" ? <Icons.Ban className="h-3 w-3" /> : <Icons.ShieldCheck className="h-3 w-3" />}
@@ -135,7 +135,7 @@ function UnknownActionChip({ action }: { action: UnknownAppAction }) {
     action === "block"
       ? "border-rose-600/60 bg-transparent text-rose-500"
       : action === "allow"
-        ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+        ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
         : "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
   return (
     <Badge variant="outline" className={`gap-1 text-[10px] ${cls}`}>
@@ -223,7 +223,7 @@ function AppCombobox(props: { apps: AppCatalogEntryDTO[]; value: string; onSelec
                     setOpen(false);
                   }}
                 >
-                  <Icons.Check className={`mr-1.5 h-4 w-4 ${props.value === app.name ? "text-blue-600 dark:text-blue-400" : "opacity-0"}`} />
+                  <Icons.Check className={`mr-1.5 h-4 w-4 ${props.value === app.name ? "text-red-700 dark:text-red-500" : "opacity-0"}`} />
                   <span className="font-mono text-xs">{app.name}</span>
                   <span className="ml-auto max-w-32 truncate text-[10px] text-zinc-400">{app.description}</span>
                 </CommandItem>
@@ -327,7 +327,7 @@ function PolicyEditor(props: { policy: AppPolicyDTO | null; onClose: () => void 
             Cancel
           </Button>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-red-700 text-white hover:bg-red-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -474,7 +474,7 @@ function AddRuleDialog(props: { policyId: number; onClose: () => void }) {
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-blue-600 text-white hover:bg-blue-700" disabled={save.isPending || !appName} onClick={submit}>
+          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending || !appName} onClick={submit}>
             {save.isPending ? "Saving…" : "Add rule"}
           </Button>
         </DialogFooter>
@@ -533,7 +533,7 @@ function RulesTable({ policyId }: { policyId: number }) {
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 p-4 dark:border-zinc-800">
         <span className="text-xs text-zinc-400">{rows.length} rules</span>
         <div className="ml-auto">
-          <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" onClick={() => setAddOpen(true)}>
+          <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
             <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add rule
           </Button>
         </div>
@@ -621,7 +621,7 @@ function RulesTable({ policyId }: { policyId: number }) {
                           <Badge
                             key={id}
                             variant="outline"
-                            className="border-blue-500/40 bg-blue-500/10 text-[10px] text-blue-600 dark:text-blue-400"
+                            className="border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500"
                           >
                             {groupMap.get(id) ?? `#${id}`}
                           </Badge>
@@ -704,7 +704,7 @@ function PolicyConflictDialog(props: {
                 <Badge
                   key={`${r.ruleName}-${i}`}
                   variant="outline"
-                  className="border-blue-500/40 bg-blue-500/10 font-mono text-[11px] text-blue-600 dark:text-blue-400"
+                  className="border-red-600/40 bg-red-600/10 font-mono text-[11px] text-red-700 dark:text-red-500"
                 >
                   <Icons.Shapes className="mr-1 h-3 w-3" />
                   {r.ruleName}
@@ -716,7 +716,7 @@ function PolicyConflictDialog(props: {
         <AlertDialogFooter>
           <AlertDialogCancel>Close</AlertDialogCancel>
           <AlertDialogAction
-            className="bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-600"
+            className="bg-red-700 text-white hover:bg-red-800 focus-visible:ring-red-700"
             onClick={(e) => {
               e.preventDefault();
               props.onOpenChange(false);
@@ -754,7 +754,7 @@ function TestAppCard({ policy }: { policy: AppPolicyDTO }) {
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.FlaskConical className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.FlaskConical className="h-4 w-4 text-red-700 dark:text-red-500" />
           Test app
           <span className="text-xs font-normal text-zinc-400">simulated decision for “{policy.name}”</span>
         </CardTitle>
@@ -774,7 +774,7 @@ function TestAppCard({ policy }: { policy: AppPolicyDTO }) {
             </SelectContent>
           </Select>
           <Button
-            className="h-9 bg-blue-600 px-5 text-white hover:bg-blue-700"
+            className="h-9 bg-red-700 px-5 text-white hover:bg-red-800"
             disabled={run.isPending || !appName}
             onClick={() => run.mutate()}
           >
@@ -836,7 +836,7 @@ function StatsStrip() {
       <StatCard
         label="Allowed (24h)"
         value={stats?.allowed24h ?? "—"}
-        tone="text-blue-600 dark:text-blue-400"
+        tone="text-red-700 dark:text-red-500"
         icon={<Icons.ShieldCheck className="h-4 w-4" />}
       />
       <StatCard
@@ -855,7 +855,7 @@ function StatsStrip() {
         <CardContent className="p-4">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-zinc-500">Top apps (24h)</span>
-            <Icons.TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <Icons.TrendingUp className="h-4 w-4 text-red-700 dark:text-red-500" />
           </div>
           {stats && stats.topApps.length > 0 ? (
             <ul className="mt-2 space-y-1">
@@ -896,7 +896,7 @@ function LogsCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.ScrollText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.ScrollText className="h-4 w-4 text-red-700 dark:text-red-500" />
           Recent app control activity
         </CardTitle>
         <div className="flex items-center gap-2">
@@ -1010,7 +1010,7 @@ function PolicyCard(props: {
       aria-pressed={props.selected}
       className={`w-full cursor-pointer rounded-xl border p-4 text-left transition-colors ${
         props.selected
-          ? "border-blue-500/50 bg-blue-500/5 ring-1 ring-blue-500/30"
+          ? "border-red-600/50 bg-red-600/5 ring-1 ring-red-600/30"
           : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50"
       }`}
     >
@@ -1025,7 +1025,7 @@ function PolicyCard(props: {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+            className="h-7 w-7 text-zinc-400 hover:text-red-700"
             aria-label={`Edit ${policy.name}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -1116,7 +1116,7 @@ export function AppControlView() {
             <CardTitle className="text-sm">Policies</CardTitle>
             <Button
               size="sm"
-              className="h-8 bg-blue-600 text-white hover:bg-blue-700"
+              className="h-8 bg-red-700 text-white hover:bg-red-800"
               onClick={() => setAddOpen(true)}
             >
               <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
@@ -1137,7 +1137,7 @@ export function AppControlView() {
                 title="No policies yet"
                 description="Create an app control policy to manage per-application allow, block and bandwidth rules."
                 action={
-                  <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => setAddOpen(true)}>
+                  <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
                     <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New policy
                   </Button>
                 }
@@ -1171,7 +1171,7 @@ export function AppControlView() {
               <Card>
                 <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
                   <CardTitle className="flex items-center gap-2 text-sm">
-                    <Icons.Shapes className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <Icons.Shapes className="h-4 w-4 text-red-700 dark:text-red-500" />
                     {selected.name}
                     {!selected.enabled && (
                       <Badge

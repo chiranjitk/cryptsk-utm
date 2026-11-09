@@ -140,7 +140,7 @@ function SubnetsTab({ goToReservations }: { goToReservations: () => void }) {
         <p className="text-xs text-zinc-500">DHCP scopes · deleting a subnet cascades its reservations and leases</p>
         <Button
           size="sm"
-          className="bg-blue-600 text-white hover:bg-blue-700"
+          className="bg-red-700 text-white hover:bg-red-800"
           onClick={() => {
             setEditing(null);
             setEditorOpen(true);
@@ -172,7 +172,7 @@ function SubnetsTab({ goToReservations }: { goToReservations: () => void }) {
               title="No DHCP subnets"
               description="Create a scope to start leasing addresses on an interface."
               action={
-                <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => { setEditing(null); setEditorOpen(true); }}>
+                <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => { setEditing(null); setEditorOpen(true); }}>
                   Add Subnet
                 </Button>
               }
@@ -213,7 +213,7 @@ function SubnetsTab({ goToReservations }: { goToReservations: () => void }) {
                   <button
                     type="button"
                     onClick={goToReservations}
-                    className="text-[11px] text-zinc-400 underline-offset-2 hover:text-blue-600 hover:underline dark:hover:text-blue-400"
+                    className="text-[11px] text-zinc-400 underline-offset-2 hover:text-red-700 hover:underline dark:hover:text-red-500"
                   >
                     {s.reservationCount} reservation{s.reservationCount === 1 ? "" : "s"}
                   </button>
@@ -390,7 +390,7 @@ function SubnetEditor({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create subnet"}
         </Button>
       </DialogFooter>
@@ -460,7 +460,7 @@ function ReservationsTab() {
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-zinc-500">Static MAC bindings — reserved IPs are excluded from the dynamic pool</p>
-        <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => { setEditing(null); setEditorOpen(true); }}>
+        <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => { setEditing(null); setEditorOpen(true); }}>
           <Icons.Plus className="mr-1 h-4 w-4" /> Add Reservation
         </Button>
       </div>
@@ -481,7 +481,7 @@ function ReservationsTab() {
               title="No reservations"
               description="Pin a MAC address to an IP inside one of your subnets."
               action={
-                <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => { setEditing(null); setEditorOpen(true); }}>
+                <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => { setEditing(null); setEditorOpen(true); }}>
                   Add Reservation
                 </Button>
               }
@@ -651,7 +651,7 @@ function ReservationEditor({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create reservation"}
         </Button>
       </DialogFooter>
@@ -742,7 +742,7 @@ function LeasesTab() {
               className={cn(
                 "rounded-full border px-3 py-1 text-[11px] font-medium transition-colors",
                 state === c.key
-                  ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                  ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
                   : "border-zinc-200 text-zinc-500 hover:text-zinc-700 dark:border-zinc-800 dark:text-zinc-400",
               )}
             >
@@ -905,7 +905,7 @@ function RelayForm({
   return (
     <Card>
       <CardContent className="space-y-5 pt-6">
-        <Alert className="border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300">
+        <Alert className="border-red-600/40 bg-red-600/10 text-red-800 dark:text-red-300">
           <Icons.Info className="h-4 w-4" />
           <AlertTitle>DHCP relay (ip-helper)</AlertTitle>
           <AlertDescription>
@@ -934,13 +934,13 @@ function RelayForm({
                       key={i.id}
                       className={cn(
                         "flex cursor-pointer items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors",
-                        on ? "border-blue-500/30 bg-blue-500/5" : "border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/60",
+                        on ? "border-red-600/30 bg-red-600/5" : "border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/60",
                       )}
                     >
                       <span className="font-mono">{i.name}</span>
                       <span className="flex items-center gap-2 text-[10px] text-zinc-400">
                         {i.role}
-                        <input type="checkbox" checked={on} onChange={() => toggleIface(i.name)} aria-label={`Relay interface ${i.name}`} className="accent-blue-600" />
+                        <input type="checkbox" checked={on} onChange={() => toggleIface(i.name)} aria-label={`Relay interface ${i.name}`} className="accent-red-700" />
                       </span>
                     </label>
                   );
@@ -953,7 +953,7 @@ function RelayForm({
         </EditorSection>
 
         <div className="flex justify-end">
-          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-blue-600 text-white hover:bg-blue-700">
+          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
             {save.isPending ? "Saving…" : "Save relay config"}
           </Button>
         </div>

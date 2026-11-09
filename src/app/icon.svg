@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
     <linearGradient id="ckg" x1="7" y1="3" x2="57" y2="61" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#3b82f6"/>
-      <stop offset="1" stop-color="#7c3aed"/>
+      <stop stop-color="#dc2626"/>
+      <stop offset="1" stop-color="#7f1d1d"/>
     </linearGradient>
   </defs>
   <path d="M32 3 L57 12.5 V29 C57 46.5 46.8 57.6 32 61.5 C17.2 57.6 7 46.5 7 29 V12.5 Z" fill="url(#ckg)"/>

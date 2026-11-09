@@ -36,8 +36,8 @@ export function useIdentityConfigInvalidation(): void {
 
 const ROLE_STYLES: Record<string, string> = {
   super_admin: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
-  tenant_admin: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  security_admin: "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  tenant_admin: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  security_admin: "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-400",
   network_admin: "border-teal-500/40 bg-teal-500/10 text-teal-600 dark:text-teal-400",
   soc_analyst: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   helpdesk: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
@@ -59,7 +59,7 @@ export function MethodBadge({ method }: { method: string }) {
     local: { cls: "border-transparent bg-emerald-600 text-white", label: "local" },
     radius: { cls: "border-teal-500/40 bg-teal-500/10 text-teal-600 dark:text-teal-400", label: "radius" },
     captive_portal: { cls: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400", label: "captive_portal" },
-    vpn: { cls: "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-400", label: "vpn" },
+    vpn: { cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-400", label: "vpn" },
   };
   const it = map[method] ?? map.local!;
   return (
@@ -110,7 +110,7 @@ export function DirectoryTypeChip({ type }: { type: string }) {
       className={cn(
         "px-1.5 py-0 text-[10px] uppercase tracking-wide",
         ad
-          ? "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-400"
+          ? "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-400"
           : "border-zinc-300 bg-zinc-50 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300",
       )}
     >

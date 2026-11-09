@@ -2,12 +2,13 @@
 
 > **TL;DR:** An enterprise, light-first, dense-but-breathable security-operations console
 > built from the existing shadcn/ui set in `src/components/ui`. Colors are LOCKED: neutrals
-> are **zinc**, brand primary is **blue-600** (white surfaces + blue chrome — ADR-019,
-> owner-directed 2026-11-06), and **emerald/teal are forbidden as brand/UI-chrome colors**
-> (buttons, active nav, badges, charts). Emerald remains reserved ONLY for true health
-> semantics (up/online/healthy dots + badges). All charts use the ordered palette
-> blue → sky → amber → rose → orange → violet → slate. No custom color names — only
-> shadcn semantic variables and the small registry of shared components defined in §5.
+> are **zinc**, brand primary is **dark red** (red-800 light / red-500 dark — white surfaces
+> + red chrome — ADR-019 rev, owner-directed 2026-11-09), and **emerald/teal are forbidden
+> as brand/UI-chrome colors** (buttons, active nav, badges, charts). Emerald remains
+> reserved ONLY for true health semantics (up/online/healthy dots + badges). All charts use
+> the ordered palette red → red-light → amber → rose → orange → zinc → slate. No custom
+> color names — only shadcn semantic variables and the small registry of shared components
+> defined in §5.
 
 Related: [PROJECT_MEMORY §8–9 (view map + tokens, LOCKED)](../00-PROJECT-MEMORY/PROJECT_MEMORY.md) ·
 [DECISIONS.md (ADRs)](../00-PROJECT-MEMORY/DECISIONS.md) ·
@@ -29,8 +30,9 @@ Related: [PROJECT_MEMORY §8–9 (view map + tokens, LOCKED)](../00-PROJECT-MEMO
   (`space-y-4`/`space-y-6`). Never cram two data tables side by side below `lg`.
 - **Icons:** lucide-react only (bundled with shadcn). One glyph size language: `size-4`
   inline, `size-5` in buttons/nav. Never mix other icon sets.
-- **Logo:** text wordmark "CRYPTSK" (`font-semibold tracking-widest`) + `ShieldCheck`
-  lucide glyph in blue-600 on a white/blue rounded tile. No image assets.
+- **Logo:** `BrandLogo` SVG mark (`components/shell/brand-logo.tsx`) — gradient shield +
+  keyhole, red-600 → red-900. Mirrored by `src/app/icon.svg` (favicon) and
+  `public/logo.svg`. No image assets.
 - **Voice:** short, factual labels ("Block", "Suppress 24h", "Force probe"). Sentence case
   everywhere; no exclamation marks; toasts state what happened, not enthusiasm.
 
@@ -38,35 +40,36 @@ Related: [PROJECT_MEMORY §8–9 (view map + tokens, LOCKED)](../00-PROJECT-MEMO
 
 **Hard rule: NO emerald/teal as brand or UI-chrome color — any `emerald-*`/`teal-*` class
 used for buttons, active nav, badges, charts, or decorative accents is a bug.** Emerald is
-reserved exclusively for health semantics (§2.4 up/healthy rows). Blue is the brand color
-(ADR-019 owner request, 2026-11-06).
+reserved exclusively for health semantics (§2.4 up/healthy rows). Red is the brand color
+(ADR-019 rev, owner request 2026-11-09): white surfaces + red/dark-red chrome. Rose stays
+reserved for destructive/critical semantics; `info` uses neutral zinc so red never dilutes.
 
 ### 2.1 Base palette roles
 
 | Role | Token / class | Notes |
 |---|---|---|
-| Neutrals (bg, surfaces, borders, text) | `zinc-50…zinc-950` | light base white, sidebar `zinc-50` w/ faint blue tint (`--sidebar` token), dark cards `zinc-900` |
-| Brand primary | blue (`blue-600` light / `blue-500` dark) | primary buttons, active nav, focus ring, logo glyph, links |
-| Accent (charts secondary, selected-but-not-active) | sky | secondary series, info-adjacent highlights |
+| Neutrals (bg, surfaces, borders, text) | `zinc-50…zinc-950` | light base white, sidebar white w/ faint warm tint (`--sidebar` token), dark cards `zinc-900` |
+| Brand primary | red (`red-800` light / `red-500` dark) | primary buttons, active nav, focus ring, logo glyph, links |
+| Accent (charts secondary, TX/upload) | red-500 (light series) | secondary series, TX labels/legend |
 | Destructive | rose-600 | delete confirms, destructive buttons (`--destructive`) |
 
 ### 2.2 Semantic meanings → tokens (canonical mapping)
 
 | Meaning | Color | Typical surface |
 |---|---|---|
-| Allow rule, success toast, permitted | blue-600 | soft badge, shield glyph, chart series 1 |
+| Allow rule, success toast, permitted | red-700 | soft badge, shield glyph, chart series 1 |
 | UP/online/healthy state (true health only) | emerald-600 | soft badge, green dot — the ONLY allowed emerald usage |
 | Degraded / warning / "needs attention" | amber-500 | soft badge, gauge >80% |
 | Secondary warning (distinct from amber when both shown) | orange-500 | reject action, medium severity |
 | Block / deny / critical / failure | rose-600 | solid badge, destructive button, gauge >95% |
-| Informational series / neutral-info | violet-500 | info severity, 6th chart series |
+| Informational series / neutral-info | zinc-500 | info severity, 6th chart series |
 | Disabled / inactive / standby | zinc (muted) | outline badge, muted switch |
 
 ### 2.3 Rule-action matrix (canonical — used by StatusBadge)
 
 | `firewall_rules.action` | Variant | Class recipe | Icon |
 |---|---|---|---|
-| `allow` | blue soft | `border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400` | `ShieldCheck` |
+| `allow` | red soft | `border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500` | `ShieldCheck` |
 | `deny` | rose solid | `border-transparent bg-rose-600 text-white` | `Ban` |
 | `drop` | rose outline | `border-rose-600/60 bg-transparent text-rose-500` | `CircleX` |
 | `reject` | orange soft | `border-orange-500/40 bg-orange-500/10 text-orange-500` | `CircleMinus` |
@@ -87,13 +90,13 @@ The same four variants serve `ips_events.action` (`alert`=amber soft, `drop`=ros
 | `high` | rose outline | `TriangleAlert` | severity scale |
 | `medium` | orange soft | `CircleAlert` | severity scale |
 | `low` | amber outline | `CircleMinus` | severity scale |
-| `info` | violet soft | `Info` | severity scale, informational toasts |
+| `info` | zinc soft | `Info` | severity scale, informational toasts |
 | `disabled` / `unused` / `passive` | zinc outline | `CircleDashed` | toggles off, HA disabled, IPS passive mode |
 
-Severity ladder (LOCKED enum): `info` < `low` < `medium` < `high` < `critical` → violet,
+Severity ladder (LOCKED enum): `info` < `low` < `medium` < `high` < `critical` → zinc,
 amber, orange, rose, rose-solid. This 5-level scale is the `ips_events.severity` enum
 (PROJECT_MEMORY §6); `notifications.severity` uses its own 3-level scale
-(`info|warning|critical` — violet, amber, rose). Color is never the sole signal — every
+(`info|warning|critical` — zinc, amber, rose). Color is never the sole signal — every
 badge pairs a glyph + text label (see §9).
 
 ### 2.5 Chart palette (LOCKED order)
@@ -103,16 +106,16 @@ Defined once as CSS variables in `globals.css` (`--chart-1`…`--chart-7`), cons
 
 | Slot | Color | Hex (light) |
 |---|---|---|
-| `--chart-1` | blue-600 | `#2563eb` |
-| `--chart-2` | sky-500 | `#0ea5e9` |
+| `--chart-1` | red-700 | `#b91c1c` |
+| `--chart-2` | red-500 | `#ef4444` |
 | `--chart-3` | amber-500 | `#f59e0b` |
-| `--chart-4` | rose-600 | `#e11d48` |
+| `--chart-4` | red-800 | `#991b1b` |
 | `--chart-5` | orange-500 | `#f97316` |
-| `--chart-6` | violet-500 | `#8b5cf6` |
+| `--chart-6` | zinc-500 | `#71717a` |
 | `--chart-7` | slate-500 | `#64748b` |
 
-Series pick slots strictly in order (1st series = blue, 2nd = sky, …). Named series
-keep a fixed slot everywhere (throughput rx = blue, tx = sky) for cross-view muscle
+Series pick slots strictly in order (1st series = red, 2nd = red-light, …). Named series
+keep a fixed slot everywhere (throughput rx = red-700, tx = red-500) for cross-view muscle
 memory. The concrete implementation lives in `src/components/charts/palette.tsx`
 (`PALETTE` — mirrors this table; dark mode uses the `.dark` `--chart-*` variables).
 

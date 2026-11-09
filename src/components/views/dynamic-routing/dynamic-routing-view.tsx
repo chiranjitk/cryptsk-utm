@@ -65,7 +65,7 @@ function OverviewStrip() {
         return (
           <Card key={c.label}>
             <CardContent className="flex items-center gap-4 p-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-600/10 text-red-700 dark:text-red-500">
                 <Icon className="h-5 w-5" />
               </div>
               <div className="min-w-0">
@@ -109,7 +109,7 @@ export function DynamicRoutingView() {
             Dynamic routing control plane — peering sessions, OSPF process, policy objects and the simulated FRR RIB.
           </p>
         </div>
-        <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 font-mono text-blue-600 dark:text-blue-400">
+        <Badge variant="outline" className="border-red-600/40 bg-red-600/10 font-mono text-red-700 dark:text-red-500">
           spec 2.6
         </Badge>
       </header>

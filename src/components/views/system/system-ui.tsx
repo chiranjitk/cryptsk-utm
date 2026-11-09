@@ -49,7 +49,7 @@ export function usePermissions(): {
 export function BackupTypeBadge({ type }: { type: string }) {
   if (type === "full") {
     return (
-      <Badge className="border-transparent bg-violet-600 text-white">
+      <Badge className="border-transparent bg-zinc-600 text-white">
         <Icons.DatabaseBackup className="mr-1 h-3 w-3" /> full
       </Badge>
     );

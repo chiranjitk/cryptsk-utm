@@ -86,7 +86,7 @@ export function RibTab() {
             aria-label="Search routes"
           />
           <Button
-            className="gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+            className="gap-1.5 bg-red-700 text-white hover:bg-red-800"
             disabled={refreshMut.isPending}
             onClick={() => refreshMut.mutate()}
           >

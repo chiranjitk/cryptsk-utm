@@ -64,7 +64,7 @@ const PROVIDER_LABEL: Record<FeedProvider, string> = {
 function SyncStatusPill({ status, at }: { status: string; at: string | null }) {
   const cls =
     status === "ok"
-      ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
       : status === "error"
         ? "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"
         : "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800";
@@ -223,7 +223,7 @@ function FeedEditor(props: { initial: FeedDTO | null; onClose: () => void }) {
             Cancel
           </Button>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-red-700 text-white hover:bg-red-800"
             disabled={save.isPending || !name.trim() || !url.trim() || !Number.isFinite(intervalNum) || intervalNum < 5 || intervalNum > 1440}
             onClick={() =>
               save.mutate({
@@ -250,17 +250,17 @@ function FeedEditor(props: { initial: FeedDTO | null; onClose: () => void }) {
 
 function StatsStrip({ stats }: { stats: ThreatStats | undefined }) {
   const items: Array<{ label: string; value: number; icon: React.ReactNode; tone?: "red" }> = [
-    { label: "Total IOCs", value: stats?.totalIocs ?? 0, icon: <Icons.Database className="h-4 w-4 text-blue-600 dark:text-blue-400" /> },
+    { label: "Total IOCs", value: stats?.totalIocs ?? 0, icon: <Icons.Database className="h-4 w-4 text-red-700 dark:text-red-500" /> },
     { label: "Critical", value: stats?.bySeverity.critical ?? 0, icon: <Icons.Siren className="h-4 w-4 text-red-500" />, tone: "red" },
-    { label: "Hits (24h)", value: stats?.hits24h ?? 0, icon: <Icons.Activity className="h-4 w-4 text-blue-600 dark:text-blue-400" /> },
-    { label: "Active feeds", value: stats?.activeFeeds ?? 0, icon: <Icons.Rss className="h-4 w-4 text-blue-600 dark:text-blue-400" /> },
+    { label: "Hits (24h)", value: stats?.hits24h ?? 0, icon: <Icons.Activity className="h-4 w-4 text-red-700 dark:text-red-500" /> },
+    { label: "Active feeds", value: stats?.activeFeeds ?? 0, icon: <Icons.Rss className="h-4 w-4 text-red-700 dark:text-red-500" /> },
   ];
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {items.map((it) => (
         <Card key={it.label} className="p-4">
           <CardContent className="flex items-center gap-3 p-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">{it.icon}</div>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-600/10">{it.icon}</div>
             <div className="min-w-0">
               <p className={cn("text-xl font-semibold tabular-nums", it.tone === "red" && (it.value ?? 0) > 0 ? "text-red-600 dark:text-red-400" : undefined)}>
                 {it.value.toLocaleString()}
@@ -330,7 +330,7 @@ export function FeedsView() {
         </p>
         <Button
           size="sm"
-          className="bg-blue-600 text-white hover:bg-blue-700"
+          className="bg-red-700 text-white hover:bg-red-800"
           onClick={() => {
             setEditing(null);
             setEditorOpen(true);
@@ -357,7 +357,7 @@ export function FeedsView() {
               description="Add a provider feed (Abuse.ch, OTX, Spamhaus or custom) to start ingesting indicators of compromise."
               action={
                 <Button
-                  className="bg-blue-600 text-white hover:bg-blue-700"
+                  className="bg-red-700 text-white hover:bg-red-800"
                   onClick={() => {
                     setEditing(null);
                     setEditorOpen(true);
@@ -377,7 +377,7 @@ export function FeedsView() {
                 <div className="min-w-0">
                   <CardTitle className="truncate text-sm font-medium">{feed.name}</CardTitle>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                    <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] font-semibold text-red-700 dark:text-red-500">
                       {PROVIDER_LABEL[feed.provider] ?? feed.provider}
                     </Badge>
                     <Badge variant="outline" className="border-zinc-300 bg-zinc-100 font-mono text-[10px] uppercase text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
@@ -402,7 +402,7 @@ export function FeedsView() {
                     <Icons.Timer className="h-3 w-3" /> every {feed.intervalMinutes}m
                   </span>
                   {feed.autoBlock && (
-                    <span className="inline-flex items-center gap-1 font-medium text-blue-600 dark:text-blue-400">
+                    <span className="inline-flex items-center gap-1 font-medium text-red-700 dark:text-red-500">
                       <Icons.ShieldCheck className="h-3 w-3" /> auto-block
                     </span>
                   )}

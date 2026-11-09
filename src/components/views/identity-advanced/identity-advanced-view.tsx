@@ -7,7 +7,7 @@
  * the matching dedicated view — FederationView (SSO IdPs, RADIUS CoA
  * profiles, activity timeline) from federation-view.tsx or NacView (stats,
  * NAC profiles, device inventory, BYOD onboarding) from nac-view.tsx.
- * Theme (ADR-019): blue-600 enterprise accents, zinc neutrals, rose-600
+ * Theme (ADR-019): red-700 enterprise accents, zinc neutrals, rose-600
  * danger, amber-500 warning — emerald/teal/indigo/violet/cyan are forbidden.
  */
 

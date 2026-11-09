@@ -8,7 +8,7 @@
  *            dialog gated behind "I have saved it" → destructive revoke.
  *   Webhooks: CRUD + events multi-select (5 locked values) + enabled switch +
  *            "Send test" simulated delivery (M11 §5.6 — no real HTTP egress).
- * Theme per ADR-019: blue-600 primary; scope badges read=zinc, write=amber,
+ * Theme per ADR-019: red-700 primary; scope badges read=zinc, write=amber,
  * admin=rose; emerald only for a genuinely-ok lastStatus.
  */
 
@@ -294,7 +294,7 @@ function KeysTab() {
                     className={cn(
                       "flex cursor-pointer items-start gap-2.5 rounded-md border p-3 transition-colors",
                       form.scopesIdx === i
-                        ? "border-blue-500/40 bg-blue-500/10 dark:border-blue-500/40"
+                        ? "border-red-600/40 bg-red-600/10 dark:border-red-600/40"
                         : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900",
                     )}
                   >
@@ -322,7 +322,7 @@ function KeysTab() {
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={createMut.isPending}>
               Cancel
             </Button>
-            <Button className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => createMut.mutate()} disabled={createMut.isPending || !form.name.trim()}>
+            <Button className="bg-red-700 text-white hover:bg-red-800" onClick={() => createMut.mutate()} disabled={createMut.isPending || !form.name.trim()}>
               {createMut.isPending ? "Creating…" : "Create key"}
             </Button>
           </DialogFooter>
@@ -340,7 +340,7 @@ function KeysTab() {
         <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Icons.ShieldCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <Icons.ShieldCheck className="h-4 w-4 text-red-700 dark:text-red-500" />
               Save your API key now
             </DialogTitle>
             <DialogDescription>
@@ -383,7 +383,7 @@ function KeysTab() {
           ) : null}
           <DialogFooter>
             <Button
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-red-700 text-white hover:bg-red-800"
               disabled={!reveal?.saved}
               onClick={() => setReveal(null)}
             >
@@ -556,7 +556,7 @@ function WebhooksTab() {
                         <Badge
                           key={ev}
                           variant="outline"
-                          className="border-blue-500/40 bg-blue-500/10 font-mono text-[10px] text-blue-600 dark:text-blue-400"
+                          className="border-red-600/40 bg-red-600/10 font-mono text-[10px] text-red-700 dark:text-red-500"
                         >
                           {ev}
                         </Badge>
@@ -594,7 +594,7 @@ function WebhooksTab() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 gap-1 px-2 text-blue-600 hover:bg-blue-500/10 dark:text-blue-400"
+                        className="h-7 gap-1 px-2 text-red-700 hover:bg-red-600/10 dark:text-red-500"
                         disabled={testMut.isPending}
                         onClick={() => testMut.mutate(wh.id)}
                       >
@@ -666,7 +666,7 @@ function WebhooksTab() {
                       className={cn(
                         "flex cursor-pointer items-start gap-2 rounded-md border p-2 text-xs transition-colors",
                         active
-                          ? "border-blue-500/40 bg-blue-500/10 dark:border-blue-500/40"
+                          ? "border-red-600/40 bg-red-600/10 dark:border-red-600/40"
                           : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900",
                       )}
                     >
@@ -698,7 +698,7 @@ function WebhooksTab() {
               Cancel
             </Button>
             <Button
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-red-700 text-white hover:bg-red-800"
               onClick={() => saveMut.mutate()}
               disabled={saveMut.isPending || !form.name.trim() || !form.url.trim() || form.events.length === 0}
             >
@@ -740,7 +740,7 @@ function WebhooksTab() {
                     <span
                       className={
                         d.ok
-                          ? "inline-block h-2 w-2 shrink-0 rounded-full bg-blue-600"
+                          ? "inline-block h-2 w-2 shrink-0 rounded-full bg-red-700"
                           : "inline-block h-2 w-2 shrink-0 rounded-full bg-rose-500"
                       }
                       aria-hidden

@@ -217,7 +217,7 @@ export function SessionsView() {
                       <div className="flex items-center gap-1.5">
                         <p className="font-medium">{s.userName ?? <span className="text-zinc-400">site-to-site</span>}</p>
                         {s.groupName ? (
-                          <Badge variant="outline" className="border-violet-500/40 bg-violet-500/10 text-[10px] text-violet-600 dark:text-violet-400">
+                          <Badge variant="outline" className="border-zinc-500/40 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-400">
                             {s.groupName}
                           </Badge>
                         ) : null}

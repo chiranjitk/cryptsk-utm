@@ -5,7 +5,7 @@
  * strip (overlays / sites / paths-by-state pills / average latency), a grid of
  * selectable overlay cards, a per-overlay detail (sites table + per-site WAN
  * path matrix with mini-meters and state badges + simulated "Probe now") and
- * a policies table next to an SLA profile mini-table. Theme: blue-600 for
+ * a policies table next to an SLA profile mini-table. Theme: red-700 for
  * healthy/up/hub, amber for degraded/full-mesh, rose for down/destructive.
  */
 
@@ -86,7 +86,7 @@ function TopologyBadge({ topology }: { topology: Topology }) {
       variant="outline"
       className={
         topology === "hub_spoke"
-          ? "gap-1 border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
+          ? "gap-1 border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
           : "gap-1 border-amber-500/40 bg-amber-500/10 font-medium text-amber-600 dark:text-amber-400"
       }
     >
@@ -107,7 +107,7 @@ function EncryptionChip({ encryption }: { encryption: string }) {
 
 function RoleBadge({ role }: { role: SiteRole }) {
   return role === "hub" ? (
-    <Badge className="gap-1 border-transparent bg-blue-600 font-medium text-white">
+    <Badge className="gap-1 border-transparent bg-red-700 font-medium text-white">
       <Icons.Server className="h-3 w-3" /> hub
     </Badge>
   ) : (
@@ -120,7 +120,7 @@ function RoleBadge({ role }: { role: SiteRole }) {
 function LabelChip({ label }: { label: PathLabel }) {
   const cls =
     label === "mpls"
-      ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
       : label === "lte"
         ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
         : "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
@@ -144,7 +144,7 @@ function StateBadge({ state }: { state: PathState }) {
       variant="outline"
       className={
         state === "up"
-          ? "gap-1 border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
+          ? "gap-1 border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
           : "gap-1 border-amber-500/40 bg-amber-500/10 font-medium text-amber-600 dark:text-amber-400"
       }
     >
@@ -165,7 +165,7 @@ function PreferredPathBadge({ policy }: { policy: PolicyDTO }) {
           : Icons.ArrowRightLeft;
   const Icon = icon;
   return (
-    <Badge variant="outline" className="gap-1 border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400">
+    <Badge variant="outline" className="gap-1 border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500">
       <Icon className="h-3 w-3" />
       {policy.preferredPath}
       {policy.preferredPath === "fixed" && policy.fixedWanInterface ? (
@@ -215,7 +215,7 @@ function MiniMeter(props: { label: string; value: number; max: number; unit: str
         </span>
       </div>
       <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-        <div className="h-full rounded-full bg-blue-600" style={{ width: `${pct}%` }} />
+        <div className="h-full rounded-full bg-red-700" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -241,7 +241,7 @@ function StatCard(props: { label: string; value: number | string; icon: React.Re
 function StatePill(props: { state: PathState; count: number }) {
   const cls =
     props.state === "up"
-      ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+      ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
       : props.state === "degraded"
         ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
         : "border-rose-500/40 bg-rose-500/10 text-rose-500";
@@ -262,19 +262,19 @@ function StatsStrip() {
       <StatCard
         label="Overlays"
         value={stats?.overlays ?? "—"}
-        tone="text-blue-600 dark:text-blue-400"
+        tone="text-red-700 dark:text-red-500"
         icon={<Icons.Network className="h-4 w-4" />}
       />
       <StatCard
         label="Sites"
         value={stats?.sites ?? "—"}
-        tone="text-blue-600 dark:text-blue-400"
+        tone="text-red-700 dark:text-red-500"
         icon={<Icons.Building2 className="h-4 w-4" />}
       />
       <StatCard
         label="WAN paths"
         value={stats ? totalPaths : "—"}
-        tone="text-blue-600 dark:text-blue-400"
+        tone="text-red-700 dark:text-red-500"
         icon={<Icons.Route className="h-4 w-4" />}
         sub={
           stats ? (
@@ -289,7 +289,7 @@ function StatsStrip() {
       <StatCard
         label="Average latency"
         value={stats ? `${stats.avgLatencyMs.toFixed(1)} ms` : "—"}
-        tone="text-blue-600 dark:text-blue-400"
+        tone="text-red-700 dark:text-red-500"
         icon={<Icons.Gauge className="h-4 w-4" />}
         sub={
           stats?.worstPath ? (
@@ -393,7 +393,7 @@ function OverlayEditor(props: { overlay: OverlayDTO | null; onClose: () => void 
             Cancel
           </Button>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-red-700 text-white hover:bg-red-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -514,7 +514,7 @@ function SiteEditor(props: { overlayId: number; site: SiteDTO | null; onClose: (
             Cancel
           </Button>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-red-700 text-white hover:bg-red-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -648,7 +648,7 @@ function PathEditor(props: { site: Pick<SiteDTO, "id" | "name">; path: PathDTO |
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-blue-600 text-white hover:bg-blue-700" disabled={save.isPending} onClick={submit}>
+          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add path"}
           </Button>
         </DialogFooter>
@@ -845,7 +845,7 @@ function PolicyEditor(props: {
             Cancel
           </Button>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-red-700 text-white hover:bg-red-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -957,7 +957,7 @@ function SlaProfileEditor(props: { profile: SlaProfileDTO | null; onClose: () =>
             Cancel
           </Button>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-red-700 text-white hover:bg-red-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -995,7 +995,7 @@ function OverlayCard(props: {
       aria-pressed={props.selected}
       className={`w-full cursor-pointer rounded-xl border p-4 text-left transition-colors ${
         props.selected
-          ? "border-blue-500/50 bg-blue-500/5 ring-1 ring-blue-500/30"
+          ? "border-red-600/50 bg-red-600/5 ring-1 ring-red-600/30"
           : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50"
       }`}
     >
@@ -1011,7 +1011,7 @@ function OverlayCard(props: {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+            className="h-7 w-7 text-zinc-400 hover:text-red-700"
             aria-label={`Edit ${overlay.name}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -1075,10 +1075,10 @@ function SitesCard(props: {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.Building2 className="h-4 w-4 text-red-700 dark:text-red-500" />
           Sites
         </CardTitle>
-        <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" onClick={props.onAdd}>
+        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add site
         </Button>
       </CardHeader>
@@ -1095,7 +1095,7 @@ function SitesCard(props: {
             title="No sites in this overlay"
             description="Add a hub first, then attach spokes to build the fabric."
             action={
-              <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={props.onAdd}>
+              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add site
               </Button>
             }
@@ -1145,7 +1145,7 @@ function SitesCard(props: {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
                           aria-label={`Edit ${site.name}`}
                           onClick={() => props.onEdit(site)}
                         >
@@ -1198,7 +1198,7 @@ function PathsCard(props: {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Route className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.Route className="h-4 w-4 text-red-700 dark:text-red-500" />
           WAN paths
         </CardTitle>
         <span className="text-[11px] text-zinc-400">meters relative to the overlay SLA</span>
@@ -1267,7 +1267,7 @@ function PathsCard(props: {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                              className="h-7 w-7 text-zinc-400 hover:text-red-700"
                               aria-label={`Edit ${path.wanInterface} on ${path.siteName}`}
                               onClick={() => props.onEdit(path)}
                             >
@@ -1320,10 +1320,10 @@ function PoliciesCard(props: {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.GitBranch className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.GitBranch className="h-4 w-4 text-red-700 dark:text-red-500" />
           Path-selection policies
         </CardTitle>
-        <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" onClick={props.onAdd}>
+        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add policy
         </Button>
       </CardHeader>
@@ -1340,7 +1340,7 @@ function PoliciesCard(props: {
             title="No policies yet"
             description="Create a policy to steer matching traffic onto the best WAN path."
             action={
-              <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={props.onAdd}>
+              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add policy
               </Button>
             }
@@ -1393,7 +1393,7 @@ function PoliciesCard(props: {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
                           aria-label={`Edit ${policy.name}`}
                           onClick={() => props.onEdit(policy)}
                         >
@@ -1435,7 +1435,7 @@ function SlaProfilesCard(props: {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Target className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.Target className="h-4 w-4 text-red-700 dark:text-red-500" />
           SLA profiles
         </CardTitle>
         <Button size="sm" variant="outline" className="h-8" onClick={props.onAdd}>
@@ -1488,7 +1488,7 @@ function SlaProfilesCard(props: {
                         variant="outline"
                         className={
                           profile.actionOnBreach === "switch"
-                            ? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                            ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
                             : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
                         }
                       >
@@ -1503,7 +1503,7 @@ function SlaProfilesCard(props: {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+                          className="h-7 w-7 text-zinc-400 hover:text-red-700"
                           aria-label={`Edit ${profile.name}`}
                           onClick={() => props.onEdit(profile)}
                         >
@@ -1682,7 +1682,7 @@ export function SdwanView() {
           <CardTitle className="text-sm">Overlays</CardTitle>
           <Button
             size="sm"
-            className="h-8 bg-blue-600 text-white hover:bg-blue-700"
+            className="h-8 bg-red-700 text-white hover:bg-red-800"
             onClick={() => setOverlayAddOpen(true)}
           >
             <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add overlay
@@ -1703,7 +1703,7 @@ export function SdwanView() {
               title="No overlays yet"
               description="Create an overlay to group sites into one routed fabric."
               action={
-                <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => setOverlayAddOpen(true)}>
+                <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setOverlayAddOpen(true)}>
                   <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New overlay
                 </Button>
               }
@@ -1735,7 +1735,7 @@ export function SdwanView() {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Icons.Network className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <Icons.Network className="h-4 w-4 text-red-700 dark:text-red-500" />
               <h2 className="text-sm font-semibold">{selected.name}</h2>
               <TopologyBadge topology={selected.topology} />
               <EncryptionChip encryption={selected.encryption} />
@@ -1746,7 +1746,7 @@ export function SdwanView() {
               )}
             </div>
             <Button
-              className="h-9 bg-blue-600 px-5 text-white hover:bg-blue-700"
+              className="h-9 bg-red-700 px-5 text-white hover:bg-red-800"
               disabled={probe.isPending}
               onClick={() => probe.mutate(selected.id)}
             >

@@ -175,7 +175,7 @@ export function WanView() {
             setEditing(null);
             setEditorOpen(true);
           }}
-          className="bg-blue-600 text-white hover:bg-blue-700"
+          className="bg-red-700 text-white hover:bg-red-800"
         >
           <Icons.Plus className="mr-1 h-4 w-4" /> Add WAN policy
         </Button>
@@ -184,7 +184,7 @@ export function WanView() {
       {/* failover explainer (static) */}
       <Card className="border-zinc-200 bg-zinc-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-          <Icons.Globe className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+          <Icons.Globe className="mt-0.5 h-4 w-4 shrink-0 text-red-700 dark:text-red-500" />
           <div className="min-w-0 flex-1 space-y-1 text-xs text-zinc-600 dark:text-zinc-300">
             <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">How multi-WAN egress is chosen</p>
             <p>
@@ -195,7 +195,7 @@ export function WanView() {
             <p className="text-zinc-500 dark:text-zinc-400">
               Active egress right now:{" "}
               {activeIface ? (
-                <Badge variant="outline" className="mx-0.5 border-blue-500/40 bg-blue-500/10 font-mono text-[11px] text-blue-600 dark:text-blue-400">
+                <Badge variant="outline" className="mx-0.5 border-red-600/40 bg-red-600/10 font-mono text-[11px] text-red-700 dark:text-red-500">
                   {activeIface}
                 </Badge>
               ) : (
@@ -228,7 +228,7 @@ export function WanView() {
                     setEditing(null);
                     setEditorOpen(true);
                   }}
-                  className="bg-blue-600 text-white hover:bg-blue-700"
+                  className="bg-red-700 text-white hover:bg-red-800"
                 >
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add WAN policy
                 </Button>
@@ -566,7 +566,7 @@ function WanPolicyEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending || (!isEdit && props.candidates.length === 0)} className="bg-blue-600 text-white hover:bg-blue-700">
+          <Button onClick={submit} disabled={mut.isPending || (!isEdit && props.candidates.length === 0)} className="bg-red-700 text-white hover:bg-red-800">
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create policy"}
           </Button>
         </DialogFooter>

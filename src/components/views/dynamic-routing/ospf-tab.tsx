@@ -208,7 +208,7 @@ export function OspfTab() {
       <Card>
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Icons.Cog className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <Icons.Cog className="h-4 w-4 text-red-700 dark:text-red-500" />
             OSPF process
           </CardTitle>
           <CardDescription>Single process per appliance — router-id and SPF costs.</CardDescription>
@@ -257,7 +257,7 @@ export function OspfTab() {
               </label>
               <div className="sm:col-span-2 lg:col-span-4">
                 <Button
-                  className="bg-blue-600 text-white hover:bg-blue-700"
+                  className="bg-red-700 text-white hover:bg-red-800"
                   disabled={settingsQ.isLoading || saveSettings.isPending}
                   onClick={() => saveSettings.mutate()}
                 >
@@ -274,7 +274,7 @@ export function OspfTab() {
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm text-zinc-500">Interfaces participating in OSPF — hello/dead, cost and network type.</p>
           <Button
-            className="gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+            className="gap-1.5 bg-red-700 text-white hover:bg-red-800"
             onClick={() => {
               setForm(initialIfaceForm);
               setFormErrors({});
@@ -433,7 +433,7 @@ export function OspfTab() {
               Cancel
             </Button>
             <Button
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-red-700 text-white hover:bg-red-800"
               disabled={saveIface.isPending}
               onClick={() =>
                 editor && saveIface.mutate(editor.mode === "edit" ? { mode: "edit", id: editor.iface.id } : { mode: "create" })

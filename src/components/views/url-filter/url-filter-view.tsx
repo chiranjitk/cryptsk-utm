@@ -5,7 +5,7 @@
  * policy cards (left) with defaults + toggles, per-policy Categories (13-row
  * replace-all table) and Custom lists (block/allow, paste import) tabs, a
  * simulated "Test URL" decision card and a 24h stats strip + recent log table.
- * Theme: allow = blue, block = rose, warn = amber (blue-600 enterprise).
+ * Theme: allow = blue, block = rose, warn = amber (red-700 enterprise).
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -70,7 +70,7 @@ function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
 // ── badge recipes (UI_DESIGN_SYSTEM: allow=blue soft, block=rose, warn=amber) ──
 
 const DECISION_CLS: Record<UrlLogAction, string> = {
-  allowed: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  allowed: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
   blocked: "border-transparent bg-rose-600 text-white",
   warned: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
 };
@@ -98,7 +98,7 @@ function DefaultActionBadge({ action }: { action: PolicyAction }) {
       className={
         action === "block"
           ? "gap-1 border-transparent bg-rose-600 font-medium text-white"
-          : "gap-1 border-blue-500/40 bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400"
+          : "gap-1 border-red-600/40 bg-red-600/10 font-medium text-red-700 dark:text-red-500"
       }
     >
       {action === "block" ? <Icons.Ban className="h-3 w-3" /> : <Icons.ShieldCheck className="h-3 w-3" />}
@@ -114,7 +114,7 @@ function ListTypeBadge({ type }: { type: ListType }) {
       className={
         type === "block"
           ? "border-rose-600/60 bg-transparent text-rose-500"
-          : "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+          : "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
       }
     >
       {type}
@@ -248,7 +248,7 @@ function PolicyEditor(props: { policy: UrlPolicyDTO | null; onClose: () => void 
             Cancel
           </Button>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-red-700 text-white hover:bg-red-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -451,7 +451,7 @@ function AddListEntryDialog(props: { policyId: number; onClose: () => void }) {
             Cancel
           </Button>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-red-700 text-white hover:bg-red-800"
             disabled={save.isPending || !value.trim()}
             onClick={() => save.mutate()}
           >
@@ -521,7 +521,7 @@ function ImportListDialog(props: { policyId: number; onClose: () => void }) {
             Cancel
           </Button>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-red-700 text-white hover:bg-red-800"
             disabled={run.isPending || !text.trim()}
             onClick={() => run.mutate()}
           >
@@ -578,7 +578,7 @@ function CustomListsTab({ policyId }: { policyId: number }) {
           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => setImportOpen(true)}>
             <Icons.Upload className="h-3.5 w-3.5" /> Import list
           </Button>
-          <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" onClick={() => setAddOpen(true)}>
+          <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
             <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
           </Button>
         </div>
@@ -683,7 +683,7 @@ function TestUrlCard({ policy }: { policy: UrlPolicyDTO }) {
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.Globe className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.Globe className="h-4 w-4 text-red-700 dark:text-red-500" />
           Test URL
           <span className="text-xs font-normal text-zinc-400">simulated decision for “{policy.name}”</span>
         </CardTitle>
@@ -704,7 +704,7 @@ function TestUrlCard({ policy }: { policy: UrlPolicyDTO }) {
             />
           </div>
           <Button
-            className="h-9 bg-blue-600 px-5 text-white hover:bg-blue-700"
+            className="h-9 bg-red-700 px-5 text-white hover:bg-red-800"
             disabled={run.isPending || !url.trim()}
             onClick={() => run.mutate()}
           >
@@ -762,7 +762,7 @@ function StatsStrip() {
       <StatCard
         label="Allowed (24h)"
         value={stats?.allowed24h ?? "—"}
-        tone="text-blue-600 dark:text-blue-400"
+        tone="text-red-700 dark:text-red-500"
         icon={<Icons.ShieldCheck className="h-4 w-4" />}
       />
       <StatCard
@@ -820,7 +820,7 @@ function LogsCard() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.ScrollText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.ScrollText className="h-4 w-4 text-red-700 dark:text-red-500" />
           Recent URL filter activity
         </CardTitle>
         <div className="flex items-center gap-2">
@@ -938,7 +938,7 @@ function PolicyCard(props: {
       aria-pressed={props.selected}
       className={`w-full cursor-pointer rounded-xl border p-4 text-left transition-colors ${
         props.selected
-          ? "border-blue-500/50 bg-blue-500/5 ring-1 ring-blue-500/30"
+          ? "border-red-600/50 bg-red-600/5 ring-1 ring-red-600/30"
           : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50"
       }`}
     >
@@ -953,7 +953,7 @@ function PolicyCard(props: {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-zinc-400 hover:text-blue-600"
+            className="h-7 w-7 text-zinc-400 hover:text-red-700"
             aria-label={`Edit ${policy.name}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -987,12 +987,12 @@ function PolicyCard(props: {
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {policy.safeSearchEnforce && (
-          <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 text-[10px] text-blue-600 dark:text-blue-400">
+          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
             safe-search
           </Badge>
         )}
         {policy.httpsInspection && (
-          <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 text-[10px] text-blue-600 dark:text-blue-400">
+          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-[10px] text-red-700 dark:text-red-500">
             https-inspect
           </Badge>
         )}
@@ -1057,7 +1057,7 @@ export function UrlFilterView() {
             <CardTitle className="text-sm">Policies</CardTitle>
             <Button
               size="sm"
-              className="h-8 bg-blue-600 text-white hover:bg-blue-700"
+              className="h-8 bg-red-700 text-white hover:bg-red-800"
               onClick={() => setAddOpen(true)}
             >
               <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
@@ -1078,7 +1078,7 @@ export function UrlFilterView() {
                 title="No policies yet"
                 description="Create a URL filter policy to control web access rules."
                 action={
-                  <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => setAddOpen(true)}>
+                  <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
                     <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New policy
                   </Button>
                 }
@@ -1112,7 +1112,7 @@ export function UrlFilterView() {
               <Card>
                 <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
                   <CardTitle className="flex items-center gap-2 text-sm">
-                    <Icons.Shield className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <Icons.Shield className="h-4 w-4 text-red-700 dark:text-red-500" />
                     {selected.name}
                     {!selected.enabled && (
                       <Badge variant="outline" className="border-zinc-300 text-[10px] uppercase text-zinc-400 dark:border-zinc-700">

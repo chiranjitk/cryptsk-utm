@@ -157,10 +157,10 @@ function UsersCard() {
     <Card className="gap-4">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.Users className="h-4 w-4 text-red-700 dark:text-red-500" />
           Users
           {usersQ.data ? (
-            <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 px-1.5 text-[10px] text-blue-600 dark:text-blue-400">
+            <Badge variant="outline" className="border-red-600/40 bg-red-600/10 px-1.5 text-[10px] text-red-700 dark:text-red-500">
               {usersQ.data.length}
             </Badge>
           ) : null}
@@ -227,7 +227,7 @@ function UsersCard() {
                       ) : (
                         <span className="flex flex-wrap gap-1">
                           {u.groups.map((g) => (
-                            <Badge key={g.id} variant="outline" className="border-blue-500/40 bg-blue-500/10 px-1.5 py-0 text-[10px] text-blue-600 dark:text-blue-400">
+                            <Badge key={g.id} variant="outline" className="border-red-600/40 bg-red-600/10 px-1.5 py-0 text-[10px] text-red-700 dark:text-red-500">
                               {g.name}
                             </Badge>
                           ))}
@@ -466,7 +466,7 @@ function UserEditorForm(props: { user: UserDTO | null; onClose: () => void; onEn
             <Table>
               <TableBody>
                 {ROLE_DESCRIPTIONS.map(([r, d]) => (
-                  <TableRow key={r} className={cn(r === role && "bg-blue-500/5")}>
+                  <TableRow key={r} className={cn(r === role && "bg-red-600/5")}>
                     <TableCell className="w-32 py-1.5 align-top">
                       <code className="text-[11px] font-medium">{r}</code>
                     </TableCell>
@@ -608,7 +608,7 @@ function GroupsCard() {
     <Card className="gap-4">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.UsersRound className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <Icons.UsersRound className="h-4 w-4 text-red-700 dark:text-red-500" />
           User Groups
         </CardTitle>
         <Button size="sm" variant="outline" className="h-9" onClick={() => setEditor({ open: true, group: null })}>
@@ -735,7 +735,7 @@ function GroupEditorForm(props: { group: UserGroupDTO | null; onClose: () => voi
                       type="checkbox"
                       checked={checked}
                       onChange={() => setMemberIds((prev) => (prev.includes(u.id) ? prev.filter((x) => x !== u.id) : [...prev, u.id]))}
-                      className="h-3.5 w-3.5 accent-blue-600"
+                      className="h-3.5 w-3.5 accent-red-700"
                       aria-label={`Include ${u.username}`}
                     />
                     <span className="font-mono text-xs">{u.username}</span>

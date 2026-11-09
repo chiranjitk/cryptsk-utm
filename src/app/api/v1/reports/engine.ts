@@ -2,7 +2,7 @@
  * M12 report engine (spec 2.13) — computes section rollups from the real
  * `firewall_logs` / `ips_events` / `audit_log` tables, builds per-framework
  * compliance checklists, and renders a print-friendly HTML document (inline
- * CSS, blue-600 headings) stored in `ReportRun.contentHtml`.
+ * CSS, red-700 headings) stored in `ReportRun.contentHtml`.
  *
  * Shared by ad-hoc runs (POST /api/v1/reports/runs) and compliance runs
  * (POST /api/v1/logs/compliance/run). Server-side only (uses `db`).
@@ -287,7 +287,7 @@ export async function buildChecklist(tenantId: number, framework: string): Promi
   }
 }
 
-// ── HTML rendering (inline CSS, print-friendly, blue-600 headings) ──────────
+// ── HTML rendering (inline CSS, print-friendly, red-700 headings) ──────────
 
 function esc(v: unknown): string {
   return String(v ?? "")
@@ -306,7 +306,7 @@ function humanBytes(n: number): string {
 
 const TBL_STYLE = "width:100%;border-collapse:collapse;margin:8px 0 20px;font-size:12px";
 const TH_STYLE =
-  "text-align:left;padding:7px 10px;background:#eff6ff;color:#1d4ed8;border:1px solid #dbeafe;font-weight:600";
+  "text-align:left;padding:7px 10px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-weight:600";
 const TD_STYLE = "padding:6px 10px;border:1px solid #e4e4e7";
 
 function htmlTable(headers: string[], rows: Array<Array<string | number>>): string {
@@ -318,7 +318,7 @@ function htmlTable(headers: string[], rows: Array<Array<string | number>>): stri
 }
 
 function sectionHeading(text: string): string {
-  return `<h2 style="margin:24px 0 4px;font-size:15px;color:#2563eb;border-bottom:2px solid #dbeafe;padding-bottom:4px">${esc(text)}</h2>`;
+  return `<h2 style="margin:24px 0 4px;font-size:15px;color:#b91c1c;border-bottom:2px solid #fecaca;padding-bottom:4px">${esc(text)}</h2>`;
 }
 
 function countTable(title: string, headers: string[], rows: CountRow[], withBytes: boolean): string {
@@ -372,18 +372,18 @@ export function buildReportHtml(opts: {
   const checklist = opts.summary.checklist ? renderChecklist(opts.summary.checklist) : "";
   const passRate =
     opts.summary.passRate !== undefined
-      ? `<div style="margin:12px 0;padding:10px 14px;background:#eff6ff;border:1px solid #dbeafe;border-radius:6px;font-size:13px;color:#1d4ed8"><strong>Pass rate: ${opts.summary.passRate}%</strong> (${esc(opts.summary.framework ?? "")} controls)</div>`
+      ? `<div style="margin:12px 0;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:13px;color:#991b1b"><strong>Pass rate: ${opts.summary.passRate}%</strong> (${esc(opts.summary.framework ?? "")} controls)</div>`
       : "";
   return `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>${esc(opts.title)}</title></head>
 <body style="margin:0;padding:28px 32px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#ffffff;color:#18181b">
-  <header style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;border-bottom:3px solid #2563eb;padding-bottom:12px;margin-bottom:8px">
+  <header style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;border-bottom:3px solid #b91c1c;padding-bottom:12px;margin-bottom:8px">
     <div>
-      <h1 style="margin:0;font-size:21px;color:#2563eb">${esc(opts.title)}</h1>
+      <h1 style="margin:0;font-size:21px;color:#b91c1c">${esc(opts.title)}</h1>
       <p style="margin:4px 0 0;font-size:12px;color:#71717a">Tenant: ${esc(opts.tenantName)} &nbsp;&middot;&nbsp; Range: ${esc(opts.range)} &nbsp;&middot;&nbsp; Generated: ${generated}</p>
     </div>
-    <div style="font-size:12px;font-weight:600;color:#2563eb;white-space:nowrap">Cryptsk UTM Console</div>
+    <div style="font-size:12px;font-weight:600;color:#b91c1c;white-space:nowrap">Cryptsk UTM Console</div>
   </header>
   ${passRate}
   ${checklist}

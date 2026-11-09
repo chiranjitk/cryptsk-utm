@@ -3,7 +3,7 @@
 /**
  * Shared UI atoms for the M09 log views — LOCKED badge color map (M09 §5.4):
  * critical rose-600 solid · high rose-500 outline · medium orange-500 ·
- * low amber-500 · info violet-500 (violet ONLY here) · allow/success
+ * low amber-500 · info zinc-500 (zinc for info — brand red reserved for critical) · allow/success
  * emerald-500 · deny/drop rose-600 · reject orange-500 · failure rose-600
  * solid · denied rose-600 outline · suppressed zinc. Every badge pairs a
  * glyph + text (color is never the sole signal). No indigo anywhere.
@@ -59,7 +59,7 @@ const SEVERITY_BADGE: Record<string, { cls: string; icon: React.ComponentType<{ 
   high: { cls: "border-rose-500/60 bg-transparent text-rose-600 dark:text-rose-400", icon: Icons.TriangleAlert },
   medium: { cls: "border-orange-500/40 bg-orange-500/10 text-orange-600 dark:text-orange-400", icon: Icons.CircleAlert },
   low: { cls: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400", icon: Icons.Info },
-  info: { cls: "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-400", icon: Icons.Info },
+  info: { cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-400", icon: Icons.Info },
 };
 
 export function SeverityBadge({ severity, className }: { severity: string; className?: string }) {

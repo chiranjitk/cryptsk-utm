@@ -112,8 +112,8 @@ export function SubtypeChip({ type }: { type: VpnType }) {
       className={cn(
         "text-[10px] uppercase tracking-wide",
         remote
-          ? "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-400"
-          : "border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-400",
+          ? "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-400"
+          : "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400",
       )}
     >
       {remote ? "remote access" : "site-to-site"}
@@ -260,12 +260,12 @@ export function TagInput(props: {
     <div className="space-y-1.5">
       <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
         {props.values.map((v) => (
-          <Badge key={v} variant="outline" className="gap-1 border-blue-500/40 bg-blue-500/10 pr-1 text-blue-600 dark:text-blue-400">
+          <Badge key={v} variant="outline" className="gap-1 border-red-600/40 bg-red-600/10 pr-1 text-red-700 dark:text-red-500">
             {v}
             <button
               type="button"
               aria-label={`Remove ${v}`}
-              className="ml-0.5 rounded-sm p-0.5 hover:bg-blue-500/20"
+              className="ml-0.5 rounded-sm p-0.5 hover:bg-red-600/20"
               onClick={() => props.onChange(props.values.filter((x) => x !== v))}
             >
               <Icons.X className="h-3 w-3" />

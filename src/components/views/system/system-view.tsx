@@ -105,7 +105,7 @@ function Gauge(props: { label: string; value: number; unit: string; warnAt: numb
       ? "bg-rose-500"
       : props.value >= props.warnAt
         ? "bg-amber-500"
-        : "bg-blue-600";
+        : "bg-red-700";
   const textTone =
     props.value >= props.criticalAt
       ? "text-rose-600 dark:text-rose-400"
@@ -159,7 +159,7 @@ function HealthStripCard() {
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Icons.HeartPulse className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" />
+            <Icons.HeartPulse className="h-4.5 w-4.5 text-red-700 dark:text-red-500" />
             Appliance health
           </CardTitle>
           <CardDescription>
@@ -240,7 +240,7 @@ function GeneralCard({ settings }: { settings: SettingsMap | undefined }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.Type className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" /> General
+          <Icons.Type className="h-4.5 w-4.5 text-red-700 dark:text-red-500" /> General
         </CardTitle>
         <CardDescription>Hostname propagates to the topbar after the config fan-out</CardDescription>
       </CardHeader>
@@ -311,7 +311,7 @@ function NtpCard({ settings }: { settings: SettingsMap | undefined }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.Clock className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" /> System time (NTP)
+          <Icons.Clock className="h-4.5 w-4.5 text-red-700 dark:text-red-500" /> System time (NTP)
         </CardTitle>
         <CardDescription>
           {seeded.synced ? (
@@ -335,12 +335,12 @@ function NtpCard({ settings }: { settings: SettingsMap | undefined }) {
           <FieldLabel hint="hostname or IP — engine flips `synced` after the next tick">Servers</FieldLabel>
           <div className="mb-2 flex flex-wrap gap-1.5">
             {servers.map((srv) => (
-              <Badge key={srv} variant="outline" className="gap-1 border-blue-500/40 bg-blue-500/10 font-mono text-xs text-blue-600 dark:text-blue-400">
+              <Badge key={srv} variant="outline" className="gap-1 border-red-600/40 bg-red-600/10 font-mono text-xs text-red-700 dark:text-red-500">
                 {srv}
                 <button
                   type="button"
                   aria-label={`Remove ${srv}`}
-                  className="rounded-sm p-0.5 hover:bg-blue-500/20"
+                  className="rounded-sm p-0.5 hover:bg-red-600/20"
                   onClick={() => setServers((s) => s.filter((x) => x !== srv))}
                 >
                   <Icons.X className="h-3 w-3" />
@@ -442,7 +442,7 @@ function SnmpCard({ settings }: { settings: SettingsMap | undefined }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.RadioTower className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" /> SNMP
+          <Icons.RadioTower className="h-4.5 w-4.5 text-red-700 dark:text-red-500" /> SNMP
         </CardTitle>
         <CardDescription>Appliance renders snmpd.conf — sandbox records config only</CardDescription>
       </CardHeader>
@@ -629,7 +629,7 @@ function HardeningCard({ settings }: { settings: SettingsMap | undefined }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.ShieldCheck className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" /> Hardening
+          <Icons.ShieldCheck className="h-4.5 w-4.5 text-red-700 dark:text-red-500" /> Hardening
         </CardTitle>
         <CardDescription>sshd_config · nftables mgmt allowlist · systemd masking — recorded only in sandbox</CardDescription>
       </CardHeader>
@@ -761,13 +761,13 @@ function FirmwareCard() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.Cpu className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" /> Firmware
+          <Icons.Cpu className="h-4.5 w-4.5 text-red-700 dark:text-red-500" /> Firmware
         </CardTitle>
         <CardDescription>Staged upgrade is simulated — appliance-side it is apt + systemd</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="border-blue-500/40 bg-blue-500/10 font-mono text-blue-600 dark:text-blue-400">
+          <Badge variant="outline" className="border-red-600/40 bg-red-600/10 font-mono text-red-700 dark:text-red-500">
             v{fw.current}
           </Badge>
           <Badge variant="outline" className="border-zinc-300 text-zinc-500 dark:border-zinc-700">
@@ -886,7 +886,7 @@ function SshKeysCard() {
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Icons.KeyRound className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" /> SSH keys
+            <Icons.KeyRound className="h-4.5 w-4.5 text-red-700 dark:text-red-500" /> SSH keys
           </CardTitle>
           <CardDescription>Management-plane access — public keys only, fingerprint derived server-side</CardDescription>
         </div>
@@ -1027,7 +1027,7 @@ function NotificationsPrefsCard({ settings }: { settings: SettingsMap | undefine
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.BellRing className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" /> Notifications
+          <Icons.BellRing className="h-4.5 w-4.5 text-red-700 dark:text-red-500" /> Notifications
         </CardTitle>
         <CardDescription>
           The engine compares cpu/mem/disk/temp per tick and emits warning/critical notifications (edge-triggered)
@@ -1129,7 +1129,7 @@ function RetentionCard({ settings }: { settings: SettingsMap | undefined }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.HardDriveDownload className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" /> Logging retention
+          <Icons.HardDriveDownload className="h-4.5 w-4.5 text-red-700 dark:text-red-500" /> Logging retention
         </CardTitle>
         <CardDescription>Overrides only tighten or extend within the hard ceilings (row caps)</CardDescription>
       </CardHeader>
@@ -1220,7 +1220,7 @@ function AdvancedCard({ settings }: { settings: SettingsMap | undefined }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.SlidersHorizontal className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" /> Advanced
+          <Icons.SlidersHorizontal className="h-4.5 w-4.5 text-red-700 dark:text-red-500" /> Advanced
         </CardTitle>
         <CardDescription>Diagnostics verbosity and the API-key master switch</CardDescription>
       </CardHeader>
@@ -1295,7 +1295,7 @@ function TemplatesCard() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.LayoutTemplate className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" /> Policy templates
+          <Icons.LayoutTemplate className="h-4.5 w-4.5 text-red-700 dark:text-red-500" /> Policy templates
         </CardTitle>
         <CardDescription>Per-vertical starter bundles — applying overwrites matching sections (audited)</CardDescription>
       </CardHeader>
@@ -1364,7 +1364,7 @@ function ConfigHistoryCard() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icons.History className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" /> Config history
+          <Icons.History className="h-4.5 w-4.5 text-red-700 dark:text-red-500" /> Config history
         </CardTitle>
         <CardDescription>
           Versions are written on every significant apply and never pruned — pick two of the same section to diff
@@ -1432,11 +1432,11 @@ function ConfigHistoryCard() {
             </TableHeader>
             <TableBody>
               {versions.data!.data.map((v) => (
-                <TableRow key={v.id} className={cn(selected.includes(v.id) && "bg-blue-500/5")}>
+                <TableRow key={v.id} className={cn(selected.includes(v.id) && "bg-red-600/5")}>
                   <TableCell>
                     <input
                       type="checkbox"
-                      className="h-4 w-4 accent-blue-600"
+                      className="h-4 w-4 accent-red-700"
                       aria-label={`Select version ${v.version}`}
                       checked={selected.includes(v.id)}
                       onChange={() => toggle(v.id)}
