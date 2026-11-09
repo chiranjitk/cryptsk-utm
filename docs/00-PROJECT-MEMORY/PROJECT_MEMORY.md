@@ -648,6 +648,19 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-09 — Rebrand: favicon + logo mark + boot animation
+
+- Replaced the Z.ai placeholder favicon (external `z-cdn.chatglm.cn` URL in layout
+  metadata + `public/logo.svg`) with an owned brand mark: gradient shield + keyhole
+  (blue-500 → violet-600, matching the console's existing accent system).
+- Single-source `BrandLogo` component (`components/shell/brand-logo.tsx`) now used on
+  all logo surfaces — sidebar, login, setup wizard, boot screen; `src/app/icon.svg`
+  (Next file convention) serves the favicon; `public/logo.svg` mirrors it for
+  bookmark/OG use. External CDN dependency removed.
+- Console boot screen upgraded: pulsing-shield placeholder → branded spinner
+  (ping halo + 1.1s orbit ring around the mark + status line). Verified in browser:
+  login/sidebar/boot visuals correct, favicon served from `/icon.svg`, zero errors.
+
 ### 2026-11-09 — Bugfix: logout 403 → user bounced back to dashboard
 
 - **Symptom:** Sign out (profile badge dropdown) appeared to do nothing — shell reloaded

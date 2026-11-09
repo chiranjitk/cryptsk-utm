@@ -67,6 +67,7 @@ import { SystemView } from "@/components/views/system/system-view";
 import { BackupsView } from "@/components/views/system/backups-view";
 import { NotificationCenter } from "@/components/views/system/notification-center";
 import { SetupWizard, useSetupCompleted } from "@/components/views/setup/setup-wizard";
+import { BrandLogo } from "@/components/shell/brand-logo";
 import { fetchApi, useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
@@ -161,10 +162,21 @@ export function AppShell() {
 
   if (meQuery.isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <Icons.ShieldCheck className="h-10 w-10 animate-pulse text-blue-600" />
-          <p className="text-sm text-zinc-500">Loading console…</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background">
+        {/* branded boot spinner — ping halo + orbit ring around the mark */}
+        <div className="relative flex h-20 w-20 items-center justify-center">
+          <span className="absolute inset-0 animate-ping rounded-full bg-blue-500/15" aria-hidden="true" />
+          <span
+            className="absolute inset-0 animate-spin rounded-full border-2 border-blue-500/20 border-t-blue-500 [animation-duration:1.1s]"
+            aria-hidden="true"
+          />
+          <BrandLogo className="relative h-9 w-9 drop-shadow-md" />
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Loading console…</p>
+          <p className="animate-pulse text-xs text-zinc-400 dark:text-zinc-500">
+            establishing secure session · real telemetry
+          </p>
         </div>
       </div>
     );
@@ -185,10 +197,8 @@ export function AppShell() {
 
   const sidebar = (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-4 dark:border-zinc-800">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
-          <Icons.ShieldCheck className="h-5 w-5" />
-        </div>
+      <div className="flex items-center gap-2.5 border-b border-zinc-200 px-4 py-4 dark:border-zinc-800">
+        <BrandLogo className="h-8 w-8 shrink-0" />
         <div>
           <p className="text-sm font-semibold leading-tight">Cryptsk</p>
           <p className="text-[11px] leading-tight text-zinc-500">UTM / NGFW Console</p>

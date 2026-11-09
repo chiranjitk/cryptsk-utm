@@ -12,6 +12,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
+import { BrandLogo } from "@/components/shell/brand-logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -162,9 +163,7 @@ export function SetupWizard(props: { onFinished: () => void }) {
       <div className="w-full max-w-2xl">
         {/* header */}
         <div className="mb-5 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white">
-            <Icons.ShieldCheck className="h-6 w-6" />
-          </div>
+          <BrandLogo className="h-10 w-10 shrink-0" />
           <div>
             <p className="text-base font-semibold">Cryptsk UTM / NGFW</p>
             <p className="text-xs text-zinc-500">First-time setup — step {step + 1} of {STEPS.length}</p>

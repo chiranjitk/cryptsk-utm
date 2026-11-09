@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck } from "lucide-react";
+import { BrandLogo } from "@/components/shell/brand-logo";
 
 export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [username, setUsername] = useState("admin");
@@ -45,9 +45,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
       <div className="mb-6 flex flex-col items-center gap-2">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-600/25">
-          <ShieldCheck className="h-7 w-7" />
-        </div>
+        <BrandLogo className="h-12 w-12 drop-shadow-lg" />
         <h1 className="text-xl font-semibold">Cryptsk Console</h1>
         <p className="text-sm text-zinc-500">UTM / NGFW management — real-host telemetry</p>
       </div>

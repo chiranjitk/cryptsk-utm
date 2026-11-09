@@ -17,9 +17,7 @@ export const metadata: Metadata = {
   title: "Cryptsk Console — UTM/NGFW",
   description:
     "Cryptsk UTM/NGFW management console — unified threat management for SMBs, branch offices and MSPs. Phase 1, simulation mode.",
-  icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
-  },
+  // favicon comes from src/app/icon.svg (Next.js file convention — brand mark)
 };
 
 export default function RootLayout({
