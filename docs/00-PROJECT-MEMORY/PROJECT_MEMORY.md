@@ -552,6 +552,26 @@ for envelope shape. Do not add console.log spam; remove temp logs after.
 
 ## 13. Gotchas (learned-the-hard-way section — keep appending)
 
+- **Git-replaced tracked DB → stale deleted-inode fd → login 401 + "attempt to
+  write a readonly database" (found 2026-11-09):** `db/cryptsk.db` is git-tracked
+  (§11.17 exception). After `git pull` / `git checkout` REPLACES the file on disk,
+  a running dev server keeps its open fd to the now-unlinked inode
+  (`ls -l /proc/<next-dev-pid>/fd` shows `cryptsk.db (deleted)`). Symptom
+  signature: SELECTs succeed but serve the stale snapshot (every login → 401 even
+  though `bcrypt.compare` passes against the on-disk file via a direct Prisma
+  script), while INSERTs fail with SQLite extended code 1032 "attempt to write a
+  readonly database" (mock-engine firewallLog createMany). Fix: restart the dev
+  server after ANY git operation that touches the tracked DB file. Diagnostic:
+  `ls -l /proc/$(pgrep -f 'next dev' | head -1)/fd | grep '(deleted)'`.
+- **Sandbox process reaper (found 2026-11-09):** agent-spawned dev servers die
+  within minutes between tool calls — setsid+nohup+disown, supervisor loops, even
+  the managed `.zscripts/dev.sh` tree are all reaped; only the platform-booted
+  instance (dev.sh at sandbox start) persists across calls, and the watchdog cron
+  restart recipe is the standing safety net. Consequence: multi-step runtime
+  verification (restart → wait → curl login matrix → agent-browser UI flow) must
+  run ATOMICALLY inside a single tool call, with an `ensure_server` retry wrapper
+  around each step. Separate evidence is fine per call as long as each call
+  re-establishes the server first.
 - **Stale `.env` DATABASE_URL → login 401 "Invalid username or password" (found
   2026-11-09):** repo `.env` pointed `DATABASE_URL` at scaffold-era phantom
   `db/custom.db`. `db.ts`'s exists-guard made the *code* fall back to the schema URL
@@ -617,6 +637,27 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 ---
 
 ## 15. SESSION LOG (append-only — newest on top)
+
+### 2026-11-09 — GitHub sync + login fix (post-sandbox-reset #3)
+- **Incident:** after sandbox reset + `git pull` (`123a126..bfc5060`), login returned
+  401 for every account and mock-engine writes logged "attempt to write a readonly
+  database" (SQLite 1032).
+- **Root cause (two-layer, on TOP of the known .env phantom-URL gotcha):**
+  (1) sandbox reset restored the stale `.env` (`db/custom.db` phantom) — re-pinned to
+  `DATABASE_URL=file:/home/z/my-project/db/cryptsk.db`; (2) NEW gotcha — the pulled
+  `chore(db)` commit REPLACED the tracked `db/cryptsk.db` on disk while the boot-time
+  dev server kept its fd to the deleted inode (`/proc/<pid>/fd` shows
+  `cryptsk.db (deleted)`): SELECTs served the stale orphaned snapshot (all logins 401
+  despite correct on-disk hashes), writes failed readonly. Restarting the dev server
+  re-opened the current file — fixed both symptoms.
+- **Verified (curl + agent-browser):** 8/8 seeded accounts login 200
+  (admin/tadmin/secops/netops/socuser/helpdesk/viewer/svcapi …123), wrong password →
+  401, no-cookie /me → 401; UI: login card → dashboard renders live metrics (CPU/mem/
+  disk/temp + throughput chart), full nav (M01–M23), `cryptsk_token` cookie set,
+  zero page errors; realtime svc :3003 healthy. Screenshot `/tmp/login-verified.png`.
+- **Ops learning:** sandbox reaps agent-spawned processes between tool calls —
+  long verifications must be atomic per call (see Gotchas §13); watchdog cron
+  (job 513113) remains the standing restart safety net.
 
 ### 2026-11-07 — PHASE 2 SPRINT: M12–M23 shipped + Phase-1 tail closed + production package — console 100% ready for Debian 13
 - **Owner directive:** "finish all Phase 2 and Phase 1 pending things, 100% production,
