@@ -47,9 +47,11 @@ ck "system/status → 200" 200 "$code"
 code=$(curl -s -o /dev/null -w '%{http_code}' -b $CJ -X POST $API/system/services/dnsmasq/restart -H 'Content-Type: application/json' -d '{}')
 ck "service restart action (admin) → 200" 200 "$code"
 
-echo "══ T7  realtime (socket.io on :3003, gateway :81)"
+echo "══ T7  realtime (socket.io on :3003, gateway :3000/:81)"
 sid=$(curl -s --max-time 5 "http://127.0.0.1:3003/socket.io/?EIO=4&transport=polling" | head -c 60)
-has "socket.io handshake (3003)" "$sid" '{"sid"'
+has "socket.io handshake (3003 direct)" "$sid" '{"sid"'
+sid2=$(curl -s --max-time 5 "http://127.0.0.1:3000/socket.io/?EIO=4&transport=polling&XTransformPort=3003" | head -c 60)
+has "socket.io handshake (:3000 via gateway)" "$sid2" '{"sid"'
 
 echo "══ T8  agent data plane"
 agent=$(curl -s --max-time 5 http://127.0.0.1:8080/healthz)
