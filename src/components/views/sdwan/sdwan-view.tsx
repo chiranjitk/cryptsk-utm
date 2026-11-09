@@ -393,7 +393,7 @@ function OverlayEditor(props: { overlay: OverlayDTO | null; onClose: () => void 
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -514,7 +514,7 @@ function SiteEditor(props: { overlayId: number; site: SiteDTO | null; onClose: (
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -648,7 +648,7 @@ function PathEditor(props: { site: Pick<SiteDTO, "id" | "name">; path: PathDTO |
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending} onClick={submit}>
+          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add path"}
           </Button>
         </DialogFooter>
@@ -845,7 +845,7 @@ function PolicyEditor(props: {
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -957,7 +957,7 @@ function SlaProfileEditor(props: { profile: SlaProfileDTO | null; onClose: () =>
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -1078,7 +1078,7 @@ function SitesCard(props: {
           <Icons.Building2 className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Sites
         </CardTitle>
-        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
+        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={props.onAdd}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add site
         </Button>
       </CardHeader>
@@ -1095,7 +1095,7 @@ function SitesCard(props: {
             title="No sites in this overlay"
             description="Add a hub first, then attach spokes to build the fabric."
             action={
-              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
+              <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={props.onAdd}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add site
               </Button>
             }
@@ -1323,7 +1323,7 @@ function PoliciesCard(props: {
           <Icons.GitBranch className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Path-selection policies
         </CardTitle>
-        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
+        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={props.onAdd}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add policy
         </Button>
       </CardHeader>
@@ -1340,7 +1340,7 @@ function PoliciesCard(props: {
             title="No policies yet"
             description="Create a policy to steer matching traffic onto the best WAN path."
             action={
-              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
+              <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={props.onAdd}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add policy
               </Button>
             }
@@ -1682,7 +1682,7 @@ export function SdwanView() {
           <CardTitle className="text-sm">Overlays</CardTitle>
           <Button
             size="sm"
-            className="h-8 bg-red-700 text-white hover:bg-red-800"
+            className="h-8 bg-zinc-700 text-white hover:bg-zinc-800"
             onClick={() => setOverlayAddOpen(true)}
           >
             <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add overlay
@@ -1703,7 +1703,7 @@ export function SdwanView() {
               title="No overlays yet"
               description="Create an overlay to group sites into one routed fabric."
               action={
-                <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setOverlayAddOpen(true)}>
+                <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setOverlayAddOpen(true)}>
                   <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New overlay
                 </Button>
               }
@@ -1746,7 +1746,7 @@ export function SdwanView() {
               )}
             </div>
             <Button
-              className="h-9 bg-red-700 px-5 text-white hover:bg-red-800"
+              className="h-9 bg-zinc-700 px-5 text-white hover:bg-zinc-800"
               disabled={probe.isPending}
               onClick={() => probe.mutate(selected.id)}
             >

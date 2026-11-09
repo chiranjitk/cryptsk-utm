@@ -140,7 +140,7 @@ function SubnetsTab({ goToReservations }: { goToReservations: () => void }) {
         <p className="text-xs text-zinc-500">DHCP scopes · deleting a subnet cascades its reservations and leases</p>
         <Button
           size="sm"
-          className="bg-red-700 text-white hover:bg-red-800"
+          className="bg-zinc-700 text-white hover:bg-zinc-800"
           onClick={() => {
             setEditing(null);
             setEditorOpen(true);
@@ -172,7 +172,7 @@ function SubnetsTab({ goToReservations }: { goToReservations: () => void }) {
               title="No DHCP subnets"
               description="Create a scope to start leasing addresses on an interface."
               action={
-                <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => { setEditing(null); setEditorOpen(true); }}>
+                <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => { setEditing(null); setEditorOpen(true); }}>
                   Add Subnet
                 </Button>
               }
@@ -390,7 +390,7 @@ function SubnetEditor({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create subnet"}
         </Button>
       </DialogFooter>
@@ -460,7 +460,7 @@ function ReservationsTab() {
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-zinc-500">Static MAC bindings — reserved IPs are excluded from the dynamic pool</p>
-        <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => { setEditing(null); setEditorOpen(true); }}>
+        <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => { setEditing(null); setEditorOpen(true); }}>
           <Icons.Plus className="mr-1 h-4 w-4" /> Add Reservation
         </Button>
       </div>
@@ -481,7 +481,7 @@ function ReservationsTab() {
               title="No reservations"
               description="Pin a MAC address to an IP inside one of your subnets."
               action={
-                <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => { setEditing(null); setEditorOpen(true); }}>
+                <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => { setEditing(null); setEditorOpen(true); }}>
                   Add Reservation
                 </Button>
               }
@@ -651,7 +651,7 @@ function ReservationEditor({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create reservation"}
         </Button>
       </DialogFooter>
@@ -953,7 +953,7 @@ function RelayForm({
         </EditorSection>
 
         <div className="flex justify-end">
-          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {save.isPending ? "Saving…" : "Save relay config"}
           </Button>
         </div>

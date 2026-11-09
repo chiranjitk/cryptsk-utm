@@ -275,7 +275,7 @@ function ResolverForm({ initial }: { initial: ResolverSettingsDTO }) {
         </EditorSection>
 
         <div className="flex justify-end">
-          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {save.isPending ? "Saving…" : "Save resolver settings"}
           </Button>
         </div>
@@ -325,7 +325,7 @@ function PoliciesTab() {
         </p>
         <Button
           size="sm"
-          className="bg-red-700 text-white hover:bg-red-800"
+          className="bg-zinc-700 text-white hover:bg-zinc-800"
           onClick={() => {
             setEditing(null);
             setEditorOpen(true);
@@ -353,7 +353,7 @@ function PoliciesTab() {
               action={
                 <Button
                   size="sm"
-                  className="bg-red-700 text-white hover:bg-red-800"
+                  className="bg-zinc-700 text-white hover:bg-zinc-800"
                   onClick={() => {
                     setEditing(null);
                     setEditorOpen(true);
@@ -603,7 +603,7 @@ function PolicyEditor({
         <Button variant="outline" onClick={() => onOpenChange(false)}>
           Cancel
         </Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create policy"}
         </Button>
       </DialogFooter>
@@ -707,7 +707,7 @@ function RecordsTab() {
         </Select>
         <Button
           size="sm"
-          className="ml-auto bg-red-700 text-white hover:bg-red-800"
+          className="ml-auto bg-zinc-700 text-white hover:bg-zinc-800"
           onClick={() => {
             setEditing(null);
             setEditorOpen(true);
@@ -733,7 +733,7 @@ function RecordsTab() {
               title="No DNS records"
               description="Local A/AAAA/CNAME/MX/TXT/SRV/PTR records answered by the resolver."
               action={
-                <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => { setEditing(null); setEditorOpen(true); }}>
+                <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => { setEditing(null); setEditorOpen(true); }}>
                   Add Record
                 </Button>
               }
@@ -926,7 +926,7 @@ function RecordEditor({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create record"}
         </Button>
       </DialogFooter>

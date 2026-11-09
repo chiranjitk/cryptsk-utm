@@ -248,7 +248,7 @@ function PolicyEditor(props: { policy: UrlPolicyDTO | null; onClose: () => void 
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -451,7 +451,7 @@ function AddListEntryDialog(props: { policyId: number; onClose: () => void }) {
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={save.isPending || !value.trim()}
             onClick={() => save.mutate()}
           >
@@ -521,7 +521,7 @@ function ImportListDialog(props: { policyId: number; onClose: () => void }) {
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={run.isPending || !text.trim()}
             onClick={() => run.mutate()}
           >
@@ -578,7 +578,7 @@ function CustomListsTab({ policyId }: { policyId: number }) {
           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => setImportOpen(true)}>
             <Icons.Upload className="h-3.5 w-3.5" /> Import list
           </Button>
-          <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+          <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
             <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
           </Button>
         </div>
@@ -704,7 +704,7 @@ function TestUrlCard({ policy }: { policy: UrlPolicyDTO }) {
             />
           </div>
           <Button
-            className="h-9 bg-red-700 px-5 text-white hover:bg-red-800"
+            className="h-9 bg-zinc-700 px-5 text-white hover:bg-zinc-800"
             disabled={run.isPending || !url.trim()}
             onClick={() => run.mutate()}
           >
@@ -1057,7 +1057,7 @@ export function UrlFilterView() {
             <CardTitle className="text-sm">Policies</CardTitle>
             <Button
               size="sm"
-              className="h-8 bg-red-700 text-white hover:bg-red-800"
+              className="h-8 bg-zinc-700 text-white hover:bg-zinc-800"
               onClick={() => setAddOpen(true)}
             >
               <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
@@ -1078,7 +1078,7 @@ export function UrlFilterView() {
                 title="No policies yet"
                 description="Create a URL filter policy to control web access rules."
                 action={
-                  <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+                  <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
                     <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New policy
                   </Button>
                 }

@@ -663,7 +663,7 @@ export function RuleEditor(props: {
             type="button"
             onClick={submit}
             disabled={saveMut.isPending || validateMut.isPending || !form.name.trim() || (blocking && !override) || macs.invalid.length > 0}
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
           >
             {saveMut.isPending ? "Saving…" : editing ? "Save changes" : "Create rule"}
           </Button>

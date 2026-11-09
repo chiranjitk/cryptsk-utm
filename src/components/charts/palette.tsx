@@ -22,7 +22,7 @@ import {
 
 export const PALETTE = {
   /** brand series — the ONLY red series a chart should use */
-  blue: "#b91c1c",
+  blue: "#0ea5e9",
   /** neutral series — upload/secondary data */
   sky: "#71717a",
   amber: "#f59e0b",
@@ -68,7 +68,7 @@ export function ThroughputAreaChart({
   );
 }
 
-const DONUT_COLORS = [PALETTE.blue, PALETTE.amber, PALETTE.sky, PALETTE.rose, PALETTE.violet, PALETTE.orange, PALETTE.slate];
+const DONUT_COLORS = ["#64748b", "#0ea5e9", "#10b981", "#f59e0b", "#8b5cf6", "#f43f5e", "#14b8a6"];
 
 export function AppsDonut({ data, height = 220 }: { data: Array<{ app: string; bytes: number }>; height?: number }) {
   const total = data.reduce((s, d) => s + d.bytes, 0) || 1;

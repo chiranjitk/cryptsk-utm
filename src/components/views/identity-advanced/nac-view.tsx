@@ -391,7 +391,7 @@ function NacProfileEditor(props: { profile: NacProfileDTO | null; onClose: () =>
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create profile"}
           </Button>
         </DialogFooter>
@@ -435,7 +435,7 @@ function ProfilesCard() {
           NAC Profiles
           <span className="text-xs font-normal text-zinc-400">{rows.length} configured</span>
         </CardTitle>
-        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add profile
         </Button>
       </CardHeader>
@@ -452,7 +452,7 @@ function ProfilesCard() {
             title="No NAC profiles"
             description="Create a profile to enforce 802.1X / MAB authentication with dynamic VLAN assignment."
             action={
-              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+              <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New profile
               </Button>
             }
@@ -777,7 +777,7 @@ function DevicesCard() {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-7 gap-1 border-red-600/40 px-2 text-[11px] text-red-700 hover:bg-red-600/10 dark:text-red-500"
+                              className="h-7 gap-1 border-zinc-600/40 px-2 text-[11px] text-zinc-700 hover:bg-zinc-600/10 dark:text-zinc-500"
                               disabled={releasing}
                               aria-label={`Release ${d.macAddress}`}
                               onClick={() => release.mutate(d.id)}
@@ -891,7 +891,7 @@ function EnrollDialog(props: { onClose: () => void }) {
               <Button variant="outline" onClick={copyToken}>
                 <Icons.Copy className="mr-1 h-3.5 w-3.5" /> Copy token
               </Button>
-              <Button className="bg-red-700 text-white hover:bg-red-800" onClick={props.onClose}>
+              <Button className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={props.onClose}>
                 Done
               </Button>
             </DialogFooter>
@@ -942,7 +942,7 @@ function EnrollDialog(props: { onClose: () => void }) {
               <Button variant="ghost" onClick={props.onClose}>
                 Cancel
               </Button>
-              <Button className="bg-red-700 text-white hover:bg-red-800" disabled={enroll.isPending || !userName.trim()} onClick={submit}>
+              <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={enroll.isPending || !userName.trim()} onClick={submit}>
                 {enroll.isPending ? "Issuing…" : "Issue token"}
               </Button>
             </DialogFooter>
@@ -988,7 +988,7 @@ function ByodCard() {
           BYOD Onboarding
           <span className="text-xs font-normal text-zinc-400">{rows.length} enrollment{rows.length === 1 ? "" : "s"}</span>
         </CardTitle>
-        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New enrollment
         </Button>
       </CardHeader>
@@ -1005,7 +1005,7 @@ function ByodCard() {
             title="No BYOD enrollments"
             description="Issue a one-time enrollment token so users can onboard personal devices onto profiled VLANs."
             action={
-              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+              <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New enrollment
               </Button>
             }

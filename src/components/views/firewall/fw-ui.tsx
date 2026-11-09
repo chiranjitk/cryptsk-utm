@@ -175,7 +175,7 @@ export function ConflictDialog(props: {
                 <a key={`${r.ruleName}-${i}`} href="#/firewall/rules" className="inline-flex">
                   <Badge
                     variant="outline"
-                    className="border-red-600/40 bg-red-600/10 text-red-700 hover:bg-red-600/20 dark:text-red-500"
+                    className="border-zinc-600/40 bg-zinc-600/10 text-zinc-700 hover:bg-zinc-600/20 dark:text-zinc-500"
                   >
                     <Icons.ShieldCheck className="mr-1 h-3 w-3" />
                     {r.ruleName}
@@ -189,7 +189,7 @@ export function ConflictDialog(props: {
         <AlertDialogFooter>
           <AlertDialogCancel>Close</AlertDialogCancel>
           <AlertDialogAction
-            className="bg-red-700 text-white hover:bg-red-800 focus-visible:ring-red-700"
+            className="bg-zinc-700 text-white hover:bg-zinc-800 focus-visible:ring-zinc-700"
             onClick={(e) => {
               e.preventDefault();
               window.location.hash = "#/firewall/rules";

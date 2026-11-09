@@ -507,7 +507,7 @@ export function ComplianceView() {
           </CardTitle>
           <Button
             size="sm"
-            className="h-8 gap-1.5 bg-red-700 text-white hover:bg-red-800"
+            className="h-8 gap-1.5 bg-zinc-700 text-white hover:bg-zinc-800"
             onClick={() => {
               setNewErr({});
               setNewOpen(true);
@@ -528,7 +528,7 @@ export function ComplianceView() {
               title="No report runs yet"
               description="Run a compliance template or create an ad-hoc report — the rendered document opens right here."
               action={
-                <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setNewOpen(true)}>
+                <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setNewOpen(true)}>
                   New report
                 </Button>
               }
@@ -610,7 +610,7 @@ export function ComplianceView() {
               <Icons.Search className="h-3.5 w-3.5" />
               Preview
             </Button>
-            <Button size="sm" className="h-8 gap-1.5 bg-red-700 text-white hover:bg-red-800" onClick={() => openRuleEditor(null)}>
+            <Button size="sm" className="h-8 gap-1.5 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => openRuleEditor(null)}>
               <Icons.Plus className="h-3.5 w-3.5" />
               Add rule
             </Button>
@@ -745,7 +745,7 @@ export function ComplianceView() {
               Cancel
             </Button>
             <Button
-              className="bg-red-700 text-white hover:bg-red-800"
+              className="bg-zinc-700 text-white hover:bg-zinc-800"
               disabled={saveTplMut.isPending || tplForm.name.trim().length === 0 || tplForm.sections.length === 0}
               onClick={() => saveTplMut.mutate()}
             >
@@ -821,7 +821,7 @@ export function ComplianceView() {
               Cancel
             </Button>
             <Button
-              className="bg-red-700 text-white hover:bg-red-800"
+              className="bg-zinc-700 text-white hover:bg-zinc-800"
               disabled={newRunMut.isPending || newForm.name.trim().length === 0 || newForm.sections.length === 0}
               onClick={() => newRunMut.mutate()}
             >
@@ -856,7 +856,7 @@ export function ComplianceView() {
                   <p className="text-xs text-zinc-600 dark:text-zinc-400">
                     PDF-format report — use your browser’s print dialog to save it as a PDF file.
                   </p>
-                  <Button size="sm" className="h-8 shrink-0 gap-1.5 bg-red-700 text-white hover:bg-red-800" onClick={() => window.print()}>
+                  <Button size="sm" className="h-8 shrink-0 gap-1.5 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => window.print()}>
                     <Icons.Printer className="h-3.5 w-3.5" />
                     Print
                   </Button>
@@ -945,7 +945,7 @@ export function ComplianceView() {
               Cancel
             </Button>
             <Button
-              className="bg-red-700 text-white hover:bg-red-800"
+              className="bg-zinc-700 text-white hover:bg-zinc-800"
               disabled={saveRuleMut.isPending || ruleForm.name.trim().length === 0}
               onClick={() => saveRuleMut.mutate()}
             >

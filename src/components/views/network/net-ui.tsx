@@ -219,7 +219,7 @@ export function Sparkline({
         <line x1={0} y1={H - 2} x2={W} y2={H - 2} strokeWidth={1.5} vectorEffect="non-scaling-stroke" className="stroke-zinc-300 dark:stroke-zinc-700" />
       ) : (
         <>
-          <polyline points={toPoints((p) => p.rxKbps)} fill="none" strokeWidth={1.5} vectorEffect="non-scaling-stroke" className="stroke-red-700 dark:stroke-red-500" />
+          <polyline points={toPoints((p) => p.rxKbps)} fill="none" strokeWidth={1.5} vectorEffect="non-scaling-stroke" className="stroke-zinc-700 dark:stroke-zinc-500" />
           <polyline points={toPoints((p) => p.txKbps)} fill="none" strokeWidth={1.5} vectorEffect="non-scaling-stroke" className="stroke-zinc-500 dark:stroke-zinc-400" />
         </>
       )}

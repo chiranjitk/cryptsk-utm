@@ -89,7 +89,7 @@ const DECISION_BADGE: Record<SslDecision, { cls: string; icon: React.ComponentTy
     label: "bypassed",
   },
   blocked: {
-    cls: "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400",
+    cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-600 dark:text-zinc-400",
     icon: Ban,
     label: "blocked",
   },
@@ -149,7 +149,7 @@ function StatsStrip({ stats }: { stats: SslStatsDTO | undefined }) {
   const items: Array<{ label: string; value: number; icon: React.ReactNode; tone: "blue" | "zinc" | "red" }> = [
     { label: "Inspected (24h)", value: stats?.inspected24h ?? 0, icon: <ShieldCheck className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />, tone: "blue" },
     { label: "Bypassed (24h)", value: stats?.bypassed24h ?? 0, icon: <CircleSlash className="h-4 w-4 text-zinc-500" />, tone: "zinc" },
-    { label: "Blocked (24h)", value: stats?.blocked24h ?? 0, icon: <Ban className="h-4 w-4 text-red-500" />, tone: "red" },
+    { label: "Blocked (24h)", value: stats?.blocked24h ?? 0, icon: <Ban className="h-4 w-4 text-rose-500" />, tone: "red" },
   ];
   const expiring = stats?.certExpiring.count ?? 0;
   const nearest = stats?.certExpiring.nearest ?? [];
@@ -160,7 +160,7 @@ function StatsStrip({ stats }: { stats: SslStatsDTO | undefined }) {
           <CardContent className="flex items-center gap-3 p-0">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-500/10">{it.icon}</div>
             <div className="min-w-0">
-              <p className={cn("text-xl font-semibold tabular-nums", it.tone === "red" && it.value > 0 && "text-red-600 dark:text-red-400")}>
+              <p className={cn("text-xl font-semibold tabular-nums", it.tone === "red" && it.value > 0 && "text-zinc-600 dark:text-zinc-400")}>
                 {it.value.toLocaleString()}
               </p>
               <p className="truncate text-[11px] text-zinc-500">{it.label}</p>
@@ -369,7 +369,7 @@ function PolicyEditor(props: { initial: SslPolicyDTO | null; onClose: () => void
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={save.isPending || !name.trim() || (mode !== "none" && signingCaId === null)}
             onClick={() =>
               save.mutate({
@@ -501,7 +501,7 @@ function BypassEditor(props: { policies: SslPolicyDTO[]; defaultPolicyId: number
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={save.isPending || policyId === null || !valueValid}
             onClick={() =>
               save.mutate({
@@ -570,7 +570,7 @@ function TestConnectionCard({ policyId, policyName }: { policyId: number | null;
             }}
           />
           <Button
-            className="shrink-0 bg-red-700 text-white hover:bg-red-800"
+            className="shrink-0 bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={!sniValid || run.isPending}
             onClick={() => run.mutate(sni.trim())}
           >
@@ -716,7 +716,7 @@ export function SslInspectionView() {
         </p>
         <Button
           size="sm"
-          className="bg-red-700 text-white hover:bg-red-800"
+          className="bg-zinc-700 text-white hover:bg-zinc-800"
           onClick={() => {
             setEditing(null);
             setEditorOpen(true);
@@ -759,7 +759,7 @@ export function SslInspectionView() {
                 description="Create a policy (selective MITM with a signing CA is the usual starting point) to start inspecting TLS."
                 action={
                   <Button
-                    className="bg-red-700 text-white hover:bg-red-800"
+                    className="bg-zinc-700 text-white hover:bg-zinc-800"
                     onClick={() => {
                       setEditing(null);
                       setEditorOpen(true);

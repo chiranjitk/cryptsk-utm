@@ -620,7 +620,7 @@ function ToolbarRow({ label, addLabel, onAdd }: { label: string; addLabel: strin
   return (
     <div className="flex items-center justify-between gap-2 border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
       <p className="text-xs text-zinc-500">{label}</p>
-      <Button size="sm" onClick={onAdd} className="bg-red-700 text-white hover:bg-red-800">
+      <Button size="sm" onClick={onAdd} className="bg-zinc-700 text-white hover:bg-zinc-800">
         <Icons.Plus className="mr-1 h-4 w-4" /> {addLabel}
       </Button>
     </div>
@@ -717,7 +717,7 @@ function AddressObjectDialog(props: { state: AddressDialogState; onOpenChange: (
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Saving…" : editing ? "Save changes" : "Create object"}
           </Button>
         </DialogFooter>
@@ -805,7 +805,7 @@ function GroupDialog(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Saving…" : editing ? "Save changes" : "Create group"}
           </Button>
         </DialogFooter>
@@ -957,7 +957,7 @@ function ServiceDialog(props: { state: ServiceDialogState; onOpenChange: (open: 
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Saving…" : editing ? "Save changes" : "Create service"}
           </Button>
         </DialogFooter>
@@ -1167,7 +1167,7 @@ function ScheduleDialog(props: { state: ScheduleDialogState; onOpenChange: (open
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Saving…" : editing ? "Save changes" : "Create schedule"}
           </Button>
         </DialogFooter>

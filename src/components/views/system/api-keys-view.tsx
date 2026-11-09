@@ -322,7 +322,7 @@ function KeysTab() {
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={createMut.isPending}>
               Cancel
             </Button>
-            <Button className="bg-red-700 text-white hover:bg-red-800" onClick={() => createMut.mutate()} disabled={createMut.isPending || !form.name.trim()}>
+            <Button className="bg-amber-700 text-white hover:bg-amber-800" onClick={() => createMut.mutate()} disabled={createMut.isPending || !form.name.trim()}>
               {createMut.isPending ? "Creating…" : "Create key"}
             </Button>
           </DialogFooter>
@@ -383,7 +383,7 @@ function KeysTab() {
           ) : null}
           <DialogFooter>
             <Button
-              className="bg-red-700 text-white hover:bg-red-800"
+              className="bg-zinc-700 text-white hover:bg-zinc-800"
               disabled={!reveal?.saved}
               onClick={() => setReveal(null)}
             >
@@ -698,7 +698,7 @@ function WebhooksTab() {
               Cancel
             </Button>
             <Button
-              className="bg-red-700 text-white hover:bg-red-800"
+              className="bg-zinc-700 text-white hover:bg-zinc-800"
               onClick={() => saveMut.mutate()}
               disabled={saveMut.isPending || !form.name.trim() || !form.url.trim() || form.events.length === 0}
             >

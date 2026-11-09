@@ -243,7 +243,7 @@ export function BgpTab() {
         <p className="text-sm text-zinc-500">
           eBGP/iBGP peering sessions — filters, route-maps and BFD attach per neighbor.
         </p>
-        <Button onClick={openCreate} className="gap-1.5 bg-red-700 text-white hover:bg-red-800">
+        <Button onClick={openCreate} className="gap-1.5 bg-zinc-700 text-white hover:bg-zinc-800">
           <Icons.Plus className="h-4 w-4" />
           Add neighbor
         </Button>
@@ -577,7 +577,7 @@ export function BgpTab() {
               Cancel
             </Button>
             <Button
-              className="bg-red-700 text-white hover:bg-red-800"
+              className="bg-zinc-700 text-white hover:bg-zinc-800"
               disabled={saveMut.isPending}
               onClick={() =>
                 editor && saveMut.mutate(editor.mode === "edit" ? { mode: "edit", id: editor.neighbor.id } : { mode: "create" })

@@ -64,7 +64,7 @@ const SCROLLY =
 const ACTION_BADGE: Record<WafAction, string> = {
   pass: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   log: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  block: "border-transparent bg-red-600 text-white",
+  block: "border-transparent bg-rose-600 text-white",
 };
 
 export function ActionBadge({ action, className }: { action: WafAction; className?: string }) {
@@ -341,7 +341,7 @@ function VhostEditor(props: { initial: VhostDTO | null; certs: CertOption[]; onC
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={!valid || save.isPending}
             onClick={() =>
               save.mutate({
@@ -573,7 +573,7 @@ function PolicyEditor(props: {
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={!valid || save.isPending}
             onClick={() =>
               save.mutate({
@@ -681,7 +681,7 @@ function ExclusionEditor(props: { policyId: number; onClose: () => void }) {
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={!valid || save.isPending}
             onClick={() =>
               save.mutate({
@@ -730,7 +730,7 @@ function PolicyCard(props: {
             title="No policy attached to this vhost"
             description="Create a policy to enable OWASP CRS inspection, rate limiting and geo-blocking for this host."
             action={
-              <Button className="bg-red-700 text-white hover:bg-red-800" onClick={() => props.onEdit(null)}>
+              <Button className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => props.onEdit(null)}>
                 <Icons.Plus className="mr-1 h-4 w-4" /> Create policy
               </Button>
             }
@@ -1011,7 +1011,7 @@ function TestRequestCard({ policy }: { policy: PolicyDTO }) {
         </div>
         <div>
           <Button
-            className="min-h-9 bg-red-700 text-white hover:bg-red-800"
+            className="min-h-9 bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={run.isPending || url.trim().length === 0}
             onClick={() => run.mutate()}
           >
@@ -1032,7 +1032,7 @@ function TestRequestCard({ policy }: { policy: PolicyDTO }) {
             <div className="flex flex-wrap items-center gap-2">
               <ActionBadge action={result.action} />
               {result.reason && result.reason !== "anomaly" && (
-                <Badge variant="outline" className="border-red-500/40 bg-red-500/10 text-[10px] uppercase text-red-600 dark:text-red-400">
+                <Badge variant="outline" className="border-zinc-500/40 bg-zinc-500/10 text-[10px] uppercase text-zinc-600 dark:text-zinc-400">
                   {result.reason.replace("_", " ")}
                 </Badge>
               )}
@@ -1042,7 +1042,7 @@ function TestRequestCard({ policy }: { policy: PolicyDTO }) {
             </div>
             <div className="relative mt-3 h-2 w-full rounded-full bg-zinc-100 dark:bg-zinc-800" role="img" aria-label={`Anomaly score ${result.anomalyScore} of threshold ${result.threshold}`}>
               <div
-                className={cn("h-2 rounded-full transition-all", score >= threshold ? "bg-red-600" : score > 0 ? "bg-amber-500" : "bg-zinc-500")}
+                className={cn("h-2 rounded-full transition-all", score >= threshold ? "bg-zinc-600" : score > 0 ? "bg-amber-500" : "bg-zinc-500")}
                 style={{ width: `${pct}%` }}
               />
               <div className="absolute top-[-3px] h-3.5 w-0.5 bg-zinc-500" style={{ left: `${thresholdPct}%` }} title={`in-threshold ${threshold}`} />
@@ -1060,7 +1060,7 @@ function TestRequestCard({ policy }: { policy: PolicyDTO }) {
                 <div className="space-y-1">
                   {result.matched.map((m) => (
                     <div key={m.id} className="flex items-center gap-2 rounded-md bg-zinc-50 px-2 py-1.5 text-xs dark:bg-zinc-800/60">
-                      <span className="font-mono font-semibold text-red-700 dark:text-red-500">{m.id}</span>
+                      <span className="font-mono font-semibold text-zinc-700 dark:text-zinc-500">{m.id}</span>
                       <span className="min-w-0 flex-1 truncate text-zinc-600 dark:text-zinc-300" title={m.msg}>
                         {m.msg}
                       </span>
@@ -1110,7 +1110,7 @@ function StatsStrip({ stats }: { stats: WafStats | undefined }) {
     {
       label: "Blocked (24h)",
       value: stats?.blocked24h ?? 0,
-      icon: <Icons.Ban className="h-4 w-4 text-red-500" />,
+      icon: <Icons.Ban className="h-4 w-4 text-zinc-500" />,
       tone: (stats?.blocked24h ?? 0) > 0 ? "red" : undefined,
     },
     { label: "Logged (24h)", value: stats?.logged24h ?? 0, icon: <Icons.Eye className="h-4 w-4 text-amber-500" /> },
@@ -1118,7 +1118,7 @@ function StatsStrip({ stats }: { stats: WafStats | undefined }) {
     {
       label: top ? `Top rule ${top.ruleId} · ${top.count} hits` : "Top attacked rule",
       value: top?.count ?? 0,
-      icon: <Icons.Crosshair className="h-4 w-4 text-red-700 dark:text-red-500" />,
+      icon: <Icons.Crosshair className="h-4 w-4 text-zinc-700 dark:text-zinc-500" />,
       sub: top?.msg,
     },
   ];
@@ -1130,7 +1130,7 @@ function StatsStrip({ stats }: { stats: WafStats | undefined }) {
             <CardContent className="flex items-center gap-3 p-0">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-500/10">{it.icon}</div>
               <div className="min-w-0">
-                <p className={cn("text-xl font-semibold tabular-nums", it.tone === "red" ? "text-red-600 dark:text-red-400" : undefined)}>
+                <p className={cn("text-xl font-semibold tabular-nums", it.tone === "red" ? "text-zinc-600 dark:text-zinc-400" : undefined)}>
                   {it.value.toLocaleString()}
                 </p>
                 <p className="truncate text-[11px] text-zinc-500" title={it.sub ?? it.label}>
@@ -1152,7 +1152,7 @@ function StatsStrip({ stats }: { stats: WafStats | undefined }) {
               title={r.msg}
             >
               {r.ruleId}
-              <span className="rounded-full bg-red-600 px-1.5 text-[10px] font-semibold text-white">{r.count}</span>
+              <span className="rounded-full bg-zinc-600 px-1.5 text-[10px] font-semibold text-white">{r.count}</span>
             </Badge>
           ))}
         </div>
@@ -1232,7 +1232,7 @@ export function WafView() {
         </p>
         <Button
           size="sm"
-          className="bg-red-700 text-white hover:bg-red-800"
+          className="bg-zinc-700 text-white hover:bg-zinc-800"
           onClick={() => setVhostEditor({ open: true, initial: null })}
         >
           <Icons.Plus className="mr-1 h-4 w-4" /> Add vhost
@@ -1255,7 +1255,7 @@ export function WafView() {
               title="No virtual hosts configured"
               description="Add a vhost to put a hostname behind the WAF, then attach a policy with CRS rules."
               action={
-                <Button className="bg-red-700 text-white hover:bg-red-800" onClick={() => setVhostEditor({ open: true, initial: null })}>
+                <Button className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setVhostEditor({ open: true, initial: null })}>
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add vhost
                 </Button>
               }

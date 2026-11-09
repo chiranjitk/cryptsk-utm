@@ -59,7 +59,7 @@ const SEV_STYLES: Record<string, string> = {
 
 const SEV_BAR: Record<string, string> = {
   critical: "bg-rose-600",
-  high: "bg-red-500",
+  high: "bg-rose-500",
   medium: "bg-amber-500",
   low: "bg-orange-400",
   info: "bg-zinc-400 dark:bg-zinc-500",
@@ -297,7 +297,7 @@ export function DashboardView() {
           <CardHeader className="flex-row items-center justify-between space-y-0 p-4 md:p-6">
             <CardTitle className="text-sm font-medium">Throughput (live)</CardTitle>
             <div className="flex items-center gap-3 text-xs">
-              <span className="flex items-center gap-1.5 tabular-nums font-semibold text-red-700 dark:text-red-500">↓ {fmtSpeed(curRx)}</span>
+              <span className="flex items-center gap-1.5 tabular-nums font-semibold text-zinc-700 dark:text-zinc-500">↓ {fmtSpeed(curRx)}</span>
               <span className="flex items-center gap-1.5 tabular-nums font-semibold text-zinc-500 dark:text-zinc-400">↑ {fmtSpeed(curTx)}</span>
             </div>
           </CardHeader>
@@ -546,7 +546,7 @@ export function DashboardView() {
                     </div>
                   );
                 })}
-                <Button asChild variant="ghost" size="sm" className="h-8 w-full justify-center text-xs text-red-700 hover:text-red-800 dark:text-red-500 dark:hover:text-red-400">
+                <Button asChild variant="ghost" size="sm" className="h-8 w-full justify-center text-xs text-zinc-700 hover:text-zinc-800 dark:text-zinc-500 dark:hover:text-zinc-400">
                   <a href="#/pki/certificates">View all certificates →</a>
                 </Button>
               </div>

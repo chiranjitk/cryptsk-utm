@@ -115,7 +115,7 @@ function SidebarNav({ current, onNavigate }: { current: string; onNavigate?: () 
                     className={cn(
                       "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
                       active
-                        ? "bg-red-600/10 font-medium text-red-700 dark:text-red-500"
+                        ? "bg-zinc-600/10 font-medium text-zinc-700 dark:text-zinc-500"
                         : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/60",
                     )}
                   >
@@ -165,9 +165,9 @@ export function AppShell() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background">
         {/* branded boot spinner — ping halo + orbit ring around the mark */}
         <div className="relative flex h-20 w-20 items-center justify-center">
-          <span className="absolute inset-0 animate-ping rounded-full bg-red-600/15" aria-hidden="true" />
+          <span className="absolute inset-0 animate-ping rounded-full bg-zinc-600/15" aria-hidden="true" />
           <span
-            className="absolute inset-0 animate-spin rounded-full border-2 border-red-600/20 border-t-red-600 [animation-duration:1.1s]"
+            className="absolute inset-0 animate-spin rounded-full border-2 border-zinc-600/20 border-t-red-600 [animation-duration:1.1s]"
             aria-hidden="true"
           />
           <BrandLogo className="relative h-9 w-9 drop-shadow-md" />

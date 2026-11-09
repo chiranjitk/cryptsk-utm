@@ -365,7 +365,7 @@ export function NatView() {
             setEditing(null);
             setEditorOpen(true);
           }}
-          className="bg-red-700 text-white hover:bg-red-800"
+          className="bg-zinc-700 text-white hover:bg-zinc-800"
         >
           <Icons.Plus className="mr-1 h-4 w-4" /> Add NAT rule
         </Button>
@@ -387,7 +387,7 @@ export function NatView() {
               title="No NAT rules yet"
               description="Without NAT, internal hosts cannot reach the internet through the WAN interfaces. Add a masquerade SNAT to get started."
               action={
-                <Button onClick={() => setEditorOpen(true)} className="bg-red-700 text-white hover:bg-red-800">
+                <Button onClick={() => setEditorOpen(true)} className="bg-zinc-700 text-white hover:bg-zinc-800">
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add NAT rule
                 </Button>
               }
@@ -940,7 +940,7 @@ function NatEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={saveMut.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={saveMut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {saveMut.isPending ? "Saving…" : editing ? "Save changes" : "Create NAT rule"}
           </Button>
         </DialogFooter>
@@ -1024,7 +1024,7 @@ function OneToOneDialog(props: { open: boolean; onOpenChange: (open: boolean) =>
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Creating…" : "Create 1:1 pair"}
           </Button>
         </DialogFooter>
@@ -1190,7 +1190,7 @@ function PortForwardDialog(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Creating…" : "Create forward"}
           </Button>
         </DialogFooter>

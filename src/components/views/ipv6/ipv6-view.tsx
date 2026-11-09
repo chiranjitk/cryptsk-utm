@@ -546,7 +546,7 @@ function SettingsCard(props: { ifaces: string[] }) {
               ) : null}
               <Button
                 size="sm"
-                className="min-h-9 bg-red-700 px-5 text-white hover:bg-red-800"
+                className="min-h-9 bg-zinc-700 px-5 text-white hover:bg-zinc-800"
                 disabled={!draft || save.isPending}
                 onClick={() => draft && save.mutate(draft)}
               >
@@ -762,7 +762,7 @@ function Nat66Editor(props: { rule: Nat66RuleDTO | null; ifaces: string[]; onClo
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -810,7 +810,7 @@ function Nat66Card(props: {
           <Icons.ArrowLeftRight className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           NAT66 rules
         </CardTitle>
-        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
+        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={props.onAdd}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add rule
         </Button>
       </CardHeader>
@@ -827,7 +827,7 @@ function Nat66Card(props: {
             title="No NAT66 rules yet"
             description="Create a rule to translate IPv6 prefixes, masquerade outbound traffic or forward a WAN port."
             action={
-              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
+              <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={props.onAdd}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add rule
               </Button>
             }
@@ -1126,7 +1126,7 @@ function Dhcpv6Editor(props: { server: Dhcpv6ServerDTO | null; ifaces: string[];
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending} onClick={submit}>
+          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create server"}
           </Button>
         </DialogFooter>
@@ -1184,7 +1184,7 @@ function Dhcpv6Card(props: {
           <Icons.Server className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           DHCPv6 servers
         </CardTitle>
-        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
+        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={props.onAdd}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add server
         </Button>
       </CardHeader>
@@ -1201,7 +1201,7 @@ function Dhcpv6Card(props: {
             title="No DHCPv6 servers yet"
             description="Create a server to hand out stateful IPv6 addresses on an interface."
             action={
-              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={props.onAdd}>
+              <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={props.onAdd}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add server
               </Button>
             }

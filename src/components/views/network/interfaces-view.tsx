@@ -239,7 +239,7 @@ export function InterfacesView() {
           <TabsTrigger value="mirroring">Mirroring</TabsTrigger>
         </TabsList>
         {tab === "interfaces" && (
-          <Button size="sm" onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
+          <Button size="sm" onClick={openCreate} className="bg-zinc-700 text-white hover:bg-zinc-800">
             <Icons.Plus className="mr-1 h-4 w-4" /> Add interface
           </Button>
         )}
@@ -360,7 +360,7 @@ export function InterfacesView() {
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <div className="w-24 shrink-0 text-right tabular-nums">
-                                <span className="block text-xs text-red-700 dark:text-red-500">↓ {fmtKbps(liveRates.rxKbps)}</span>
+                                <span className="block text-xs text-rose-700 dark:text-rose-500">↓ {fmtKbps(liveRates.rxKbps)}</span>
                                 <span className="block text-xs text-zinc-500 dark:text-zinc-400">↑ {fmtKbps(liveRates.txKbps)}</span>
                               </div>
                               <Sparkline points={liveSparks} />
@@ -476,7 +476,7 @@ function AddMirrorButton({ ifaces }: { ifaces: Iface[] }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)} className="bg-red-700 text-white hover:bg-red-800">
+      <Button size="sm" onClick={() => setOpen(true)} className="bg-zinc-700 text-white hover:bg-zinc-800">
         <Icons.Plus className="mr-1 h-4 w-4" /> Add mirror
       </Button>
       <MirrorEditor open={open} onOpenChange={setOpen} ifaces={ifaces} />
@@ -1144,7 +1144,7 @@ function IfaceEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create interface"}
           </Button>
         </DialogFooter>
@@ -1195,7 +1195,7 @@ function IfaceStatsDialog(props: { iface: Iface | null; onOpenChange: (open: boo
                 uptime <span className="font-mono tabular-nums text-zinc-800 dark:text-zinc-200">{fmtUptime(stats.uptimeSec)}</span>
               </span>
               <span className="ml-auto tabular-nums">
-                <span className="text-red-700 dark:text-red-500">↓ {fmtKbps(stats.rates.rxKbps)}</span>
+                <span className="text-zinc-700 dark:text-zinc-500">↓ {fmtKbps(stats.rates.rxKbps)}</span>
                 <span className="ml-3 text-zinc-500 dark:text-zinc-400">↑ {fmtKbps(stats.rates.txKbps)}</span>
               </span>
             </div>
@@ -1221,7 +1221,7 @@ function IfaceStatsDialog(props: { iface: Iface | null; onOpenChange: (open: boo
               <Sparkline points={stats.sparkline} className="h-24 w-full" />
               <div className="mt-1 flex items-center gap-4 text-[10px] text-zinc-400">
                 <span className="flex items-center gap-1">
-                  <span className="inline-block h-1.5 w-3 rounded-full bg-red-700" /> rx
+                  <span className="inline-block h-1.5 w-3 rounded-full bg-rose-700" /> rx
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="inline-block h-1.5 w-3 rounded-full bg-zinc-500" /> tx
@@ -1690,7 +1690,7 @@ function MirrorEditor(props: { open: boolean; onOpenChange: (open: boolean) => v
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Creating…" : "Create mirror"}
           </Button>
         </DialogFooter>

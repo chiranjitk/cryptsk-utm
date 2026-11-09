@@ -85,7 +85,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
                 {error}
               </p>
             ) : null}
-            <Button type="submit" className="w-full bg-red-700 hover:bg-red-800" disabled={busy}>
+            <Button type="submit" className="w-full bg-zinc-700 hover:bg-zinc-800" disabled={busy}>
               {busy ? "Signing in…" : "Sign in"}
             </Button>
           </form>

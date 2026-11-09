@@ -153,7 +153,7 @@ function RuleEditor(props: { onClose: () => void }) {
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={save.isPending || !name.trim() || !matchValue.trim()}
             onClick={() => save.mutate({ name: name.trim(), matchType, matchValue: matchValue.trim(), action, direction, enabled: true })}
           >
@@ -179,7 +179,7 @@ function RecentMatches() {
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0 p-4 pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <Icons.Activity className="h-4 w-4 text-red-700 dark:text-red-500" />
+          <Icons.Activity className="h-4 w-4 text-zinc-700 dark:text-zinc-500" />
           Recent matches
         </CardTitle>
         <span className="inline-flex items-center gap-1.5 text-[11px] text-zinc-400">
@@ -262,7 +262,7 @@ export function AutoBlockView() {
           Rules block, reject or quarantine traffic matching an indicator. &quot;auto-feed&quot; rules are created by feed sync
           for new critical IOCs; manual rules are curated here.
         </p>
-        <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+        <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
           <Icons.Plus className="mr-1 h-4 w-4" /> Add rule
         </Button>
       </div>

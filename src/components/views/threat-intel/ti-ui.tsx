@@ -15,7 +15,7 @@ import * as Icons from "lucide-react";
 // ── severity (M13 scale: info | warning | critical) ─────────────────────────
 
 const SEVERITY_CLS: Record<string, string> = {
-  critical: "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400",
+  critical: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
   warning: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   info: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
 };
@@ -32,7 +32,7 @@ export function SeverityBadge({ severity, className }: { severity: string; class
 export function SeverityDot({ severity }: { severity: string }) {
   const cls =
     severity === "critical"
-      ? "bg-red-500"
+      ? "bg-zinc-500"
       : severity === "warning"
         ? "bg-amber-500"
         : "bg-zinc-400";
@@ -42,9 +42,9 @@ export function SeverityDot({ severity }: { severity: string }) {
 // ── auto-block action chips ─────────────────────────────────────────────────
 
 const ACTION_CLS: Record<string, string> = {
-  drop: "border-red-500/50 bg-transparent text-red-500",
+  drop: "border-rose-500/50 bg-transparent text-rose-500",
   reject: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  quarantine_vlan: "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500",
+  quarantine_vlan: "border-rose-600/40 bg-rose-600/10 text-rose-700 dark:text-rose-500",
 };
 
 export function ActionChip({ action, className }: { action: string; className?: string }) {
@@ -61,7 +61,7 @@ export function ActionChip({ action, className }: { action: string; className?: 
 export function HitActionChip({ action }: { action: string }) {
   const cls =
     action === "blocked"
-      ? "border-red-500/50 bg-transparent text-red-500"
+      ? "border-zinc-500/50 bg-transparent text-zinc-500"
       : action === "quarantined"
         ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
         : "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800";
@@ -128,7 +128,7 @@ export function Meter({ value, label, tone = "blue" }: { value: number; label: s
     <div className="flex items-center gap-2" title={`${label}: ${clamped}%`}>
       <div className="h-1.5 w-16 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
         <div
-          className={cn("h-full rounded-full transition-[width]", tone === "blue" ? "bg-zinc-500" : "bg-red-500")}
+          className={cn("h-full rounded-full transition-[width]", tone === "blue" ? "bg-zinc-500" : "bg-zinc-500")}
           style={{ width: `${clamped}%` }}
         />
       </div>

@@ -166,7 +166,7 @@ function IocEditor(props: { onClose: () => void }) {
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={save.isPending || !value.trim() || !Number.isFinite(confidenceNum) || confidenceNum < 0 || confidenceNum > 100}
             onClick={() =>
               save.mutate({
@@ -368,7 +368,7 @@ export function IocsView() {
                 <Icons.X className="h-3.5 w-3.5" /> Clear
               </Button>
             )}
-            <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+            <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
               <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add IOC
             </Button>
           </div>

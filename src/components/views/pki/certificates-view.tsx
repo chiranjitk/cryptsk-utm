@@ -550,7 +550,7 @@ function IssueCertDialog(props: { open: boolean; onOpenChange: (open: boolean) =
           <Button
             onClick={() => mut.mutate()}
             disabled={mut.isPending || !form.caId || !form.name || !form.commonName}
-            className="gap-1.5 bg-red-700 text-white hover:bg-red-800"
+            className="gap-1.5 bg-zinc-700 text-white hover:bg-zinc-800"
           >
             {mut.isPending ? <Icons.Loader2 className="h-4 w-4 animate-spin" /> : <Icons.FileKey2 className="h-4 w-4" />}
             {mut.isPending ? "Signing…" : "Issue certificate"}

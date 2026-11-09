@@ -257,7 +257,7 @@ export function OspfTab() {
               </label>
               <div className="sm:col-span-2 lg:col-span-4">
                 <Button
-                  className="bg-red-700 text-white hover:bg-red-800"
+                  className="bg-zinc-700 text-white hover:bg-zinc-800"
                   disabled={settingsQ.isLoading || saveSettings.isPending}
                   onClick={() => saveSettings.mutate()}
                 >
@@ -274,7 +274,7 @@ export function OspfTab() {
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm text-zinc-500">Interfaces participating in OSPF — hello/dead, cost and network type.</p>
           <Button
-            className="gap-1.5 bg-red-700 text-white hover:bg-red-800"
+            className="gap-1.5 bg-zinc-700 text-white hover:bg-zinc-800"
             onClick={() => {
               setForm(initialIfaceForm);
               setFormErrors({});
@@ -433,7 +433,7 @@ export function OspfTab() {
               Cancel
             </Button>
             <Button
-              className="bg-red-700 text-white hover:bg-red-800"
+              className="bg-zinc-700 text-white hover:bg-zinc-800"
               disabled={saveIface.isPending}
               onClick={() =>
                 editor && saveIface.mutate(editor.mode === "edit" ? { mode: "edit", id: editor.iface.id } : { mode: "create" })

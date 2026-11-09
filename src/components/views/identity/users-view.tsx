@@ -735,7 +735,7 @@ function GroupEditorForm(props: { group: UserGroupDTO | null; onClose: () => voi
                       type="checkbox"
                       checked={checked}
                       onChange={() => setMemberIds((prev) => (prev.includes(u.id) ? prev.filter((x) => x !== u.id) : [...prev, u.id]))}
-                      className="h-3.5 w-3.5 accent-red-700"
+                      className="h-3.5 w-3.5 accent-zinc-700"
                       aria-label={`Include ${u.username}`}
                     />
                     <span className="font-mono text-xs">{u.username}</span>

@@ -282,7 +282,7 @@ function WelcomeStep(props: {
           You can revisit everything later in the console.
         </p>
       </div>
-      <div className="rounded-lg border border-red-600/40 bg-red-600/10 p-3 text-xs text-red-800 dark:text-red-500">
+      <div className="rounded-lg border border-zinc-600/40 bg-zinc-600/10 p-3 text-xs text-zinc-800 dark:text-zinc-500">
         <p className="flex items-start gap-2">
           <Icons.KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>

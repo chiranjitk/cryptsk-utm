@@ -110,7 +110,7 @@ export function ZonesView() {
         <p className="mr-auto text-xs text-zinc-500">
           Zones group interfaces for zone-based policy. WAN and LAN are protected — they cannot be deleted or renamed.
         </p>
-        <Button size="sm" onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
+        <Button size="sm" onClick={openCreate} className="bg-zinc-700 text-white hover:bg-zinc-800">
           <Icons.Plus className="mr-1 h-4 w-4" /> Add zone
         </Button>
       </div>
@@ -131,7 +131,7 @@ export function ZonesView() {
               title="No zones yet"
               description="Create a zone (L3, L2 or VPN) and assign interfaces so firewall rules can match on it."
               action={
-                <Button onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
+                <Button onClick={openCreate} className="bg-zinc-700 text-white hover:bg-zinc-800">
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add zone
                 </Button>
               }
@@ -342,7 +342,7 @@ function ZoneEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Saving…" : editing ? "Save changes" : "Create zone"}
           </Button>
         </DialogFooter>

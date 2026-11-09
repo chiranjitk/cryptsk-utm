@@ -671,7 +671,7 @@ export function PolicyObjectsTab() {
               Cancel
             </Button>
             <Button
-              className="bg-red-700 text-white hover:bg-red-800"
+              className="bg-zinc-700 text-white hover:bg-zinc-800"
               disabled={savePl.isPending}
               onClick={() =>
                 plEditor && savePl.mutate(plEditor.mode === "edit" ? { mode: "edit", id: plEditor.list.id } : { mode: "create" })
@@ -828,7 +828,7 @@ export function PolicyObjectsTab() {
               Cancel
             </Button>
             <Button
-              className="bg-red-700 text-white hover:bg-red-800"
+              className="bg-zinc-700 text-white hover:bg-zinc-800"
               disabled={saveRm.isPending}
               onClick={() =>
                 rmEditor && saveRm.mutate(rmEditor.mode === "edit" ? { mode: "edit", id: rmEditor.map.id } : { mode: "create" })
@@ -920,7 +920,7 @@ export function PolicyObjectsTab() {
               Cancel
             </Button>
             <Button
-              className="bg-red-700 text-white hover:bg-red-800"
+              className="bg-zinc-700 text-white hover:bg-zinc-800"
               disabled={saveCl.isPending}
               onClick={() =>
                 clEditor && saveCl.mutate(clEditor.mode === "edit" ? { mode: "edit", id: clEditor.list.id } : { mode: "create" })

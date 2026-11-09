@@ -523,7 +523,7 @@ function ImportDialog(props: { open: boolean; onOpenChange: (open: boolean) => v
           <Button
             onClick={() => importMut.mutate()}
             disabled={importMut.isPending || !payload.trim()}
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
           >
             {importMut.isPending ? "Importing…" : "Import"}
           </Button>
@@ -687,7 +687,7 @@ export function RulesView() {
             />
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
+            <Button size="sm" onClick={openCreate} className="bg-zinc-700 text-white hover:bg-zinc-800">
               <Icons.Plus className="mr-1 h-4 w-4" /> Add rule
             </Button>
             <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
@@ -800,7 +800,7 @@ export function RulesView() {
               title="No firewall rules yet"
               description="All traffic falls through to the implicit deny — every unmatched flow is dropped and logged as deny. Add your first rule to start allowing traffic."
               action={
-                <Button onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
+                <Button onClick={openCreate} className="bg-zinc-700 text-white hover:bg-zinc-800">
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add rule
                 </Button>
               }

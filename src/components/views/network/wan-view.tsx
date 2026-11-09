@@ -175,7 +175,7 @@ export function WanView() {
             setEditing(null);
             setEditorOpen(true);
           }}
-          className="bg-red-700 text-white hover:bg-red-800"
+          className="bg-zinc-700 text-white hover:bg-zinc-800"
         >
           <Icons.Plus className="mr-1 h-4 w-4" /> Add WAN policy
         </Button>
@@ -228,7 +228,7 @@ export function WanView() {
                     setEditing(null);
                     setEditorOpen(true);
                   }}
-                  className="bg-red-700 text-white hover:bg-red-800"
+                  className="bg-zinc-700 text-white hover:bg-zinc-800"
                 >
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add WAN policy
                 </Button>
@@ -566,7 +566,7 @@ function WanPolicyEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending || (!isEdit && props.candidates.length === 0)} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={mut.isPending || (!isEdit && props.candidates.length === 0)} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create policy"}
           </Button>
         </DialogFooter>

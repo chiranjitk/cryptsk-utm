@@ -271,7 +271,7 @@ function StatsStrip() {
         <CardContent className="p-4">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-zinc-500">Avg spam score (24h)</span>
-            <Icons.Gauge className="h-4 w-4 text-red-700 dark:text-red-500" />
+            <Icons.Gauge className="h-4 w-4 text-zinc-700 dark:text-zinc-500" />
           </div>
           <p className="mt-1 text-2xl font-semibold tabular-nums">
             {stats ? stats.avgSpamScore.toFixed(1) : "—"}
@@ -437,7 +437,7 @@ function GatewayEditor(props: { gateway: EmailGatewayDTO | null; onClose: () => 
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create gateway"}
           </Button>
         </DialogFooter>
@@ -481,7 +481,7 @@ function GatewaysCard() {
             {gateways.length} listener{gateways.length === 1 ? "" : "s"}
           </span>
         </CardTitle>
-        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
         </Button>
       </CardHeader>
@@ -498,7 +498,7 @@ function GatewaysCard() {
             title="No gateways yet"
             description="Add a proxy or relay listener to accept and scan SMTP traffic."
             action={
-              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+              <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New gateway
               </Button>
             }
@@ -835,7 +835,7 @@ function PolicyFormBody({ policy }: { policy: EmailPolicyDTO }) {
       {err && <p className="text-xs text-rose-600">{err}</p>}
 
       <div className="flex justify-end">
-        <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending} onClick={submit}>
+        <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending} onClick={submit}>
           {save.isPending ? "Saving…" : "Save policy"}
         </Button>
       </div>
@@ -1000,7 +1000,7 @@ function RuleEditor(props: { rule: EmailRoutingRuleDTO | null; onClose: () => vo
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create rule"}
           </Button>
         </DialogFooter>
@@ -1044,7 +1044,7 @@ function RoutingRulesCard() {
             {rules.length} rule{rules.length === 1 ? "" : "s"}
           </span>
         </CardTitle>
-        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
         </Button>
       </CardHeader>
@@ -1251,7 +1251,7 @@ function TestMessageCard() {
 
         <div className="flex items-center gap-2">
           <Button
-            className="h-9 bg-red-700 px-5 text-white hover:bg-red-800"
+            className="h-9 bg-zinc-700 px-5 text-white hover:bg-zinc-800"
             disabled={run.isPending || !from.trim() || !to.trim()}
             onClick={() => run.mutate()}
           >

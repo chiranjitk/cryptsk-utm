@@ -1,0 +1,282 @@
+{
+ "components/shell/app-shell.tsx": [
+  3,
+  {
+   "zinc": 3
+  }
+ ],
+ "components/ui/toast.tsx": [
+  1,
+  {
+   "zinc": 1
+  }
+ ],
+ "components/views/url-filter/url-filter-view.tsx": [
+  7,
+  {
+   "zinc": 7
+  }
+ ],
+ "components/views/login/login-view.tsx": [
+  1,
+  {
+   "zinc": 1
+  }
+ ],
+ "components/views/system/api-keys-view.tsx": [
+  3,
+  {
+   "amber": 1,
+   "zinc": 2
+  }
+ ],
+ "components/views/sdwan/sdwan-view.tsx": [
+  12,
+  {
+   "zinc": 11,
+   "amber": 1
+  }
+ ],
+ "components/views/identity/users-view.tsx": [
+  1,
+  {
+   "zinc": 1
+  }
+ ],
+ "components/views/firewall/nat-view.tsx": [
+  5,
+  {
+   "zinc": 2,
+   "amber": 3
+  }
+ ],
+ "components/views/firewall/zones-view.tsx": [
+  3,
+  {
+   "zinc": 2,
+   "amber": 1
+  }
+ ],
+ "components/views/firewall/objects-view.tsx": [
+  5,
+  {
+   "zinc": 1,
+   "amber": 4
+  }
+ ],
+ "components/views/firewall/fw-ui.tsx": [
+  2,
+  {
+   "zinc": 2
+  }
+ ],
+ "components/views/firewall/rules-view.tsx": [
+  3,
+  {
+   "zinc": 3
+  }
+ ],
+ "components/views/firewall/rule-editor.tsx": [
+  1,
+  {
+   "zinc": 1
+  }
+ ],
+ "components/views/setup/setup-wizard.tsx": [
+  1,
+  {
+   "zinc": 1
+  }
+ ],
+ "components/views/dashboard/dashboard-view.tsx": [
+  3,
+  {
+   "rose": 1,
+   "zinc": 2
+  }
+ ],
+ "components/views/ipv6/ipv6-view.tsx": [
+  7,
+  {
+   "zinc": 6,
+   "amber": 1
+  }
+ ],
+ "components/views/pki/certificates-view.tsx": [
+  1,
+  {
+   "zinc": 1
+  }
+ ],
+ "components/views/pki/authorities-view.tsx": [
+  2,
+  {
+   "zinc": 2
+  }
+ ],
+ "components/views/ips/events-view.tsx": [
+  3,
+  {
+   "zinc": 3
+  }
+ ],
+ "components/views/ips/policies-view.tsx": [
+  10,
+  {
+   "zinc": 10
+  }
+ ],
+ "components/views/email-security/email-security-view.tsx": [
+  8,
+  {
+   "zinc": 5,
+   "amber": 3
+  }
+ ],
+ "components/views/app-control/app-control-view.tsx": [
+  7,
+  {
+   "zinc": 6,
+   "amber": 1
+  }
+ ],
+ "components/views/qos/qos-view.tsx": [
+  8,
+  {
+   "zinc": 6,
+   "amber": 2
+  }
+ ],
+ "components/views/ssl-inspection/ssl-inspection-view.tsx": [
+  8,
+  {
+   "zinc": 7,
+   "rose": 1
+  }
+ ],
+ "components/views/waf/waf-view.tsx": [
+  15,
+  {
+   "rose": 1,
+   "zinc": 14
+  }
+ ],
+ "components/views/threat-intel/ti-ui.tsx": [
+  6,
+  {
+   "rose": 3,
+   "zinc": 3
+  }
+ ],
+ "components/views/threat-intel/iocs-view.tsx": [
+  2,
+  {
+   "zinc": 2
+  }
+ ],
+ "components/views/threat-intel/feeds-view.tsx": [
+  9,
+  {
+   "zinc": 8,
+   "rose": 1
+  }
+ ],
+ "components/views/threat-intel/auto-block-view.tsx": [
+  3,
+  {
+   "zinc": 3
+  }
+ ],
+ "components/views/dynamic-routing/policy-tab.tsx": [
+  3,
+  {
+   "zinc": 3
+  }
+ ],
+ "components/views/dynamic-routing/ospf-tab.tsx": [
+  3,
+  {
+   "zinc": 3
+  }
+ ],
+ "components/views/dynamic-routing/bgp-tab.tsx": [
+  2,
+  {
+   "zinc": 2
+  }
+ ],
+ "components/views/dynamic-routing/rib-tab.tsx": [
+  1,
+  {
+   "zinc": 1
+  }
+ ],
+ "components/views/network/interfaces-view.tsx": [
+  7,
+  {
+   "zinc": 3,
+   "rose": 2,
+   "amber": 2
+  }
+ ],
+ "components/views/network/routing-view.tsx": [
+  6,
+  {
+   "zinc": 4,
+   "amber": 2
+  }
+ ],
+ "components/views/network/net-ui.tsx": [
+  1,
+  {
+   "zinc": 1
+  }
+ ],
+ "components/views/network/wan-view.tsx": [
+  3,
+  {
+   "zinc": 2,
+   "amber": 1
+  }
+ ],
+ "components/views/dns-dhcp/dhcp-view.tsx": [
+  7,
+  {
+   "zinc": 4,
+   "amber": 3
+  }
+ ],
+ "components/views/dns-dhcp/dns-view.tsx": [
+  7,
+  {
+   "amber": 3,
+   "zinc": 4
+  }
+ ],
+ "components/views/logs/compliance-view.tsx": [
+  7,
+  {
+   "zinc": 7
+  }
+ ],
+ "components/views/logs/search-view.tsx": [
+  2,
+  {
+   "zinc": 2
+  }
+ ],
+ "components/views/identity-advanced/nac-view.tsx": [
+  8,
+  {
+   "amber": 2,
+   "zinc": 6
+  }
+ ],
+ "components/views/identity-advanced/federation-view.tsx": [
+  7,
+  {
+   "amber": 2,
+   "zinc": 5
+  }
+ ]
+}

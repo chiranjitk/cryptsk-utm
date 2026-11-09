@@ -392,7 +392,7 @@ function IdpEditor(props: { idp: IdpDTO | null; onClose: () => void }) {
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create IdP"}
           </Button>
         </DialogFooter>
@@ -575,7 +575,7 @@ function CoaEditor(props: { profile: CoaProfileDTO | null; onClose: () => void }
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create profile"}
           </Button>
         </DialogFooter>
@@ -679,7 +679,7 @@ function SendCoaDialog(props: { profile: CoaProfileDTO; onClose: () => void }) {
             Close
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={send.isPending || !userName.trim()}
             onClick={submit}
           >
@@ -738,7 +738,7 @@ function IdpsCard() {
           Identity Providers
           <span className="text-xs font-normal text-zinc-400">{rows.length} configured</span>
         </CardTitle>
-        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add IdP
         </Button>
       </CardHeader>
@@ -755,7 +755,7 @@ function IdpsCard() {
             title="No federated IdPs"
             description="Add a SAML 2.0 or OpenID Connect provider to enable single sign-on against the console and captive portal."
             action={
-              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+              <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New IdP
               </Button>
             }
@@ -904,7 +904,7 @@ function CoaCard() {
           RADIUS CoA Profiles
           <span className="text-xs font-normal text-zinc-400">{rows.length} configured</span>
         </CardTitle>
-        <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add profile
         </Button>
       </CardHeader>
@@ -921,7 +921,7 @@ function CoaCard() {
             title="No CoA profiles"
             description="RADIUS Change-of-Authorization profiles let the firewall push session updates (VLAN, re-auth, disconnect) to NAS devices."
             action={
-              <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+              <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New profile
               </Button>
             }

@@ -327,7 +327,7 @@ function PolicyEditor(props: { policy: AppPolicyDTO | null; onClose: () => void 
             Cancel
           </Button>
           <Button
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
             disabled={save.isPending || !name.trim()}
             onClick={submit}
           >
@@ -474,7 +474,7 @@ function AddRuleDialog(props: { policyId: number; onClose: () => void }) {
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-red-700 text-white hover:bg-red-800" disabled={save.isPending || !appName} onClick={submit}>
+          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending || !appName} onClick={submit}>
             {save.isPending ? "Saving…" : "Add rule"}
           </Button>
         </DialogFooter>
@@ -533,7 +533,7 @@ function RulesTable({ policyId }: { policyId: number }) {
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 p-4 dark:border-zinc-800">
         <span className="text-xs text-zinc-400">{rows.length} rules</span>
         <div className="ml-auto">
-          <Button size="sm" className="h-8 bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+          <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
             <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add rule
           </Button>
         </div>
@@ -716,7 +716,7 @@ function PolicyConflictDialog(props: {
         <AlertDialogFooter>
           <AlertDialogCancel>Close</AlertDialogCancel>
           <AlertDialogAction
-            className="bg-red-700 text-white hover:bg-red-800 focus-visible:ring-red-700"
+            className="bg-zinc-700 text-white hover:bg-zinc-800 focus-visible:ring-zinc-700"
             onClick={(e) => {
               e.preventDefault();
               props.onOpenChange(false);
@@ -774,7 +774,7 @@ function TestAppCard({ policy }: { policy: AppPolicyDTO }) {
             </SelectContent>
           </Select>
           <Button
-            className="h-9 bg-red-700 px-5 text-white hover:bg-red-800"
+            className="h-9 bg-zinc-700 px-5 text-white hover:bg-zinc-800"
             disabled={run.isPending || !appName}
             onClick={() => run.mutate()}
           >
@@ -1116,7 +1116,7 @@ export function AppControlView() {
             <CardTitle className="text-sm">Policies</CardTitle>
             <Button
               size="sm"
-              className="h-8 bg-red-700 text-white hover:bg-red-800"
+              className="h-8 bg-zinc-700 text-white hover:bg-zinc-800"
               onClick={() => setAddOpen(true)}
             >
               <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
@@ -1137,7 +1137,7 @@ export function AppControlView() {
                 title="No policies yet"
                 description="Create an app control policy to manage per-application allow, block and bandwidth rules."
                 action={
-                  <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => setAddOpen(true)}>
+                  <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
                     <Icons.Plus className="mr-1 h-3.5 w-3.5" /> New policy
                   </Button>
                 }

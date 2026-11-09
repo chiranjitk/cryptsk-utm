@@ -230,7 +230,7 @@ export function PoliciesView() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="gap-1.5">
-                <Icons.Wand2 className="h-4 w-4 text-red-700 dark:text-red-500" />
+                <Icons.Wand2 className="h-4 w-4 text-zinc-700 dark:text-zinc-500" />
                 Apply preset
               </Button>
             </DropdownMenuTrigger>
@@ -241,7 +241,7 @@ export function PoliciesView() {
                 <Icons.ShieldMinus className="mr-2 h-4 w-4 text-emerald-500" /> Conservative
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setPresetKey("balanced")}>
-                <Icons.Scale className="mr-2 h-4 w-4 text-red-700 dark:text-red-500" /> Balanced
+                <Icons.Scale className="mr-2 h-4 w-4 text-zinc-700 dark:text-zinc-500" /> Balanced
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setPresetKey("aggressive")}>
                 <Icons.ShieldAlert className="mr-2 h-4 w-4 text-rose-500" /> Aggressive
@@ -327,7 +327,7 @@ export function PoliciesView() {
                       {p.attachedRuleCount > 0 ? (
                         <a
                           href={`#/firewall/rules?search=${encodeURIComponent(p.name)}`}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline dark:text-red-500"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-zinc-700 hover:underline dark:text-zinc-500"
                         >
                           <Icons.ShieldCheck className="h-3.5 w-3.5" />
                           {p.attachedRuleCount} rule{p.attachedRuleCount === 1 ? "" : "s"}
@@ -565,7 +565,7 @@ function PolicyEditor(props: {
                   htmlFor={`mode-${m}`}
                   className={cn(
                     "flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 transition-colors",
-                    form.mode === m ? "border-red-600/60 bg-red-600/5" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
+                    form.mode === m ? "border-zinc-600/60 bg-zinc-600/5" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
                   )}
                 >
                   <RadioGroupItem id={`mode-${m}`} value={m} className="mt-0.5" />
@@ -620,7 +620,7 @@ function PolicyEditor(props: {
                           key={c.name}
                           className={cn(
                             "flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5",
-                            on ? "border-red-600/30 bg-red-600/5" : "border-zinc-200 dark:border-zinc-800",
+                            on ? "border-zinc-600/30 bg-zinc-600/5" : "border-zinc-200 dark:border-zinc-800",
                           )}
                         >
                           <div className="min-w-0">
@@ -892,7 +892,7 @@ const PRESET_META: Record<IpsPreset, { label: string; icon: React.ReactNode; blu
   },
   balanced: {
     label: "Balanced",
-    icon: <Icons.Scale className="h-4 w-4 text-red-700 dark:text-red-500" />,
+    icon: <Icons.Scale className="h-4 w-4 text-zinc-700 dark:text-zinc-500" />,
     blurb: "Most ET categories on, noisy policy categories off, inline drop. Standard small enterprise.",
   },
   aggressive: {
@@ -966,7 +966,7 @@ function PresetDialog(props: {
                     className={cn(
                       "px-1.5 py-0 font-mono text-[10px]",
                       on
-                        ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-500"
+                        ? "border-zinc-600/40 bg-zinc-600/10 text-zinc-700 dark:text-zinc-500"
                         : "border-zinc-200 text-zinc-400 line-through dark:border-zinc-800",
                     )}
                   >
@@ -978,11 +978,11 @@ function PresetDialog(props: {
           </div>
 
           <RadioGroup value={mode} onValueChange={(v) => setMode(v as "create" | "replace")} className="grid grid-cols-2 gap-2">
-            <Label htmlFor="preset-create" className={cn("flex cursor-pointer items-center gap-2 rounded-lg border p-2.5", mode === "create" && "border-red-600/60 bg-red-600/5")}>
+            <Label htmlFor="preset-create" className={cn("flex cursor-pointer items-center gap-2 rounded-lg border p-2.5", mode === "create" && "border-zinc-600/60 bg-zinc-600/5")}>
               <RadioGroupItem id="preset-create" value="create" />
               <span className="text-xs font-medium">Create new policy</span>
             </Label>
-            <Label htmlFor="preset-replace" className={cn("flex cursor-pointer items-center gap-2 rounded-lg border p-2.5", mode === "replace" && "border-red-600/60 bg-red-600/5")}>
+            <Label htmlFor="preset-replace" className={cn("flex cursor-pointer items-center gap-2 rounded-lg border p-2.5", mode === "replace" && "border-zinc-600/60 bg-zinc-600/5")}>
               <RadioGroupItem id="preset-replace" value="replace" />
               <span className="text-xs font-medium">Replace existing</span>
             </Label>
@@ -1079,7 +1079,7 @@ function RuleUpdatesCard(props: { settings: UpdateSettingsDto | null; loading: b
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icons.RefreshCw className="h-4 w-4 text-red-700 dark:text-red-500" /> Rule Updates
+          <Icons.RefreshCw className="h-4 w-4 text-zinc-700 dark:text-zinc-500" /> Rule Updates
           <Badge variant="outline" className="ml-1 border-zinc-300 font-mono text-[10px] text-zinc-500 dark:border-zinc-700">
             {s.source}
           </Badge>

@@ -161,7 +161,7 @@ export function QosView() {
         </p>
         <Button
           size="sm"
-          className="bg-red-700 text-white hover:bg-red-800"
+          className="bg-zinc-700 text-white hover:bg-zinc-800"
           onClick={() => {
             setEditing(null);
             setEditorOpen(true);
@@ -195,7 +195,7 @@ export function QosView() {
               action={
                 <Button
                   size="sm"
-                  className="bg-red-700 text-white hover:bg-red-800"
+                  className="bg-zinc-700 text-white hover:bg-zinc-800"
                   onClick={() => {
                     setEditing(null);
                     setEditorOpen(true);
@@ -282,7 +282,7 @@ export function QosView() {
               <div className="flex flex-wrap gap-1.5">
                 {deleteConflict.refs.map((r, i) => (
                   <a key={`${r.ruleName}-${i}`} href="#/firewall/rules" className="inline-flex">
-                    <Badge variant="outline" className="border-red-600/40 bg-red-600/10 text-red-700 hover:bg-red-600/20 dark:text-red-500">
+                    <Badge variant="outline" className="border-zinc-600/40 bg-zinc-600/10 text-zinc-700 hover:bg-zinc-600/20 dark:text-zinc-500">
                       <Icons.ShieldCheck className="mr-1 h-3 w-3" />
                       {r.ruleName}
                       <span className="ml-1 text-[10px] uppercase text-zinc-400">{r.ruleType}</span>
@@ -295,7 +295,7 @@ export function QosView() {
           <AlertDialogFooter>
             <AlertDialogCancel>Close</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-red-700 text-white hover:bg-red-800 focus-visible:ring-red-700"
+              className="bg-zinc-700 text-white hover:bg-zinc-800 focus-visible:ring-zinc-700"
               onClick={(e) => {
                 e.preventDefault();
                 window.location.hash = "#/firewall/rules";
@@ -456,7 +456,7 @@ function PolicyDetail({
               <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => openEditor(null, { mode: "app" })}>
                 <Icons.AppWindow className="mr-1 h-3.5 w-3.5" /> Limit application…
               </Button>
-              <Button size="sm" className="h-8 bg-red-700 text-xs text-white hover:bg-red-800" onClick={() => openEditor(null)}>
+              <Button size="sm" className="h-8 bg-zinc-700 text-xs text-white hover:bg-zinc-800" onClick={() => openEditor(null)}>
                 <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add Rule
               </Button>
             </div>
@@ -476,7 +476,7 @@ function PolicyDetail({
               title="No rules in this policy"
               description="Add a class with matchers and rates — or use the quick limit actions above."
               action={
-                <Button size="sm" className="bg-red-700 text-white hover:bg-red-800" onClick={() => openEditor(null)}>
+                <Button size="sm" className="bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => openEditor(null)}>
                   Add Rule
                 </Button>
               }
@@ -877,7 +877,7 @@ function PolicyDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {save.isPending ? "Saving…" : editing ? "Save changes" : "Create policy"}
           </Button>
         </DialogFooter>
@@ -1168,7 +1168,7 @@ function RuleDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending || !canSave} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={() => save.mutate()} disabled={save.isPending || !canSave} className="bg-amber-700 text-white hover:bg-amber-800">
             {save.isPending ? "Saving…" : editing ? "Save changes" : "Create rule"}
           </Button>
         </DialogFooter>

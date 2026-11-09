@@ -389,7 +389,7 @@ export function SearchView() {
 
         <Button
           size="sm"
-          className={cn("h-9 gap-1.5 bg-red-700 text-white hover:bg-red-800", dataset === "firewall" && "ml-0")}
+          className={cn("h-9 gap-1.5 bg-zinc-700 text-white hover:bg-zinc-800", dataset === "firewall" && "ml-0")}
           onClick={() => {
             setSaveName("");
             setSaveErr({});
@@ -580,7 +580,7 @@ export function SearchView() {
               Cancel
             </Button>
             <Button
-              className="bg-red-700 text-white hover:bg-red-800"
+              className="bg-zinc-700 text-white hover:bg-zinc-800"
               disabled={saveMut.isPending || saveName.trim().length === 0}
               onClick={() => saveMut.mutate()}
             >

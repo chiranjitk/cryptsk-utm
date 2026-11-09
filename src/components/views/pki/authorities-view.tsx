@@ -454,7 +454,7 @@ function CreateCaDialog(props: { open: boolean; onOpenChange: (open: boolean) =>
           <Button
             onClick={() => mut.mutate()}
             disabled={mut.isPending || !form.name || !form.commonName || (form.type === "subordinate" && !form.parentCaId)}
-            className="gap-1.5 bg-red-700 text-white hover:bg-red-800"
+            className="gap-1.5 bg-zinc-700 text-white hover:bg-zinc-800"
           >
             {mut.isPending ? (
               <Icons.Loader2 className="h-4 w-4 animate-spin" />
@@ -538,7 +538,7 @@ function EditCaDialog(props: { ca: CaDto | null; onOpenChange: (open: boolean) =
           <Button
             onClick={() => mut.mutate()}
             disabled={mut.isPending || !name}
-            className="bg-red-700 text-white hover:bg-red-800"
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
           >
             Save changes
           </Button>

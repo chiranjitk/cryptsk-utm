@@ -202,7 +202,7 @@ function StaticRoutesTab() {
             setEditing(null);
             setEditorOpen(true);
           }}
-          className="bg-red-700 text-white hover:bg-red-800"
+          className="bg-zinc-700 text-white hover:bg-zinc-800"
         >
           <Icons.Plus className="mr-1 h-4 w-4" /> Add route
         </Button>
@@ -229,7 +229,7 @@ function StaticRoutesTab() {
                     setEditing(null);
                     setEditorOpen(true);
                   }}
-                  className="bg-red-700 text-white hover:bg-red-800"
+                  className="bg-zinc-700 text-white hover:bg-zinc-800"
                 >
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add route
                 </Button>
@@ -466,7 +466,7 @@ function RouteEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create route"}
           </Button>
         </DialogFooter>
@@ -557,7 +557,7 @@ function PbrTab() {
       </Alert>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button size="sm" onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
+        <Button size="sm" onClick={openCreate} className="bg-zinc-700 text-white hover:bg-zinc-800">
           <Icons.Plus className="mr-1 h-4 w-4" /> Add policy route
         </Button>
       </div>
@@ -578,7 +578,7 @@ function PbrTab() {
               title="No policy routes"
               description="PBR rules steer matching connections to a specific WAN interface or gateway before multi-WAN mode selection applies."
               action={
-                <Button onClick={openCreate} className="bg-red-700 text-white hover:bg-red-800">
+                <Button onClick={openCreate} className="bg-zinc-700 text-white hover:bg-zinc-800">
                   <Icons.Plus className="mr-1 h-4 w-4" /> Add policy route
                 </Button>
               }
@@ -871,7 +871,7 @@ function PbrEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-red-700 text-white hover:bg-red-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create policy route"}
           </Button>
         </DialogFooter>
