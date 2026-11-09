@@ -552,6 +552,21 @@ for envelope shape. Do not add console.log spam; remove temp logs after.
 
 ## 13. Gotchas (learned-the-hard-way section — keep appending)
 
+- **Stale `.env` DATABASE_URL → login 401 "Invalid username or password" (found
+  2026-11-09):** repo `.env` pointed `DATABASE_URL` at scaffold-era phantom
+  `db/custom.db`. `db.ts`'s exists-guard made the *code* fall back to the schema URL
+  correctly, but a dev-server process started while an older `.env`/code was live
+  served 401s from a stale env state; root page 200 masked it (only login broke).
+  Symptom signature: `POST /api/v1/auth/login` → 401 for every account while the DB
+  itself verifies fine (`bcrypt.compare` true via direct Prisma script) and no login
+  query appears in `dev.log` for the failing instance. Fix: `.env` now pins the real
+  DB explicitly — `DATABASE_URL=file:/home/z/my-project/db/cryptsk.db` (absolute,
+  gitignored) — so no resolution chain is relied upon. Also removed the inner
+  `| tee dev.log` from the `dev` script (it truncated dev.log on every restart and
+  hid the failing instance's log lines; the watchdog loop's outer `tee -a` is the
+  only logger now). Verification matrix after fix: all 8 seeded accounts login 200
+  (`admin/admin123` … `svcapi/svcapi123`, see `prisma/seed.ts` §Users), wrong
+  password → 401, no cookie → 401.
 - **Next standalone + Prisma SQLite (found 2026-11-08):** the traced
   `.next/standalone/node_modules/.prisma/client` does NOT resolve `env("DATABASE_URL")`
   from `process.env` at runtime (dev client does; same bytes) → SQLite "Error code 14:
