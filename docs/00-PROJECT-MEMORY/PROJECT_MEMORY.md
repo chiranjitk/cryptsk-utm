@@ -552,6 +552,13 @@ for envelope shape. Do not add console.log spam; remove temp logs after.
 
 ## 13. Gotchas (learned-the-hard-way section — keep appending)
 
+- **PM2 is the ONLY sanctioned process manager (2026-11-09, user mandate):** the
+  sandbox reaps detached bash/setsid dev loops between sessions — the preview panel
+  kept going down ("app is down"). Fix: full stack under pm2
+  (`ecosystem.config.cjs` — `cryptsk-utm` next dev :3000 + `realtime-service` :3003,
+  autorestart + 1400M cap, logs → dev.log); `pm2 save` persisted so the watchdog
+  does `pm2 resurrect`. NEVER restart dev via pkill/setsid/nohup loops again —
+  pm2 only; the watchdog cron (`dev-server-watchdog-pm2`) enforces the same recipe.
 - **Git-replaced tracked DB → stale deleted-inode fd → login 401 + "attempt to
   write a readonly database" (found 2026-11-09):** `db/cryptsk.db` is git-tracked
   (§11.17 exception). After `git pull` / `git checkout` REPLACES the file on disk,
