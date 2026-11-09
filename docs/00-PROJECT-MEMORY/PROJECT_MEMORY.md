@@ -648,6 +648,42 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-09 — FIRST PRODUCTION DEPLOY: Debian 13 appliance LIVE (103.244.7.219) + de-red overlay pass
+
+- **Owner handed over the production box**: Debian 13 (trixie), 103.244.7.219, SSH :22222, 4 CPU /
+  3.9 GB RAM / 14 GB free. Mandate: "connect and do deploy/install-debian13.sh and live the app".
+- Deployed via paramiko-SSH (sandbox has no ssh binary; sshpass/apt unrooted — pexpect/paramiko
+  route). Server prep already had node 22 + bun 1.4.4 + pm2 + a stale clone of the repo in
+  /opt/cryptsk-utm and /opt/cryptsk/console (at 506be80, the parallel session's rev-2 push).
+- **GitHub push of this session's commit FAILED — no token in sandbox env** (ghp_ token lives only
+  in the session that created it). Deploy therefore BYPASSED git: slim tarball (5.9 MB, excludes
+  node_modules/.next/.git/db/logs/tools/skills) → SFTP → extracted over /opt/cryptsk/console.
+- Bootstrap (nohup, /opt/cryptsk-bootstrap.log, ~70 s total): apt (build-essential, golang-go,
+  nftables, wireguard-tools, sqlite3) → fresh .env (AUTH/JWT/INTERNAL_TOKEN/AGENT secrets) →
+  bun install → prisma generate + db push (fresh SQLite, zero mock) → production seed →
+  **next build OK on-server** (turbopack, no OOM) → Go agent build → pm2 (cryptsk-utm :3000 +
+  realtime-service :3003 + cryptsk-agent :8080) → pm2 save + **pm2-root.service enabled** (boot
+  persistence).
+- **Caddy gateway installed** (apt, :81 XTransformPort pattern from repo Caddyfile → /etc/caddy/
+  Caddyfile, systemd active) so browser realtime works: `GET :81/socket.io/?EIO=4&transport=
+  polling&XTransformPort=3003` → real handshake `0{"sid":…}`. Agent healthz `{"ok":true}`.
+- **Verified end-to-end**: public `http://103.244.7.219:3000/` → 200 (title "Cryptsk Console —
+  UTM/NGFW"); `:81` → 200; POST /api/v1/auth/login admin/admin123 → full user+permissions JSON
+  (super_admin); dashboard live metrics REAL (cpu/ram/ens32/drop via ADAPTER_MODE=host).
+- **Login credentials on the appliance**: admin/admin123 (super_admin), tadmin/tadmin123, pattern
+  `<user>123` — owner must change (Settings → Auth).
+- **De-red overlay (this session, on top of parallel rev-2)**: tool-outage window forced a
+  single-pass scripted remap (scripts/de_red.py): 43 files / 204 lines — `red-N` classes split by
+  line semantics → rose (danger keywords) / amber (expiring·warn·degraded·pending) / zinc
+  (decorative·info); brand logo/icon/boot + globals.css --primary + reports engine untouched.
+  **Charts fully de-redded** (owner's exact complaint "the graph showing red"): throughput
+  rx=`#0ea5e9` sky, tx=zinc `#71717a`; donut = balanced 7-hue `#64748b #0ea5e9 #10b981 #f59e0b
+  #8b5cf6 #f43f5e #14b8a6` — deliberately DIVERGES from parallel rev-2 (rx=brand red): owner
+  wanted no red graphs. Local next build + tsc both OOM-killed in the sandbox (pm2 services eat
+  RAM) — the on-server build is the compile gate that passed.
+- **Follow-up**: push d032a6f-equivalent state to GitHub when a fresh token is provided (repo is
+  private; remote URL clean); then `bash deploy/update.sh` flow can resume for future updates.
+
 ### 2026-11-09 — Rev 2: red discipline (owner-rejected the all-red look) + dashboard polish
 
 - Owner feedback on rev 1: brand is white/red but "I did not say make everything red" — the
