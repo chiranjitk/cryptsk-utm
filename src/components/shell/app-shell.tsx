@@ -153,7 +153,9 @@ export function AppShell() {
   const logout = useCallback(async () => {
     await fetch("/api/v1/auth/logout", { method: "POST", credentials: "same-origin" });
     queryClient.clear();
-    window.location.hash = "#/dashboard";
+    // drop any hash deep-link without a history entry — after the reload the
+    // auth gate renders the login view, and a fresh login lands on #/dashboard
+    window.history.replaceState(null, "", window.location.pathname);
     window.location.reload();
   }, [queryClient]);
 

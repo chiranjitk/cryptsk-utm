@@ -648,6 +648,25 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-09 — Bugfix: logout 403 → user bounced back to dashboard
+
+- **Symptom:** Sign out (profile badge dropdown) appeared to do nothing — shell reloaded
+  straight back to the dashboard.
+- **Root cause:** `POST /api/v1/auth/logout` declared `route({ area: "dashboard" })`; as a
+  mutation it maps to op `write`, and the RBAC matrix has `dashboard.write: []` (read-only
+  area by design) → 403 FORBIDDEN for **every** role incl. super_admin. Cookie never
+  cleared → reload → `auth/me` still 200 → dashboard. The client-side
+  `window.location.hash = "#/dashboard"` before reload completed the illusion.
+- **Fix:** logout route now passes no capability `area` (self-service for every
+  authenticated principal — all roles, auditor, api keys; `authenticate()` still runs so
+  anonymous callers get 401). Client handler drops the hash via
+  `history.replaceState(null, "", pathname)` (no stale deep-link, no history entry) before
+  reload; fresh login lands on default `#/dashboard`.
+- **Verified:** curl jar-aware (login 200 → logout 200 + `Set-Cookie: cryptsk_token=;
+  Max-Age=0` → me 401) + agent-browser golden path (badge → Sign out → login view →
+  re-login → dashboard, zero page errors after reload). Lesson: **never attach an RBAC
+  `area` to a mutation that every principal must be able to run** (logout, self-service).
+
 ### 2026-11-09 — M25: Go sensor agent shipped + agent mode verified end-to-end
 
 **Owner directive (continuation):** complete the real data plane development in the sandbox so a fresh Debian 13 shows real data with no mock; project must live under pm2; deploy script for fresh Debian 13.
