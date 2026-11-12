@@ -63,19 +63,22 @@ export const POST = route(
       if (missing.length) throw ApiError.validation("Unknown interface name", { offendingNames: missing });
     }
 
-    const zone = await db.$transaction(async (tx) => {
-      const created = await tx.zone.create({
-        data: {
-          tenantId: auth.tenantId,
-          name: body.name,
-          type: body.type,
-          interfaceNames: JSON.stringify(body.interfaceNames),
-          description: body.description ?? null,
-        },
-      });
-      await syncZoneMembers(created.id, auth.tenantId, body.interfaceNames);
-      return created;
-    });
+    const zone = await db.$transaction(
+      async (tx) => {
+        const created = await tx.zone.create({
+          data: {
+            tenantId: auth.tenantId,
+            name: body.name,
+            type: body.type,
+            interfaceNames: JSON.stringify(body.interfaceNames),
+            description: body.description ?? null,
+          },
+        });
+        await syncZoneMembers(created.id, auth.tenantId, body.interfaceNames, tx);
+        return created;
+      },
+      { timeout: 20000, maxWait: 10000 },
+    );
 
     return {
       data: shapeZone(zone),

@@ -58,19 +58,22 @@ export const PUT = route(
       if (dup) throw ApiError.conflict(`Zone '${body.name}' already exists`);
     }
 
-    const updated = await db.$transaction(async (tx) => {
-      const row = await tx.zone.update({
-        where: { id: zone.id },
-        data: {
-          name: body.name,
-          type: body.type,
-          interfaceNames: JSON.stringify(body.interfaceNames),
-          description: body.description ?? null,
-        },
-      });
-      await syncZoneMembers(zone.id, auth.tenantId, body.interfaceNames);
-      return row;
-    });
+    const updated = await db.$transaction(
+      async (tx) => {
+        const row = await tx.zone.update({
+          where: { id: zone.id },
+          data: {
+            name: body.name,
+            type: body.type,
+            interfaceNames: JSON.stringify(body.interfaceNames),
+            description: body.description ?? null,
+          },
+        });
+        await syncZoneMembers(zone.id, auth.tenantId, body.interfaceNames, tx);
+        return row;
+      },
+      { timeout: 20000, maxWait: 10000 },
+    );
 
     return {
       data: shapeZone(updated),
@@ -96,10 +99,13 @@ export const DELETE = route({ area: "firewall", section: "firewall" }, async ({ 
     throw ApiError.conflict(`Zone '${zone.name}' is referenced by ${refs.length} rule(s)`, { referencedBy: refs });
   }
 
-  await db.$transaction(async (tx) => {
-    await detachZoneMembers(zone.id);
-    await tx.zone.delete({ where: { id: zone.id } });
-  });
+  await db.$transaction(
+    async (tx) => {
+      await detachZoneMembers(zone.id, tx);
+      await tx.zone.delete({ where: { id: zone.id } });
+    },
+    { timeout: 20000, maxWait: 10000 },
+  );
 
   return {
     data: { ok: true },
