@@ -67,6 +67,11 @@ const WAN_EVERY = 5; // ticks → 10 s gateway probes
 const SOURCES_EVERY = 5; // ticks → suricata / nft / wg / unbound tails
 const SLOW_EVERY = 30; // ticks → kea leases, interface sync, disk, services
 
+/** verbose logging window: first 120 ticks of a process, then sampled. */
+function myTickVerbose(tickNo: number): boolean {
+  return tickNo <= 120 || tickNo % 150 === 0;
+}
+
 export interface IfaceCounterDelta {
   errors: number;
   drops: number;
@@ -80,6 +85,7 @@ class HostCollector {
   private started = false;
   private starting: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
   private tickNo = 0;
 
   readonly metricsRing: MetricsTick[] = [];
@@ -182,6 +188,14 @@ class HostCollector {
     this.timer = setInterval(() => {
       void this.tick();
     }, TICK_MS);
+    // liveness heartbeat — a REFFED timer that must keep firing as long as
+    // the process lives; if heartbeats stop, the event loop itself is stuck.
+    if (!this.heartbeat) {
+      this.heartbeat = setInterval(() => {
+        const handles = (process as unknown as { _getActiveHandles?: () => unknown[] })._getActiveHandles?.().length ?? -1;
+        console.log(`[host-collector] heartbeat tick=${this.tickNo} handles=${handles} slow=${this.slowRunNo}`);
+      }, 30_000);
+    }
     void this.tick();
   }
 
@@ -218,30 +232,32 @@ class HostCollector {
   // ── tick pipeline ──────────────────────────────────────────────────────────
 
   private async tick(): Promise<void> {
+    const myTick = this.tickNo + 1;
     this.tickNo += 1;
     const t0 = Date.now();
+    if (myTick <= 120) console.log(`[host-collector] tick #${myTick} start`);
     try {
-      const tickPayload = await this.sampleMetrics();
+      const tickPayload = await this.stageTimeout("sampleMetrics", this.sampleMetrics(), 5000);
       if (tickPayload) {
         this.metricsRing.push(tickPayload);
         if (this.metricsRing.length > METRICS_RING_CAP) this.metricsRing.shift();
         emitEvent({ type: "metrics:tick", payload: tickPayload });
       }
-      if (this.tickNo % WAN_EVERY === 0) await this.wanProbeStep().catch(() => {});
-      if (this.tickNo % SOURCES_EVERY === 0) await this.realSourcesStep().catch(() => {});
-      if (this.tickNo % SLOW_EVERY === 0) await this.slowStep().catch(() => {});
+      if (myTick % WAN_EVERY === 0) await this.wanProbeStep().catch(() => {});
+      if (myTick % SOURCES_EVERY === 0) await this.realSourcesStep().catch(() => {});
+      if (myTick % SLOW_EVERY === 0) await this.slowStep().catch(() => {});
       await this.thresholdStep(tickPayload).catch(() => {});
       // pipeline watchdog: a hung stage delays every subsequent tick — surface it
       const dt = Date.now() - t0;
-      if (dt > 15_000 && this.tickNo % 15 === 0) {
-        console.warn(`[host-collector] tick #${this.tickNo} took ${dt}ms — a pipeline stage is stalling`);
+      if (dt > 15_000 && myTick % 15 === 0) {
+        console.warn(`[host-collector] tick #${myTick} took ${dt}ms — a pipeline stage is stalling`);
       }
     } catch (err) {
       console.error("[host-collector] tick error:", err instanceof Error ? err.message : err);
     }
-    // stage-flow visibility (first 30 ticks of each process, then sampled)
-    if (this.tickNo <= 30 || this.tickNo % 15 === 0) {
-      console.log(`[host-collector] tick #${this.tickNo} done in ${Date.now() - t0}ms`);
+    // stage-flow visibility (first 120 ticks of each process, then sampled)
+    if (myTick <= 120 || myTick % 15 === 0) {
+      console.log(`[host-collector] tick #${myTick} done in ${Date.now() - t0}ms`);
     }
   }
 
@@ -312,7 +328,7 @@ class HostCollector {
   // ── WAN probes (real gateway TCP checks) ───────────────────────────────────
 
   private async wanProbeStep(): Promise<void> {
-    const verbose = this.tickNo <= 30 || this.tickNo % 150 === 0;
+    const verbose = myTickVerbose(this.tickNo);
     const t0 = Date.now();
     // re-read WAN policies periodically (admin adds rows after boot)
     try {
@@ -352,7 +368,7 @@ class HostCollector {
   // ── real optional sources (suricata / nft / wg / unbound) ──────────────────
 
   private async realSourcesStep(): Promise<void> {
-    const verbose = this.tickNo <= 30 || this.tickNo % 150 === 0;
+    const verbose = myTickVerbose(this.tickNo);
     const t0 = Date.now();
     if (this.evePath === undefined) this.evePath = await detectSuricataEve();
     if (this.evePath) await this.stageTimeout("suricataStep", this.suricataStep(), 5000);
