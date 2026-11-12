@@ -16,6 +16,65 @@ export type WanMode = "priority" | "failover" | "load_balance";
 export type ProbeType = "icmp" | "tcp" | "dns" | "http";
 export type WanState = "up" | "degraded" | "down" | "unknown";
 export type MirrorDirection = "ingress" | "egress" | "both";
+export type SecondaryIp = { ip: string; cidrPrefix: number };
+
+export interface OsDriftItem {
+  field: string;
+  db: string;
+  os: string;
+}
+
+export interface OsManagedRow {
+  name: string;
+  type: string;
+  role: string;
+  enabled: boolean;
+  mode: string;
+  db: { mtu: number; ip: string | null; adminState: string };
+  os: {
+    operState: string;
+    carrier: boolean | null;
+    mtu: number | null;
+    ipv4: string[];
+    mac: string | null;
+    isDefaultRoute: boolean;
+  } | null;
+  inSync: boolean;
+  drift: OsDriftItem[];
+}
+
+export interface OsUnmanagedRow {
+  name: string;
+  operState: string;
+  mtu: number | null;
+  ipv4: string[];
+  mac: string | null;
+}
+
+export interface OsStateResp {
+  applyEnabled: boolean;
+  capturedAt: string;
+  managed: OsManagedRow[];
+  unmanaged: OsUnmanagedRow[];
+}
+
+export interface OsPlanStep {
+  cmd: string;
+  summary: string;
+}
+
+export interface OsPlan {
+  name: string;
+  osName: string | null;
+  steps: OsPlanStep[];
+}
+
+export interface OsApplyResp {
+  applied: boolean;
+  reason: string;
+  plans: OsPlan[];
+  results?: Array<{ cmd: string; ok: boolean; stderr?: string }>;
+}
 
 export interface Iface {
   id: number;
@@ -163,6 +222,11 @@ export interface IfaceBody {
   dns?: string[];
   pppoe?: { user: string; password: string; service?: string };
   lldp?: boolean;
+  // enterprise additions
+  secondaryIps?: SecondaryIp[];
+  force?: boolean;
+  speed?: "auto" | "10" | "100" | "1000" | "10000";
+  duplex?: "half" | "full";
 }
 
 export interface MirrorBody {
@@ -276,6 +340,15 @@ export const netApi = {
     netFetch<Iface>(`/api/v1/interfaces/${id}`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) }),
   deleteIface: (id: number) => netFetch<{ ok: boolean }>(`/api/v1/interfaces/${id}`, { method: "DELETE" }),
   ifaceStats: (id: number) => netFetch<IfaceStats>(`/api/v1/interfaces/${id}/stats`),
+
+  // OS-level sync (drift + gated apply)
+  ifaceOsState: () => netFetch<OsStateResp>("/api/v1/interfaces/os-state"),
+  applyIfaceOs: (name?: string) =>
+    netFetch<OsApplyResp>("/api/v1/interfaces/apply", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(name ? { name } : {}),
+    }),
 
   // derived switching tables (engine views — not persisted)
   listLldp: (params?: string) => netFetchList<LldpRow>("/api/v1/network/lldp-neighbors", params),

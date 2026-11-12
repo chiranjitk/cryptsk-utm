@@ -10,6 +10,12 @@ import { db } from "@/lib/db";
 import { parseJson } from "@/lib/json";
 import { getEngine } from "@/lib/engine";
 import {
+  groupIssues,
+  lintIface,
+  type IfaceIssue,
+  type IfaceRuleView,
+} from "./iface-rules";
+import {
   bondConfigPatch,
   bridgeConfigPatch,
   greConfigPatch,
@@ -205,21 +211,119 @@ export async function assertIfacesExist(tenantId: number, names: string[]): Prom
   }
 }
 
+// ── business-rule enforcement (iface-rules.ts — pure engine, unit-tested) ──
+
+function rowToRuleView(row: IfaceRow): IfaceRuleView {
+  const cfg = parseIfaceConfig(row.config);
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    mode: row.mode,
+    role: row.role,
+    mtu: row.mtu,
+    mssClamp: row.mssClamp,
+    enabled: row.enabled,
+    parentName: row.parentName ?? (typeof cfg.parent === "string" ? cfg.parent : null),
+    vlanId: row.vlanId,
+    config: cfg,
+  };
+}
+
+/** Convert lint issues into the API field-error shape (matches zodIssues). */
+function throwIfErrors(issues: IfaceIssue[], action: string): void {
+  const { errors, warnings } = groupIssues(issues);
+  const keys = Object.keys(errors);
+  if (keys.length > 0) {
+    throw ApiError.validation(`Interface ${action} blocked by business rules`, {
+      fieldErrors: errors,
+      warnings,
+    });
+  }
+}
+
+/** Active config that would break when the interface goes admin-down. */
+async function collectDisableRefs(tenantId: number, name: string): Promise<Array<{ kind: string; label: string }>> {
+  const refs: Array<{ kind: string; label: string }> = [];
+  const [routes, wanPolicies, dhcpSubnets, zones] = await Promise.all([
+    db.staticRoute.findMany({ where: { tenantId, interfaceName: name, enabled: true }, select: { destinationCidr: true } }),
+    db.wanPolicy.findMany({ where: { tenantId, interfaceName: name }, select: { id: true, mode: true } }),
+    db.dhcpSubnet.findMany({ where: { tenantId, interfaceName: name, enabled: true }, select: { subnetCidr: true } }),
+    db.zone.findMany({ where: { tenantId }, select: { name: true, interfaceNames: true } }),
+  ]);
+  for (const r of routes) refs.push({ kind: "static-route", label: r.destinationCidr });
+  for (const w of wanPolicies) refs.push({ kind: "wan-policy", label: `#${w.id} (${w.mode})` });
+  for (const s of dhcpSubnets) refs.push({ kind: "dhcp-subnet", label: s.subnetCidr });
+  for (const z2 of zones) {
+    const names = strArrJson(z2.interfaceNames);
+    if (names.includes(name)) refs.push({ kind: "zone", label: z2.name });
+  }
+  return refs;
+}
+
+/** Lint the tenant and throw 400 on errors (warnings returned for callers).
+ *  forceOverride=true lets the caller bypass BR-MGMT-LOCKOUT specifically —
+ *  an operator may consciously give up the last mgmt interface (recovery
+ *  console access assumed), every other rule stays absolute. */
+async function enforceRules(
+  tenantId: number,
+  candidate: IfaceRuleView,
+  opts: { action?: "disable" | "delete"; roleFrom?: string | null; excludeId?: number; action_: string; forceOverride?: boolean },
+): Promise<{ warnings: Record<string, string[]> }> {
+  const rows = await db.networkInterface.findMany({ where: { tenantId }, orderBy: { id: "asc" } });
+  const views = rows.filter((r) => r.id !== opts.excludeId).map(rowToRuleView);
+  const issues = lintIface({ self: candidate, others: views, action: opts.action, roleFrom: opts.roleFrom });
+  const { warnings } = groupIssues(issues);
+  const errors = issues.filter((i) => i.severity === "error");
+  const lockoutOverridden =
+    opts.forceOverride === true && errors.length > 0 && errors.every((i) => i.code === "BR-MGMT-LOCKOUT");
+  if (!lockoutOverridden) throwIfErrors(issues, opts.action_);
+  return { warnings };
+}
+
 // ── create ──────────────────────────────────────────────────────────────────
+
+/** L3 addressing block shared by vlan/bridge/bond creates. */
+function addrConfig(body: {
+  ip?: string;
+  cidrPrefix?: number;
+  gateway?: string | null;
+  dns?: string[];
+  secondaryIps?: Array<{ ip: string; cidrPrefix: number }>;
+}): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (body.ip !== undefined && body.cidrPrefix != null) {
+    out.ip = body.ip;
+    out.cidrPrefix = body.cidrPrefix;
+  }
+  if (body.gateway != null) out.gateway = body.gateway;
+  if (body.dns !== undefined) out.dns = body.dns;
+  if (body.secondaryIps !== undefined) out.secondaryIps = body.secondaryIps;
+  return out;
+}
 
 function buildCreateConfig(body: Exclude<IfaceCreateBody, { type: "physical" }>): Record<string, unknown> {
   switch (body.type) {
     case "vlan":
-      return { parent: body.parent };
+      return { parent: body.parent, ...addrConfig(body) };
     case "bridge":
       return {
         members: body.members,
         stp: body.stp ?? false,
         ...(body.stpMode ? { stpMode: body.stpMode } : {}),
+        ...(body.stpPriority != null ? { stpPriority: body.stpPriority } : {}),
+        ...(body.forwardDelay != null ? { forwardDelay: body.forwardDelay } : {}),
         igmpSnooping: body.igmpSnooping ?? false,
+        ...addrConfig(body),
       };
     case "bond":
-      return { members: body.members, mode: body.mode };
+      return {
+        members: body.members,
+        mode: body.mode,
+        ...(body.lacpRate ? { lacpRate: body.lacpRate } : {}),
+        ...(body.miimon != null ? { miimon: body.miimon } : {}),
+        ...addrConfig(body),
+      };
     case "gre":
       return { local: body.local, remote: body.remote, ...(body.ttl != null ? { ttl: body.ttl } : {}) };
     case "ipip":
@@ -246,6 +350,21 @@ export async function createIface(tenantId: number, body: IfaceCreateBody): Prom
   if (body.type === "vlan") refs.push(body.parent);
   if (body.type === "bridge" || body.type === "bond") refs.push(...body.members);
   if (refs.length) await assertIfacesExist(tenantId, refs);
+
+  // enterprise business rules (subnet overlap, MTU chain, members, roles…)
+  const candidate: IfaceRuleView = {
+    name: body.name,
+    type: body.type,
+    mode: body.type === "bond" ? "l3" : body.mode,
+    role: body.role,
+    mtu: body.mtu,
+    mssClamp: body.mssClamp ?? null,
+    enabled: body.enabled,
+    parentName: body.type === "vlan" ? body.parent : null,
+    vlanId: body.type === "vlan" ? body.vlanId : null,
+    config: buildCreateConfig(body),
+  };
+  await enforceRules(tenantId, candidate, { excludeId: undefined, action_: "create" });
 
   try {
     return await db.networkInterface.create({
@@ -280,6 +399,9 @@ const L3_FIELDS = ["ip", "cidrPrefix", "gateway", "wanType", "dns"] as const;
 function mergePhysicalConfig(existing: IfaceRow, body: IfaceUpdateBody): Record<string, unknown> {
   const cfg = parseIfaceConfig(existing.config);
   if (body.lldp !== undefined) cfg.lldp = body.lldp;
+  if (body.speed !== undefined) cfg.speed = body.speed;
+  if (body.duplex !== undefined) cfg.duplex = body.duplex;
+  if (body.secondaryIps !== undefined) cfg.secondaryIps = body.secondaryIps;
 
   const touchesWan =
     body.wanType !== undefined ||
@@ -420,10 +542,61 @@ export async function updateIface(
     if (dup) throw ApiError.conflict(`Interface '${body.name}' already exists`);
   }
 
+  // merged desired state FIRST — the rule engine lints the candidate, not the patch
   const merged =
     existing.type === "physical"
       ? { config: mergePhysicalConfig(existing, body) }
       : await mergeLogicalConfig(tenantId, existing, body);
+
+  const nextEnabled = body.enabled ?? existing.enabled;
+  const candidate: IfaceRuleView = {
+    id: existing.id,
+    name: body.name ?? existing.name,
+    type: existing.type,
+    mode: nextMode,
+    role: body.role ?? existing.role,
+    mtu: body.mtu ?? existing.mtu,
+    mssClamp: body.mssClamp !== undefined ? (body.mssClamp ?? null) : existing.mssClamp,
+    enabled: nextEnabled,
+    parentName: merged.parentName ?? existing.parentName,
+    vlanId: existing.vlanId,
+    config: merged.config,
+  };
+
+  const disabling = existing.enabled && nextEnabled === false;
+  const roleFrom = body.role !== undefined && body.role !== existing.role ? existing.role : null;
+
+  // physical L2 switch — strip addressing/references first (enterprise lockstep)
+  const cfgIp = typeof candidate.config["ip"] === "string" ? (candidate.config["ip"] as string) : null;
+  if (existing.type === "physical" && nextMode === "l2" && existing.mode === "l3" && !body.force) {
+    const refs = await collectDisableRefs(tenantId, existing.name);
+    if (cfgIp || refs.length > 0) {
+      throw ApiError.conflict(
+        "Switching to L2 requires stripping the IP addressing and active references first",
+        {
+          refs,
+          addressing: cfgIp ? [cfgIp] : [],
+        },
+      );
+    }
+  }
+
+  // enterprise business rules (subnet overlap, MTU chain, mgmt lockout, members…)
+  await enforceRules(tenantId, candidate, {
+    excludeId: existing.id,
+    action: disabling ? "disable" : undefined,
+    roleFrom,
+    action_: "update",
+    forceOverride: body.force === true,
+  });
+
+  // disable with active references → 409 listing them, force overrides
+  if (disabling && body.force !== true) {
+    const refs = await collectDisableRefs(tenantId, existing.name);
+    if (refs.length > 0) {
+      throw ApiError.conflict(`Interface ${existing.name} is referenced by active configuration`, { refs });
+    }
+  }
 
   try {
     // undefined fields stay untouched (patch semantics); explicit nulls clear
@@ -453,6 +626,15 @@ export async function deleteIface(tenantId: number, row: IfaceRow): Promise<{ id
   if (row.type === "physical") {
     throw ApiError.validation("Physical interfaces cannot be deleted — disable instead");
   }
+
+  // last-mgmt lockout on delete — structural rules (members etc.) must not
+  // block deletion (a bridge whose members were already scrubbed deletes fine)
+  const rows = await db.networkInterface.findMany({ where: { tenantId }, orderBy: { id: "asc" } });
+  const others = rows.filter((r) => r.id !== row.id).map(rowToRuleView);
+  const issues = lintIface({ self: rowToRuleView(row), others, action: "delete" });
+  const lockout = issues.filter((i) => i.severity === "error" && i.code === "BR-MGMT-LOCKOUT");
+  if (lockout.length > 0) throwIfErrors(lockout, "delete");
+
   await db.$transaction(async (tx) => {
     // hard FK by name — the WAN policy goes first (M02 §2 integrity rules)
     await tx.wanPolicy.deleteMany({ where: { tenantId, interfaceName: row.name } });
@@ -472,6 +654,18 @@ export async function deleteIface(tenantId: number, row: IfaceRow): Promise<{ id
       where: { tenantId, interfaceName: row.name },
       data: { interfaceName: null },
     });
+    // bridges/bonds keep a dangling member otherwise — scrub membership refs
+    const masters = await tx.networkInterface.findMany({ where: { tenantId, type: { in: ["bridge", "bond"] } } });
+    for (const m of masters) {
+      const cfg = parseIfaceConfig(m.config);
+      const members = Array.isArray(cfg.members) ? strArr(cfg.members) : [];
+      if (members.includes(row.name)) {
+        await tx.networkInterface.update({
+          where: { id: m.id },
+          data: { config: JSON.stringify({ ...cfg, members: members.filter((n) => n !== row.name) }) },
+        });
+      }
+    }
     await tx.networkInterface.delete({ where: { id: row.id } });
   });
   return { id: row.id, name: row.name };

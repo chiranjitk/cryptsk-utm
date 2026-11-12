@@ -61,6 +61,7 @@ import {
   BOND_MODES,
   STP_MODES,
   IFACE_NAME_RE,
+  NetApiError,
   fmtAge,
   fmtBytes,
   fmtKbps,
@@ -82,9 +83,17 @@ import {
   type MacRow,
   type Mirror,
   type MirrorDirection,
+  type OsApplyResp,
+  type SecondaryIp,
   type StpMode,
   type ZoneRef,
 } from "./net-api";
+import {
+  groupIssues,
+  lintIface,
+  suggestMssClamp,
+  type IfaceRuleView,
+} from "@/lib/network/iface-rules";
 import {
   DirectionChip,
   IfaceConfigSummary,
@@ -100,10 +109,91 @@ const LLDP_KEY = ["network", "lldp"] as const;
 const MAC_KEY = ["network", "mac-table"] as const;
 const MIRRORS_KEY = ["network", "port-mirrors"] as const;
 const NET_ZONES_KEY = ["network", "zones"] as const;
+const OS_STATE_KEY = ["network", "os-state"] as const;
+
+/** Role semantics surfaced under the role select (enterprise UX). */
+const ROLE_HINTS: Record<IfaceRole, string> = {
+  wan: "Uplink toward the ISP — NAT source, multi-WAN probes attach here",
+  lan: "Trusted internal segment — firewall zones typically allow LAN→WAN",
+  dmz: "Isolated services segment — inbound publishing terminates here",
+  vpn: "Tunnel/overlay terminations — IPsec, WireGuard, GRE endpoints",
+  mgmt: "Administrative access (SSH/HTTPS) — never disabled to zero",
+  unused: "No role assigned — safe default for spare ports",
+};
 
 const CREATE_TYPES: IfaceType[] = ["vlan", "bridge", "bond", "gre", "ipip", "loopback"];
 const IFACE_TYPES: IfaceType[] = ["physical", "vlan", "bridge", "bond", "gre", "ipip", "loopback"];
 const IFACE_ROLES: IfaceRole[] = ["wan", "lan", "dmz", "vpn", "mgmt", "unused"];
+const SPEEDS = ["auto", "10", "100", "1000", "10000"] as const;
+const DUPLEXES = ["half", "full"] as const;
+
+/** Secondary-address rows editor — enterprise alias IPs (max 8). */
+function SecondaryIpsEditor(props: {
+  value: SecondaryIp[];
+  onChange: (next: SecondaryIp[]) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      {props.value.length === 0 && (
+        <p className="text-[11px] text-zinc-400">No secondary (alias) addresses.</p>
+      )}
+      {props.value.map((row, idx) => (
+        <div key={idx} className="flex items-center gap-2">
+          <Input
+            value={row.ip}
+            onChange={(e) => {
+              const next = [...props.value];
+              next[idx] = { ...row, ip: e.target.value };
+              props.onChange(next);
+            }}
+            placeholder="192.168.30.10"
+            className="h-8 font-mono text-xs"
+            disabled={props.disabled}
+            aria-label={`Secondary address ${idx + 1} IP`}
+          />
+          <Input
+            type="number"
+            min={1}
+            max={32}
+            value={Number.isFinite(row.cidrPrefix) ? row.cidrPrefix : ""}
+            onChange={(e) => {
+              const next = [...props.value];
+              next[idx] = { ...row, cidrPrefix: Number(e.target.value) };
+              props.onChange(next);
+            }}
+            placeholder="24"
+            className="h-8 w-20 text-xs"
+            disabled={props.disabled}
+            aria-label={`Secondary address ${idx + 1} prefix`}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 text-rose-600 hover:text-rose-700 dark:text-rose-400"
+            disabled={props.disabled}
+            aria-label={`Remove secondary address ${idx + 1}`}
+            onClick={() => props.onChange(props.value.filter((_, i) => i !== idx))}
+          >
+            <Icons.Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8"
+        disabled={props.disabled || props.value.length >= 8}
+        onClick={() => props.onChange([...props.value, { ip: "", cidrPrefix: 24 }])}
+      >
+        <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add address
+      </Button>
+      {props.value.length >= 8 && <p className="text-[11px] text-zinc-400">Maximum of 8 secondary addresses reached.</p>}
+    </div>
+  );
+}
 const SPARK_CAP = 60;
 
 type SparkPoint = { ts: string; rxKbps: number; txKbps: number };
@@ -115,6 +205,23 @@ function useDebounced<T>(value: T, delayMs: number): T {
     return () => clearTimeout(t);
   }, [value, delayMs]);
   return debounced;
+}
+
+/** Shaped row → pure rule-engine view (client-side live validation). */
+function ifaceToRuleView(i: Iface): IfaceRuleView {
+  return {
+    id: i.id,
+    name: i.name,
+    type: i.type,
+    mode: i.mode,
+    role: i.role,
+    mtu: i.mtu,
+    mssClamp: i.mssClamp,
+    enabled: i.enabled,
+    parentName: i.parentName,
+    vlanId: i.vlanId,
+    config: i.config ?? {},
+  };
 }
 
 /** Shared scroll shell for the long tables (mirrors the M03 table wrapper). */
@@ -193,12 +300,32 @@ export function InterfacesView() {
   const [editing, setEditing] = useState<Iface | null>(null);
   const [statsIface, setStatsIface] = useState<Iface | null>(null);
   const [deleting, setDeleting] = useState<Iface | null>(null);
+  const [pendingDisable, setPendingDisable] = useState<{
+    iface: Iface;
+    refs: Array<{ kind: string; label: string }>;
+  } | null>(null);
 
   const toggleMut = useMutation({
-    mutationFn: (iface: Iface) =>
-      netApi.updateIface(iface.id, ifaceBodyOf(iface, { enabled: !iface.enabled })),
-    onSuccess: (updated) => toastOk(updated.enabled ? "Interface enabled" : "Interface disabled", updated.name),
-    onError: (err) => toastErr(err, "Toggle failed"),
+    mutationFn: ({ iface, force }: { iface: Iface; force?: boolean }) =>
+      netApi.updateIface(
+        iface.id,
+        ifaceBodyOf(iface, { enabled: !iface.enabled, ...(force ? { force: true } : {}) }),
+      ),
+    onSuccess: (updated) => {
+      toastOk(updated.enabled ? "Interface enabled" : "Interface disabled", updated.name);
+      setPendingDisable(null);
+    },
+    onError: (err, vars) => {
+      // 409 with reference list → confirmation flow instead of a bare toast
+      if (err instanceof NetApiError && err.code === "CONFLICT") {
+        const refs = (err.details as { refs?: Array<{ kind: string; label: string }> } | undefined)?.refs;
+        if (refs && refs.length > 0) {
+          setPendingDisable({ iface: vars.iface, refs });
+          return;
+        }
+      }
+      toastErr(err, "Toggle failed");
+    },
     onSettled: () => void queryClient.invalidateQueries({ queryKey: IFACES_KEY }),
   });
 
@@ -234,6 +361,7 @@ export function InterfacesView() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <TabsList aria-label="Network interface tabs">
           <TabsTrigger value="interfaces">Interfaces</TabsTrigger>
+          <TabsTrigger value="os-state">OS State</TabsTrigger>
           <TabsTrigger value="lldp">LLDP Neighbors</TabsTrigger>
           <TabsTrigger value="mac">MAC Table</TabsTrigger>
           <TabsTrigger value="mirroring">Mirroring</TabsTrigger>
@@ -377,7 +505,7 @@ export function InterfacesView() {
                                 checked={iface.enabled}
                                 disabled={toggleMut.isPending}
                                 aria-label={`Toggle interface ${iface.name}`}
-                                onCheckedChange={() => toggleMut.mutate(iface)}
+                                onCheckedChange={() => toggleMut.mutate({ iface })}
                               />
                             </div>
                           </TableCell>
@@ -434,6 +562,10 @@ export function InterfacesView() {
         </p>
       </TabsContent>
 
+      <TabsContent value="os-state" className="space-y-3">
+        <OsStateTab />
+      </TabsContent>
+
       <TabsContent value="lldp" className="space-y-3">
         <LldpTab />
       </TabsContent>
@@ -467,6 +599,22 @@ export function InterfacesView() {
         description={`Delete interface '${deleting?.name ?? ""}'? Its zone membership is detached, routes pointing at it lose the interface reference, and an attached WAN policy is removed first.`}
         loading={deleteMut.isPending}
         onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
+      />
+
+      <ConfirmDialog
+        open={pendingDisable !== null}
+        onOpenChange={(open) => !open && setPendingDisable(null)}
+        title="Disable interface with active references?"
+        description={`'${
+          pendingDisable?.iface.name ?? ""
+        }' is referenced by active configuration: ${
+          pendingDisable?.refs.map((r) => `${r.kind} ${r.label}`).join(", ") ?? ""
+        }. Disabling it takes those features down until the interface is re-enabled.`}
+        confirmLabel="Disable anyway"
+        loading={toggleMut.isPending}
+        onConfirm={() =>
+          pendingDisable && toggleMut.mutate({ iface: pendingDisable.iface, force: true })
+        }
       />
     </Tabs>
   );
@@ -541,16 +689,40 @@ function IfaceEditor(props: {
   const [pppoeService, setPppoeService] = useState(pppoeCfg.service ?? "");
   const [lldp, setLldp] = useState(editing ? cfgBool(editing.config, "lldp") : true);
 
+  // enterprise extras — secondary addresses, NIC hints, bond/bridge tuning
+  const secCfg = Array.isArray(editing?.config?.["secondaryIps"])
+    ? (editing.config["secondaryIps"] as SecondaryIp[])
+    : [];
+  const [secondaryIps, setSecondaryIps] = useState<SecondaryIp[]>(
+    secCfg.map((s) => ({ ip: String(s.ip ?? ""), cidrPrefix: Number(s.cidrPrefix ?? 24) })),
+  );
+  const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(
+    (cfgString(editing?.config, "speed") as (typeof SPEEDS)[number] | null) ?? "auto",
+  );
+  const [duplex, setDuplex] = useState<(typeof DUPLEXES)[number]>(
+    (cfgString(editing?.config, "duplex") as (typeof DUPLEXES)[number] | null) ?? "full",
+  );
+  const [lacpRate, setLacpRate] = useState<"slow" | "fast">(
+    (cfgString(editing?.config, "lacpRate") as "slow" | "fast" | null) ?? "slow",
+  );
+  const [miimon, setMiimon] = useState(cfgNumber(editing?.config, "miimon")?.toString() ?? "100");
+  const [stpPriority, setStpPriority] = useState(cfgNumber(editing?.config, "stpPriority")?.toString() ?? "32768");
+  const [forwardDelay, setForwardDelay] = useState(cfgNumber(editing?.config, "forwardDelay")?.toString() ?? "15");
+
   const [error, setError] = useState<string | null>(null);
 
   const applyVlanNameSuggestion = (nextType: IfaceType, nextVlanId: string, touched: boolean) => {
     if (nextType === "vlan" && !touched && /^\d+$/.test(nextVlanId)) setName(`vlan${nextVlanId}`);
   };
 
-  const physicalParents = useMemo(() => props.ifaces.filter((i) => i.type === "physical"), [props.ifaces]);
+  const vlanParentOptions = useMemo(
+    () => props.ifaces.filter((i) => ["physical", "bridge", "bond"].includes(i.type)),
+    [props.ifaces],
+  );
   const memberOptions = useMemo(
     () =>
       props.ifaces
+        .filter((i) => ["physical", "vlan"].includes(i.type))
         .filter((i) => !isEdit || i.name !== editing.name)
         .map((i) => ({ id: i.name, label: i.name, sub: i.type })),
     [props.ifaces, isEdit, editing],
@@ -566,6 +738,38 @@ function IfaceEditor(props: {
     },
     onError: (err) => toastErr(err, isEdit ? "Update failed" : "Create failed"),
   });
+
+  // create-time flat addressing (vlan/bridge/bond) — mirrors ifaceCreateSchema
+  const flatAddr = () => {
+    const p = Number(prefix);
+    const dnsList = dnsRaw
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return {
+      ...(isValidIpv4(ip) && Number.isInteger(p) && p >= 1 && p <= 32 ? { ip: ip.trim(), cidrPrefix: p } : {}),
+      ...(isValidIpv4(gateway.trim()) ? { gateway: gateway.trim() } : {}),
+      ...(dnsList.length ? { dns: dnsList } : {}),
+      ...(secondaryIps.length ? { secondaryIps } : {}),
+    };
+  };
+  // update-time config-patch addressing (vlan/bridge/bond)
+  const patchAddr = (): Record<string, unknown> => {
+    const p = Number(prefix);
+    const dnsList = dnsRaw
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const out: Record<string, unknown> = {};
+    if (isValidIpv4(ip) && Number.isInteger(p) && p >= 1 && p <= 32) {
+      out.ip = ip.trim();
+      out.cidrPrefix = p;
+    }
+    if (isValidIpv4(gateway.trim())) out.gateway = gateway.trim();
+    if (dnsList.length) out.dns = dnsList;
+    out.secondaryIps = secondaryIps; // always sent so removals persist
+    return out;
+  };
 
   const buildBody = (): IfaceBody | string => {
     const trimmedName = name.trim();
@@ -594,26 +798,42 @@ function IfaceEditor(props: {
           if (!parentName) return "A parent interface is required for a VLAN";
           const v = Number(vlanId);
           if (!Number.isInteger(v) || v < 1 || v > 4094) return "VLAN ID must be an integer between 1 and 4094";
-          return { type, name: trimmedName, parent: parentName, vlanId: v, enabled: true, mode, ...common };
+          return { type, name: trimmedName, parent: parentName, vlanId: v, enabled: true, mode, ...common, ...flatAddr() };
         }
         case "bridge": {
           if (members.length < 1) return "A bridge needs at least 1 member";
+          const stpPriorityNum = Number(stpPriority);
+          const forwardDelayNum = Number(forwardDelay);
           return {
             type,
             name: trimmedName,
             members,
             stp,
             ...(stp ? { stpMode } : {}),
+            ...(stp && Number.isInteger(stpPriorityNum) ? { stpPriority: stpPriorityNum } : {}),
+            ...(stp && Number.isInteger(forwardDelayNum) ? { forwardDelay: forwardDelayNum } : {}),
             igmpSnooping,
             enabled: true,
             mode,
             ...common,
+            ...flatAddr(),
           };
         }
         case "bond": {
           if (members.length < 2) return "bond needs at least 2 members";
+          const miimonNum = Number(miimon);
           // on create a bond's `mode` IS the aggregation mode (l2|l3 defaults l3, settable via PUT)
-          return { type, name: trimmedName, members, mode: bondMode, enabled: true, ...common };
+          return {
+            type,
+            name: trimmedName,
+            members,
+            mode: bondMode,
+            ...(bondMode === "802.3ad" ? { lacpRate } : {}),
+            ...(Number.isInteger(miimonNum) ? { miimon: miimonNum } : {}),
+            enabled: true,
+            ...common,
+            ...flatAddr(),
+          };
         }
         case "gre":
         case "ipip": {
@@ -672,6 +892,9 @@ function IfaceEditor(props: {
             cidrPrefix: Number(prefix),
             ...(gateway.trim() !== "" ? { gateway: gateway.trim() } : { gateway: null }),
             ...(dnsList.length ? { dns: dnsList } : {}),
+            secondaryIps,
+            speed,
+            duplex,
             lldp,
           };
         }
@@ -688,31 +911,45 @@ function IfaceEditor(props: {
               password: pppoePassword,
               ...(pppoeService.trim() !== "" ? { service: pppoeService.trim() } : {}),
             },
+            speed,
+            duplex,
             lldp,
           };
         }
-        return { name: editing.name, mode, enabled: editing.enabled, ...common, wanType: "dhcp", lldp };
+        return { name: editing.name, mode, enabled: editing.enabled, ...common, wanType: "dhcp", speed, duplex, lldp };
       }
       // l2 physical — switching only
-      return { name: editing.name, mode, enabled: editing.enabled, ...common, lldp };
+      return { name: editing.name, mode, enabled: editing.enabled, ...common, speed, duplex, lldp };
     }
 
     const patch: Record<string, unknown> = {};
     if (type === "vlan") {
       if (!parentName) return "A parent interface is required for a VLAN";
       patch.parent = parentName;
+      Object.assign(patch, patchAddr());
     }
     if (type === "bridge") {
       if (members.length < 1) return "A bridge needs at least 1 member";
       patch.members = members;
       patch.stp = stp;
-      if (stp) patch.stpMode = stpMode;
+      if (stp) {
+        patch.stpMode = stpMode;
+        const stpPriorityNum = Number(stpPriority);
+        const forwardDelayNum = Number(forwardDelay);
+        if (Number.isInteger(stpPriorityNum)) patch.stpPriority = stpPriorityNum;
+        if (Number.isInteger(forwardDelayNum)) patch.forwardDelay = forwardDelayNum;
+      }
       patch.igmpSnooping = igmpSnooping;
+      Object.assign(patch, patchAddr());
     }
     if (type === "bond") {
       if (members.length < 2) return "bond needs at least 2 members";
       patch.members = members;
       patch.mode = bondMode;
+      if (bondMode === "802.3ad") patch.lacpRate = lacpRate;
+      const miimonNum = Number(miimon);
+      if (Number.isInteger(miimonNum)) patch.miimon = miimonNum;
+      Object.assign(patch, patchAddr());
     }
     if ((type === "gre" || type === "ipip") && mode === "l3") {
       if (!isValidIpv4(local)) return "A valid local tunnel IPv4 is required";
@@ -741,7 +978,6 @@ function IfaceEditor(props: {
       ...(Object.keys(patch).length ? { config: patch } : {}),
     };
   };
-
   const submit = () => {
     const result = buildBody();
     if (typeof result === "string") {
@@ -758,9 +994,85 @@ function IfaceEditor(props: {
   const showWanFields = isPhysicalEdit && mode === "l3";
   const l3Editable = mode === "l3";
 
+  // ── live business-rule validation (same engine the API enforces) ──────────
+  const dnsListForLint = dnsRaw
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const lintConfig: Record<string, unknown> = {};
+  if (type === "vlan") {
+    if (parentName) lintConfig.parent = parentName;
+    Object.assign(lintConfig, patchAddr());
+  } else if (type === "bridge") {
+    lintConfig.members = members;
+    lintConfig.stp = stp;
+    if (stp) {
+      lintConfig.stpMode = stpMode;
+      const sp = Number(stpPriority);
+      if (Number.isInteger(sp)) lintConfig.stpPriority = sp;
+      const fd = Number(forwardDelay);
+      if (Number.isInteger(fd)) lintConfig.forwardDelay = fd;
+    }
+    lintConfig.igmpSnooping = igmpSnooping;
+    Object.assign(lintConfig, patchAddr());
+  } else if (type === "bond") {
+    lintConfig.members = members;
+    lintConfig.mode = bondMode;
+    if (bondMode === "802.3ad") lintConfig.lacpRate = lacpRate;
+    const mm = Number(miimon);
+    if (Number.isInteger(mm)) lintConfig.miimon = mm;
+    Object.assign(lintConfig, patchAddr());
+  } else if (type === "gre" || type === "ipip") {
+    lintConfig.local = local.trim();
+    lintConfig.remote = remote.trim();
+    if (type === "gre" && ttl.trim() !== "") lintConfig.ttl = Number(ttl);
+  } else if (type === "loopback") {
+    if (isValidIpv4(loIp)) {
+      lintConfig.ip = loIp.trim();
+      lintConfig.cidrPrefix = Number(loPrefix) || 0;
+    }
+  } else if (isPhysicalEdit) {
+    if (mode === "l3" && wanType === "static") {
+      if (isValidIpv4(ip)) {
+        lintConfig.ip = ip.trim();
+        lintConfig.cidrPrefix = Number(prefix);
+      }
+      if (isValidIpv4(gateway.trim())) lintConfig.gateway = gateway.trim();
+      if (dnsListForLint.length) lintConfig.dns = dnsListForLint;
+    }
+    if (mode === "l3") lintConfig.wanType = wanType;
+    lintConfig.lldp = lldp;
+    lintConfig.speed = speed;
+    lintConfig.duplex = duplex;
+  }
+  if (secondaryIps.length && (isPhysicalEdit ? mode === "l3" : type !== "gre" && type !== "ipip" && type !== "loopback")) {
+    lintConfig.secondaryIps = secondaryIps;
+  }
+  const lintSelf: IfaceRuleView = {
+    id: editing?.id,
+    name: name.trim(),
+    type,
+    mode: type === "bond" ? "l3" : mode,
+    role,
+    mtu: Number.isFinite(mtuNum) ? mtuNum : 1500,
+    mssClamp: mss.trim() !== "" && Number.isFinite(Number(mss)) ? Number(mss) : null,
+    enabled: isEdit ? editing.enabled : true,
+    parentName: type === "vlan" ? parentName || null : null,
+    vlanId: type === "vlan" && /^\d+$/.test(vlanId) ? Number(vlanId) : null,
+    config: lintConfig,
+  };
+  const lintOthers = useMemo(
+    () => props.ifaces.filter((i) => i.name !== editing?.name).map(ifaceToRuleView),
+    [props.ifaces, editing],
+  );
+  const lintIssues = lintIface({ self: lintSelf, others: lintOthers, roleFrom: null });
+  const lintGrouped = groupIssues(lintIssues);
+  const lintErrorCount = Object.keys(lintGrouped.errors).length;
+  const lintWarningCount = Object.keys(lintGrouped.warnings).length;
+
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-xl">
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? `Edit interface — ${editing.name}` : "Add interface"}</DialogTitle>
           <DialogDescription>
@@ -824,6 +1136,9 @@ function IfaceEditor(props: {
                   ))}
                 </SelectContent>
               </Select>
+              <p className="mt-1 text-[11px] leading-snug text-zinc-400" aria-live="polite">
+                {ROLE_HINTS[role]}
+              </p>
             </div>
           </div>
 
@@ -832,15 +1147,15 @@ function IfaceEditor(props: {
             <EditorSection title="VLAN">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <FieldLabel>Parent (physical)</FieldLabel>
+                  <FieldLabel hint="physical / bridge / bond">Parent</FieldLabel>
                   <Select value={parentName || undefined} onValueChange={setParentName}>
                     <SelectTrigger aria-label="VLAN parent interface">
                       <SelectValue placeholder="select parent…" />
                     </SelectTrigger>
                     <SelectContent>
-                      {physicalParents.map((p) => (
+                      {vlanParentOptions.map((p) => (
                         <SelectItem key={p.id} value={p.name}>
-                          {p.name}
+                          {p.name} ({p.type})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -904,6 +1219,32 @@ function IfaceEditor(props: {
                   <Switch checked={igmpSnooping} onCheckedChange={setIgmpSnooping} aria-label="Toggle IGMP snooping" /> IGMP snooping
                 </Label>
               </div>
+              {stp && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <FieldLabel hint="0–65535, lower = root">STP priority</FieldLabel>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={65535}
+                      value={stpPriority}
+                      onChange={(e) => setStpPriority(e.target.value)}
+                      aria-label="STP bridge priority"
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel hint="4–30 s">Forward delay</FieldLabel>
+                    <Input
+                      type="number"
+                      min={4}
+                      max={30}
+                      value={forwardDelay}
+                      onChange={(e) => setForwardDelay(e.target.value)}
+                      aria-label="STP forward delay"
+                    />
+                  </div>
+                </div>
+              )}
             </EditorSection>
           )}
 
@@ -934,6 +1275,31 @@ function IfaceEditor(props: {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <FieldLabel hint="802.3ad only">LACP rate</FieldLabel>
+                  <Select value={lacpRate} onValueChange={(v) => setLacpRate(v as "slow" | "fast")} disabled={bondMode !== "802.3ad"}>
+                    <SelectTrigger aria-label="LACP rate">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="slow">slow (30 s)</SelectItem>
+                      <SelectItem value="fast">fast (1 s)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <FieldLabel hint="0 = off, ms">MII monitor</FieldLabel>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={1000}
+                    value={miimon}
+                    onChange={(e) => setMiimon(e.target.value)}
+                    aria-label="Bond MII monitor interval"
+                  />
+                </div>
               </div>
             </EditorSection>
           )}
@@ -1039,7 +1405,7 @@ function IfaceEditor(props: {
                     <Input type="number" min={0} max={32} value={prefix} onChange={(e) => setPrefix(e.target.value)} aria-label="Static prefix" />
                   </div>
                   <div>
-                    <FieldLabel>Gateway</FieldLabel>
+                    <FieldLabel hint="must sit inside the subnet">Gateway</FieldLabel>
                     <Input value={gateway} onChange={(e) => setGateway(e.target.value)} placeholder="203.0.113.1" className="font-mono" aria-label="Gateway" />
                   </div>
                   <div className="col-span-2">
@@ -1052,6 +1418,10 @@ function IfaceEditor(props: {
                       className="font-mono text-xs"
                       aria-label="DNS servers"
                     />
+                  </div>
+                  <div className="col-span-2">
+                    <FieldLabel hint="aliases, max 8">Secondary addresses</FieldLabel>
+                    <SecondaryIpsEditor value={secondaryIps} onChange={setSecondaryIps} disabled={!l3Editable} />
                   </div>
                 </div>
               )}
@@ -1081,9 +1451,85 @@ function IfaceEditor(props: {
                   L2 mode: this port switches — WAN/IP addressing is disabled and stripped on save.
                 </p>
               )}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <FieldLabel hint="NIC-dependent, apply best-effort">Speed</FieldLabel>
+                  <Select value={speed} onValueChange={(v) => setSpeed(v as (typeof SPEEDS)[number])}>
+                    <SelectTrigger aria-label="Port speed">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SPEEDS.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s === "auto" ? "auto-negotiate" : `${s} Mbps`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <FieldLabel>Duplex</FieldLabel>
+                  <Select value={duplex} onValueChange={(v) => setDuplex(v as (typeof DUPLEXES)[number])}>
+                    <SelectTrigger aria-label="Port duplex">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DUPLEXES.map((d) => (
+                        <SelectItem key={d} value={d}>
+                          {d}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               <Label className="flex items-center gap-2 text-sm">
                 <Switch checked={lldp} onCheckedChange={setLldp} aria-label="Toggle LLDP transmit" /> LLDP transmit (lldpd)
               </Label>
+            </EditorSection>
+          )}
+
+          {isPhysicalEdit && mode === "l3" && wanType !== "static" && (
+            <p className="text-[11px] text-zinc-400">
+              Secondary alias addresses apply to statically addressed interfaces — switch to static to manage them here.
+            </p>
+          )}
+
+          {/* L3 addressing for logical interfaces (vlan / bridge / bond) */}
+          {(type === "vlan" || type === "bridge" || type === "bond") && l3Editable && (
+            <EditorSection title="Addressing (L3)">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <FieldLabel hint="optional">IPv4</FieldLabel>
+                  <Input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="10.20.30.1" className="font-mono" aria-label="Logical interface IPv4" />
+                </div>
+                <div>
+                  <FieldLabel hint="1–32">Prefix</FieldLabel>
+                  <Input type="number" min={1} max={32} value={prefix} onChange={(e) => setPrefix(e.target.value)} aria-label="Logical interface prefix" />
+                </div>
+                <div>
+                  <FieldLabel hint="must sit inside the subnet">Gateway</FieldLabel>
+                  <Input value={gateway} onChange={(e) => setGateway(e.target.value)} placeholder="10.20.30.254" className="font-mono" aria-label="Logical interface gateway" />
+                </div>
+                <div className="col-span-2">
+                  <FieldLabel hint="one per line, max 4">DNS servers</FieldLabel>
+                  <Textarea
+                    value={dnsRaw}
+                    onChange={(e) => setDnsRaw(e.target.value)}
+                    rows={2}
+                    placeholder={"1.1.1.1\n8.8.8.8"}
+                    className="font-mono text-xs"
+                    aria-label="Logical interface DNS servers"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <FieldLabel hint="aliases, max 8">Secondary addresses</FieldLabel>
+                  <SecondaryIpsEditor value={secondaryIps} onChange={setSecondaryIps} />
+                </div>
+              </div>
+              <p className="text-[11px] text-zinc-400">
+                Subnets must not overlap any other L3 interface — the same rule engine that enforces this server-side runs live here.
+              </p>
             </EditorSection>
           )}
 
@@ -1122,7 +1568,23 @@ function IfaceEditor(props: {
               </div>
               <div>
                 <FieldLabel hint="536–1460, optional">MSS clamp</FieldLabel>
-                <Input type="number" min={536} max={1460} value={mss} onChange={(e) => setMss(e.target.value)} placeholder="—" aria-label="MSS clamp" />
+                <div className="flex items-center gap-2">
+                  <Input type="number" min={536} max={1460} value={mss} onChange={(e) => setMss(e.target.value)} placeholder="—" aria-label="MSS clamp" />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 shrink-0"
+                    disabled={!Number.isInteger(mtuNum) || mtuNum < 68 || mtuNum > 9000}
+                    onClick={() => {
+                      const s = suggestMssClamp(mtuNum);
+                      if (s != null) setMss(String(s));
+                    }}
+                    aria-label="Auto-derive MSS clamp from MTU"
+                  >
+                    auto (mtu-40)
+                  </Button>
+                </div>
               </div>
             </div>
             {showMssHint && (
@@ -1137,6 +1599,35 @@ function IfaceEditor(props: {
             </div>
           </EditorSection>
 
+          {/* live business-rule validation (mirror of the server engine) */}
+          {(lintErrorCount > 0 || lintWarningCount > 0) && (
+            <div className="space-y-1.5 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800" aria-live="polite">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                Business rules — {lintErrorCount} error{lintErrorCount === 1 ? "" : "s"}, {lintWarningCount} warning{lintWarningCount === 1 ? "" : "s"}
+              </p>
+              {lintIssues
+                .filter((i) => i.severity === "error")
+                .map((i, idx) => (
+                  <p key={`err-${idx}`} className="flex items-start gap-1.5 text-xs font-medium text-rose-600 dark:text-rose-400">
+                    <Icons.CircleX className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      <span className="font-mono text-[10px] opacity-70">{i.code}</span> {i.message}
+                    </span>
+                  </p>
+                ))}
+              {lintIssues
+                .filter((i) => i.severity === "warning")
+                .map((i, idx) => (
+                  <p key={`warn-${idx}`} className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                    <Icons.TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      <span className="font-mono text-[10px] opacity-70">{i.code}</span> {i.message}
+                    </span>
+                  </p>
+                ))}
+            </div>
+          )}
+
           {error && <p className="text-xs font-medium text-rose-600 dark:text-rose-400">{error}</p>}
         </div>
 
@@ -1144,7 +1635,11 @@ function IfaceEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
+          <Button
+            onClick={submit}
+            disabled={mut.isPending || lintErrorCount > 0}
+            className="bg-amber-700 text-white hover:bg-amber-800"
+          >
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create interface"}
           </Button>
         </DialogFooter>
@@ -1696,5 +2191,252 @@ function MirrorEditor(props: { open: boolean; onOpenChange: (open: boolean) => v
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ── OS State tab (drift between console DB and the live host) ───────────────
+
+function DriftBadge({ inSync, drift, managed }: { inSync: boolean; drift: Array<{ field: string; db: string; os: string }>; managed: boolean }) {
+  if (!managed) {
+    return (
+      <Badge variant="outline" className="gap-1 border-rose-600/50 bg-transparent text-[10px] font-medium text-rose-500">
+        <Icons.CircleOff className="h-3 w-3" /> not on host
+      </Badge>
+    );
+  }
+  if (inSync) {
+    return (
+      <Badge variant="outline" className="gap-1 border-emerald-500/40 bg-emerald-500/10 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+        <Icons.CircleCheck className="h-3 w-3" /> in sync
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="gap-1 border-amber-500/40 bg-amber-500/10 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+      title={drift.map((d) => `${d.field}: db=${d.db} os=${d.os}`).join(" | ")}
+    >
+      <Icons.TriangleAlert className="h-3 w-3" /> drift ({drift.length})
+    </Badge>
+  );
+}
+
+function OsStateTab() {
+  const query = useQuery({ queryKey: OS_STATE_KEY, queryFn: () => netApi.ifaceOsState(), refetchInterval: 10_000 });
+  const [plan, setPlan] = useState<OsApplyResp | null>(null);
+  const applyMut = useMutation({
+    mutationFn: () => netApi.applyIfaceOs(),
+    onSuccess: (d) => setPlan(d),
+    onError: (err) => toastErr(err, "Apply plan failed"),
+  });
+  const data = query.data;
+  const managed = useMemo(() => data?.managed ?? [], [data]);
+  const unmanaged = useMemo(() => data?.unmanaged ?? [], [data]);
+  const driftCount = managed.filter((r) => !r.inSync).length;
+  const syncCount = managed.filter((r) => r.inSync).length;
+
+  return (
+    <div className="space-y-3">
+      <InfoBanner title="Console ↔ host OS sync">
+        Desired state lives in the console database; actual state is read live from the host kernel (/sys/class/net + interface
+        addresses). Apply is gated by CONSOLE_OS_APPLY on the appliance — everywhere else this is a plan preview.
+      </InfoBanner>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline" className="gap-1 border-emerald-500/40 bg-emerald-500/10 text-xs text-emerald-600 dark:text-emerald-400">
+          {syncCount} in sync
+        </Badge>
+        {driftCount > 0 && (
+          <Badge variant="outline" className="gap-1 border-amber-500/40 bg-amber-500/10 text-xs text-amber-600 dark:text-amber-400">
+            {driftCount} drift
+          </Badge>
+        )}
+        <Badge variant="outline" className="border-zinc-300 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+          {unmanaged.length} unmanaged
+        </Badge>
+        <Badge variant="outline" className="border-zinc-300 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+          apply {data?.applyEnabled ? "armed" : "gated off"}
+        </Badge>
+        <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => void query.refetch()} disabled={query.isFetching}>
+            <Icons.RefreshCw className={cn("mr-1 h-3.5 w-3.5", query.isFetching && "animate-spin")} /> Refresh
+          </Button>
+          <Button size="sm" onClick={() => applyMut.mutate()} disabled={applyMut.isPending} className="bg-zinc-700 text-white hover:bg-zinc-800">
+            <Icons.Terminal className="mr-1 h-3.5 w-3.5" /> {applyMut.isPending ? "Planning…" : "Plan apply"}
+          </Button>
+        </div>
+      </div>
+
+      <Card className="p-0">
+        <CardContent className="p-0">
+          {query.error ? (
+            <div className="p-4">
+              <QueryError error={query.error} onRetry={() => void query.refetch()} />
+            </div>
+          ) : query.isLoading ? (
+            <div className="p-4">
+              <TableSkeleton rows={6} cols={7} />
+            </div>
+          ) : managed.length === 0 ? (
+            <EmptyBlock icon={<Icons.Server className="h-6 w-6" />} title="No managed interfaces" description="Create interfaces in the Interfaces tab first." />
+          ) : (
+            <ScrollWrap>
+              <Table className="min-w-[980px] text-sm">
+                <TableHeader className="sticky top-0 z-10 bg-card">
+                  <TableRow>
+                    <TableHead>Interface</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>DB (desired)</TableHead>
+                    <TableHead>OS (actual)</TableHead>
+                    <TableHead>Oper state</TableHead>
+                    <TableHead>MAC</TableHead>
+                    <TableHead className="w-36">Sync</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {managed.map((r) => (
+                    <TableRow key={r.name} className={cn(!r.inSync && "bg-amber-500/5")}>
+                      <TableCell className="font-mono text-sm font-medium">
+                        {r.name}
+                        <span className="ml-1.5 text-[10px] font-normal text-zinc-400">{r.type}</span>
+                        {r.os?.isDefaultRoute && (
+                          <Badge variant="outline" className="ml-1.5 border-zinc-400 text-[9px] font-normal text-zinc-500">
+                            default route
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <RoleBadge role={r.role as IfaceRole} />
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-zinc-600 dark:text-zinc-300">
+                        mtu {r.db.mtu}
+                        {r.db.ip ? ` · ${r.db.ip}` : ""} · {r.db.adminState}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-zinc-600 dark:text-zinc-300">
+                        {r.os ? `mtu ${r.os.mtu ?? "?"}${r.os.ipv4.length ? ` · ${r.os.ipv4.join(", ")}` : ""}` : "—"}
+                      </TableCell>
+                      <TableCell>
+                        {r.os ? (
+                          <span
+                            className={cn(
+                              "font-mono text-xs",
+                              r.os.operState === "up" ? "text-emerald-600 dark:text-emerald-400" : "text-zinc-500",
+                            )}
+                          >
+                            {r.os.operState}
+                            {r.os.carrier === false ? " (no carrier)" : ""}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-rose-500">missing</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-zinc-500">{r.os?.mac ?? "—"}</TableCell>
+                      <TableCell>
+                        <DriftBadge inSync={r.inSync} drift={r.drift} managed={r.os != null} />
+                        {!r.inSync && r.os != null && (
+                          <p className="mt-1 max-w-64 text-[10px] leading-snug text-amber-600 dark:text-amber-400">
+                            {r.drift.map((d) => `${d.field}: db=${d.db} os=${d.os}`).join(" · ")}
+                          </p>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollWrap>
+          )}
+        </CardContent>
+      </Card>
+
+      {unmanaged.length > 0 && (
+        <Card className="p-0">
+          <CardContent className="p-0">
+            <div className="border-b border-zinc-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
+              Unmanaged host interfaces (present on the OS, absent in the console)
+            </div>
+            <ScrollWrap>
+              <Table className="min-w-[720px] text-sm">
+                <TableHeader className="sticky top-0 z-10 bg-card">
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Oper state</TableHead>
+                    <TableHead>MTU</TableHead>
+                    <TableHead>IPv4</TableHead>
+                    <TableHead>MAC</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {unmanaged.map((u) => (
+                    <TableRow key={u.name}>
+                      <TableCell className="font-mono text-xs">{u.name}</TableCell>
+                      <TableCell className="font-mono text-xs text-zinc-500">{u.operState}</TableCell>
+                      <TableCell className="tabular-nums">{u.mtu ?? "—"}</TableCell>
+                      <TableCell className="font-mono text-xs text-zinc-500">{u.ipv4.length ? u.ipv4.join(", ") : "—"}</TableCell>
+                      <TableCell className="font-mono text-xs text-zinc-500">{u.mac ?? "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollWrap>
+          </CardContent>
+        </Card>
+      )}
+      <p className="text-xs text-zinc-400">Read live from the host every 10 s — no simulated values.</p>
+
+      {/* apply plan dialog */}
+      <Dialog open={plan !== null} onOpenChange={(open) => !open && setPlan(null)}>
+        <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icons.Terminal className="h-4 w-4 text-zinc-500" />
+              OS apply plan {plan?.applied ? "(executed)" : "(preview)"}
+            </DialogTitle>
+            <DialogDescription>{plan?.reason}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {(plan?.plans ?? [])
+              .filter((p) => p.steps.length > 0)
+              .map((p) => (
+                <div key={p.name} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+                  <p className="mb-1.5 font-mono text-xs font-semibold">{p.name}</p>
+                  <ul className="space-y-1">
+                    {p.steps.map((s, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs">
+                        <span className="font-mono text-zinc-700 dark:text-zinc-300">$ {s.cmd}</span>
+                        <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{s.summary}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            {(plan?.plans ?? []).every((p) => p.steps.length === 0) && (
+              <p className="text-sm text-zinc-500">No convergence steps needed — the host already matches the console.</p>
+            )}
+            {plan?.results && plan.results.length > 0 && (
+              <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+                <p className="mb-1.5 text-xs font-semibold">Execution results</p>
+                {plan.results.map((r, i) => (
+                  <p key={i} className="flex items-center gap-2 font-mono text-xs">
+                    {r.ok ? (
+                      <Icons.CircleCheck className="h-3 w-3 text-emerald-500" />
+                    ) : (
+                      <Icons.CircleX className="h-3 w-3 text-rose-500" />
+                    )}
+                    <span className="truncate">{r.cmd}</span>
+                    {!r.ok && r.stderr ? <span className="ml-auto text-[10px] text-rose-500">{r.stderr}</span> : null}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPlan(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

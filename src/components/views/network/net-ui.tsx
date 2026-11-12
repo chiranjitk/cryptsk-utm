@@ -231,6 +231,11 @@ export function Sparkline({
 
 const L3_TYPES: IfaceType[] = ["physical", "loopback", "gre", "ipip"];
 
+function secondaryCount(c: Record<string, unknown>): number {
+  const v = c["secondaryIps"];
+  return Array.isArray(v) ? v.length : 0;
+}
+
 export function IfaceConfigSummary({ iface, className }: { iface: Iface; className?: string }) {
   const c = iface.config ?? {};
   let text: string;
@@ -254,6 +259,9 @@ export function IfaceConfigSummary({ iface, className }: { iface: Iface; classNa
       case "vlan": {
         const parent = iface.parentName ?? cfgString(c, "parent") ?? "—";
         text = `VLAN ${iface.vlanId ?? "—"} on ${parent}`;
+        const ip = cfgString(c, "ip");
+        const prefix = cfgNumber(c, "cidrPrefix");
+        if (ip) text += ` · ${ip}${prefix != null ? `/${prefix}` : ""}`;
         break;
       }
       case "bridge": {
@@ -261,10 +269,16 @@ export function IfaceConfigSummary({ iface, className }: { iface: Iface; classNa
         text = `bridge · ${members.length} member${members.length === 1 ? "" : "s"}`;
         if (cfgBool(c, "stp")) text += ` · ${cfgString(c, "stpMode") ?? "stp"}`;
         if (cfgBool(c, "igmpSnooping")) text += " · igmp";
+        const ip = cfgString(c, "ip");
+        const prefix = cfgNumber(c, "cidrPrefix");
+        if (ip) text += ` · ${ip}${prefix != null ? `/${prefix}` : ""}`;
         break;
       }
       case "bond": {
         text = `bond · ${cfgString(c, "mode") ?? "—"}${cfgStringArray(c, "members").length > 0 ? ` · ${cfgStringArray(c, "members").length} link(s)` : ""}`;
+        const ip = cfgString(c, "ip");
+        const prefix = cfgNumber(c, "cidrPrefix");
+        if (ip) text += ` · ${ip}${prefix != null ? `/${prefix}` : ""}`;
         break;
       }
       case "gre": {
@@ -285,6 +299,9 @@ export function IfaceConfigSummary({ iface, className }: { iface: Iface; classNa
         text = "—";
     }
   }
+
+  const aliases = secondaryCount(c);
+  if (aliases > 0) text += ` · +${aliases} alias${aliases === 1 ? "" : "es"}`;
 
   return <span className={cn("font-mono text-xs text-zinc-600 dark:text-zinc-300", className)}>{text}</span>;
 }

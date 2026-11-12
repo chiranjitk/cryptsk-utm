@@ -19,6 +19,17 @@ export const ifaceNameSchema = z
   .string()
   .regex(/^[a-z0-9-]{1,15}$/, "Must match ^[a-z0-9-]{1,15}$ (e.g. wan0, vlan10, br-lan)");
 
+/** Secondary (alias) IPv4 address on an interface — enterprise addressing. */
+export const secondaryIpSchema = z.object({
+  ip: ipv4Schema,
+  cidrPrefix: z.number().int().min(1).max(32),
+});
+export const secondaryIpsSchema = z
+  .array(secondaryIpSchema)
+  .max(8, "At most 8 secondary addresses per interface");
+
+export type SecondaryIp = z.infer<typeof secondaryIpSchema>;
+
 /** CIDR grammar (M02 §5) with prefix ≤ 32 (octets still range-checked). */
 export const cidrSchema = z
   .string()
@@ -29,7 +40,16 @@ export const cidrSchema = z
     return Number(prefix) <= 32 && octets.every((o) => o >= 0 && o <= 255);
   }, "Prefix must be 0-32 and each octet 0-255");
 
-const L3_FIELD_KEYS = ["ip", "cidrPrefix", "gateway", "wanType", "dns"] as const;
+const L3_FIELD_KEYS = ["ip", "cidrPrefix", "gateway", "wanType", "dns", "secondaryIps"] as const;
+
+/** L3 addressing shared by logical L3 interfaces (vlan/bridge/bond) on create. */
+const logicalAddressing = {
+  ip: ipv4Schema.optional(),
+  cidrPrefix: z.number().int().min(1).max(32).optional(),
+  gateway: ipv4Schema.nullish(),
+  dns: z.array(ipv4Schema).max(4, "At most 4 DNS servers").optional(),
+  secondaryIps: secondaryIpsSchema.optional(),
+};
 
 /** First L3 field present on an l2-mode payload, else null (M02 §5). */
 function firstL3FieldOnL2(mode: string | undefined, v: Record<string, unknown>): string | null {
@@ -60,6 +80,7 @@ const vlanIfaceCreate = z.object({
   name: ifaceNameSchema,
   parent: ifaceNameSchema,
   vlanId: z.number().int().min(1).max(4094),
+  ...logicalAddressing,
   ...ifaceCommonFields,
   ...l3ModeField,
 });
@@ -70,7 +91,10 @@ const bridgeIfaceCreate = z.object({
   members: z.array(ifaceNameSchema).min(1, "Bridge needs at least 1 member"),
   stp: z.boolean().optional(),
   stpMode: z.enum(["stp", "rstp"]).optional(),
+  stpPriority: z.number().int().min(0).max(65535).optional(),
+  forwardDelay: z.number().int().min(4).max(30).optional(),
   igmpSnooping: z.boolean().optional(),
+  ...logicalAddressing,
   ...ifaceCommonFields,
   ...l3ModeField,
 });
@@ -82,6 +106,9 @@ const bondIfaceCreate = z.object({
   // NOTE: a bond's `mode` is its aggregation mode — the l2|l3 toggle is not
   // part of the create payload for bonds (defaults to l3; settable via PUT).
   mode: z.enum(["active-backup", "802.3ad", "balance-xor"]),
+  lacpRate: z.enum(["slow", "fast"]).optional(),
+  miimon: z.number().int().min(0).max(1000).optional(),
+  ...logicalAddressing,
   ...ifaceCommonFields,
 });
 
@@ -168,6 +195,12 @@ export const ifaceUpdateSchema = z
     cidrPrefix: z.number().int().min(1).max(32).optional(),
     gateway: ipv4Schema.nullish(),
     dns: z.array(ipv4Schema).max(4, "At most 4 DNS servers").optional(),
+    secondaryIps: secondaryIpsSchema.optional(),
+    // physical NIC hints (best-effort on apply — NIC dependent)
+    speed: z.enum(["auto", "10", "100", "1000", "10000"]).optional(),
+    duplex: z.enum(["half", "full"]).optional(),
+    /** reference-conflict override for disable/L2 switches (409 → force) */
+    force: z.boolean().optional(),
     pppoe: z
       .object({
         user: z.string().min(1),
@@ -190,16 +223,37 @@ export type IfaceUpdateBody = z.infer<typeof ifaceUpdateSchema>;
 
 // ── per-type config patches (applied to the merged config by the service) ──
 
-export const vlanConfigPatch = z.object({ parent: ifaceNameSchema.optional() });
+export const vlanConfigPatch = z.object({
+  parent: ifaceNameSchema.optional(),
+  ip: ipv4Schema.optional(),
+  cidrPrefix: z.number().int().min(1).max(32).optional(),
+  gateway: ipv4Schema.nullish(),
+  dns: z.array(ipv4Schema).max(4).optional(),
+  secondaryIps: secondaryIpsSchema.optional(),
+});
 export const bridgeConfigPatch = z.object({
   members: z.array(ifaceNameSchema).min(1).optional(),
   stp: z.boolean().optional(),
   stpMode: z.enum(["stp", "rstp"]).optional(),
+  stpPriority: z.number().int().min(0).max(65535).optional(),
+  forwardDelay: z.number().int().min(4).max(30).optional(),
   igmpSnooping: z.boolean().optional(),
+  ip: ipv4Schema.optional(),
+  cidrPrefix: z.number().int().min(1).max(32).optional(),
+  gateway: ipv4Schema.nullish(),
+  dns: z.array(ipv4Schema).max(4).optional(),
+  secondaryIps: secondaryIpsSchema.optional(),
 });
 export const bondConfigPatch = z.object({
   members: z.array(ifaceNameSchema).min(2, "Bond needs at least 2 members").optional(),
   mode: z.enum(["active-backup", "802.3ad", "balance-xor"]).optional(),
+  lacpRate: z.enum(["slow", "fast"]).optional(),
+  miimon: z.number().int().min(0).max(1000).optional(),
+  ip: ipv4Schema.optional(),
+  cidrPrefix: z.number().int().min(1).max(32).optional(),
+  gateway: ipv4Schema.nullish(),
+  dns: z.array(ipv4Schema).max(4).optional(),
+  secondaryIps: secondaryIpsSchema.optional(),
 });
 export const greConfigPatch = z.object({
   local: ipv4Schema.optional(),
