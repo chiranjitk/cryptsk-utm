@@ -5,7 +5,7 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { buildApplyPlan, buildDeletePlan } from "@/lib/network/iface-os";
+import { buildApplyPlan, buildDeletePlan, diffIfaceOs } from "@/lib/network/iface-os";
 import { protectedIfaces } from "@/lib/network/iface-apply";
 import type { IfaceRuleView } from "@/lib/network/iface-rules";
 import type { RealInterface } from "@/lib/host/proc";
@@ -151,7 +151,6 @@ describe("L2 conversion address handling", () => {
   });
 
   test("l2 port with kernel IPv4 reports ip-extra drift", () => {
-    const { diffIfaceOs } = require("@/lib/network/iface-os") as typeof import("@/lib/network/iface-os");
     const d = diffIfaceOs(view({ name: "ens34", mode: "l2" }), os({ name: "ens34", ipv4: ["20.20.30.2"] }));
     expect(d.inSync).toBe(false);
     expect(d.drift).toContainEqual({ field: "ip-extra", db: "(l2 — no addressing)", os: "20.20.30.2" });
