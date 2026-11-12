@@ -156,3 +156,22 @@ describe("L2 conversion address handling", () => {
     expect(d.drift).toContainEqual({ field: "ip-extra", db: "(l2 — no addressing)", os: "20.20.30.2" });
   });
 });
+
+// ── creation carries the console MTU (bond/bridge enslave parity) ─────────
+
+describe("buildApplyPlan creation MTU", () => {
+  test("new bond gets an explicit mtu step before member enslaving", () => {
+    const plan = buildApplyPlan(
+      view({ name: "bond0", type: "bond", mtu: 1400, config: { members: ["eth0", "eth1"], mode: "active-backup" } }),
+      undefined,
+    );
+    const cmds = plan.steps.map((s) => s.cmd);
+    expect(cmds).toContain("ip link set bond0 mtu 1400");
+    expect(cmds.indexOf("ip link set bond0 mtu 1400")).toBeLessThan(cmds.indexOf("ip link set eth0 master bond0"));
+  });
+
+  test("missing physical emits no creation steps (incl. no MTU)", () => {
+    const plan = buildApplyPlan(view({ name: "eth9", type: "physical", mtu: 9000 }), undefined);
+    expect(plan.steps).toHaveLength(0);
+  });
+});

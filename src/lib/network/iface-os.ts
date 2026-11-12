@@ -222,6 +222,12 @@ export function buildApplyPlan(
         // physical/tunnels cannot be conjured by the console
         break;
     }
+    if (steps.length > 0 && view.type !== "loopback") {
+      // creation must carry the console MTU — bonds/bridges enforce their MTU
+      // onto members at enslave time, so a stale kernel default (1500) breaks
+      // enslaving of smaller-MTU members (kernel dev_set_mtu ERANGE)
+      steps.push({ cmd: `ip link set ${name} mtu ${view.mtu}`, summary: `MTU ${view.mtu} on new interface` });
+    }
   } else if (os.mtu != null && os.mtu !== view.mtu) {
     steps.push({ cmd: `ip link set ${name} mtu ${view.mtu}`, summary: `MTU ${os.mtu} -> ${view.mtu}` });
   }
