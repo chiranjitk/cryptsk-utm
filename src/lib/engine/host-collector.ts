@@ -219,6 +219,7 @@ class HostCollector {
 
   private async tick(): Promise<void> {
     this.tickNo += 1;
+    const t0 = Date.now();
     try {
       const tickPayload = await this.sampleMetrics();
       if (tickPayload) {
@@ -230,8 +231,17 @@ class HostCollector {
       if (this.tickNo % SOURCES_EVERY === 0) await this.realSourcesStep().catch(() => {});
       if (this.tickNo % SLOW_EVERY === 0) await this.slowStep().catch(() => {});
       await this.thresholdStep(tickPayload).catch(() => {});
+      // pipeline watchdog: a hung stage delays every subsequent tick — surface it
+      const dt = Date.now() - t0;
+      if (dt > 15_000 && this.tickNo % 15 === 0) {
+        console.warn(`[host-collector] tick #${this.tickNo} took ${dt}ms — a pipeline stage is stalling`);
+      }
     } catch (err) {
       console.error("[host-collector] tick error:", err instanceof Error ? err.message : err);
+    }
+    // stage-flow visibility (first 30 ticks of each process, then sampled)
+    if (this.tickNo <= 30 || this.tickNo % 15 === 0) {
+      console.log(`[host-collector] tick #${this.tickNo} done in ${Date.now() - t0}ms`);
     }
   }
 
@@ -302,6 +312,8 @@ class HostCollector {
   // ── WAN probes (real gateway TCP checks) ───────────────────────────────────
 
   private async wanProbeStep(): Promise<void> {
+    const verbose = this.tickNo <= 30 || this.tickNo % 150 === 0;
+    const t0 = Date.now();
     // re-read WAN policies periodically (admin adds rows after boot)
     try {
       const wans = await db.wanPolicy.findMany({ where: { tenantId: 1 }, select: { interfaceName: true, enabled: true } });
@@ -315,6 +327,7 @@ class HostCollector {
     }
     for (const [iface] of this.wanProbes) {
       const result = await probeGateway(iface);
+      if (verbose) console.log(`[host-collector] wan probe ${iface} → ${result.state} (${Date.now() - t0}ms)`);
       const prev = this.wanProbes.get(iface)!;
       this.wanProbes.set(iface, { ...result, lastTs: Date.now() });
       if (prev.state !== result.state) {
@@ -335,6 +348,8 @@ class HostCollector {
   // ── real optional sources (suricata / nft / wg / unbound) ──────────────────
 
   private async realSourcesStep(): Promise<void> {
+    const verbose = this.tickNo <= 30 || this.tickNo % 150 === 0;
+    const t0 = Date.now();
     if (this.evePath === undefined) this.evePath = await detectSuricataEve();
     if (this.evePath) await this.suricataStep();
 
@@ -344,6 +359,7 @@ class HostCollector {
     await this.wireguardStep();
     await this.kernelFirewallLogStep();
     this.journalSince = new Date(Date.now() - 12_000);
+    if (verbose) console.log(`[host-collector] realSources done in ${Date.now() - t0}ms`);
   }
 
   /** Suricata eve.json → real ipsEvent rows + live tail. */

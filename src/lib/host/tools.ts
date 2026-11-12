@@ -256,7 +256,10 @@ export async function readGatewayFor(iface: string): Promise<string | null> {
       const f = line.trim().split(/\s+/);
       if (f.length >= 3 && f[0] === iface && f[2] !== "00000000") {
         const hex = f[2];
-        const bytes = [0, 2, 4, 6].map((i) => parseInt(hex.slice(i, i + 2), 16));
+        // /proc/net/route stores addresses as 32-bit LITTLE-ENDIAN words —
+        // the bytes appear in REVERSE octet order and must be reversed back
+        // (e.g. 103.244.7.217 → file "d907f467" → [217,7,244,103] → reversed).
+        const bytes = [0, 2, 4, 6].map((i) => parseInt(hex.slice(i, i + 2), 16)).reverse();
         return bytes.join(".");
       }
     }
