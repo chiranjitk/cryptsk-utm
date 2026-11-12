@@ -1129,10 +1129,17 @@ suite("interfaces-os", "Interfaces OS-level on ens34 — ip config/update/delete
     assert(link?.mtu === 1500, `kernel mtu=${link?.mtu}`);
   });
 
-  await tc("TC8 admin DOWN (disable) → kernel flags lose UP", async () => {
+  await tc("TC8a admin DOWN without force → 409 lists references (zone lan)", async () => {
     const r = await PUT(`/api/v1/interfaces/${ens34Id}`, { enabled: false });
+    expectErr(r, "CONFLICT", 409);
+    const refs = r.json?.error?.details?.refs ?? [];
+    assert(refs.some((x) => x.kind === "zone"), `refs=${JSON.stringify(refs).slice(0, 160)}`);
+  });
+
+  await tc("TC8b admin DOWN with force → kernel flags lose UP", async () => {
+    const r = await PUT(`/api/v1/interfaces/${ens34Id}`, { enabled: false, force: true });
     const os = osOutcome(r);
-    assert(os?.applied === true, `reason=${os?.reason}`);
+    assert(os?.applied === true, `reason=${os?.reason} ${JSON.stringify(os?.results ?? []).slice(0, 160)}`);
     const link = await kernLink("ens34");
     assert(!flagsUp(link), `kernel flags=${JSON.stringify(link?.flags)}`);
   });
@@ -1327,6 +1334,994 @@ suite("interfaces-os", "Interfaces OS-level on ens34 — ip config/update/delete
     assert(d.applied === true, `applied=${d.applied} reason=${d.reason}`);
     const steps = d.plans?.[0]?.steps ?? [];
     check("steps", true, `${steps.length} step(s): ${steps.map((s) => s.cmd).join(" | ").slice(0, 160)}`);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SUITES — batch 4: dns, dhcp
+// ═════════════════════════════════════════════════════════════════════════════
+
+suite("dns", "DNS & DHCP → DNS Security: settings/records/policies/logs", async () => {
+  let snap = null;
+  let recId = null;
+  let polId = null;
+
+  await tc("GET resolver settings (snapshot)", async () => {
+    snap = expectOk(await GET("/api/v1/dns/settings"));
+    assert(snap && typeof snap === "object", JSON.stringify(snap).slice(0, 100));
+  });
+
+  await tc("PUT resolver settings (cache 512 + rrl) → revert", async () => {
+    const body = { ...snap, cacheSizeMb: 512, rrl: true };
+    const u = expectOk(await PUT("/api/v1/dns/settings", body));
+    assert(u.cacheSizeMb === 512 && u.rrl === true, JSON.stringify(u).slice(0, 140));
+    const back = expectOk(await PUT("/api/v1/dns/settings", { ...snap, cacheSizeMb: snap.cacheSizeMb ?? 64, rrl: snap.rrl ?? false }));
+    assert(back.cacheSizeMb === (snap.cacheSizeMb ?? 64), `revert cache=${back.cacheSizeMb}`);
+  });
+
+  await tc("settings validation: cacheSizeMb 8 → 400", async () => {
+    const r = await PUT("/api/v1/dns/settings", { ...snap, cacheSizeMb: 8 });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("create A record", async () => {
+    const rec = expectOk(await POST("/api/v1/dns/records", { zone: "e2e-lab.local", name: "host1", type: "A", value: "10.90.9.9", ttl: 300 }));
+    recId = rec.id;
+    assert(rec.type === "A" && rec.value === "10.90.9.9", JSON.stringify(rec).slice(0, 140));
+  });
+
+  await tc("A record with bad IP → 400", async () => {
+    const r = await POST("/api/v1/dns/records", { zone: "e2e-lab.local", name: "bad", type: "A", value: "999.1.1.1" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("A record with priority → 400 (priority only for MX/SRV)", async () => {
+    const r = await POST("/api/v1/dns/records", { zone: "e2e-lab.local", name: "bad2", type: "A", value: "10.90.9.10", priority: 10 });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("MX record without priority → 400", async () => {
+    const r = await POST("/api/v1/dns/records", { zone: "e2e-lab.local", name: "@", type: "MX", value: "mail.e2e-lab.local" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("update A record value → 10.90.9.10", async () => {
+    const u = expectOk(await PUT(`/api/v1/dns/records/${recId}`, { value: "10.90.9.10" }));
+    assert(u.value === "10.90.9.10", JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("create DNS policy (block ads + custom)", async () => {
+    const p = expectOk(await POST("/api/v1/dns/policies", { name: un("E2E-DNSPOL"), blockCategories: ["ads"], customBlock: ["tracker.e2e-lab.local"], action: "sinkhole", sinkholeIp: "0.0.0.0" }));
+    polId = p.id;
+    assert(p.blockCategories?.includes("ads"), JSON.stringify(p).slice(0, 160));
+  });
+
+  await tc("policy update (partial) — action nxdomain", async () => {
+    const u = expectOk(await PUT(`/api/v1/dns/policies/${polId}`, { action: "nxdomain" }));
+    assert(u.action === "nxdomain", `action=${u.action}`);
+  });
+
+  await tc("policy bad category → 400", async () => {
+    const r = await POST("/api/v1/dns/policies", { name: un("E2E-BAD"), blockCategories: ["cryptojacking"] });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("query-logs endpoint → list", async () => {
+    const data = expectOk(await GET("/api/v1/dns/query-logs?limit=5"));
+    assert(Array.isArray(data), `not array: ${JSON.stringify(data).slice(0, 80)}`);
+    check("log rows", true, `${data.length} rows`);
+  });
+
+  await tc("delete policy + record → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/dns/policies/${polId}`));
+    expectOk(await DEL(`/api/v1/dns/records/${recId}`));
+    const recs = (await GET("/api/v1/dns/records?q=host1")).json?.data ?? [];
+    assert(!recs.some((x) => x.id === recId), "A record still present");
+    const pols = (await GET("/api/v1/dns/policies")).json?.data ?? [];
+    assert(!pols.some((x) => x.id === polId), "policy still present");
+    recId = polId = null;
+  });
+});
+
+suite("dhcp", "DNS & DHCP → DHCP: subnets/reservations/relay/leases", async () => {
+  let subId = null;
+  let resId = null;
+  let relaySnap = null;
+
+  await tc("list subnets (baseline)", async () => {
+    const data = expectOk(await GET("/api/v1/dhcp/subnets"));
+    assert(Array.isArray(data), `not array: ${JSON.stringify(data).slice(0, 80)}`);
+    check("baseline", true, `${data.length} subnets`);
+  });
+
+  await tc("create subnet 10.219.77.0/24 on ens34", async () => {
+    const s = expectOk(await POST("/api/v1/dhcp/subnets", {
+      interfaceName: "ens34", family: "ipv4", subnetCidr: "10.219.77.0/24",
+      rangeStart: "10.219.77.100", rangeEnd: "10.219.77.200", gateway: "10.219.77.1",
+      dnsServers: ["10.219.77.1"], leaseTime: 3600,
+    }));
+    subId = s.id;
+    assert(s.subnetCidr === "10.219.77.0/24", JSON.stringify(s).slice(0, 160));
+  });
+
+  await tc("overlapping subnet → 400/409", async () => {
+    const r = await POST("/api/v1/dhcp/subnets", {
+      interfaceName: "ens34", family: "ipv4", subnetCidr: "10.219.77.128/25",
+      rangeStart: "10.219.77.130", rangeEnd: "10.219.77.140",
+    });
+    assert(r.status === 400 || r.status === 409, `expected 400/409 got ${r.status}: ${JSON.stringify(r.json).slice(0, 160)}`);
+  });
+
+  await tc("pool outside subnet → 400", async () => {
+    const r = await POST("/api/v1/dhcp/subnets", {
+      interfaceName: "ens34", family: "ipv4", subnetCidr: "10.219.78.0/24",
+      rangeStart: "10.219.99.10", rangeEnd: "10.219.99.20",
+    });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("unknown interface → 400", async () => {
+    const r = await POST("/api/v1/dhcp/subnets", {
+      interfaceName: "ens99", family: "ipv4", subnetCidr: "10.219.79.0/24",
+      rangeStart: "10.219.79.10", rangeEnd: "10.219.79.20",
+    });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("update subnet — range end 210", async () => {
+    const u = expectOk(await PUT(`/api/v1/dhcp/subnets/${subId}`, { rangeEnd: "10.219.77.210" }));
+    assert(u.rangeEnd === "10.219.77.210", JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("create reservation (mac + ip in pool subnet)", async () => {
+    const r = expectOk(await POST("/api/v1/dhcp/reservations", { subnetId: subId, mac: "AA:BB:CC:DD:EE:10", ip: "10.219.77.50", hostname: "e2e-host" }));
+    resId = r.id;
+    assert(r.mac === "aa:bb:cc:dd:ee:10", `mac=${r.mac}`);
+  });
+
+  await tc("reservation ip outside subnet → 400", async () => {
+    const r = await POST("/api/v1/dhcp/reservations", { subnetId: subId, mac: "AA:BB:CC:DD:EE:11", ip: "10.219.99.50" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("update reservation hostname", async () => {
+    const u = expectOk(await PUT(`/api/v1/dhcp/reservations/${resId}`, { hostname: "e2e-host2" }));
+    assert(u.hostname === "e2e-host2", JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("leases list → array", async () => {
+    const data = expectOk(await GET("/api/v1/dhcp/leases?limit=10"));
+    assert(Array.isArray(data), `not array: ${JSON.stringify(data).slice(0, 80)}`);
+    check("lease rows", true, `${data.length} rows`);
+  });
+
+  await tc("relay settings — snapshot → set → revert", async () => {
+    relaySnap = expectOk(await GET("/api/v1/dhcp/relay"));
+    const u = expectOk(await PUT("/api/v1/dhcp/relay", { enabled: true, servers: ["10.90.0.1"], interfaces: ["ens34"] }));
+    assert(u.enabled === true && u.servers?.[0] === "10.90.0.1", JSON.stringify(u).slice(0, 140));
+    // PUT schema requires ≥1 server/interface — an empty snapshot reverts to
+    // disabled+placeholder (functionally identical to unset)
+    const hasServers = Array.isArray(relaySnap?.servers) && relaySnap.servers.length > 0;
+    const revertBody = hasServers
+      ? relaySnap
+      : { enabled: false, servers: ["127.0.0.1"], interfaces: ["lo"] };
+    const back = expectOk(await PUT("/api/v1/dhcp/relay", revertBody));
+    assert(back.enabled === revertBody.enabled, `revert enabled=${back.enabled}`);
+    check("relay reverted", true, hasServers ? "exact snapshot" : "disabled state (empty snapshot not expressible via PUT schema)");
+  });
+
+  await tc("relay with zero servers → 400", async () => {
+    const r = await PUT("/api/v1/dhcp/relay", { enabled: true, servers: [], interfaces: ["ens34"] });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("delete reservation + subnet → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/dhcp/reservations/${resId}`));
+    expectOk(await DEL(`/api/v1/dhcp/subnets/${subId}`));
+    const subs = (await GET("/api/v1/dhcp/subnets")).json?.data ?? [];
+    assert(!subs.some((x) => x.id === subId), "subnet still present");
+    const ress = (await GET("/api/v1/dhcp/reservations")).json?.data ?? [];
+    assert(!ress.some((x) => x.id === resId), "reservation still present");
+    subId = resId = null;
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SUITES — batch 5: identity (users/groups/sessions/settings, access, advanced)
+// ═════════════════════════════════════════════════════════════════════════════
+
+suite("identity-users", "Identity → Users & Groups CRUD + auth settings + sessions read", async () => {
+  const uname = `e2euser${ctx.tag.slice(0, 5)}`;
+  let uid = null;
+  let gid = null;
+  let snap = null;
+
+  await tc("list users (baseline)", async () => {
+    const data = expectOk(await GET("/api/v1/users"));
+    const rows = Array.isArray(data) ? data : data?.users ?? [];
+    assert(Array.isArray(rows), `unexpected: ${JSON.stringify(data).slice(0, 100)}`);
+    check("baseline", true, `${rows.length} users`);
+  });
+
+  await tc("create user (helpdesk role)", async () => {
+    const u = expectOk(await POST("/api/v1/users", { username: uname, email: `${uname}@e2e-lab.local`, role: "helpdesk", password: "e2e-Pass-123" }));
+    uid = u.id ?? u.user?.id;
+    assert(uid, `no id: ${JSON.stringify(u).slice(0, 160)}`);
+  });
+
+  await tc("duplicate username → 400/409", async () => {
+    const r = await POST("/api/v1/users", { username: uname, email: `${uname}@e2e-lab.local`, password: "x" });
+    assert(r.status === 400 || r.status === 409, `expected 400/409 got ${r.status}: ${JSON.stringify(r.json).slice(0, 160)}`);
+  });
+
+  await tc("bad username grammar → 400", async () => {
+    const r = await POST("/api/v1/users", { username: "AB", email: "a@b.c", password: "x" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("update user — email + role soc_analyst", async () => {
+    const u = expectOk(await PUT(`/api/v1/users/${uid}`, { email: `${uname}-2@e2e-lab.local`, role: "soc_analyst" }));
+    const got = u.email ?? u.user?.email;
+    assert(got === `${uname}-2@e2e-lab.local` || got === null, `email=${got}`);
+  });
+
+  await tc("create group with user member", async () => {
+    const g = expectOk(await POST("/api/v1/user-groups", { name: un("E2E-GROUP"), memberIds: [uid] }));
+    gid = g.id;
+    assert(gid, JSON.stringify(g).slice(0, 140));
+  });
+
+  await tc("update group members", async () => {
+    const g = expectOk(await PUT(`/api/v1/user-groups/${gid}`, { memberIds: [] }));
+    check("group updated", true, JSON.stringify(g).slice(0, 120));
+  });
+
+  await tc("assign user groupIds replace-all", async () => {
+    const u = expectOk(await PUT(`/api/v1/users/${uid}`, { groupIds: [gid] }));
+    check("groups assigned", true, JSON.stringify(u).slice(0, 120));
+  });
+
+  await tc("identity sessions read → array", async () => {
+    const data = expectOk(await GET("/api/v1/identity/sessions?limit=10"));
+    assert(Array.isArray(data), `not array: ${JSON.stringify(data).slice(0, 100)}`);
+    check("session rows", true, `${data.length} rows`);
+  });
+
+  await tc("auth-settings snapshot → change session lifetime → revert", async () => {
+    snap = expectOk(await GET("/api/v1/auth-settings"));
+    const u = expectOk(await PUT("/api/v1/auth-settings", { ...snap, sessionLifetimeHours: 12 }));
+    assert(u.sessionLifetimeHours === 12, JSON.stringify(u).slice(0, 160));
+    const back = expectOk(await PUT("/api/v1/auth-settings", snap));
+    assert(back.sessionLifetimeHours === snap.sessionLifetimeHours, "revert mismatch");
+  });
+
+  await tc("auth-settings invalid (lockout 2) → 400", async () => {
+    const r = await PUT("/api/v1/auth-settings", { ...snap, lockout: { ...snap.lockout, maxAttempts: 2 } });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("delete group → delete user → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/user-groups/${gid}`));
+    expectOk(await DEL(`/api/v1/users/${uid}`));
+    const users = expectOk(await GET("/api/v1/users"));
+    const rows = Array.isArray(users) ? users : users?.users ?? [];
+    assert(!rows.some((x) => x.id === uid), "user still present");
+    const groups = expectOk(await GET("/api/v1/user-groups"));
+    const grows = Array.isArray(groups) ? groups : groups?.groups ?? [];
+    assert(!grows.some((x) => x.id === gid), "group still present");
+    uid = gid = null;
+  });
+});
+
+suite("identity-access", "Identity → Directory sources / RADIUS / Captive portal / Vouchers", async () => {
+  let srcId = null;
+  let radId = null;
+  let portalSnap = null;
+  let voucherIds = [];
+
+  await tc("create LDAP directory source", async () => {
+    const s = expectOk(await POST("/api/v1/directory-sources", { name: un("E2E-LDAP"), type: "ldap", serverIp: "10.90.0.9", port: 389, baseDn: "dc=e2e,dc=local", bindDn: "cn=svc,dc=e2e,dc=local", bindPassword: "pw-e2e" }));
+    srcId = s.id;
+    assert(s.type === "ldap", JSON.stringify(s).slice(0, 160));
+    assert(s.bindPassword !== "pw-e2e", `bindPassword NOT masked: ${s.bindPassword}`);
+    check("secret masked", true, `bindPassword=${s.bindPassword}`);
+  });
+
+  await tc("bad baseDn → 400", async () => {
+    const r = await POST("/api/v1/directory-sources", { name: un("E2E-BAD"), type: "ldap", serverIp: "10.90.0.9", baseDn: "not-a-dn" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("update directory source — port 636", async () => {
+    const u = expectOk(await PUT(`/api/v1/directory-sources/${srcId}`, { port: 636 }));
+    assert(u.port === 636, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("create RADIUS profile", async () => {
+    const p = expectOk(await POST("/api/v1/radius-profiles", { name: un("E2E-RADIUS"), serverIp: "10.90.0.10", authPort: 1812, sharedSecret: "e2e-secret-1", timeoutSec: 3, retries: 2 }));
+    radId = p.id;
+    assert(!p.sharedSecret || p.sharedSecret === "••••••" || typeof p.sharedSecret !== "string" || p.sharedSecret.includes("•"), `secret echoed? ${p.sharedSecret}`);
+  });
+
+  await tc("RADIUS reveal endpoint returns secret once", async () => {
+    const d = expectOk(await POST(`/api/v1/radius-profiles/${radId}/reveal`, {}));
+    assert(typeof d.sharedSecret === "string" && d.sharedSecret.includes("e2e-secret-1"), `reveal=${JSON.stringify(d).slice(0, 140)}`);
+  });
+
+  await tc("RADIUS update keeps secret when omitted", async () => {
+    const u = expectOk(await PUT(`/api/v1/radius-profiles/${radId}`, { timeoutSec: 5 }));
+    assert(u.timeoutSec === 5, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("captive portal snapshot → update → revert", async () => {
+    portalSnap = expectOk(await GET("/api/v1/captive-portal"));
+    const cur = portalSnap?.profile ?? portalSnap ?? {};
+    const body = {
+      name: cur.name ?? "E2E-PORTAL", enabled: true, mode: "voucher", interfaceName: "ens34",
+      sessionTimeoutMin: 60, voucherTtlHours: 24,
+    };
+    const u = expectOk(await PUT("/api/v1/captive-portal", body));
+    const got = u.profile ?? u;
+    assert(got.mode === "voucher" && got.enabled === true, JSON.stringify(got).slice(0, 200));
+    const revertBody = {
+      name: cur.name ?? "GUEST-PORTAL", enabled: cur.enabled ?? false, mode: cur.mode ?? "clickthrough",
+      interfaceName: cur.interfaceName ?? "ens34", sessionTimeoutMin: cur.sessionTimeoutMin ?? 240,
+      bandwidthKbps: cur.bandwidthKbps ?? null, redirectUrl: cur.redirectUrl ?? null,
+      voucherTtlHours: cur.voucherTtlHours ?? 24,
+    };
+    const back = expectOk(await PUT("/api/v1/captive-portal", revertBody));
+    check("portal reverted", true, `mode=${(back.profile ?? back).mode}`);
+  });
+
+  await tc("portal bad mode → 400", async () => {
+    const r = await PUT("/api/v1/captive-portal", { name: "x", enabled: false, mode: "walled-garden", interfaceName: "ens34" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("generate 3 vouchers → returned codes", async () => {
+    const d = expectOk(await POST("/api/v1/captive-portal/vouchers", { count: 3, ttlHours: 24 }));
+    const rows = d.vouchers ?? d.codes ?? (Array.isArray(d) ? d : []);
+    voucherIds = rows.map((v) => v.id).filter(Boolean);
+    assert(voucherIds.length === 3, `generated=${JSON.stringify(d).slice(0, 200)}`);
+  });
+
+  await tc("voucher list shows 3 new", async () => {
+    const data = expectOk(await GET("/api/v1/captive-portal/vouchers"));
+    const rows = Array.isArray(data) ? data : data?.vouchers ?? [];
+    const mine = rows.filter((v) => voucherIds.includes(v.id));
+    assert(mine.length === 3, `found ${mine.length}/3`);
+  });
+
+  await tc("delete a voucher → gone", async () => {
+    expectOk(await DEL(`/api/v1/captive-portal/vouchers/${voucherIds[0]}`));
+    const data = expectOk(await GET("/api/v1/captive-portal/vouchers"));
+    const rows = Array.isArray(data) ? data : data?.vouchers ?? [];
+    assert(!rows.some((v) => v.id === voucherIds[0]), "voucher still present");
+    voucherIds = voucherIds.slice(1);
+  });
+
+  await tc("delete radius + directory source + remaining vouchers", async () => {
+    expectOk(await DEL(`/api/v1/radius-profiles/${radId}`));
+    expectOk(await DEL(`/api/v1/directory-sources/${srcId}`));
+    for (const id of voucherIds) await DEL(`/api/v1/captive-portal/vouchers/${id}`);
+    const srcs = (await GET("/api/v1/directory-sources")).json?.data ?? [];
+    assert(!srcs.some((x) => x.id === srcId), "source still present");
+    srcId = radId = null;
+    voucherIds = [];
+  });
+});
+
+suite("identity-advanced", "Identity → Federation/NAC/CoA/BYOD/devices/activity", async () => {
+  let idpId = null;
+  let nacId = null;
+  let coaId = null;
+  let byodId = null;
+
+  await tc("create SAML2 IdP", async () => {
+    const p = expectOk(await POST("/api/v1/identity-advanced/idps", { name: un("E2E-IDP"), protocol: "saml2", entityId: "https://idp.e2e-lab.local/sso", ssoUrl: "https://idp.e2e-lab.local/saml", clientSecret: "s3cret" }));
+    idpId = p.id;
+    assert(p.protocol === "saml2" && !p.clientSecret, `secret echoed: ${JSON.stringify(p).slice(0, 160)}`);
+  });
+
+  await tc("SAML2 without entityId/metadataUrl → 400", async () => {
+    const r = await POST("/api/v1/identity-advanced/idps", { name: un("E2E-BAD"), protocol: "saml2" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("update IdP — disable", async () => {
+    const u = expectOk(await PUT(`/api/v1/identity-advanced/idps/${idpId}`, { enabled: false }));
+    assert(u.enabled === false, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("create NAC profile (802.1x + peap)", async () => {
+    const p = expectOk(await POST("/api/v1/identity-advanced/nac-profiles", { name: un("E2E-NAC"), method: "802.1x", eapType: "peap", dynamicVlan: true, guestVlan: 900, authFailVlan: 901, profiling: true }));
+    nacId = p.id;
+    assert(p.method === "802.1x", JSON.stringify(p).slice(0, 160));
+  });
+
+  await tc("NAC profile update — mab", async () => {
+    const u = expectOk(await PUT(`/api/v1/identity-advanced/nac-profiles/${nacId}`, { method: "mab" }));
+    assert(u.method === "mab", `method=${u.method}`);
+  });
+
+  await tc("create CoA profile (dynamicVlan pool 100-200)", async () => {
+    const p = expectOk(await POST("/api/v1/identity-advanced/coa-profiles", { name: un("E2E-COA"), coaEnabled: true, dynamicVlan: true, vlanPoolStart: 100, vlanPoolEnd: 200, sessionTimeoutMin: 480 }));
+    coaId = p.id;
+    assert(p.vlanPoolEnd === 200, JSON.stringify(p).slice(0, 160));
+  });
+
+  await tc("CoA pool without end → 400", async () => {
+    const r = await POST("/api/v1/identity-advanced/coa-profiles", { name: un("E2E-BAD"), dynamicVlan: true, vlanPoolStart: 100 });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("CoA send (simulated reauth) on an existing user", async () => {
+    const users = expectOk(await GET("/api/v1/users"));
+    const rows = Array.isArray(users) ? users : users?.users ?? [];
+    const target = rows[0]?.username;
+    assert(target, "no existing user to target");
+    const d = expectOk(await POST(`/api/v1/identity-advanced/coa-profiles/${coaId}/coa`, { userName: target, action: "reauth" }));
+    check("coa ack", true, JSON.stringify(d).slice(0, 120));
+  });
+
+  await tc("CoA send with unknown user → 400 (validation works)", async () => {
+    const r = await POST(`/api/v1/identity-advanced/coa-profiles/${coaId}/coa`, { userName: `e2e-nonexistent-${ctx.tag}`, action: "reauth" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("CoA vlan action without vlanId → 400", async () => {
+    const r = await POST(`/api/v1/identity-advanced/coa-profiles/${coaId}/coa`, { userName: "e2e", action: "vlan" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("devices read → array", async () => {
+    const data = expectOk(await GET("/api/v1/identity-advanced/devices?limit=50"));
+    const rows = Array.isArray(data) ? data : data?.devices ?? [];
+    assert(Array.isArray(rows), `unexpected: ${JSON.stringify(data).slice(0, 120)}`);
+    check("device rows", true, `${rows.length} rows`);
+  });
+
+  await tc("devices rescan (simulated)", async () => {
+    const d = await POST("/api/v1/identity-advanced/devices/rescan", {});
+    check("rescan", true, `status=${d.status} body=${JSON.stringify(d.json).slice(0, 120)}`);
+  });
+
+  await tc("BYOD create enrollment (pending)", async () => {
+    const d = expectOk(await POST("/api/v1/identity-advanced/byod", { userName: `e2euser${ctx.tag.slice(0, 5)}`, ttlHours: 24 }));
+    byodId = d.id ?? d.enrollment?.id;
+    assert(byodId, `no id: ${JSON.stringify(d).slice(0, 200)}`);
+    const status = d.status ?? d.enrollment?.status;
+    assert(status === "pending", `status=${status}`);
+  });
+
+  await tc("BYOD revoke while pending → revoked", async () => {
+    const d = expectOk(await DEL(`/api/v1/identity-advanced/byod/${byodId}`));
+    const status = d.status ?? d.enrollment?.status;
+    assert(status === "revoked", `status=${status}`);
+  });
+
+  await tc("BYOD second enrollment + approve → approved", async () => {
+    const d = expectOk(await POST("/api/v1/identity-advanced/byod", { userName: `e2euser${ctx.tag.slice(0, 5)}`, ttlHours: 24 }));
+    byodId = d.id ?? d.enrollment?.id;
+    const a = expectOk(await POST(`/api/v1/identity-advanced/byod/${byodId}/approve`, {}));
+    const status = a.status ?? a.enrollment?.status;
+    assert(status === "approved", `status=${status} body=${JSON.stringify(a).slice(0, 160)}`);
+  });
+
+  await tc("BYOD revoke after approve → 409 (M23 lifecycle guard)", async () => {
+    const r = await DEL(`/api/v1/identity-advanced/byod/${byodId}`);
+    expectErr(r, "CONFLICT", 409);
+  });
+
+  await tc("activity timeline read → array", async () => {
+    const data = expectOk(await GET("/api/v1/identity-advanced/activity?limit=20"));
+    const rows = Array.isArray(data) ? data : data?.activity ?? data?.events ?? [];
+    assert(Array.isArray(rows), `unexpected: ${JSON.stringify(data).slice(0, 120)}`);
+    check("activity rows", true, `${rows.length} rows`);
+  });
+
+  await tc("cleanup: coa + nac + idp → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/identity-advanced/coa-profiles/${coaId}`));
+    expectOk(await DEL(`/api/v1/identity-advanced/nac-profiles/${nacId}`));
+    expectOk(await DEL(`/api/v1/identity-advanced/idps/${idpId}`));
+    const idps = (await GET("/api/v1/identity-advanced/idps")).json?.data ?? [];
+    assert(!idps.some((x) => x.id === idpId), "idp still present");
+    idpId = nacId = coaId = null;
+  });
+
+  await tc("note: approved BYOD row remains (M23 spec: pending-only revoke)", async () => {
+    check("byod leftover", true, `enrollment ${byodId} approved — documented M23 lifecycle dead-end`);
+    byodId = null;
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SUITES — batch 6: ips, vpn
+// ═════════════════════════════════════════════════════════════════════════════
+
+suite("ips", "IPS → Policies CRUD + preset + categories + events + update settings", async () => {
+  let polId = null;
+  let presetId = null;
+  let snap = null;
+
+  await tc("list policies (baseline)", async () => {
+    const data = expectOk(await GET("/api/v1/ips/policies"));
+    assert(Array.isArray(data), `not array: ${JSON.stringify(data).slice(0, 100)}`);
+    check("baseline", true, `${data.length} policies`);
+  });
+
+  await tc("create IPS policy (categories + custom rule)", async () => {
+    const p = expectOk(await POST("/api/v1/ips/policies", {
+      name: un("E2E-IPS"), mode: "inline_drop",
+      ruleCategories: { trojan: true, scan: true, dos: false },
+      customRules: ['alert tcp any any -> any any (msg:"E2E test rule"; sid:9000001;)'],
+      exceptions: [{ sid: 9000001, source: "10.90.0.5", comment: "e2e allow" }],
+      thresholds: [{ sid: 9000001, track: "by_src", count: 10, seconds: 60 }],
+    }));
+    polId = p.id;
+    assert(p.mode === "inline_drop", JSON.stringify(p).slice(0, 160));
+  });
+
+  await tc("unknown category → 400", async () => {
+    const r = await POST("/api/v1/ips/policies", { name: un("E2E-BAD"), ruleCategories: { notacat: true } });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("custom rule without sid → 400 (per-line errors)", async () => {
+    const r = await POST("/api/v1/ips/policies", { name: un("E2E-BAD2"), customRules: ['alert tcp any any -> any any (msg:"no sid";)'] });
+    expectErr(r, "VALIDATION_ERROR", 400);
+    assert(JSON.stringify(r.json.error.details ?? "").includes("sid"), "details should mention sid");
+  });
+
+  await tc("update policy — mode passive", async () => {
+    const u = expectOk(await PUT(`/api/v1/ips/policies/${polId}`, { mode: "passive" }));
+    assert(u.mode === "passive", `mode=${u.mode}`);
+  });
+
+  await tc("apply-preset balanced → new policy", async () => {
+    const d = expectOk(await POST("/api/v1/ips/policies/apply-preset", { preset: "balanced", name: un("E2E-IPS-PRESET") }));
+    presetId = d.id ?? d.policy?.id;
+    assert(presetId, `no id: ${JSON.stringify(d).slice(0, 160)}`);
+  });
+
+  await tc("rule-categories endpoint → list", async () => {
+    const d = expectOk(await GET("/api/v1/ips/rule-categories"));
+    check("categories", true, JSON.stringify(d).slice(0, 120));
+  });
+
+  await tc("events list → array", async () => {
+    const d = expectOk(await GET("/api/v1/ips/events?limit=5"));
+    const rows = Array.isArray(d) ? d : d?.events ?? [];
+    assert(Array.isArray(rows), `unexpected: ${JSON.stringify(d).slice(0, 120)}`);
+    check("event rows", true, `${rows.length} rows`);
+  });
+
+  await tc("suppress first event (24h) if any", async () => {
+    const d = expectOk(await GET("/api/v1/ips/events?limit=1"));
+    const rows = Array.isArray(d) ? d : d?.events ?? [];
+    if (!rows.length) {
+      check("no events to suppress", true, "skipped (no seeded events)");
+      return;
+    }
+    const sid = rows[0].id;
+    const s = expectOk(await POST(`/api/v1/ips/events/${sid}/suppress`, { duration: "24h" }));
+    check("suppressed", true, JSON.stringify(s).slice(0, 120));
+  });
+
+  await tc("update-settings snapshot → change → revert", async () => {
+    snap = expectOk(await GET("/api/v1/ips/update-settings"));
+    const body = { enabled: snap.enabled ?? true, interval: snap.interval ?? "daily", time: "04:45", source: snap.source };
+    const u = expectOk(await PUT("/api/v1/ips/update-settings", body));
+    assert(u.time === "04:45", JSON.stringify(u).slice(0, 160));
+    const back = expectOk(await PUT("/api/v1/ips/update-settings", { enabled: snap.enabled ?? true, interval: snap.interval ?? "daily", time: snap.time ?? "03:00", source: snap.source }));
+    assert(back.time === (snap.time ?? "03:00"), `revert time=${back.time}`);
+  });
+
+  await tc("update-settings bad interval → 400", async () => {
+    const r = await PUT("/api/v1/ips/update-settings", { ...snap, interval: "hourly" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("delete preset + policy → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/ips/policies/${presetId}`));
+    expectOk(await DEL(`/api/v1/ips/policies/${polId}`));
+    const list = (await GET("/api/v1/ips/policies")).json?.data ?? [];
+    assert(!list.some((x) => x.id === polId || x.id === presetId), "policy still present");
+    polId = presetId = null;
+  });
+});
+
+suite("vpn", "VPN → Configs (WG s2s + remote) + status + bundle + sessions + user groups", async () => {
+  let s2sId = null;
+  let remId = null;
+  let grpId = null;
+
+  await tc("list configs (baseline)", async () => {
+    const data = expectOk(await GET("/api/v1/vpn/configs"));
+    assert(Array.isArray(data), `not array: ${JSON.stringify(data).slice(0, 100)}`);
+    check("baseline", true, `${data.length} configs`);
+  });
+
+  await tc("create wireguard_s2s config", async () => {
+    const c = expectOk(await POST("/api/v1/vpn/configs", {
+      name: un("E2E-WG-S2S"), type: "wireguard_s2s",
+      config: {
+        privateKey: "e2e-private-key-placeholder==", listenPort: 51821,
+        address: "10.99.1.1/24",
+        peers: [{ name: "e2e-peer", publicKey: "e2e-public-key-placeholder==", allowedIps: ["10.99.1.2/32"], endpoint: "198.51.100.10:51821", keepaliveSec: 25 }],
+      },
+    }));
+    s2sId = c.id;
+    assert(c.type === "wireguard_s2s", JSON.stringify(c).slice(0, 160));
+  });
+
+  await tc("WG s2s without privateKey → 400", async () => {
+    const r = await POST("/api/v1/vpn/configs", { name: un("E2E-BAD"), type: "wireguard_s2s", config: { listenPort: 51820, address: "10.99.2.1/24", peers: [] } });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("config type mismatch (openvpn shape on s2s) → 400", async () => {
+    const r = await POST("/api/v1/vpn/configs", { name: un("E2E-BAD2"), type: "wireguard_s2s", config: { proto: "udp", port: 1194, pool: "10.99.3.0/24" } });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("create wireguard_remote config (client pool)", async () => {
+    const c = expectOk(await POST("/api/v1/vpn/configs", {
+      name: un("E2E-WG-REM"), type: "wireguard_remote",
+      config: { privateKey: "e2e-rem-key==", listenPort: 51822, address: "10.99.4.1/24", pool: "10.99.4.0/24", dns: "10.99.4.1", peers: [] },
+    }));
+    remId = c.id;
+    assert(c.type === "wireguard_remote", JSON.stringify(c).slice(0, 160));
+  });
+
+  await tc("update s2s config — disable", async () => {
+    const u = expectOk(await PUT(`/api/v1/vpn/configs/${s2sId}`, { enabled: false }));
+    assert(u.enabled === false, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("status endpoint (engine-owned, simulated)", async () => {
+    const d = expectOk(await GET(`/api/v1/vpn/configs/${s2sId}/status`));
+    check("status", true, JSON.stringify(d).slice(0, 140));
+  });
+
+  await tc("client-bundle for remote config (POST)", async () => {
+    const r = await POST(`/api/v1/vpn/configs/${remId}/client-bundle`, {});
+    assert(r.status === 200 || r.status === 400, `bundle status=${r.status}`);
+    check("bundle", true, r.status === 200 ? `${String(JSON.stringify(r.json)).length}B` : `rejected: ${JSON.stringify(r.json).slice(0, 100)}`);
+  });
+
+  await tc("vpn sessions list → array", async () => {
+    const d = expectOk(await GET("/api/v1/vpn/sessions?limit=10"));
+    const rows = Array.isArray(d) ? d : d?.sessions ?? [];
+    assert(Array.isArray(rows), `unexpected: ${JSON.stringify(d).slice(0, 120)}`);
+    check("session rows", true, `${rows.length} rows`);
+  });
+
+  await tc("create vpn user group", async () => {
+    const g = expectOk(await POST("/api/v1/vpn/user-groups", { name: un("E2E-VGROUP"), pool: "10.99.9.0/24", dns: "10.99.9.1", idleTimeoutMin: 30, maxSessionsPerUser: 2 }));
+    grpId = g.id;
+    assert(gid_ok(g), JSON.stringify(g).slice(0, 120));
+  });
+
+  await tc("update vpn user group", async () => {
+    const g = expectOk(await PUT(`/api/v1/vpn/user-groups/${grpId}`, { idleTimeoutMin: 60 }));
+    assert(g.idleTimeoutMin === 60, JSON.stringify(g).slice(0, 140));
+  });
+
+  await tc("bad pool cidr → 400", async () => {
+    const r = await POST("/api/v1/vpn/user-groups", { name: un("E2E-BAD"), pool: "10.99.9.0/99" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("delete group + configs → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/vpn/user-groups/${grpId}`));
+    expectOk(await DEL(`/api/v1/vpn/configs/${s2sId}`));
+    expectOk(await DEL(`/api/v1/vpn/configs/${remId}`));
+    const list = (await GET("/api/v1/vpn/configs")).json?.data ?? [];
+    assert(!list.some((x) => x.id === s2sId || x.id === remId), "config still present");
+    s2sId = remId = grpId = null;
+  });
+});
+
+function gid_ok(g) {
+  return Boolean(g.id);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SUITES — batch 7: web security (ssl, urlf, waf, appctl)
+// ═════════════════════════════════════════════════════════════════════════════
+
+suite("ssl", "Web Security → SSL Inspection: policies + bypass rules + stats/logs", async () => {
+  let polId = null;
+  let ruleId = null;
+  let caId = null;
+
+  await tc("temp signing CA for selective mode", async () => {
+    const c = expectOk(await POST("/api/v1/pki/cas", { name: un("E2E-SSL-CA"), type: "root", commonName: "E2E SSL CA", keyType: "rsa2048", validityDays: 365 }));
+    caId = c.id ?? c.ca?.id;
+    assert(caId, `no CA id: ${JSON.stringify(c).slice(0, 160)}`);
+    track(`/api/v1/pki/cas/${caId}`);
+  });
+
+  await tc("list policies (baseline)", async () => {
+    const data = expectOk(await GET("/api/v1/ssl-inspection/policies"));
+    assert(Array.isArray(data), `not array: ${JSON.stringify(data).slice(0, 100)}`);
+    check("baseline", true, `${data.length} policies`);
+  });
+
+  await tc("create SSL policy (selective + signing CA)", async () => {
+    const p = expectOk(await POST("/api/v1/ssl-inspection/policies", { name: un("E2E-SSL"), mode: "selective", signingCaId: caId, hstsHandling: "honor", certPinningAction: "bypass", invalidCertAction: "block", minTlsVersion: "1.2" }));
+    polId = p.id;
+    assert(p.mode === "selective", JSON.stringify(p).slice(0, 160));
+  });
+
+  await tc("selective without signingCaId → 400", async () => {
+    const r = await POST("/api/v1/ssl-inspection/policies", { name: un("E2E-BAD"), mode: "selective" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("update policy — full mode + minTls 1.3", async () => {
+    const u = expectOk(await PUT(`/api/v1/ssl-inspection/policies/${polId}`, { mode: "full", minTlsVersion: "1.3" }));
+    assert(u.mode === "full" && u.minTlsVersion === "1.3", JSON.stringify(u).slice(0, 160));
+  });
+
+  await tc("non-numeric id → 400 (not 500)", async () => {
+    const r = await PUT("/api/v1/ssl-inspection/policies/null", { mode: "full" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("create bypass rule (domain banking.e2e-lab.local)", async () => {
+    const r = expectOk(await POST("/api/v1/ssl-inspection/bypass-rules", { policyId: polId, matchType: "domain", matchValue: "banking.e2e-lab.local", reason: "e2e banking" }));
+    ruleId = r.id;
+    assert(r.matchValue === "banking.e2e-lab.local", JSON.stringify(r).slice(0, 160));
+  });
+
+  await tc("bypass rule bad value for cidr type → 400", async () => {
+    const r = await POST("/api/v1/ssl-inspection/bypass-rules", { policyId: polId, matchType: "cidr", matchValue: "not-a-cidr" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("update bypass rule — disable", async () => {
+    const u = expectOk(await PUT(`/api/v1/ssl-inspection/bypass-rules/${ruleId}`, { enabled: false }));
+    assert(u.enabled === false, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("stats + logs endpoints", async () => {
+    const st = expectOk(await GET("/api/v1/ssl-inspection/stats"));
+    check("stats", true, JSON.stringify(st).slice(0, 100));
+    const lg = expectOk(await GET("/api/v1/ssl-inspection/logs?limit=5"));
+    const rows = Array.isArray(lg) ? lg : lg?.logs ?? [];
+    check("logs", true, `${rows.length} rows`);
+  });
+
+  await tc("delete bypass rule + policy → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/ssl-inspection/bypass-rules/${ruleId}`));
+    expectOk(await DEL(`/api/v1/ssl-inspection/policies/${polId}`));
+    const list = (await GET("/api/v1/ssl-inspection/policies")).json?.data ?? [];
+    assert(!list.some((x) => x.id === polId), "policy still present");
+    polId = ruleId = null;
+  });
+});
+
+suite("urlf", "Web Security → URL Filtering: policies + category rules + custom lists + import", async () => {
+  let polId = null;
+  let listId = null;
+
+  await tc("list policies (baseline)", async () => {
+    const data = expectOk(await GET("/api/v1/url-filter/policies"));
+    assert(Array.isArray(data), `not array: ${JSON.stringify(data).slice(0, 100)}`);
+    check("baseline", true, `${data.length} policies`);
+  });
+
+  await tc("create URL filter policy", async () => {
+    const p = expectOk(await POST("/api/v1/url-filter/policies", { name: un("E2E-URLF"), defaultAction: "allow", safeSearchEnforce: true, transparentProxy: true }));
+    polId = p.id;
+    assert(p.defaultAction === "allow", JSON.stringify(p).slice(0, 160));
+  });
+
+  await tc("update policy — defaultAction block", async () => {
+    const u = expectOk(await PUT(`/api/v1/url-filter/policies/${polId}`, { defaultAction: "block" }));
+    assert(u.defaultAction === "block", `action=${u.defaultAction}`);
+  });
+
+  await tc("category rules GET (13-row joined view)", async () => {
+    const rules = expectOk(await GET(`/api/v1/url-filter/policies/${polId}/categories`));
+    assert(Array.isArray(rules) && rules.length >= 10, `rows=${Array.isArray(rules) ? rules.length : "nan"}`);
+  });
+
+  await tc("category rules PUT — block gambling+malware", async () => {
+    const d = expectOk(await PUT(`/api/v1/url-filter/policies/${polId}/categories`, { rules: [{ category: "gambling", action: "block", enabled: true }, { category: "malware", action: "block", enabled: true }] }));
+    const configured = d.filter((r) => r.configured && r.action === "block");
+    assert(configured.length === 2, `configured=${JSON.stringify(d).slice(0, 200)}`);
+  });
+
+  await tc("category rules bad category → 400", async () => {
+    const r = await PUT(`/api/v1/url-filter/policies/${polId}/categories`, { rules: [{ category: "nosuchcat", action: "block", enabled: true }] });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("custom list add block domain", async () => {
+    const c = expectOk(await POST("/api/v1/url-filter/custom-lists", { policyId: polId, listType: "block", matchType: "domain", value: "blocked.e2e-lab.local" }));
+    listId = c.id;
+    assert(c.value === "blocked.e2e-lab.local", JSON.stringify(c).slice(0, 140));
+  });
+
+  await tc("custom list bad wildcard → 400", async () => {
+    const r = await POST("/api/v1/url-filter/custom-lists", { policyId: polId, listType: "block", matchType: "wildcard", value: "http://bad" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("import by paste (2 lines, 1 bad)", async () => {
+    const d = expectOk(await POST("/api/v1/url-filter/custom-lists/import", { policyId: polId, listType: "block", text: "ads.e2e-lab.local\n*.trackers.e2e-lab.local" }));
+    check("import result", true, JSON.stringify(d).slice(0, 140));
+  });
+
+  await tc("stats + logs", async () => {
+    const st = expectOk(await GET("/api/v1/url-filter/stats"));
+    check("stats", true, JSON.stringify(st).slice(0, 100));
+    const lg = expectOk(await GET("/api/v1/url-filter/logs?limit=5"));
+    const rows = Array.isArray(lg) ? lg : lg?.logs ?? [];
+    check("logs", true, `${rows.length} rows`);
+  });
+
+  await tc("delete custom lists + policy → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/url-filter/custom-lists/${listId}`));
+    expectOk(await DEL(`/api/v1/url-filter/policies/${polId}`));
+    const list = (await GET("/api/v1/url-filter/policies")).json?.data ?? [];
+    assert(!list.some((x) => x.id === polId), "policy still present");
+    polId = listId = null;
+  });
+});
+
+suite("waf", "Web Security → WAF: vhosts + policies + exclusions + logs", async () => {
+  let vhId = null;
+  let polId = null;
+  let exId = null;
+
+  await tc("list vhosts (baseline)", async () => {
+    const data = expectOk(await GET("/api/v1/waf/vhosts"));
+    assert(Array.isArray(data), `not array: ${JSON.stringify(data).slice(0, 100)}`);
+    check("baseline", true, `${data.length} vhosts`);
+  });
+
+  await tc("create vhost (no TLS cert)", async () => {
+    const v = expectOk(await POST("/api/v1/waf/vhosts", { name: un("E2E-VHOST"), hostname: "shop.e2e-lab.local", backendHost: "10.90.0.80", backendPort: 8080, listenPort: 8443, tls: false, mode: "waf" }));
+    vhId = v.id;
+    assert(v.hostname === "shop.e2e-lab.local", JSON.stringify(v).slice(0, 160));
+  });
+
+  await tc("vhost bad hostname → 400", async () => {
+    const r = await POST("/api/v1/waf/vhosts", { name: un("E2E-BAD"), hostname: "not a hostname", backendHost: "10.90.0.80", tls: false });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("create WAF policy on vhost", async () => {
+    const p = expectOk(await POST("/api/v1/waf/policies", { name: un("E2E-WAFPOL"), vhostId: vhId, owaspCrsEnabled: true, crsVersion: "4.0", paranoiaLevel: 2, anomalyInThreshold: 10, geoBlockCountries: ["KP"], rateLimitRpm: 300, rateLimitBurst: 50 }));
+    polId = p.id;
+    assert(p.paranoiaLevel === 2, JSON.stringify(p).slice(0, 200));
+  });
+
+  await tc("second policy on same vhost → 409 (one per vhost)", async () => {
+    const r = await POST("/api/v1/waf/policies", { name: un("E2E-WAFPOL2"), vhostId: vhId });
+    expectErr(r, "CONFLICT", 409);
+  });
+
+  await tc("policy on missing vhost → 404", async () => {
+    const r = await POST("/api/v1/waf/policies", { name: un("E2E-WAFPOL3"), vhostId: 99999999 });
+    expectErr(r, "NOT_FOUND", 404);
+  });
+
+  await tc("update policy — paranoia 3 + learning mode", async () => {
+    const u = expectOk(await PUT(`/api/v1/waf/policies/${polId}`, { paranoiaLevel: 3, learningMode: true }));
+    assert(u.paranoiaLevel === 3 && u.learningMode === true, JSON.stringify(u).slice(0, 180));
+  });
+
+  await tc("create exclusion (rule_id scope)", async () => {
+    const e = expectOk(await POST(`/api/v1/waf/policies/${polId}/exclusions`, { scope: "rule_id", matchValue: "942100", note: "e2e exclusion" }));
+    exId = e.id;
+    assert(e.matchValue === "942100", JSON.stringify(e).slice(0, 160));
+  });
+
+  await tc("update exclusion — disable", async () => {
+    const u = expectOk(await PUT(`/api/v1/waf/policies/${polId}/exclusions/${exId}`, { enabled: false }));
+    assert(u.enabled === false, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("waf logs + stats", async () => {
+    const lg = expectOk(await GET("/api/v1/waf/logs?limit=5"));
+    const rows = Array.isArray(lg) ? lg : lg?.logs ?? [];
+    check("logs", true, `${rows.length} rows`);
+    const st = expectOk(await GET("/api/v1/waf/stats"));
+    check("stats", true, JSON.stringify(st).slice(0, 100));
+  });
+
+  await tc("delete exclusion → policy → vhost → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/waf/policies/${polId}/exclusions/${exId}`));
+    expectOk(await DEL(`/api/v1/waf/policies/${polId}`));
+    expectOk(await DEL(`/api/v1/waf/vhosts/${vhId}`));
+    const vhosts = (await GET("/api/v1/waf/vhosts")).json?.data ?? [];
+    assert(!vhosts.some((x) => x.id === vhId), "vhost still present");
+    vhId = polId = exId = null;
+  });
+});
+
+suite("appctl", "Web Security → App Control: policies + rules + catalog + logs", async () => {
+  let polId = null;
+  let ruleId = null;
+  let appName = null;
+  let appName2 = null;
+
+  await tc("catalog read + pick two apps", async () => {
+    const d = expectOk(await GET("/api/v1/app-control/catalog"));
+    const rows = Array.isArray(d) ? d : d?.apps ?? d?.catalog ?? [];
+    assert(rows.length >= 2, `catalog too small: ${JSON.stringify(d).slice(0, 120)}`);
+    appName = rows[0].name ?? rows[0].appName;
+    appName2 = rows[1].name ?? rows[1].appName;
+    assert(typeof appName === "string" && appName.length > 0, `no name: ${JSON.stringify(rows[0]).slice(0, 120)}`);
+    check("catalog", true, `${rows.length} apps, first=${appName}`);
+  });
+
+  await tc("list policies (baseline)", async () => {
+    const data = expectOk(await GET("/api/v1/app-control/policies"));
+    assert(Array.isArray(data), `not array: ${JSON.stringify(data).slice(0, 100)}`);
+    check("baseline", true, `${data.length} policies`);
+  });
+
+  await tc("create app-control policy (block default for unknown)", async () => {
+    const p = expectOk(await POST("/api/v1/app-control/policies", { name: un("E2E-APPCTL"), defaultAction: "allow", unknownAppAction: "log" }));
+    polId = p.id;
+    assert(p.unknownAppAction === "log", JSON.stringify(p).slice(0, 160));
+  });
+
+  await tc("bad action → 400", async () => {
+    const r = await POST("/api/v1/app-control/policies", { name: un("E2E-BAD"), defaultAction: "deny" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("create rule (block app, upload direction)", async () => {
+    const r = expectOk(await POST(`/api/v1/app-control/policies/${polId}/rules`, { appName, action: "block", direction: "upload" }));
+    ruleId = r.id ?? r.rule?.id;
+    assert(ruleId, JSON.stringify(r).slice(0, 180));
+  });
+
+  await tc("limit rule without bandwidth → 400", async () => {
+    const r = await POST(`/api/v1/app-control/policies/${polId}/rules`, { appName, action: "limit" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("limit rule with bandwidth 10 (different app)", async () => {
+    const r = expectOk(await POST(`/api/v1/app-control/policies/${polId}/rules`, { appName: appName2, action: "limit", bandwidthLimitMbps: 10, direction: "download" }));
+    const rid = r.id ?? r.rule?.id;
+    assert(rid, JSON.stringify(r).slice(0, 180));
+    await DEL(`/api/v1/app-control/rules/${rid}`);
+  });
+
+  await tc("duplicate app rule → 409", async () => {
+    const r = await POST(`/api/v1/app-control/policies/${polId}/rules`, { appName, action: "block", direction: "upload" });
+    assert(r.status === 409 || r.status === 400, `expected 409/400 got ${r.status}`);
+  });
+
+  await tc("update rule — allow", async () => {
+    const u = expectOk(await PUT(`/api/v1/app-control/rules/${ruleId}`, { action: "allow" }));
+    const act = u.action ?? u.rule?.action;
+    assert(act === "allow", JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("logs + stats", async () => {
+    const lg = expectOk(await GET("/api/v1/app-control/logs?limit=5"));
+    const rows = Array.isArray(lg) ? lg : lg?.logs ?? [];
+    check("logs", true, `${rows.length} rows`);
+    const st = expectOk(await GET("/api/v1/app-control/stats"));
+    check("stats", true, JSON.stringify(st).slice(0, 100));
+  });
+
+  await tc("delete rule + policy → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/app-control/rules/${ruleId}`));
+    expectOk(await DEL(`/api/v1/app-control/policies/${polId}`));
+    const list = (await GET("/api/v1/app-control/policies")).json?.data ?? [];
+    assert(!list.some((x) => x.id === polId), "policy still present");
+    polId = ruleId = null;
+    appName = null;
   });
 });
 

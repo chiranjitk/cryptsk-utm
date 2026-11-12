@@ -9,6 +9,10 @@
 import { z } from "zod";
 import { ApiError } from "@/lib/api/errors";
 
+/** Shared [id] route param grammar — NaN/"null" ids must fail as 400, never
+ *  reach Prisma (a NaN id renders a 500 "Invalid findFirst invocation"). */
+export const idParamSchema = z.object({ id: z.coerce.number().int().min(1) });
+
 // ── locked enums (schema.prisma column comments) ────────────────────────────
 
 export const sslModeSchema = z.enum(["none", "selective", "full"]);
