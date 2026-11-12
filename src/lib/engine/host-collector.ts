@@ -326,7 +326,11 @@ class HostCollector {
       // DB unavailable — keep current state
     }
     for (const [iface] of this.wanProbes) {
-      const result = await probeGateway(iface);
+      const result = (await this.stageTimeout(`probeGateway:${iface}`, probeGateway(iface), 8000)) ?? {
+        state: "unknown" as const,
+        latencyMs: null,
+        detail: "probe watchdog detached",
+      };
       if (verbose) console.log(`[host-collector] wan probe ${iface} → ${result.state} (${Date.now() - t0}ms)`);
       const prev = this.wanProbes.get(iface)!;
       this.wanProbes.set(iface, { ...result, lastTs: Date.now() });
@@ -351,13 +355,13 @@ class HostCollector {
     const verbose = this.tickNo <= 30 || this.tickNo % 150 === 0;
     const t0 = Date.now();
     if (this.evePath === undefined) this.evePath = await detectSuricataEve();
-    if (this.evePath) await this.suricataStep();
+    if (this.evePath) await this.stageTimeout("suricataStep", this.suricataStep(), 5000);
 
     if (this.unboundPath === undefined) this.unboundPath = await detectUnboundLog();
-    if (this.unboundPath) await this.unboundStep();
+    if (this.unboundPath) await this.stageTimeout("unboundStep", this.unboundStep(), 5000);
 
-    await this.wireguardStep();
-    await this.kernelFirewallLogStep();
+    await this.stageTimeout("wireguardStep", this.wireguardStep(), 8000);
+    await this.stageTimeout("kernelFirewallLogStep", this.kernelFirewallLogStep(), 10_000);
     this.journalSince = new Date(Date.now() - 12_000);
     if (verbose) console.log(`[host-collector] realSources done in ${Date.now() - t0}ms`);
   }
@@ -627,6 +631,40 @@ class HostCollector {
   // ── slow cycle: kea leases, interfaces, disk, services ─────────────────────
 
   private slowRunNo = 0;
+  private lastStageWarnAt = 0;
+
+  /**
+   * Hard per-stage watchdog: races `p` against `ms`. A stage that stalls
+   * (spawn wedged, IO hang) is DETACHED with a rate-limited named warning
+   * so the tick pipeline can never be dead-locked by a single source.
+   */
+  private stageTimeout<T>(label: string, p: Promise<T>, ms: number): Promise<T | null> {
+    return new Promise<T | null>((resolve) => {
+      let settled = false;
+      const done = (v: T | null) => {
+        if (!settled) {
+          settled = true;
+          resolve(v);
+        }
+      };
+      const timer = setTimeout(() => {
+        done(null);
+        const now = Date.now();
+        if (now - this.lastStageWarnAt > 300_000) {
+          this.lastStageWarnAt = now;
+          console.warn(`[host-collector] stage "${label}" exceeded ${ms}ms — detached from pipeline (check host: spawn/IO hang?)`);
+        }
+      }, ms);
+      (timer as unknown as { unref?: () => void }).unref?.();
+      p.then((v) => {
+        clearTimeout(timer);
+        done(v);
+      }, () => {
+        clearTimeout(timer);
+        done(null);
+      });
+    });
+  }
 
   /** Whether the last slow cycle reached the services read (null = not probed yet). */
   get servicesProbed(): boolean | null {
@@ -640,12 +678,13 @@ class HostCollector {
     if (verbose) console.log(`[host-collector] slowStep #${this.slowRunNo} (tick ${this.tickNo}) enter`);
 
     if (this.keaPath === undefined) this.keaPath = await detectKeaLeases();
-    if (this.keaPath) await this.keaStep();
+    if (this.keaPath) await this.stageTimeout("keaStep", this.keaStep(), 8000);
 
-    await this.syncRealInterfaces();
+    await this.stageTimeout("syncRealInterfaces", this.syncRealInterfaces(), 12_000);
     if (verbose) console.log(`[host-collector] slowStep #${this.slowRunNo} interfaces synced`);
 
-    await this.refreshDiskAndServices();
+    await this.stageTimeout("refreshDiskAndServices", this.refreshDiskAndServices(), 10_000);
+    if (verbose) console.log(`[host-collector] slowStep #${this.slowRunNo} disk+services refreshed`);
     const dt = Date.now() - t0;
     if (dt > 8000) console.warn(`[host-collector] slowStep #${this.slowRunNo} took ${dt}ms — check earlier stage warnings`);
   }
