@@ -598,6 +598,15 @@ export async function updateIface(
       ? { config: mergePhysicalConfig(existing, body) }
       : await mergeLogicalConfig(tenantId, existing, body);
 
+  // physical L3→L2 switch — the row is scrubbed of ALL L3 config (BR-L2-L3
+  // parity: an L2 port carries no addressing), and OS convergence strips the
+  // kernel address. Only active REFERENCES still require an explicit force.
+  if (existing.type === "physical" && nextMode === "l2" && existing.mode !== "l2") {
+    for (const k of ["ip", "cidrPrefix", "gateway", "dns", "pppoe", "wanType", "secondaryIps"]) {
+      delete merged.config[k];
+    }
+  }
+
   const nextEnabled = body.enabled ?? existing.enabled;
   const candidate: IfaceRuleView = {
     id: existing.id,
@@ -616,17 +625,13 @@ export async function updateIface(
   const disabling = existing.enabled && nextEnabled === false;
   const roleFrom = body.role !== undefined && body.role !== existing.role ? existing.role : null;
 
-  // physical L2 switch — strip addressing/references first (enterprise lockstep)
-  const cfgIp = typeof candidate.config["ip"] === "string" ? (candidate.config["ip"] as string) : null;
+  // physical L2 switch — active references still need an explicit force
   if (existing.type === "physical" && nextMode === "l2" && existing.mode === "l3" && !body.force) {
     const refs = await collectDisableRefs(tenantId, existing.name);
-    if (cfgIp || refs.length > 0) {
+    if (refs.length > 0) {
       throw ApiError.conflict(
-        "Switching to L2 requires stripping the IP addressing and active references first",
-        {
-          refs,
-          addressing: cfgIp ? [cfgIp] : [],
-        },
+        "Switching to L2 requires confirming active references",
+        { refs },
       );
     }
   }
