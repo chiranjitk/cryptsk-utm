@@ -14,12 +14,23 @@ const exec = promisify(execCb);
 
 const EXEC_TIMEOUT_MS = 5000;
 
-/** Cached binary availability (per process). */
+/**
+ * Cached binary availability (per process).
+ * Positives are cached for the process lifetime; negatives are retried after
+ * WHICH_NEG_TTL_MS — a single transient failure at boot (fork hiccup, cgroup
+ * stall) must not permanently black-hole a tool.
+ */
 const whichCache = new Map<string, boolean>();
+const whichCacheAt = new Map<string, number>();
+const WHICH_NEG_TTL_MS = 60_000;
 
 export async function hasTool(bin: string): Promise<boolean> {
   const cached = whichCache.get(bin);
-  if (cached !== undefined) return cached;
+  if (cached === true) return true;
+  if (cached === false) {
+    const at = whichCacheAt.get(bin) ?? 0;
+    if (Date.now() - at < WHICH_NEG_TTL_MS) return false;
+  }
   let ok = false;
   try {
     await exec(`command -v ${JSON.stringify(bin)} >/dev/null 2>&1`, { timeout: 2000, shell: "/bin/sh" });
@@ -28,11 +39,13 @@ export async function hasTool(bin: string): Promise<boolean> {
     ok = false;
   }
   whichCache.set(bin, ok);
+  whichCacheAt.set(bin, Date.now());
   return ok;
 }
 
 export function clearToolCache(): void {
   whichCache.clear();
+  whichCacheAt.clear();
 }
 
 export interface ToolResult {
@@ -120,11 +133,31 @@ export async function readWgPeers(): Promise<WgPeerDump[] | null> {
 
 // ── systemd ─────────────────────────────────────────────────────────────────
 
-/** Batch `systemctl is-active` — returns a map; null when systemctl is absent. */
+/** Rate-limited warning so a persistent tool failure is VISIBLE in logs. */
+let lastServiceWarn = 0;
+function warnServiceRead(reason: string): void {
+  const now = Date.now();
+  if (now - lastServiceWarn < 300_000) return;
+  lastServiceWarn = now;
+  console.warn(`[host-tools] service states unreadable — ${reason}`);
+}
+
+/** Batch `systemctl is-active` — returns a map; null when systemctl is absent or the call failed outright. */
 export async function readServiceStates(units: string[]): Promise<Record<string, string> | null> {
-  if (!(await hasTool("systemctl"))) return null;
+  if (!(await hasTool("systemctl"))) {
+    warnServiceRead('`systemctl` binary not found (re-probed every 60 s)');
+    return null;
+  }
   const res = await runTool(`systemctl is-active -- ${units.map((u) => JSON.stringify(u)).join(" ")}`, 6000);
+  if (!res.ok && !res.stdout.trim()) {
+    // exec failed outright (spawn error / timeout) with nothing to parse
+    warnServiceRead(`systemctl is-active failed: ${res.error ?? "unknown"}${res.stderr ? ` · stderr: ${res.stderr.slice(0, 200)}` : ""}`);
+    return null;
+  }
   const lines = res.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length !== units.length) {
+    warnServiceRead(`systemctl is-active returned ${lines.length} lines for ${units.length} units — suffix units read as "unknown"`);
+  }
   const map: Record<string, string> = {};
   units.forEach((u, i) => {
     map[u] = lines[i] ?? "unknown";

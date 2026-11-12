@@ -610,12 +610,28 @@ class HostCollector {
 
   // ── slow cycle: kea leases, interfaces, disk, services ─────────────────────
 
+  private slowRunNo = 0;
+
+  /** Whether the last slow cycle reached the services read (null = not probed yet). */
+  get servicesProbed(): boolean | null {
+    return this.servicesAvailable;
+  }
+
   private async slowStep(): Promise<void> {
+    const t0 = Date.now();
+    this.slowRunNo += 1;
+    const verbose = this.slowRunNo <= 5 || this.slowRunNo % 10 === 0;
+    if (verbose) console.log(`[host-collector] slowStep #${this.slowRunNo} (tick ${this.tickNo}) enter`);
+
     if (this.keaPath === undefined) this.keaPath = await detectKeaLeases();
     if (this.keaPath) await this.keaStep();
 
     await this.syncRealInterfaces();
+    if (verbose) console.log(`[host-collector] slowStep #${this.slowRunNo} interfaces synced`);
+
     await this.refreshDiskAndServices();
+    const dt = Date.now() - t0;
+    if (dt > 8000) console.warn(`[host-collector] slowStep #${this.slowRunNo} took ${dt}ms — check earlier stage warnings`);
   }
 
   /** Kea memfile leases → real dhcpLease rows (subnet must resolve). */
@@ -711,6 +727,9 @@ class HostCollector {
     const catalogUnits = ["nftables", "suricata", "sshd", "strongswan", "dnsmasq", "chronyd", "snmpd", "conntrackd", "rsyslogd", "unbound", "kea-dhcp4-server", "keepalived"];
     const states = await readServiceStates(catalogUnits);
     this.servicesAvailable = states !== null;
+    if (states && (this.slowRunNo <= 5 || this.slowRunNo % 10 === 0)) {
+      console.log(`[host-collector] service states: ${Object.entries(states).map(([u, s]) => `${u}=${s}`).join(" ")}`);
+    }
     if (states) {
       const changed: string[] = [];
       for (const [unit, state] of Object.entries(states)) {

@@ -144,7 +144,13 @@ function HealthStripCard() {
   const restart = useMutation({
     mutationFn: (name: string) => systemApi.restartService(name),
     onSuccess: (svc) => {
-      toastOk(`Restarting ${svc.name}`, "Simulated apply (~2 s) — service returns to running shortly.");
+      const hostPlane = (status.data?.dataPlane ?? "").startsWith("host");
+      toastOk(
+        `Restarting ${svc.name}`,
+        hostPlane
+          ? "systemctl restart issued on the appliance — status updates on the next poll."
+          : "Simulated apply (~2 s) — service returns to running shortly.",
+      );
       setTimeout(() => void queryClient.invalidateQueries({ queryKey: ["system", "status"] }), 2500);
     },
     onError: (err) => toastErr(err, "Restart failed"),
@@ -179,8 +185,14 @@ function HealthStripCard() {
         </div>
         <div>
           <FieldLabel hint={admin ? undefined : "restart requires admin"}>Services</FieldLabel>
+          {s.servicesObservable === false ? (
+            <p className="mb-1.5 text-[11px] text-zinc-500">
+              systemd states not observable on this host (yet) — service chips show unknown, not stopped
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-1.5">
             {s.services.map((svc) => {
+              const unobservable = s.servicesObservable === false;
               const stopped = svc.state === "stopped";
               const restarting = svc.state === "restarting";
               return (
@@ -188,15 +200,22 @@ function HealthStripCard() {
                   key={svc.name}
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
-                    stopped
-                      ? "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                      : restarting
-                        ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                        : "border-zinc-200 text-zinc-600 dark:border-zinc-800 dark:text-zinc-300",
+                    unobservable
+                      ? "border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+                      : stopped
+                        ? "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                        : restarting
+                          ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                          : "border-zinc-200 text-zinc-600 dark:border-zinc-800 dark:text-zinc-300",
                   )}
-                  title={svc.label}
+                  title={unobservable ? `${svc.label} — state unknown (systemd not observable on this host)` : svc.label}
                 >
-                  <span className={cn("h-2 w-2 rounded-full", stopped ? "bg-rose-500" : restarting ? "bg-amber-500 animate-pulse" : "bg-emerald-500")} />
+                  <span
+                    className={cn(
+                      "h-2 w-2 rounded-full",
+                      unobservable ? "bg-zinc-400 dark:bg-zinc-600" : stopped ? "bg-rose-500" : restarting ? "bg-amber-500 animate-pulse" : "bg-emerald-500",
+                    )}
+                  />
                   {svc.name}
                   {admin ? (
                     <button

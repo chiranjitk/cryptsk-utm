@@ -100,6 +100,12 @@ export type SystemStatusDTO = {
   dataPlane: string;
   conntrackCount: number;
   services: ServiceStateDTO[];
+  /**
+   * false in host mode when systemd states were never observed (systemctl
+   * absent or unreadable / first slow cycle not run yet) — the UI must then
+   * show services as "unknown", NOT as stopped (honest absence, M10 §4).
+   */
+  servicesObservable: boolean;
 };
 
 /** restart-in-progress markers (simulated ~2 s apply — M10 §3) */
@@ -211,6 +217,8 @@ export async function getSystemStatus(tenantId: number): Promise<SystemStatusDTO
     dataPlane: dataPlaneLabel(),
     conntrackCount: latest?.conntrackCount ?? 0,
     services,
+    servicesObservable:
+      getDataPlaneMode() === "host" ? getHostCollector().servicesProbed === true : true,
   };
 }
 
