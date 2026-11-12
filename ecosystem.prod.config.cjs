@@ -24,7 +24,7 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = __dirname;
-const NEXT_PORT = process.env.NEXT_PORT || "3000";
+const NEXT_PORT = process.env.NEXT_PORT || "3001";  // gateway Caddyfile: public :3000 -> localhost:3001
 
 // pull the secrets the agent needs from .env (never log them)
 function readDotEnv(p) {
@@ -56,6 +56,11 @@ const apps = [
       NODE_ENV: "production",
       PORT: NEXT_PORT,
       NODE_OPTIONS: "--max-old-space-size=1500",
+      // appliance semantics: console writes converge the host OS (iproute2)
+      // CONSOLE_OS_PROTECT = management guard — the executor refuses any step
+      // naming these interfaces so the appliance can never cut its own access
+      CONSOLE_OS_APPLY: "1",
+      CONSOLE_OS_PROTECT: "lo,ens32",
     },
     out_file: ROOT + "/logs/console-out.log",
     error_file: ROOT + "/logs/console-err.log",

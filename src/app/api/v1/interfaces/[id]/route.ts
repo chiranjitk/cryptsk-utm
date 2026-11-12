@@ -27,11 +27,12 @@ export const PUT = route(
     if (!raw) throw ApiError.notFound(`Interface ${id} not found`);
     const before = (await loadShapedIfaces(auth.tenantId)).find((i) => i.id === id) ?? null;
 
-    await updateIface(auth.tenantId, id, body, raw);
+    const updated = await updateIface(auth.tenantId, id, body, raw);
     const after = (await loadShapedIfaces(auth.tenantId)).find((i) => i.id === id) ?? null;
 
     return {
       data: after,
+      os: updated.os,
       audit: {
         action: "iface.update",
         objectType: "interface",
@@ -52,6 +53,7 @@ export const DELETE = route({ area: "network", section: "interfaces" }, async ({
   const deleted = await deleteIface(auth.tenantId, raw);
   return {
     data: { ok: true },
+    os: deleted.os,
     audit: {
       action: "iface.delete",
       objectType: "interface",

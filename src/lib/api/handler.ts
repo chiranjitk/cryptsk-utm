@@ -31,6 +31,8 @@ export interface HandlerResult<T> {
   data: T;
   meta?: PageMeta;
   audit?: AuditInfo;
+  /** optional OS-convergence outcome (network write paths — iface-apply.ts) */
+  os?: unknown;
 }
 
 export interface RouteOptions<TBody, TQuery> {
@@ -233,7 +235,7 @@ export function route<TBody = undefined, TQuery = undefined, TResult = unknown>(
         }
       }
 
-      return ok(payload.data, payload.meta, requestId);
+      return ok(payload.data, payload.meta, requestId, payload.os);
     } catch (err) {
       if (err instanceof ZodError) {
         return fail("VALIDATION_ERROR", "Request failed validation", { requestId, details: zodIssues(err) });

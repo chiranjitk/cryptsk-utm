@@ -16,6 +16,8 @@ export interface PageMeta {
 export interface EnvelopeSuccess<T> {
   data: T;
   meta?: PageMeta;
+  /** optional OS-convergence outcome (network write paths — iface-apply.ts) */
+  os?: unknown;
 }
 
 export interface EnvelopeError {
@@ -27,8 +29,9 @@ export interface EnvelopeError {
   };
 }
 
-export function ok<T>(data: T, meta?: PageMeta, requestId?: string): NextResponse {
+export function ok<T>(data: T, meta?: PageMeta, requestId?: string, os?: unknown): NextResponse {
   const body: EnvelopeSuccess<T> = meta ? { data, meta } : { data };
+  if (os !== undefined) body.os = os;
   const res = NextResponse.json(body);
   if (requestId) res.headers.set("x-request-id", requestId);
   return res;

@@ -25,6 +25,11 @@ import {
   type IfaceCreateBody,
   type IfaceUpdateBody,
 } from "@/lib/validators/network";
+import {
+  convergeIfaceSafe,
+  teardownIfaceSafe,
+  type OsApplyOutcome,
+} from "./iface-apply";
 
 /** Scalar shape of a NetworkInterface row (config still a raw JSON string). */
 export type IfaceRow = {
@@ -376,7 +381,10 @@ function buildCreateConfig(body: Exclude<IfaceCreateBody, { type: "physical" }>)
   }
 }
 
-export async function createIface(tenantId: number, body: IfaceCreateBody): Promise<IfaceRow> {
+export async function createIface(
+  tenantId: number,
+  body: IfaceCreateBody,
+): Promise<IfaceRow & { os: OsApplyOutcome }> {
   // zod already rejects physical via superRefine; this guard also narrows the union
   if (body.type === "physical") {
     throw ApiError.validation("Physical interfaces are provisioned by the appliance");
@@ -404,8 +412,9 @@ export async function createIface(tenantId: number, body: IfaceCreateBody): Prom
   };
   await enforceRules(tenantId, candidate, { excludeId: undefined, action_: "create" });
 
+  let created: IfaceRow;
   try {
-    return await db.networkInterface.create({
+    created = await db.networkInterface.create({
       data: {
         tenantId,
         name: body.name,
@@ -427,6 +436,9 @@ export async function createIface(tenantId: number, body: IfaceCreateBody): Prom
   } catch (err) {
     throw p2002ToConflict(err, `Interface '${body.name}' already exists`);
   }
+  // appliance semantics: a created logical interface exists on the host
+  const os = await convergeIfaceSafe(rowToRuleView(created));
+  return { ...created, os };
 }
 
 // ── update ──────────────────────────────────────────────────────────────────
@@ -558,7 +570,7 @@ export async function updateIface(
   id: number,
   body: IfaceUpdateBody,
   existing: IfaceRow,
-): Promise<IfaceRow> {
+): Promise<IfaceRow & { os: OsApplyOutcome }> {
   // L2/L3 mode semantics (M02 §5) — service-side check against the merged mode
   const nextMode = body.mode ?? existing.mode;
   if (nextMode === "l2") {
@@ -636,9 +648,10 @@ export async function updateIface(
     }
   }
 
+  let updated: IfaceRow;
   try {
     // undefined fields stay untouched (patch semantics); explicit nulls clear
-    return await db.networkInterface.update({
+    updated = await db.networkInterface.update({
       where: { id },
       data: {
         name: body.name,
@@ -656,11 +669,21 @@ export async function updateIface(
   } catch (err) {
     throw p2002ToConflict(err, `Interface '${body.name ?? existing.name}' already exists`);
   }
+  // rename: the old kernel link must not linger (logical interfaces only)
+  if (body.name && body.name !== existing.name && existing.type !== "physical") {
+    await teardownIfaceSafe(rowToRuleView(existing));
+  }
+  // appliance semantics: every committed change converges the host
+  const os = await convergeIfaceSafe(rowToRuleView(updated));
+  return { ...updated, os };
 }
 
 // ── delete (cascade per M02 §2/§5) ──────────────────────────────────────────
 
-export async function deleteIface(tenantId: number, row: IfaceRow): Promise<{ id: number; name: string }> {
+export async function deleteIface(
+  tenantId: number,
+  row: IfaceRow,
+): Promise<{ id: number; name: string; os: OsApplyOutcome }> {
   if (row.type === "physical") {
     throw ApiError.validation("Physical interfaces cannot be deleted — disable instead");
   }
@@ -706,5 +729,7 @@ export async function deleteIface(tenantId: number, row: IfaceRow): Promise<{ id
     }
     await tx.networkInterface.delete({ where: { id: row.id } });
   });
-  return { id: row.id, name: row.name };
+  // appliance semantics: a deleted logical interface disappears from the host
+  const os = await teardownIfaceSafe(rowToRuleView(row));
+  return { id: row.id, name: row.name, os };
 }

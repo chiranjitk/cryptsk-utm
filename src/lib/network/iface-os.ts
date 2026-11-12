@@ -9,6 +9,10 @@
  * CONSOLE_OS_APPLY=1 is set in the environment — everywhere else it is a
  * preview (plan-only). This module itself is side-effect free and pure
  * except for the RealInterface type import.
+ *
+ * buildApplyPlan/buildDeletePlan take an optional `hostDefaultDev` (the dev
+ * of the host's current default route) so default-route mutation steps are
+ * only generated for the interface that actually owns the route.
  */
 
 import type { RealInterface } from "@/lib/host/proc";
@@ -88,13 +92,23 @@ function linkAdminSteps(name: string, view: IfaceRuleView, os: RealInterface | u
     }
     return steps;
   }
-  if (os && osUpState(os) === "down") {
+  if (!os) {
+    // freshly created links (bridges/bonds are born admin-down) — force up
+    steps.push({ cmd: `ip link set ${name} up`, summary: "bring new interface up" });
+    return steps;
+  }
+  if (osUpState(os) === "down") {
     steps.push({ cmd: `ip link set ${name} up`, summary: "bring interface up" });
   }
   return steps;
 }
 
-function addrSteps(name: string, view: IfaceRuleView, os: RealInterface | undefined): OsPlanStep[] {
+function addrSteps(
+  name: string,
+  view: IfaceRuleView,
+  os: RealInterface | undefined,
+  hostDefaultDev: string | null | undefined,
+): OsPlanStep[] {
   const steps: OsPlanStep[] = [];
   if (view.mode !== "l3") return steps;
 
@@ -116,13 +130,18 @@ function addrSteps(name: string, view: IfaceRuleView, os: RealInterface | undefi
         }
       }
     }
+    // default-route ownership safety — `ip route replace default` rewrites the
+    // host's ONLY default route. When another interface already owns it, the
+    // step is suppressed (a second WAN must never silently hijack it).
     const gw = typeof view.config["gateway"] === "string" ? (view.config["gateway"] as string) : null;
-    if (gw) {
+    if (gw && (!hostDefaultDev || hostDefaultDev === name)) {
       steps.push({ cmd: `ip route replace default via ${gw} dev ${name}`, summary: `default route via ${gw}` });
     }
   }
   const mss = typeof view.config["mssClamp"] === "number" ? (view.config["mssClamp"] as number) : view.mssClamp;
-  if (typeof mss === "number") {
+  // advmss mutates the existing default route — same ownership rule applies
+  // (undefined = route info not provided → legacy behavior; null = known none)
+  if (typeof mss === "number" && (hostDefaultDev === undefined || hostDefaultDev === name)) {
     steps.push({
       cmd: `ip route change default dev ${name} advmss ${mss}`,
       summary: `TCP MSS clamp ${mss} (advmss)`,
@@ -135,7 +154,11 @@ function addrSteps(name: string, view: IfaceRuleView, os: RealInterface | undefi
  * Build the iproute2 plan that converges the host onto the console row.
  * When `os` is undefined the interface is missing on the host → creation steps.
  */
-export function buildApplyPlan(view: IfaceRuleView, os: RealInterface | undefined): OsPlan {
+export function buildApplyPlan(
+  view: IfaceRuleView,
+  os: RealInterface | undefined,
+  hostDefaultDev?: string | null,
+): OsPlan {
   const steps: OsPlanStep[] = [];
   const name = view.name;
 
@@ -205,12 +228,23 @@ export function buildApplyPlan(view: IfaceRuleView, os: RealInterface | undefine
     }
   }
 
-  if (os) {
-    steps.push(...linkAdminSteps(name, view, os));
-  }
-  steps.push(...addrSteps(name, view, os));
+  steps.push(...linkAdminSteps(name, view, os));
+  steps.push(...addrSteps(name, view, os, hostDefaultDev));
 
   return { name, osName: os ? os.name : null, steps };
+}
+
+/**
+ * Teardown plan for a deleted console interface. Only logical kernel links
+ * (vlan/bridge/bond/loopback/tunnels) can be removed from the host — physical
+ * ports stay (the kernel owns them), only the console record disappears.
+ */
+export function buildDeletePlan(view: IfaceRuleView, os: RealInterface | undefined): OsPlan {
+  const steps: OsPlanStep[] = [];
+  if (os && view.type !== "physical") {
+    steps.push({ cmd: `ip link del ${view.name}`, summary: "remove interface from host" });
+  }
+  return { name: view.name, osName: os ? os.name : null, steps };
 }
 
 /** Compare a DB row against the OS list by name; null OS → unmanaged entry. */

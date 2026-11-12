@@ -65,6 +65,7 @@ export const POST = route(
     const shaped = (await loadShapedIfaces(auth.tenantId)).find((i) => i.id === created.id) ?? null;
     return {
       data: shaped,
+      os: created.os,
       audit: { action: "iface.create", objectType: "interface", objectId: created.id, objectName: created.name },
     };
   },
