@@ -4,13 +4,13 @@
  * `{ ok, lastRunAt }` — the console opens the print view / download itself.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { runReportSchedule } from "@/lib/logs/service";
 
 export const dynamic = "force-dynamic";
 
 export const POST = route({ area: "reports", section: "system" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const result = await runReportSchedule(auth.tenantId, id);
   return {
     data: result,

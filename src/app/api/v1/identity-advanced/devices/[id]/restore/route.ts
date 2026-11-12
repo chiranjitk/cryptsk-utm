@@ -5,7 +5,7 @@
  * `nac.device.restore`.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { toDeviceDTO } from "@/app/api/v1/identity-advanced/_lib/server";
@@ -13,7 +13,7 @@ import { toDeviceDTO } from "@/app/api/v1/identity-advanced/_lib/server";
 export const dynamic = "force-dynamic";
 
 export const POST = route({ area: "identity", section: "identity" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const device = await db.nacDevice.findFirst({ where: { id, tenantId: auth.tenantId } });
   if (!device) throw ApiError.notFound("Device not found");
 

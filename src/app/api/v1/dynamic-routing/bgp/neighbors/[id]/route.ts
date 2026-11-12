@@ -4,7 +4,7 @@
  * the stored value, explicit null clears it.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { bgpNeighborUpdateSchema } from "@/lib/validators/dynamic-routing";
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
@@ -21,7 +21,7 @@ async function findNeighbor(tenantId: number, id: number) {
 export const PUT = route(
   { area: "dynamic_routing", bodySchema: bgpNeighborUpdateSchema, section: "dynamic_routing" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const existing = await findNeighbor(auth.tenantId, id);
     await assertNeighborRefs(auth.tenantId, body);
 
@@ -50,7 +50,7 @@ export const PUT = route(
 export const DELETE = route(
   { area: "dynamic_routing", section: "dynamic_routing" },
   async ({ auth, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const existing = await findNeighbor(auth.tenantId, id);
     await db.bgpNeighbor.delete({ where: { id } });
     return {

@@ -5,7 +5,7 @@
  * `nac.device.quarantine`.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { quarantineSchema } from "@/lib/validators/identity-advanced";
 import { db } from "@/lib/db";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const POST = route(
   { area: "identity", bodySchema: quarantineSchema, section: "identity" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const device = await db.nacDevice.findFirst({ where: { id, tenantId: auth.tenantId } });
     if (!device) throw ApiError.notFound("Device not found");
 

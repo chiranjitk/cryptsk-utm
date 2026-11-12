@@ -5,7 +5,7 @@
  * from/to. Audit `email.release`, snapshot section `email_security`.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { z } from "zod";
 import { releaseQuarantined } from "@/app/api/v1/email-security/service";
 
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export const POST = route(
   { area: "email_security", bodySchema: z.object({}).default({}), section: "email_security" },
   async ({ auth, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const released = await releaseQuarantined(auth.tenantId, params.id ?? String(id));
     return {
       data: released,

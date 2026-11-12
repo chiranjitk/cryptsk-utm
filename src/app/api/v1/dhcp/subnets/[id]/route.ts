@@ -3,7 +3,7 @@
  * leases (SCHEMA onDelete: Cascade); the response reports the cascaded counts.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { dhcpSubnetUpdateSchema } from "@/lib/validators/dns-dhcp";
 import { deleteSubnet, updateSubnet } from "@/lib/dhcp/service";
 
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const PUT = route(
   { area: "dns_dhcp", bodySchema: dhcpSubnetUpdateSchema, section: "dhcp" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const updated = await updateSubnet(auth.tenantId, id, body);
     return {
       data: updated,
@@ -22,7 +22,7 @@ export const PUT = route(
 );
 
 export const DELETE = route({ area: "dns_dhcp", section: "dhcp" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const cascaded = await deleteSubnet(auth.tenantId, id);
   return {
     data: { ok: true, cascaded },

@@ -2,7 +2,7 @@
  * M12 report runs — GET single (full row incl. contentHtml) + DELETE.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { toRunDetail } from "@/app/api/v1/reports/engine";
@@ -10,7 +10,7 @@ import { toRunDetail } from "@/app/api/v1/reports/engine";
 export const dynamic = "force-dynamic";
 
 export const GET = route({ area: "reports" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   if (!Number.isInteger(id) || id <= 0) throw ApiError.validation("Invalid report run id");
   const row = await db.reportRun.findFirst({ where: { tenantId: auth.tenantId, id } });
   if (!row) throw ApiError.notFound("Report run not found");
@@ -18,7 +18,7 @@ export const GET = route({ area: "reports" }, async ({ auth, params }) => {
 });
 
 export const DELETE = route({ area: "reports", section: "reports" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   if (!Number.isInteger(id) || id <= 0) throw ApiError.validation("Invalid report run id");
   const existing = await db.reportRun.findFirst({ where: { tenantId: auth.tenantId, id } });
   if (!existing) throw ApiError.notFound("Report run not found");

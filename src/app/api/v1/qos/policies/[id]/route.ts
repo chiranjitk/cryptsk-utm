@@ -4,7 +4,7 @@
  * references it (body details list the referencing rule names).
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { qosPolicyUpdateSchema } from "@/lib/validators/qos";
 import { deletePolicy, updatePolicy } from "@/lib/qos/service";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const PUT = route(
   { area: "qos", bodySchema: qosPolicyUpdateSchema, section: "qos" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const updated = await updatePolicy(auth.tenantId, id, body);
     return {
       data: updated,
@@ -23,7 +23,7 @@ export const PUT = route(
 );
 
 export const DELETE = route({ area: "qos", section: "qos" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const cascaded = await deletePolicy(auth.tenantId, id);
   return {
     data: { ok: true, cascaded },

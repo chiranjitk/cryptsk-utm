@@ -3,7 +3,7 @@
  * value) and delete. Interactive admins only; machine keys get 403.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { webhookUpdateSchema } from "@/lib/validators/api-keys";
 import { deleteWebhook, updateWebhook } from "@/lib/api-keys/service";
@@ -14,7 +14,7 @@ export const PUT = route(
   { area: "webhooks", bodySchema: webhookUpdateSchema, section: "system" },
   async ({ auth, body, params }) => {
     if (auth.kind === "key") throw ApiError.forbidden("Machine keys cannot manage webhooks");
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const updated = await updateWebhook(auth.tenantId, id, body);
     return {
       data: updated, // WebhookDTO — secret never returned
@@ -31,7 +31,7 @@ export const PUT = route(
 
 export const DELETE = route({ area: "webhooks", section: "system" }, async ({ auth, params }) => {
   if (auth.kind === "key") throw ApiError.forbidden("Machine keys cannot manage webhooks");
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const result = await deleteWebhook(auth.tenantId, id);
   return {
     data: result,

@@ -4,7 +4,7 @@
  * `referencedBy` detail while application rules exist under the policy.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { policyUpdateSchema } from "@/lib/validators/app-control";
 import { deletePolicy, updatePolicy } from "@/app/api/v1/app-control/service";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const PUT = route(
   { area: "app_control", bodySchema: policyUpdateSchema, section: "app_control" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const updated = await updatePolicy(auth.tenantId, id, body);
     return {
       data: updated,
@@ -29,7 +29,7 @@ export const PUT = route(
 );
 
 export const DELETE = route({ area: "app_control", section: "app_control" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   await deletePolicy(auth.tenantId, id);
   return {
     data: { ok: true },

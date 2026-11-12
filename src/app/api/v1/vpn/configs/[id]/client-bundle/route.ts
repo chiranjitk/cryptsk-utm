@@ -4,7 +4,7 @@
  * WireGuard remote bundles append a provisioned peer to the config.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { z } from "zod";
 import { clientBundle } from "@/lib/vpn/service";
 
@@ -19,7 +19,7 @@ const bodySchema = z
 export const POST = route(
   { area: "vpn_config", bodySchema, section: "vpn" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const bundle = await clientBundle(auth.tenantId, id, body?.peerName);
     return {
       data: bundle,

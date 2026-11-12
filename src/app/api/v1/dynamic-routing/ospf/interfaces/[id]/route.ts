@@ -3,7 +3,7 @@
  * `ospf_interface.update|delete`.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ospfInterfaceUpdateSchema } from "@/lib/validators/dynamic-routing";
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
@@ -19,7 +19,7 @@ async function findIface(tenantId: number, id: number) {
 export const PUT = route(
   { area: "dynamic_routing", bodySchema: ospfInterfaceUpdateSchema, section: "dynamic_routing" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const existing = await findIface(auth.tenantId, id);
     const updated = await db.ospfInterface.update({ where: { id }, data: body });
     return {
@@ -39,7 +39,7 @@ export const PUT = route(
 export const DELETE = route(
   { area: "dynamic_routing", section: "dynamic_routing" },
   async ({ auth, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const existing = await findIface(auth.tenantId, id);
     await db.ospfInterface.delete({ where: { id } });
     return {

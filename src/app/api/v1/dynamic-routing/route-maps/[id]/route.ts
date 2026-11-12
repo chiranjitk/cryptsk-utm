@@ -3,7 +3,7 @@
  * Delete is guarded: 409 while a BGP neighbor references the map.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { routeMapUpdateSchema } from "@/lib/validators/dynamic-routing";
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
@@ -20,7 +20,7 @@ async function findMap(tenantId: number, id: number) {
 export const PUT = route(
   { area: "dynamic_routing", bodySchema: routeMapUpdateSchema, section: "dynamic_routing" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const existing = await findMap(auth.tenantId, id);
     const updated = await db.routeMap.update({
       where: { id },
@@ -46,7 +46,7 @@ export const PUT = route(
 export const DELETE = route(
   { area: "dynamic_routing", section: "dynamic_routing" },
   async ({ auth, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const existing = await findMap(auth.tenantId, id);
     await assertNotReferencedByNeighbor(auth.tenantId, "routeMapInId", id, existing.name);
     await assertNotReferencedByNeighbor(auth.tenantId, "routeMapOutId", id, existing.name);

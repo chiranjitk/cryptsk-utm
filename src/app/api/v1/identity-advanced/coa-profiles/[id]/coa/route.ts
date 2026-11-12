@@ -4,7 +4,7 @@
  * persists an IdentityActivityEvent (`coa`) and audits `radius.coa`.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { coaSendSchema } from "@/lib/validators/identity-advanced";
 import { db } from "@/lib/db";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export const POST = route(
   { area: "identity", bodySchema: coaSendSchema, section: "identity" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const profile = await db.radiusCoaProfile.findFirst({ where: { id, tenantId: auth.tenantId } });
     if (!profile) throw ApiError.notFound("CoA profile not found");
     if (!profile.enabled || !profile.coaEnabled) {

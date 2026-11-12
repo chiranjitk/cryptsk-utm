@@ -4,14 +4,14 @@
  * `sessions:update {kind:"identity"}` so open views flip the row in place.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { expireIdentitySession } from "@/lib/identity/service";
 import { emitEvent } from "@/lib/engine/events";
 
 export const dynamic = "force-dynamic";
 
 export const POST = route({ area: "identity" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const expired = await expireIdentitySession(auth.tenantId, id);
   emitEvent({
     type: "sessions:update",

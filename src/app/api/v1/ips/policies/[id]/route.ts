@@ -3,7 +3,7 @@
  * delete (409 CONFLICT with referencing rule names while RESTRICT applies).
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ipsPolicyUpdateSchema } from "@/lib/validators/ips";
 import { deletePolicy, updatePolicy } from "@/lib/ips/service";
 
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const PUT = route(
   { area: "ips_policies", bodySchema: ipsPolicyUpdateSchema, section: "ips" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const updated = await updatePolicy(auth.tenantId, id, body);
     return {
       data: updated,
@@ -22,7 +22,7 @@ export const PUT = route(
 );
 
 export const DELETE = route({ area: "ips_policies", section: "ips" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   await deletePolicy(auth.tenantId, id);
   return {
     data: { ok: true },

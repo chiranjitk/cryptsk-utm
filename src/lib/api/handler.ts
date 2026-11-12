@@ -253,3 +253,16 @@ export function route<TBody = undefined, TQuery = undefined, TResult = unknown>(
 }
 
 export { z };
+
+/**
+ * Parse an integer path param ([id], [ruleId], …). Invalid values (missing,
+ * "null", NaN, ≤0) must fail as 400 VALIDATION_ERROR — letting them reach
+ * Prisma renders a 500 "Invalid findFirst invocation" instead.
+ */
+export function numericId(params: Record<string, string>, key = "id"): number {
+  const n = Number(params[key]);
+  if (!Number.isInteger(n) || n < 1) {
+    throw ApiError.validation(`Invalid path parameter '${key}'`);
+  }
+  return n;
+}

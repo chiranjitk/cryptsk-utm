@@ -6,7 +6,7 @@
  * on the row. Audit `bgp.session`.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { bgpSessionActionSchema, hashIpv4To } from "@/lib/validators/dynamic-routing";
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export const POST = route(
   { area: "dynamic_routing", bodySchema: bgpSessionActionSchema, section: "dynamic_routing" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const neighbor = await db.bgpNeighbor.findFirst({ where: { id, tenantId: auth.tenantId } });
     if (!neighbor) throw ApiError.notFound("BGP neighbor not found");
 

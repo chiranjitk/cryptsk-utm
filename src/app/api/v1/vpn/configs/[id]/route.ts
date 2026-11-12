@@ -4,7 +4,7 @@
  * the config's sessions (ER_DIAGRAM §2).
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { vpnConfigUpdateSchema } from "@/lib/validators/vpn";
 import { deleteConfig, updateConfig } from "@/lib/vpn/service";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const PUT = route(
   { area: "vpn_config", bodySchema: vpnConfigUpdateSchema, section: "vpn" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const updated = await updateConfig(auth.tenantId, id, body);
     return {
       data: updated,
@@ -23,7 +23,7 @@ export const PUT = route(
 );
 
 export const DELETE = route({ area: "vpn_config", section: "vpn" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   await deleteConfig(auth.tenantId, id);
   return {
     data: { ok: true },

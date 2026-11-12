@@ -1,6 +1,6 @@
 /** Path item (M20 §2.5) — update / delete, audit `path.update|delete`. */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { pathUpdateSchema } from "@/lib/validators/sdwan";
 import { deletePath, updatePath } from "@/app/api/v1/sdwan/service";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const PUT = route(
   { area: "sdwan", bodySchema: pathUpdateSchema, section: "sdwan" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const updated = await updatePath(auth.tenantId, id, body);
     return {
       data: updated,
@@ -25,7 +25,7 @@ export const PUT = route(
 );
 
 export const DELETE = route({ area: "sdwan", section: "sdwan" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   await deletePath(auth.tenantId, id);
   return { data: { ok: true }, audit: { action: "path.delete", objectType: "sdwan_path", objectId: id } };
 });

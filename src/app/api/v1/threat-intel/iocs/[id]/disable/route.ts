@@ -5,7 +5,7 @@
  * `threat_ioc.disable` / `threat_ioc.enable`.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { iocDisableSchema } from "@/lib/validators/threat-intel";
 import { disableIoc } from "@/lib/threat-intel/service";
 
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export const POST = route(
   { area: "threat_intel", bodySchema: iocDisableSchema, section: "threat_intel" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const updated = await disableIoc(auth.tenantId, id, body.enabled);
     return {
       data: updated,

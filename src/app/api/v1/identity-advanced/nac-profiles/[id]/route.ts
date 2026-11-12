@@ -4,7 +4,7 @@
  * dangling logical ref (nacProfileId kept — the view renders "—").
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { nacProfileUpdateSchema } from "@/lib/validators/identity-advanced";
 import { db } from "@/lib/db";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export const PUT = route(
   { area: "identity", bodySchema: nacProfileUpdateSchema, section: "identity" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const existing = await db.nacProfile.findFirst({ where: { id, tenantId: auth.tenantId } });
     if (!existing) throw ApiError.notFound("NAC profile not found");
 
@@ -50,7 +50,7 @@ export const PUT = route(
 );
 
 export const DELETE = route({ area: "identity", section: "identity" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const existing = await db.nacProfile.findFirst({ where: { id, tenantId: auth.tenantId } });
   if (!existing) throw ApiError.notFound("NAC profile not found");
   await db.nacProfile.delete({ where: { id: existing.id } });

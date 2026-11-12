@@ -3,14 +3,14 @@
  * Write area is `reports` (the `logs` matrix has no write column).
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export const DELETE = route({ area: "reports", section: "reports" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   if (!Number.isInteger(id) || id <= 0) throw ApiError.validation("Invalid saved search id");
   const existing = await db.savedLogSearch.findFirst({ where: { tenantId: auth.tenantId, id } });
   if (!existing) throw ApiError.notFound("Saved search not found");

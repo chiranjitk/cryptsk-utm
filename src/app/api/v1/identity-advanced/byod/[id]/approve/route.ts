@@ -4,7 +4,7 @@
  * enrolled). Audit `byod.approve`.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { toByodDTO } from "@/app/api/v1/identity-advanced/_lib/server";
@@ -12,7 +12,7 @@ import { toByodDTO } from "@/app/api/v1/identity-advanced/_lib/server";
 export const dynamic = "force-dynamic";
 
 export const POST = route({ area: "identity", section: "identity" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const row = await db.byodEnrollment.findFirst({ where: { id, tenantId: auth.tenantId } });
   if (!row) throw ApiError.notFound("Enrollment not found");
 

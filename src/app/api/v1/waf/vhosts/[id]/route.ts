@@ -3,7 +3,7 @@
  * DELETE is blocked with 409 while a WafPolicy references the vhost.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { vhostUpdateSchema } from "@/lib/validators/waf";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export const PUT = route(
   { area: "waf", bodySchema: vhostUpdateSchema, section: "waf" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const existing = await db.wafVhost.findFirst({ where: { id, tenantId: auth.tenantId } });
     if (!existing) throw ApiError.notFound("Vhost not found");
 
@@ -64,7 +64,7 @@ export const PUT = route(
 );
 
 export const DELETE = route({ area: "waf", section: "waf" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const existing = await db.wafVhost.findFirst({ where: { id, tenantId: auth.tenantId } });
   if (!existing) throw ApiError.notFound("Vhost not found");
 

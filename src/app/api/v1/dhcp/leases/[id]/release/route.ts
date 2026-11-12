@@ -5,7 +5,7 @@
  * Role floor network_admin comes from the dns_dhcp write tier (rbac.ts).
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { z } from "zod";
 import { releaseLease } from "@/lib/dhcp/service";
 
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export const POST = route(
   { area: "dns_dhcp", bodySchema: z.object({}).default({}), section: "dhcp" },
   async ({ auth, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const released = await releaseLease(auth.tenantId, id);
     return {
       data: released,

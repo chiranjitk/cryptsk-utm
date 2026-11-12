@@ -6,13 +6,13 @@
  * Audits `threat_feed.sync`.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { syncFeed } from "@/lib/threat-intel/corpus";
 
 export const dynamic = "force-dynamic";
 
 export const POST = route({ area: "threat_intel", section: "threat_intel" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const result = await syncFeed(auth.tenantId, id);
   return {
     data: result,

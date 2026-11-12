@@ -2326,6 +2326,263 @@ suite("appctl", "Web Security → App Control: policies + rules + catalog + logs
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// SUITES — batch 8: dynroute (BGP/OSPF/BFD/prefix/route-map/community), sdwan, ipv6
+// ═════════════════════════════════════════════════════════════════════════════
+
+suite("dynroute", "Advanced Routing → BGP/OSPF/BFD/prefix-lists/route-maps/community-lists/rib", async () => {
+  let ospfSnap = null;
+  let ospfIfaceId = null;
+  let nbrId = null;
+  let bfdId = null;
+  let plId = null;
+  let rmId = null;
+  let clId = null;
+
+  await tc("ospf settings snapshot → change → revert", async () => {
+    ospfSnap = expectOk(await GET("/api/v1/dynamic-routing/ospf/settings"));
+    const body = { routerId: "10.220.0.9", referenceBandwidth: 10000, gracefulRestart: false, enabled: ospfSnap.enabled ?? false };
+    const u = expectOk(await PUT("/api/v1/dynamic-routing/ospf/settings", body));
+    assert(u.routerId === "10.220.0.9", JSON.stringify(u).slice(0, 160));
+    const back = expectOk(await PUT("/api/v1/dynamic-routing/ospf/settings", { ...ospfSnap, routerId: ospfSnap.routerId ?? "1.1.1.1", referenceBandwidth: ospfSnap.referenceBandwidth ?? 100, gracefulRestart: ospfSnap.gracefulRestart ?? false, enabled: ospfSnap.enabled ?? false }));
+    check("ospf reverted", true, `routerId=${back.routerId}`);
+  });
+
+  await tc("ospf settings bad routerId → 400", async () => {
+    const r = await PUT("/api/v1/dynamic-routing/ospf/settings", { routerId: "nope", referenceBandwidth: 100, gracefulRestart: false, enabled: false });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("ospf interface create on ens34", async () => {
+    const i = expectOk(await POST("/api/v1/dynamic-routing/ospf/interfaces", { interfaceName: "ens34", area: "0.0.0.0", helloSec: 10, deadSec: 40, cost: 10, networkType: "broadcast", passive: true, enabled: true }));
+    ospfIfaceId = i.id;
+    assert(i.area === "0.0.0.0", JSON.stringify(i).slice(0, 160));
+  });
+
+  await tc("ospf interface dead < 2×hello → 400", async () => {
+    const r = await POST("/api/v1/dynamic-routing/ospf/interfaces", { interfaceName: "ens34", area: "0.0.0.0", helloSec: 10, deadSec: 15 });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("ospf interface update — cost 20", async () => {
+    const u = expectOk(await PUT(`/api/v1/dynamic-routing/ospf/interfaces/${ospfIfaceId}`, { cost: 20 }));
+    assert(u.cost === 20, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("bfd profile create + update", async () => {
+    const b = expectOk(await POST("/api/v1/dynamic-routing/bfd-profiles", { name: un("E2E-BFD"), detectMultiplier: 3, txIntervalMs: 300, rxIntervalMs: 300, enabled: true }));
+    bfdId = b.id;
+    const u = expectOk(await PUT(`/api/v1/dynamic-routing/bfd-profiles/${bfdId}`, { txIntervalMs: 500 }));
+    assert(u.txIntervalMs === 500, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("prefix-list create (ipv4 2 entries)", async () => {
+    const p = expectOk(await POST("/api/v1/dynamic-routing/prefix-lists", { name: un("E2E-PL"), family: "ipv4", entries: [{ seq: 10, action: "permit", prefix: "10.220.0.0/16", ge: 16, le: 24 }, { seq: 20, action: "deny", prefix: "0.0.0.0/0" }] }));
+    plId = p.id;
+    assert(p.entries?.length === 2, JSON.stringify(p).slice(0, 160));
+  });
+
+  await tc("prefix-list bad family cidr → 400", async () => {
+    const r = await POST("/api/v1/dynamic-routing/prefix-lists", { name: un("E2E-BAD"), family: "ipv4", entries: [{ seq: 10, action: "permit", prefix: "2001:db8::/32" }] });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("route-map create (match prefix-list)", async () => {
+    const r = expectOk(await POST("/api/v1/dynamic-routing/route-maps", { name: un("E2E-RM"), entries: [{ seq: 10, action: "permit", matchPrefixListId: plId, setLocalPref: 200 }] }));
+    rmId = r.id;
+    assert(r.entries?.length === 1, JSON.stringify(r).slice(0, 160));
+  });
+
+  await tc("route-map entry without match → 400", async () => {
+    const r = await POST("/api/v1/dynamic-routing/route-maps", { name: un("E2E-BAD2"), entries: [{ seq: 10, action: "permit", setLocalPref: 100 }] });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("community-list create", async () => {
+    const c = expectOk(await POST("/api/v1/dynamic-routing/community-lists", { name: un("E2E-CL"), entries: [{ seq: 10, action: "permit", community: "65000:100" }] }));
+    clId = c.id;
+    assert(c.entries?.[0]?.community === "65000:100", JSON.stringify(c).slice(0, 160));
+  });
+
+  await tc("community-list bad tag → 400", async () => {
+    const r = await POST("/api/v1/dynamic-routing/community-lists", { name: un("E2E-BAD3"), entries: [{ seq: 10, action: "permit", community: "notatag" }] });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("bgp neighbor create", async () => {
+    const n = expectOk(await POST("/api/v1/dynamic-routing/bgp/neighbors", { name: un("E2E-BGP"), remoteAs: 65001, peerIp: "10.220.0.1", keepaliveSec: 30, holdtimeSec: 90, enabled: true }));
+    nbrId = n.id;
+    assert(n.remoteAs === 65001, JSON.stringify(n).slice(0, 160));
+  });
+
+  await tc("bgp holdtime < 3×keepalive → 400", async () => {
+    const r = await POST("/api/v1/dynamic-routing/bgp/neighbors", { name: un("E2E-BAD4"), remoteAs: 65002, peerIp: "10.220.0.2", keepaliveSec: 60, holdtimeSec: 100 });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("bgp neighbor session action start (simulated)", async () => {
+    const d = expectOk(await POST(`/api/v1/dynamic-routing/bgp/neighbors/${nbrId}/session`, { action: "start" }));
+    check("session action", true, JSON.stringify(d).slice(0, 120));
+  });
+
+  await tc("bgp neighbor update — localAs", async () => {
+    const u = expectOk(await PUT(`/api/v1/dynamic-routing/bgp/neighbors/${nbrId}`, { localAs: 65000 }));
+    assert(Number(u.localAs) === 65000, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("rib read + refresh", async () => {
+    const rib = expectOk(await GET("/api/v1/dynamic-routing/rib?limit=20"));
+    const rows = Array.isArray(rib) ? rib : rib?.routes ?? [];
+    check("rib rows", true, `${rows.length} rows`);
+    const r = await POST("/api/v1/dynamic-routing/rib/refresh", {});
+    check("rib refresh", true, `status=${r.status}`);
+  });
+
+  await tc("cleanup: nbr/bfd/pl/rm/cl + ospf iface → gone", async () => {
+    expectOk(await DEL(`/api/v1/dynamic-routing/bgp/neighbors/${nbrId}`));
+    expectOk(await DEL(`/api/v1/dynamic-routing/bfd-profiles/${bfdId}`));
+    expectOk(await DEL(`/api/v1/dynamic-routing/prefix-lists/${plId}`));
+    expectOk(await DEL(`/api/v1/dynamic-routing/route-maps/${rmId}`));
+    expectOk(await DEL(`/api/v1/dynamic-routing/community-lists/${clId}`));
+    expectOk(await DEL(`/api/v1/dynamic-routing/ospf/interfaces/${ospfIfaceId}`));
+    nbrId = bfdId = plId = rmId = clId = ospfIfaceId = null;
+  });
+});
+
+suite("sdwan", "Advanced Routing → SD-WAN: sla/overlays/sites/paths/policies + probe + stats", async () => {
+  let slaId = null;
+  let ovId = null;
+  let siteId = null;
+  let polId = null;
+
+  await tc("sla profile create + update", async () => {
+    const s = expectOk(await POST("/api/v1/sdwan/sla-profiles", { name: un("E2E-SLA"), latencyMsMax: 150, jitterMsMax: 30, lossPctMax: 2, actionOnBreach: "switch" }));
+    slaId = s.id;
+    const u = expectOk(await PUT(`/api/v1/sdwan/sla-profiles/${slaId}`, { latencyMsMax: 200 }));
+    assert(Number(u.latencyMsMax) === 200, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("sla bad loss → 400", async () => {
+    const r = await POST("/api/v1/sdwan/sla-profiles", { name: un("E2E-BAD"), latencyMsMax: 150, jitterMsMax: 30, lossPctMax: 99 });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("overlay create + update", async () => {
+    const o = expectOk(await POST("/api/v1/sdwan/overlays", { name: un("E2E-OVL"), topology: "hub_spoke", encryption: "wireguard" }));
+    ovId = o.id;
+    const u = expectOk(await PUT(`/api/v1/sdwan/overlays/${ovId}`, { enabled: false }));
+    assert(u.enabled === false, JSON.stringify(u).slice(0, 140));
+    await PUT(`/api/v1/sdwan/overlays/${ovId}`, { enabled: true });
+  });
+
+  await tc("site create on overlay", async () => {
+    const s = expectOk(await POST("/api/v1/sdwan/sites", { overlayId: ovId, name: un("E2E-SITE"), role: "spoke", publicIp: "203.0.113.50", region: "e2e" }));
+    siteId = s.id;
+    assert(s.role === "spoke", JSON.stringify(s).slice(0, 160));
+  });
+
+  await tc("site bad publicIp → 400", async () => {
+    const r = await POST("/api/v1/sdwan/sites", { overlayId: ovId, name: un("E2E-BAD"), publicIp: "999.1.1.1" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("site paths — list + create + update + probe", async () => {
+    const paths = expectOk(await POST(`/api/v1/sdwan/sites/${siteId}/paths`, { wanInterface: "wan0", label: "broadband", latencyMs: 25, jitterMs: 4, lossPct: 0.5, state: "up" }));
+    const pathId = paths.id ?? paths.path?.id;
+    assert(pathId, JSON.stringify(paths).slice(0, 200));
+    const u = expectOk(await PUT(`/api/v1/sdwan/paths/${pathId}`, { latencyMs: 40 }));
+    assert(Number(u.latencyMs) === 40, JSON.stringify(u).slice(0, 140));
+    const p = expectOk(await POST(`/api/v1/sdwan/paths/${pathId}/probe`, {}));
+    check("probe", true, JSON.stringify(p).slice(0, 140));
+  });
+
+  await tc("sdwan policy create + update", async () => {
+    const p = expectOk(await POST("/api/v1/sdwan/policies", { name: un("E2E-SDWANPOL"), slaProfileId: slaId, preferredPath: "latency", enabled: true }));
+    polId = p.id;
+    assert(p.preferredPath === "latency", JSON.stringify(p).slice(0, 200));
+    const u = expectOk(await PUT(`/api/v1/sdwan/policies/${polId}`, { preferredPath: "fixed" }));
+    assert(u.preferredPath === "fixed", JSON.stringify(u).slice(0, 160));
+  });
+
+  await tc("sdwan stats", async () => {
+    const st = expectOk(await GET("/api/v1/sdwan/stats"));
+    check("stats", true, JSON.stringify(st).slice(0, 120));
+  });
+
+  await tc("cleanup: policy/site/overlay/sla → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/sdwan/policies/${polId}`));
+    expectOk(await DEL(`/api/v1/sdwan/sites/${siteId}`));
+    expectOk(await DEL(`/api/v1/sdwan/overlays/${ovId}`));
+    expectOk(await DEL(`/api/v1/sdwan/sla-profiles/${slaId}`));
+    const ovs = (await GET("/api/v1/sdwan/overlays")).json?.data ?? [];
+    assert(!ovs.some((x) => x.id === ovId), "overlay still present");
+    slaId = ovId = siteId = polId = null;
+  });
+});
+
+suite("ipv6", "System → IPv6: settings/nat66(+simulate)/dhcpv6/prefix-delegation/status", async () => {
+  let setSnap = null;
+  let natId = null;
+  let dhcpId = null;
+
+  await tc("ipv6 settings snapshot → change → revert", async () => {
+    setSnap = expectOk(await GET("/api/v1/ipv6/settings"));
+    const body = { enabled: true, dhcpv6Enabled: true, slaacEnabled: false, rdnssEnabled: false, pdWanInterface: "ens34", pdPrefixLength: setSnap.pdPrefixLength ?? 56, raMode: setSnap.raMode ?? "slaac" };
+    const u = expectOk(await PUT("/api/v1/ipv6/settings", body));
+    assert(u.slaacEnabled === false, JSON.stringify(u).slice(0, 200));
+    const back = expectOk(await PUT("/api/v1/ipv6/settings", setSnap));
+    check("ipv6 settings reverted", true, `enabled=${back.enabled}`);
+  });
+
+  await tc("nat66 nptv6 create + update + simulate", async () => {
+    const n = expectOk(await POST("/api/v1/ipv6/nat66-rules", { name: un("E2E-NAT66"), type: "nptv6", sourcePrefix: "2001:db8:aa::/48", translatedPrefix: "2001:db8:bb::/48", interfaceName: "ens34" }));
+    natId = n.id;
+    assert(n.type === "nptv6", JSON.stringify(n).slice(0, 160));
+    const u = expectOk(await PUT(`/api/v1/ipv6/nat66-rules/${natId}`, { enabled: false }));
+    assert(u.enabled === false, JSON.stringify(u).slice(0, 140));
+    const s = await POST(`/api/v1/ipv6/nat66-rules/${natId}/simulate`, {});
+    check("nat66 simulate", true, `status=${s.status} body=${JSON.stringify(s.json).slice(0, 120)}`);
+  });
+
+  await tc("nat66 nptv6 same prefix → 400", async () => {
+    const r = await POST("/api/v1/ipv6/nat66-rules", { name: un("E2E-BAD"), type: "nptv6", sourcePrefix: "2001:db8:cc::/48", translatedPrefix: "2001:db8:cc::/48", interfaceName: "ens34" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("nat66 dnat66 without destPort → 400", async () => {
+    const r = await POST("/api/v1/ipv6/nat66-rules", { name: un("E2E-BAD2"), type: "dnat66", sourcePrefix: "2001:db8:dd::/48", interfaceName: "ens34" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("dhcpv6 server create + update", async () => {
+    const d = expectOk(await POST("/api/v1/ipv6/dhcpv6-servers", { interfaceName: "ens34", poolStart: "2001:db8:ee::100", poolEnd: "2001:db8:ee::1ff", prefixLength: 64, dnsServers: ["2001:db8:ee::1"] }));
+    dhcpId = d.id;
+    assert(d.poolStart === "2001:db8:ee::100", JSON.stringify(d).slice(0, 180));
+    const u = expectOk(await PUT(`/api/v1/ipv6/dhcpv6-servers/${dhcpId}`, { preferredLifetime: 1800 }));
+    assert(Number(u.preferredLifetime) === 1800, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("dhcpv6 poolEnd <= poolStart → 400", async () => {
+    const r = await POST("/api/v1/ipv6/dhcpv6-servers", { interfaceName: "ens34", poolStart: "2001:db8:ff::200", poolEnd: "2001:db8:ff::100" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("prefix delegation read + status read", async () => {
+    const pd = expectOk(await GET("/api/v1/ipv6/prefix-delegation"));
+    check("pd", true, JSON.stringify(pd).slice(0, 120));
+    const st = expectOk(await GET("/api/v1/ipv6/status"));
+    check("status", true, JSON.stringify(st).slice(0, 120));
+  });
+
+  await tc("cleanup: nat66 + dhcpv6 → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/ipv6/nat66-rules/${natId}`));
+    expectOk(await DEL(`/api/v1/ipv6/dhcpv6-servers/${dhcpId}`));
+    const nats = (await GET("/api/v1/ipv6/nat66-rules")).json?.data ?? [];
+    assert(!nats.some((x) => x.id === natId), "nat66 still present");
+    natId = dhcpId = null;
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // runner
 // ═════════════════════════════════════════════════════════════════════════════
 

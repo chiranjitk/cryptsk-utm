@@ -4,13 +4,13 @@
  * so the demo counters move like live traffic.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { simulateNat66Hit } from "@/app/api/v1/ipv6/shared";
 
 export const dynamic = "force-dynamic";
 
 export const POST = route({ area: "ipv6", section: "ipv6" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const updated = await simulateNat66Hit(auth.tenantId, id);
   return {
     data: updated,

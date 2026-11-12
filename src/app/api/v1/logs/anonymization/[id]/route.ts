@@ -2,7 +2,7 @@
  * M12 anonymization rules — PUT update + DELETE by id (spec 2.13 §6).
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { anonymizationRuleUpdateSchema } from "@/lib/validators/reporting";
 import { db } from "@/lib/db";
@@ -33,7 +33,7 @@ function toDto(row: {
 export const PUT = route(
   { area: "reports", bodySchema: anonymizationRuleUpdateSchema, section: "reports" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     if (!Number.isInteger(id) || id <= 0) throw ApiError.validation("Invalid rule id");
     const existing = await db.anonymizationRule.findFirst({ where: { tenantId: auth.tenantId, id } });
     if (!existing) throw ApiError.notFound("Anonymization rule not found");
@@ -56,7 +56,7 @@ export const PUT = route(
 );
 
 export const DELETE = route({ area: "reports", section: "reports" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   if (!Number.isInteger(id) || id <= 0) throw ApiError.validation("Invalid rule id");
   const existing = await db.anonymizationRule.findFirst({ where: { tenantId: auth.tenantId, id } });
   if (!existing) throw ApiError.notFound("Anonymization rule not found");

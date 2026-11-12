@@ -4,7 +4,7 @@
  * rules + custom lists (logs keep the dangling logical policyId by design).
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { policyUpdateSchema } from "@/lib/validators/url-filter";
 import { deletePolicy, updatePolicy } from "@/app/api/v1/url-filter/service";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const PUT = route(
   { area: "url_filter", bodySchema: policyUpdateSchema, section: "url_filter" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const updated = await updatePolicy(auth.tenantId, id, body);
     return {
       data: updated,
@@ -29,7 +29,7 @@ export const PUT = route(
 );
 
 export const DELETE = route({ area: "url_filter", section: "url_filter" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   await deletePolicy(auth.tenantId, id);
   return {
     data: { ok: true },

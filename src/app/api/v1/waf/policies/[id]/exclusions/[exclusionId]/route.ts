@@ -4,7 +4,7 @@
  * The exclusion must belong to the given policy (and tenant) → 404 otherwise.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { exclusionUpdateSchema } from "@/lib/validators/waf";
@@ -24,8 +24,8 @@ async function exclusionOr404(tenantId: number, policyId: number, exclusionId: n
 export const PUT = route(
   { area: "waf", bodySchema: exclusionUpdateSchema, section: "waf" },
   async ({ auth, body, params }) => {
-    const policyId = Number(params.id);
-    const exclusionId = Number(params.exclusionId);
+    const policyId = numericId(params, "id");
+    const exclusionId = numericId(params, "exclusionId");
     await policyOr404(auth.tenantId, policyId);
     await exclusionOr404(auth.tenantId, policyId, exclusionId);
 
@@ -53,8 +53,8 @@ export const PUT = route(
 );
 
 export const DELETE = route({ area: "waf", section: "waf" }, async ({ auth, params }) => {
-  const policyId = Number(params.id);
-  const exclusionId = Number(params.exclusionId);
+  const policyId = numericId(params, "id");
+  const exclusionId = numericId(params, "exclusionId");
   await policyOr404(auth.tenantId, policyId);
   const existing = await exclusionOr404(auth.tenantId, policyId, exclusionId);
 

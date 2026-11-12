@@ -3,7 +3,7 @@
  * /policies/[id]. Mutations audit `waf.exclusion.create`, section `waf`.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { db } from "@/lib/db";
 import { exclusionCreateSchema } from "@/lib/validators/waf";
 import { policyOr404, shapeExclusion } from "../../../shared";
@@ -11,7 +11,7 @@ import { policyOr404, shapeExclusion } from "../../../shared";
 export const dynamic = "force-dynamic";
 
 export const GET = route({ area: "waf" }, async ({ auth, params }) => {
-  const policyId = Number(params.id);
+  const policyId = numericId(params, "id");
   await policyOr404(auth.tenantId, policyId);
   const rows = await db.wafExclusion.findMany({
     where: { tenantId: auth.tenantId, policyId },
@@ -23,7 +23,7 @@ export const GET = route({ area: "waf" }, async ({ auth, params }) => {
 export const POST = route(
   { area: "waf", bodySchema: exclusionCreateSchema, section: "waf" },
   async ({ auth, body, params }) => {
-    const policyId = Number(params.id);
+    const policyId = numericId(params, "id");
     await policyOr404(auth.tenantId, policyId);
     const created = await db.wafExclusion.create({
       data: {

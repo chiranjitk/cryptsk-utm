@@ -5,7 +5,7 @@
  * against the merged record.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { idpSemanticError, idpUpdateSchema } from "@/lib/validators/identity-advanced";
 import { db } from "@/lib/db";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const PUT = route(
   { area: "federation", bodySchema: idpUpdateSchema, section: "identity" },
   async ({ auth, body, params }) => {
-    const id = Number(params.id);
+    const id = numericId(params, "id");
     const existing = await db.federatedIdp.findFirst({ where: { id, tenantId: auth.tenantId } });
     if (!existing) throw ApiError.notFound("IdP not found");
     await assertIdpCertUsable(auth.tenantId, body.idpCertId);
@@ -61,7 +61,7 @@ export const PUT = route(
 );
 
 export const DELETE = route({ area: "federation", section: "identity" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const existing = await db.federatedIdp.findFirst({ where: { id, tenantId: auth.tenantId } });
   if (!existing) throw ApiError.notFound("IdP not found");
   await db.federatedIdp.delete({ where: { id: existing.id } });

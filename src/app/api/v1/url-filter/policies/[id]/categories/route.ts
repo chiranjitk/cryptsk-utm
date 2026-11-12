@@ -6,21 +6,21 @@
  * category). Audit `url_filter.category_rules.replace`.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { categoryRulesPutSchema } from "@/lib/validators/url-filter";
 import { listCategoryRules, replaceCategoryRules } from "@/app/api/v1/url-filter/service";
 
 export const dynamic = "force-dynamic";
 
 export const GET = route({ area: "url_filter" }, async ({ auth, params }) => {
-  const policyId = Number(params.id);
+  const policyId = numericId(params, "id");
   return { data: await listCategoryRules(auth.tenantId, policyId) };
 });
 
 export const PUT = route(
   { area: "url_filter", bodySchema: categoryRulesPutSchema, section: "url_filter" },
   async ({ auth, body, params }) => {
-    const policyId = Number(params.id);
+    const policyId = numericId(params, "id");
     const rules = await replaceCategoryRules(auth.tenantId, policyId, body.rules);
     return {
       data: rules,

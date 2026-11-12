@@ -3,13 +3,13 @@
  * 404 on unknown session; idempotent success when already disconnected.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { disconnectSession } from "@/lib/vpn/service";
 
 export const dynamic = "force-dynamic";
 
 export const POST = route({ area: "vpn_sessions", section: "vpn" }, async ({ auth, params }) => {
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const session = await disconnectSession(auth.tenantId, id);
   return {
     data: session,

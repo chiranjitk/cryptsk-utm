@@ -3,7 +3,7 @@
  * next call (session.ts); the row stays visible in the M10 list for history.
  */
 
-import { route } from "@/lib/api/handler";
+import { route, numericId } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
 import { revokeKey } from "@/lib/api-keys/service";
 
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export const DELETE = route({ area: "api_keys", section: "system" }, async ({ auth, params }) => {
   if (auth.kind === "key") throw ApiError.forbidden("API keys cannot manage API keys");
-  const id = Number(params.id);
+  const id = numericId(params, "id");
   const revoked = await revokeKey(auth.tenantId, id);
   return {
     data: revoked,
