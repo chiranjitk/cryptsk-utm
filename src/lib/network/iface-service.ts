@@ -261,6 +261,44 @@ async function collectDisableRefs(tenantId: number, name: string): Promise<Array
   return refs;
 }
 
+export interface IfaceRefItem {
+  kind: string;
+  label: string;
+}
+
+/**
+ * Batched reference map for the whole tenant — the FortiGate "Ref." column
+ * backing data (routes, WAN policies, DHCP subnets, zones, master memberships).
+ */
+export async function collectAllRefs(tenantId: number): Promise<Map<string, { count: number; items: IfaceRefItem[] }>> {
+  const [routes, wanPolicies, dhcpSubnets, zones, masters] = await Promise.all([
+    db.staticRoute.findMany({ where: { tenantId, enabled: true }, select: { interfaceName: true, destinationCidr: true } }),
+    db.wanPolicy.findMany({ where: { tenantId }, select: { interfaceName: true, id: true, mode: true } }),
+    db.dhcpSubnet.findMany({ where: { tenantId, enabled: true }, select: { interfaceName: true, subnetCidr: true } }),
+    db.zone.findMany({ where: { tenantId }, select: { name: true, interfaceNames: true } }),
+    db.networkInterface.findMany({ where: { tenantId, type: { in: ["bridge", "bond"] } }, select: { name: true, type: true, config: true } }),
+  ]);
+  const map = new Map<string, { count: number; items: IfaceRefItem[] }>();
+  const push = (n: string | null | undefined, item: IfaceRefItem) => {
+    if (!n) return;
+    const e = map.get(n) ?? { count: 0, items: [] };
+    e.count += 1;
+    e.items.push(item);
+    map.set(n, e);
+  };
+  for (const r of routes) push(r.interfaceName, { kind: "static-route", label: r.destinationCidr });
+  for (const w of wanPolicies) push(w.interfaceName, { kind: "wan-policy", label: `#${w.id} (${w.mode})` });
+  for (const s of dhcpSubnets) push(s.interfaceName, { kind: "dhcp-subnet", label: s.subnetCidr });
+  for (const z2 of zones) {
+    for (const n of strArrJson(z2.interfaceNames)) push(n, { kind: "zone", label: z2.name });
+  }
+  for (const m of masters) {
+    const cfg = parseIfaceConfig(m.config);
+    for (const member of strArr(cfg.members)) push(member, { kind: `${m.type}-member`, label: m.name });
+  }
+  return map;
+}
+
 /** Lint the tenant and throw 400 on errors (warnings returned for callers).
  *  forceOverride=true lets the caller bypass BR-MGMT-LOCKOUT specifically —
  *  an operator may consciously give up the last mgmt interface (recovery

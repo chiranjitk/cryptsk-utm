@@ -18,45 +18,7 @@ export type WanState = "up" | "degraded" | "down" | "unknown";
 export type MirrorDirection = "ingress" | "egress" | "both";
 export type SecondaryIp = { ip: string; cidrPrefix: number };
 
-export interface OsDriftItem {
-  field: string;
-  db: string;
-  os: string;
-}
-
-export interface OsManagedRow {
-  name: string;
-  type: string;
-  role: string;
-  enabled: boolean;
-  mode: string;
-  db: { mtu: number; ip: string | null; adminState: string };
-  os: {
-    operState: string;
-    carrier: boolean | null;
-    mtu: number | null;
-    ipv4: string[];
-    mac: string | null;
-    isDefaultRoute: boolean;
-  } | null;
-  inSync: boolean;
-  drift: OsDriftItem[];
-}
-
-export interface OsUnmanagedRow {
-  name: string;
-  operState: string;
-  mtu: number | null;
-  ipv4: string[];
-  mac: string | null;
-}
-
-export interface OsStateResp {
-  applyEnabled: boolean;
-  capturedAt: string;
-  managed: OsManagedRow[];
-  unmanaged: OsUnmanagedRow[];
-}
+// ── OS apply plan (single-interface, gated execution) ───────────────────────
 
 export interface OsPlanStep {
   cmd: string;
@@ -74,6 +36,85 @@ export interface OsApplyResp {
   reason: string;
   plans: OsPlan[];
   results?: Array<{ cmd: string; ok: boolean; stderr?: string }>;
+}
+
+/** Live kernel facts merged into every interface row (vendor-parity columns). */
+export interface IfaceLive {
+  operState: string;
+  carrier: boolean | null;
+  mtu: number | null;
+  ipv4: string[];
+  mac: string | null;
+  isDefaultRoute: boolean;
+}
+
+export interface IfaceRefItem {
+  kind: string;
+  label: string;
+}
+
+export interface IfaceRefs {
+  count: number;
+  items: IfaceRefItem[];
+}
+
+// ── diagnostics (vendor-style Diagnostics section) ─────────────────────────
+
+export interface ArpEntry {
+  ip: string;
+  mac: string | null;
+  device: string;
+  complete: boolean;
+}
+
+export interface OsRouteEntry {
+  iface: string;
+  destination: string;
+  gateway: string;
+  mask: string;
+  metric: number;
+  isDefault: boolean;
+}
+
+export interface DiagPingResult {
+  ok: boolean;
+  output: string;
+  lossPct: number | null;
+  avgMs: number | null;
+  error?: string;
+}
+
+export interface NetDevCounters {
+  name: string;
+  rxBytes: number;
+  rxPackets: number;
+  rxErrors: number;
+  rxDrops: number;
+  txBytes: number;
+  txPackets: number;
+  txErrors: number;
+  txDrops: number;
+}
+
+export interface HostPort {
+  name: string;
+  operState: string;
+  mtu: number | null;
+  mac: string | null;
+  ipv4: string[];
+  ipv6: string[];
+  carrier: boolean | null;
+  isDefaultRoute: boolean;
+  counters: {
+    rxBytes: number;
+    rxPackets: number;
+    rxErrors: number;
+    rxDrops: number;
+    txBytes: number;
+    txPackets: number;
+    txErrors: number;
+    txDrops: number;
+  } | null;
 }
 
 export interface Iface {
@@ -95,6 +136,10 @@ export interface Iface {
   degraded: boolean;
   rxKbps: number;
   txKbps: number;
+  /** live kernel state (null = interface absent on the host) */
+  live?: IfaceLive | null;
+  /** FortiGate-style reference count + entries */
+  refs?: IfaceRefs;
 }
 
 export interface IfaceStats {
@@ -341,13 +386,23 @@ export const netApi = {
   deleteIface: (id: number) => netFetch<{ ok: boolean }>(`/api/v1/interfaces/${id}`, { method: "DELETE" }),
   ifaceStats: (id: number) => netFetch<IfaceStats>(`/api/v1/interfaces/${id}/stats`),
 
-  // OS-level sync (drift + gated apply)
-  ifaceOsState: () => netFetch<OsStateResp>("/api/v1/interfaces/os-state"),
+  // OS-level sync (gated single-interface apply)
   applyIfaceOs: (name?: string) =>
     netFetch<OsApplyResp>("/api/v1/interfaces/apply", {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify(name ? { name } : {}),
+    }),
+
+  // diagnostics (ARP / routes / counters / ping — vendor Diagnostics section)
+  listArp: () => netFetchList<ArpEntry>("/api/v1/network/arp"),
+  listOsRoutes: () => netFetchList<OsRouteEntry>("/api/v1/network/routes"),
+  listHostPorts: () => netFetchList<HostPort>("/api/v1/network/host-ports"),
+  pingDiag: (host: string, iface?: string, count = 3) =>
+    netFetch<DiagPingResult>("/api/v1/network/diagnostics/ping", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ host, ...(iface ? { iface } : {}), count }),
     }),
 
   // derived switching tables (engine views — not persisted)

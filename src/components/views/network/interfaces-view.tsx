@@ -22,8 +22,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
@@ -76,10 +84,15 @@ import {
   cfgStringArray,
   type BondMode,
   type Iface,
+  type IfaceLive,
   type IfaceMode,
   type IfaceRole,
   type IfaceType,
   type IfaceBody,
+  type ArpEntry,
+  type OsRouteEntry,
+  type DiagPingResult,
+  type HostPort,
   type MacRow,
   type Mirror,
   type MirrorDirection,
@@ -109,7 +122,9 @@ const LLDP_KEY = ["network", "lldp"] as const;
 const MAC_KEY = ["network", "mac-table"] as const;
 const MIRRORS_KEY = ["network", "port-mirrors"] as const;
 const NET_ZONES_KEY = ["network", "zones"] as const;
-const OS_STATE_KEY = ["network", "os-state"] as const;
+const HOST_PORTS_KEY = ["network", "host-ports"] as const;
+const ARP_KEY = ["network", "arp"] as const;
+const OS_ROUTES_KEY = ["network", "os-routes"] as const;
 
 /** Role semantics surfaced under the role select (enterprise UX). */
 const ROLE_HINTS: Record<IfaceRole, string> = {
@@ -305,6 +320,31 @@ export function InterfacesView() {
     refs: Array<{ kind: string; label: string }>;
   } | null>(null);
 
+  const [refsDialog, setRefsDialog] = useState<Iface | null>(null);
+  const [plan, setPlan] = useState<OsApplyResp | null>(null);
+  const [pingResult, setPingResult] = useState<{ target: string; result: DiagPingResult } | null>(null);
+
+  const planMut = useMutation({
+    mutationFn: (name: string) => netApi.applyIfaceOs(name),
+    onSuccess: (d) => setPlan(d),
+    onError: (err) => toastErr(err, "Apply plan failed"),
+  });
+
+  const pingMut = useMutation({
+    mutationFn: (args: { host: string; iface: string }) => netApi.pingDiag(args.host, args.iface, 3),
+    onSuccess: (r, args) => setPingResult({ target: `${args.host} via ${args.iface}`, result: r }),
+    onError: (err) => toastErr(err, "Ping failed"),
+  });
+
+  const pingGateway = (iface: Iface) => {
+    const gw = typeof iface.config["gateway"] === "string" ? (iface.config["gateway"] as string) : null;
+    if (!gw) {
+      toastErr(new NetApiError("VALIDATION_ERROR", `No gateway configured on ${iface.name}`), "Ping gateway");
+      return;
+    }
+    pingMut.mutate({ host: gw, iface: iface.name });
+  };
+
   const toggleMut = useMutation({
     mutationFn: ({ iface, force }: { iface: Iface; force?: boolean }) =>
       netApi.updateIface(
@@ -361,7 +401,7 @@ export function InterfacesView() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <TabsList aria-label="Network interface tabs">
           <TabsTrigger value="interfaces">Interfaces</TabsTrigger>
-          <TabsTrigger value="os-state">OS State</TabsTrigger>
+          <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
           <TabsTrigger value="lldp">LLDP Neighbors</TabsTrigger>
           <TabsTrigger value="mac">MAC Table</TabsTrigger>
           <TabsTrigger value="mirroring">Mirroring</TabsTrigger>
@@ -438,18 +478,19 @@ export function InterfacesView() {
               />
             ) : (
               <ScrollWrap>
-                <Table className="min-w-[1050px] text-sm">
+                <Table className="min-w-[1240px] text-sm">
                   <TableHeader className="sticky top-0 z-10 bg-card">
                     <TableRow>
                       <TableHead>Name</TableHead>
-                      <TableHead className="w-14">Mode</TableHead>
                       <TableHead className="w-20">Role</TableHead>
                       <TableHead className="w-24">Zone</TableHead>
                       <TableHead>Address / config</TableHead>
-                      <TableHead className="w-20">MTU</TableHead>
+                      <TableHead className="w-24">MTU / MSS</TableHead>
+                      <TableHead className="w-28">Link</TableHead>
+                      <TableHead className="w-14">Ref.</TableHead>
+                      <TableHead className="w-36">MAC</TableHead>
                       <TableHead className="w-44">Live rx / tx</TableHead>
-                      <TableHead className="w-24">Link</TableHead>
-                      <TableHead className="w-28 pr-2 text-right">Actions</TableHead>
+                      <TableHead className="w-24 pr-2 text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -460,12 +501,19 @@ export function InterfacesView() {
                         <TableRow key={iface.id} className={cn(!iface.enabled && "opacity-60")}>
                           <TableCell>
                             <div className="flex flex-col gap-1">
-                              <span className="font-mono text-sm font-medium">{iface.name}</span>
-                              <TypeBadge type={iface.type} className="w-fit" />
+                              <span className="font-mono text-sm font-medium">
+                                {iface.name}
+                                {iface.live?.isDefaultRoute ? (
+                                  <Badge variant="outline" className="ml-1.5 border-zinc-400 px-1 py-0 text-[9px] font-normal text-zinc-500">
+                                    gw*
+                                  </Badge>
+                                ) : null}
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <TypeBadge type={iface.type} className="w-fit" />
+                                {iface.mode === "l2" ? <ModeChip mode={iface.mode} /> : null}
+                              </div>
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <ModeChip mode={iface.mode} />
                           </TableCell>
                           <TableCell>
                             <RoleBadge role={iface.role} />
@@ -474,7 +522,21 @@ export function InterfacesView() {
                             {iface.zoneName ?? zoneNameById.get(iface.zoneId ?? -1) ?? "—"}
                           </TableCell>
                           <TableCell>
-                            <IfaceConfigSummary iface={iface} />
+                            <span className="inline-flex items-center gap-1">
+                              <IfaceConfigSummary iface={iface} />
+                              {mtuDrift(iface) ? (
+                                <span
+                                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+                                  title={`MTU changed out-of-band — OS reports ${iface.live?.mtu}`}
+                                />
+                              ) : null}
+                              {ipDrift(iface) ? (
+                                <span
+                                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+                                  title={`Address changed out-of-band — OS reports ${(iface.live?.ipv4 ?? []).join(", ") || "none"}`}
+                                />
+                              ) : null}
+                            </span>
                             {iface.description ? (
                               <p className="mt-0.5 max-w-56 truncate text-[11px] text-zinc-400">{iface.description}</p>
                             ) : null}
@@ -482,17 +544,8 @@ export function InterfacesView() {
                           <TableCell className="tabular-nums">
                             {iface.mtu}
                             {iface.mssClamp != null ? (
-                              <span className="ml-1 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">MSS</span>
+                              <span className="ml-1 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">MSS {iface.mssClamp}</span>
                             ) : null}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <div className="w-24 shrink-0 text-right tabular-nums">
-                                <span className="block text-xs text-rose-700 dark:text-rose-500">↓ {fmtKbps(liveRates.rxKbps)}</span>
-                                <span className="block text-xs text-zinc-500 dark:text-zinc-400">↑ {fmtKbps(liveRates.txKbps)}</span>
-                              </div>
-                              <Sparkline points={liveSparks} />
-                            </div>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
@@ -501,12 +554,41 @@ export function InterfacesView() {
                               ) : (
                                 <LinkDot up={false} neutral />
                               )}
+                              <span
+                                className={cn(
+                                  "font-mono text-[11px]",
+                                  iface.enabled && iface.live
+                                    ? iface.live.operState === "up"
+                                      ? "text-emerald-600 dark:text-emerald-400"
+                                      : iface.live.operState === "down"
+                                        ? "text-rose-500"
+                                        : "text-zinc-400"
+                                    : "text-zinc-400",
+                                )}
+                              >
+                                {iface.live ? iface.live.operState : iface.enabled ? iface.linkUp ? "up" : "down" : "off"}
+                              </span>
                               <Switch
                                 checked={iface.enabled}
                                 disabled={toggleMut.isPending}
                                 aria-label={`Toggle interface ${iface.name}`}
                                 onCheckedChange={() => toggleMut.mutate({ iface })}
                               />
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <RefsCell iface={iface} onOpen={(target) => setRefsDialog(target)} />
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-zinc-500">
+                            {iface.live?.mac ?? "—"}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div className="w-24 shrink-0 text-right tabular-nums">
+                                <span className="block text-xs text-rose-700 dark:text-rose-500">↓ {fmtKbps(liveRates.rxKbps)}</span>
+                                <span className="block text-xs text-zinc-500 dark:text-zinc-400">↑ {fmtKbps(liveRates.txKbps)}</span>
+                              </div>
+                              <Sparkline points={liveSparks} />
                             </div>
                           </TableCell>
                           <TableCell className="pr-2 text-right">
@@ -529,7 +611,26 @@ export function InterfacesView() {
                               >
                                 <Icons.Activity className="h-3.5 w-3.5" />
                               </Button>
-                              {iface.type !== "physical" && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`More actions for ${iface.name}`}>
+                                    <Icons.MoreVertical className="h-3.5 w-3.5" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-52">
+                                  <DropdownMenuItem onClick={() => pingGateway(iface)}>
+                                    <Icons.Radar className="mr-2 h-3.5 w-3.5" /> Ping gateway
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => setRefsDialog(iface)}>
+                                    <Icons.ListTree className="mr-2 h-3.5 w-3.5" /> Search references
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => planMut.mutate(iface.name)} disabled={planMut.isPending}>
+                                    <Icons.Terminal className="mr-2 h-3.5 w-3.5" /> Preview apply plan
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                              {iface.type !== "physical" && (iface.refs?.count ?? 0) === 0 && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -558,12 +659,12 @@ export function InterfacesView() {
         </Card>
         <p className="flex items-center gap-1.5 text-xs text-zinc-400">
           <Icons.Info className="h-3.5 w-3.5" />
-          Physical interfaces are never deletable — disable them instead. Live rates update from the metrics feed (~2 s cadence).
+          Physical ports are never deletable — disable instead. Ref. = objects referencing the interface (delete is hidden while &gt; 0). Amber dots mark out-of-band kernel changes; apply is plan-preview on this install.
         </p>
       </TabsContent>
 
-      <TabsContent value="os-state" className="space-y-3">
-        <OsStateTab />
+      <TabsContent value="diagnostics" className="space-y-3">
+        <DiagnosticsTab ifaces={ifaces} />
       </TabsContent>
 
       <TabsContent value="lldp" className="space-y-3">
@@ -616,7 +717,168 @@ export function InterfacesView() {
           pendingDisable && toggleMut.mutate({ iface: pendingDisable.iface, force: true })
         }
       />
+
+      {/* Used-by dialog (FortiGate Ref. parity) */}
+      <Dialog open={refsDialog !== null} onOpenChange={(open) => !open && setRefsDialog(null)}>
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icons.ListTree className="h-4 w-4 text-zinc-500" />
+              Used by — {refsDialog?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Objects referencing this interface. Delete stays hidden while references exist.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            {(refsDialog?.refs?.count ?? 0) === 0 ? (
+              <p className="py-4 text-center text-sm text-zinc-500">No references — safe to remove.</p>
+            ) : (
+              (refsDialog?.refs?.items ?? []).map((r, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800"
+                >
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">{r.kind}</span>
+                  <span className="font-mono text-xs text-zinc-700 dark:text-zinc-200">{r.label}</span>
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRefsDialog(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ping result (per-row "Ping gateway") */}
+      <Dialog open={pingResult !== null} onOpenChange={(open) => !open && setPingResult(null)}>
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icons.Radar className="h-4 w-4 text-zinc-500" />
+              Ping — {pingResult?.target}
+            </DialogTitle>
+            <DialogDescription>Scoped ICMP probe from the interface (3 packets, 1 s wait).</DialogDescription>
+          </DialogHeader>
+          {pingResult && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 text-sm">
+                {pingResult.result.lossPct != null ? (
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-xs",
+                      pingResult.result.lossPct === 0
+                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                        : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                    )}
+                  >
+                    loss {pingResult.result.lossPct}%
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-xs text-rose-500">failed</Badge>
+                )}
+                {pingResult.result.avgMs != null && (
+                  <span className="tabular-nums text-zinc-600 dark:text-zinc-300">avg {pingResult.result.avgMs} ms</span>
+                )}
+              </div>
+              <pre className="max-h-56 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] leading-snug dark:border-zinc-800 dark:bg-zinc-900">
+                {pingResult.result.error ?? pingResult.result.output}
+              </pre>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPingResult(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* single-interface apply plan (gated preview / exec) */}
+      <Dialog open={plan !== null} onOpenChange={(open) => !open && setPlan(null)}>
+        <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icons.Terminal className="h-4 w-4 text-zinc-500" />
+              OS apply plan {plan?.applied ? "(executed)" : "(preview)"}
+            </DialogTitle>
+            <DialogDescription>{plan?.reason}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {(plan?.plans ?? [])
+              .filter((p) => p.steps.length > 0)
+              .map((p) => (
+                <div key={p.name} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+                  <p className="mb-1.5 font-mono text-xs font-semibold">{p.name}</p>
+                  <ul className="space-y-1">
+                    {p.steps.map((s, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs">
+                        <span className="font-mono text-zinc-700 dark:text-zinc-300">$ {s.cmd}</span>
+                        <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{s.summary}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            {(plan?.plans ?? []).every((p) => p.steps.length === 0) && (
+              <p className="text-sm text-zinc-500">No convergence steps needed — the host already matches the console.</p>
+            )}
+            {plan?.results && plan.results.length > 0 && (
+              <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+                <p className="mb-1.5 text-xs font-semibold">Execution results</p>
+                {plan.results.map((r, i) => (
+                  <p key={i} className="flex items-center gap-2 font-mono text-xs">
+                    {r.ok ? (
+                      <Icons.CircleCheck className="h-3 w-3 text-emerald-500" />
+                    ) : (
+                      <Icons.CircleX className="h-3 w-3 text-rose-500" />
+                    )}
+                    <span className="truncate">{r.cmd}</span>
+                    {!r.ok && r.stderr ? <span className="ml-auto text-[10px] text-rose-500">{r.stderr}</span> : null}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPlan(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Tabs>
+  );
+}
+
+/** Out-of-band change detectors — exceptions only, silence is healthy (vendor convention). */
+function mtuDrift(iface: Iface): boolean {
+  return iface.live?.mtu != null && iface.live.mtu !== iface.mtu;
+}
+
+function ipDrift(iface: Iface): boolean {
+  const ip = typeof iface.config["ip"] === "string" ? (iface.config["ip"] as string) : null;
+  if (!ip || iface.mode !== "l3" || !iface.live) return false;
+  return !iface.live.ipv4.includes(ip);
+}
+
+/** FortiGate-style Ref. cell — count badge, click opens the "Used by" dialog. */
+function RefsCell({ iface, onOpen }: { iface: Iface; onOpen: (i: Iface) => void }) {
+  const count = iface.refs?.count ?? 0;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(iface)}
+      aria-label={`Show ${count} references of ${iface.name}`}
+      title={count > 0 ? (iface.refs?.items ?? []).map((r) => `${r.kind} ${r.label}`).join(", ") : "No references"}
+      className="inline-flex h-6 min-w-7 items-center justify-center rounded-md border border-zinc-200 px-1.5 text-xs tabular-nums text-zinc-600 transition-colors hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-300"
+    >
+      {count > 0 ? count : <span className="text-zinc-300 dark:text-zinc-600">0</span>}
+    </button>
   );
 }
 
@@ -2194,151 +2456,100 @@ function MirrorEditor(props: { open: boolean; onOpenChange: (open: boolean) => v
   );
 }
 
-// ── OS State tab (drift between console DB and the live host) ───────────────
+// ── Diagnostics tab (vendor-style: host ports / ARP / routes / ping) ────────
 
-function DriftBadge({ inSync, drift, managed }: { inSync: boolean; drift: Array<{ field: string; db: string; os: string }>; managed: boolean }) {
-  if (!managed) {
-    return (
-      <Badge variant="outline" className="gap-1 border-rose-600/50 bg-transparent text-[10px] font-medium text-rose-500">
-        <Icons.CircleOff className="h-3 w-3" /> not on host
-      </Badge>
-    );
-  }
-  if (inSync) {
-    return (
-      <Badge variant="outline" className="gap-1 border-emerald-500/40 bg-emerald-500/10 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-        <Icons.CircleCheck className="h-3 w-3" /> in sync
-      </Badge>
-    );
-  }
-  return (
-    <Badge
-      variant="outline"
-      className="gap-1 border-amber-500/40 bg-amber-500/10 text-[10px] font-medium text-amber-600 dark:text-amber-400"
-      title={drift.map((d) => `${d.field}: db=${d.db} os=${d.os}`).join(" | ")}
-    >
-      <Icons.TriangleAlert className="h-3 w-3" /> drift ({drift.length})
-    </Badge>
-  );
-}
+function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
+  const portsQuery = useQuery({ queryKey: HOST_PORTS_KEY, queryFn: () => netApi.listHostPorts(), refetchInterval: 10_000 });
+  const arpQuery = useQuery({ queryKey: ARP_KEY, queryFn: () => netApi.listArp(), refetchInterval: 10_000 });
+  const routesQuery = useQuery({ queryKey: OS_ROUTES_KEY, queryFn: () => netApi.listOsRoutes(), refetchInterval: 10_000 });
 
-function OsStateTab() {
-  const query = useQuery({ queryKey: OS_STATE_KEY, queryFn: () => netApi.ifaceOsState(), refetchInterval: 10_000 });
-  const [plan, setPlan] = useState<OsApplyResp | null>(null);
-  const applyMut = useMutation({
-    mutationFn: () => netApi.applyIfaceOs(),
-    onSuccess: (d) => setPlan(d),
-    onError: (err) => toastErr(err, "Apply plan failed"),
+  const dbNames = useMemo(() => new Set(ifaces.map((i) => i.name)), [ifaces]);
+
+  // ping tool state
+  const [pingHost, setPingHost] = useState("");
+  const [pingIface, setPingIface] = useState("");
+  const [pingCount, setPingCount] = useState("3");
+  const [pingResult2, setPingResult2] = useState<DiagPingResult | null>(null);
+  const pingMut2 = useMutation({
+    mutationFn: () => netApi.pingDiag(pingHost.trim(), pingIface || undefined, Number(pingCount) || 3),
+    onSuccess: (r) => setPingResult2(r),
+    onError: (err) => toastErr(err, "Ping failed"),
   });
-  const data = query.data;
-  const managed = useMemo(() => data?.managed ?? [], [data]);
-  const unmanaged = useMemo(() => data?.unmanaged ?? [], [data]);
-  const driftCount = managed.filter((r) => !r.inSync).length;
-  const syncCount = managed.filter((r) => r.inSync).length;
+
+  const ports = useMemo(() => portsQuery.data?.data ?? [], [portsQuery.data]);
+  const arp = useMemo(() => arpQuery.data?.data ?? [], [arpQuery.data]);
+  const routes = useMemo(() => routesQuery.data?.data ?? [], [routesQuery.data]);
 
   return (
-    <div className="space-y-3">
-      <InfoBanner title="Console ↔ host OS sync">
-        Desired state lives in the console database; actual state is read live from the host kernel (/sys/class/net + interface
-        addresses). Apply is gated by CONSOLE_OS_APPLY on the appliance — everywhere else this is a plan preview.
+    <div className="space-y-4">
+      <InfoBanner title="Live host diagnostics">
+        Read straight from the Linux host (/sys/class/net, /proc/net/dev · arp · route) — the same kernel the appliance
+        forwards packets with. Ping binds to the selected source interface (pfSense-style scoped probe).
       </InfoBanner>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline" className="gap-1 border-emerald-500/40 bg-emerald-500/10 text-xs text-emerald-600 dark:text-emerald-400">
-          {syncCount} in sync
-        </Badge>
-        {driftCount > 0 && (
-          <Badge variant="outline" className="gap-1 border-amber-500/40 bg-amber-500/10 text-xs text-amber-600 dark:text-amber-400">
-            {driftCount} drift
-          </Badge>
-        )}
-        <Badge variant="outline" className="border-zinc-300 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-          {unmanaged.length} unmanaged
-        </Badge>
-        <Badge variant="outline" className="border-zinc-300 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-          apply {data?.applyEnabled ? "armed" : "gated off"}
-        </Badge>
-        <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => void query.refetch()} disabled={query.isFetching}>
-            <Icons.RefreshCw className={cn("mr-1 h-3.5 w-3.5", query.isFetching && "animate-spin")} /> Refresh
-          </Button>
-          <Button size="sm" onClick={() => applyMut.mutate()} disabled={applyMut.isPending} className="bg-zinc-700 text-white hover:bg-zinc-800">
-            <Icons.Terminal className="mr-1 h-3.5 w-3.5" /> {applyMut.isPending ? "Planning…" : "Plan apply"}
-          </Button>
-        </div>
-      </div>
-
+      {/* host ports inventory */}
       <Card className="p-0">
         <CardContent className="p-0">
-          {query.error ? (
+          <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Host ports (kernel inventory)</p>
+            <Button size="sm" variant="outline" className="h-7" onClick={() => void portsQuery.refetch()} disabled={portsQuery.isFetching}>
+              <Icons.RefreshCw className={cn("mr-1 h-3 w-3", portsQuery.isFetching && "animate-spin")} /> Refresh
+            </Button>
+          </div>
+          {portsQuery.isLoading ? (
             <div className="p-4">
-              <QueryError error={query.error} onRetry={() => void query.refetch()} />
+              <TableSkeleton rows={4} cols={8} />
             </div>
-          ) : query.isLoading ? (
-            <div className="p-4">
-              <TableSkeleton rows={6} cols={7} />
-            </div>
-          ) : managed.length === 0 ? (
-            <EmptyBlock icon={<Icons.Server className="h-6 w-6" />} title="No managed interfaces" description="Create interfaces in the Interfaces tab first." />
           ) : (
             <ScrollWrap>
-              <Table className="min-w-[980px] text-sm">
+              <Table className="min-w-[900px] text-sm">
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
-                    <TableHead>Interface</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>DB (desired)</TableHead>
-                    <TableHead>OS (actual)</TableHead>
+                    <TableHead>Port</TableHead>
                     <TableHead>Oper state</TableHead>
+                    <TableHead>Carrier</TableHead>
+                    <TableHead>MTU</TableHead>
                     <TableHead>MAC</TableHead>
-                    <TableHead className="w-36">Sync</TableHead>
+                    <TableHead>IPv4</TableHead>
+                    <TableHead className="text-right">rx err/drop</TableHead>
+                    <TableHead className="text-right">tx err/drop</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {managed.map((r) => (
-                    <TableRow key={r.name} className={cn(!r.inSync && "bg-amber-500/5")}>
-                      <TableCell className="font-mono text-sm font-medium">
-                        {r.name}
-                        <span className="ml-1.5 text-[10px] font-normal text-zinc-400">{r.type}</span>
-                        {r.os?.isDefaultRoute && (
-                          <Badge variant="outline" className="ml-1.5 border-zinc-400 text-[9px] font-normal text-zinc-500">
+                  {ports.map((p) => (
+                    <TableRow key={p.name}>
+                      <TableCell className="font-mono text-xs font-medium">
+                        {p.name}
+                        {p.isDefaultRoute ? (
+                          <Badge variant="outline" className="ml-1.5 border-zinc-400 px-1 py-0 text-[9px] font-normal text-zinc-500">
                             default route
                           </Badge>
-                        )}
+                        ) : null}
+                        {!dbNames.has(p.name) ? (
+                          <Badge variant="outline" className="ml-1.5 border-zinc-300 px-1 py-0 text-[9px] font-normal text-zinc-400">
+                            unadopted
+                          </Badge>
+                        ) : null}
                       </TableCell>
                       <TableCell>
-                        <RoleBadge role={r.role as IfaceRole} />
+                        <span
+                          className={cn(
+                            "font-mono text-xs",
+                            p.operState === "up" ? "text-emerald-600 dark:text-emerald-400" : p.operState === "down" ? "text-rose-500" : "text-zinc-500",
+                          )}
+                        >
+                          {p.operState}
+                        </span>
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-zinc-600 dark:text-zinc-300">
-                        mtu {r.db.mtu}
-                        {r.db.ip ? ` · ${r.db.ip}` : ""} · {r.db.adminState}
+                      <TableCell className="text-xs text-zinc-500">{p.carrier == null ? "—" : p.carrier ? "yes" : "no"}</TableCell>
+                      <TableCell className="tabular-nums">{p.mtu ?? "—"}</TableCell>
+                      <TableCell className="font-mono text-xs text-zinc-500">{p.mac ?? "—"}</TableCell>
+                      <TableCell className="font-mono text-xs text-zinc-500">{p.ipv4.length ? p.ipv4.join(", ") : "—"}</TableCell>
+                      <TableCell className={cn("text-right tabular-nums", (p.counters?.rxErrors ?? 0) + (p.counters?.rxDrops ?? 0) > 0 && "font-semibold text-amber-600 dark:text-amber-400")}>
+                        {p.counters ? `${p.counters.rxErrors} / ${p.counters.rxDrops}` : "—"}
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-zinc-600 dark:text-zinc-300">
-                        {r.os ? `mtu ${r.os.mtu ?? "?"}${r.os.ipv4.length ? ` · ${r.os.ipv4.join(", ")}` : ""}` : "—"}
-                      </TableCell>
-                      <TableCell>
-                        {r.os ? (
-                          <span
-                            className={cn(
-                              "font-mono text-xs",
-                              r.os.operState === "up" ? "text-emerald-600 dark:text-emerald-400" : "text-zinc-500",
-                            )}
-                          >
-                            {r.os.operState}
-                            {r.os.carrier === false ? " (no carrier)" : ""}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-rose-500">missing</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-zinc-500">{r.os?.mac ?? "—"}</TableCell>
-                      <TableCell>
-                        <DriftBadge inSync={r.inSync} drift={r.drift} managed={r.os != null} />
-                        {!r.inSync && r.os != null && (
-                          <p className="mt-1 max-w-64 text-[10px] leading-snug text-amber-600 dark:text-amber-400">
-                            {r.drift.map((d) => `${d.field}: db=${d.db} os=${d.os}`).join(" · ")}
-                          </p>
-                        )}
+                      <TableCell className={cn("text-right tabular-nums", (p.counters?.txErrors ?? 0) + (p.counters?.txDrops ?? 0) > 0 && "font-semibold text-amber-600 dark:text-amber-400")}>
+                        {p.counters ? `${p.counters.txErrors} / ${p.counters.txDrops}` : "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -2349,94 +2560,183 @@ function OsStateTab() {
         </CardContent>
       </Card>
 
-      {unmanaged.length > 0 && (
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* ARP table */}
         <Card className="p-0">
           <CardContent className="p-0">
             <div className="border-b border-zinc-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
-              Unmanaged host interfaces (present on the OS, absent in the console)
+              ARP / neighbor cache
             </div>
             <ScrollWrap>
-              <Table className="min-w-[720px] text-sm">
+              <Table className="min-w-[420px] text-sm">
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Oper state</TableHead>
-                    <TableHead>MTU</TableHead>
-                    <TableHead>IPv4</TableHead>
+                    <TableHead>IP</TableHead>
                     <TableHead>MAC</TableHead>
+                    <TableHead>Device</TableHead>
+                    <TableHead className="text-right">State</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {unmanaged.map((u) => (
-                    <TableRow key={u.name}>
-                      <TableCell className="font-mono text-xs">{u.name}</TableCell>
-                      <TableCell className="font-mono text-xs text-zinc-500">{u.operState}</TableCell>
-                      <TableCell className="tabular-nums">{u.mtu ?? "—"}</TableCell>
-                      <TableCell className="font-mono text-xs text-zinc-500">{u.ipv4.length ? u.ipv4.join(", ") : "—"}</TableCell>
-                      <TableCell className="font-mono text-xs text-zinc-500">{u.mac ?? "—"}</TableCell>
+                  {arp.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="py-6 text-center text-sm text-zinc-500">
+                        Neighbor cache is empty.
+                      </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    arp.map((a, i) => (
+                      <TableRow key={`${a.ip}-${a.device}-${i}`}>
+                        <TableCell className="font-mono text-xs">{a.ip}</TableCell>
+                        <TableCell className="font-mono text-xs text-zinc-500">{a.mac ?? "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{a.device}</TableCell>
+                        <TableCell className="text-right">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-[10px]",
+                              a.complete
+                                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                : "border-zinc-300 text-zinc-400 dark:border-zinc-700",
+                            )}
+                          >
+                            {a.complete ? "reachable" : "incomplete"}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </ScrollWrap>
           </CardContent>
         </Card>
-      )}
-      <p className="text-xs text-zinc-400">Read live from the host every 10 s — no simulated values.</p>
 
-      {/* apply plan dialog */}
-      <Dialog open={plan !== null} onOpenChange={(open) => !open && setPlan(null)}>
-        <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Icons.Terminal className="h-4 w-4 text-zinc-500" />
-              OS apply plan {plan?.applied ? "(executed)" : "(preview)"}
-            </DialogTitle>
-            <DialogDescription>{plan?.reason}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            {(plan?.plans ?? [])
-              .filter((p) => p.steps.length > 0)
-              .map((p) => (
-                <div key={p.name} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-                  <p className="mb-1.5 font-mono text-xs font-semibold">{p.name}</p>
-                  <ul className="space-y-1">
-                    {p.steps.map((s, i) => (
-                      <li key={i} className="flex items-start gap-2 text-xs">
-                        <span className="font-mono text-zinc-700 dark:text-zinc-300">$ {s.cmd}</span>
-                        <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{s.summary}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            {(plan?.plans ?? []).every((p) => p.steps.length === 0) && (
-              <p className="text-sm text-zinc-500">No convergence steps needed — the host already matches the console.</p>
-            )}
-            {plan?.results && plan.results.length > 0 && (
-              <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-                <p className="mb-1.5 text-xs font-semibold">Execution results</p>
-                {plan.results.map((r, i) => (
-                  <p key={i} className="flex items-center gap-2 font-mono text-xs">
-                    {r.ok ? (
-                      <Icons.CircleCheck className="h-3 w-3 text-emerald-500" />
-                    ) : (
-                      <Icons.CircleX className="h-3 w-3 text-rose-500" />
-                    )}
-                    <span className="truncate">{r.cmd}</span>
-                    {!r.ok && r.stderr ? <span className="ml-auto text-[10px] text-rose-500">{r.stderr}</span> : null}
-                  </p>
-                ))}
-              </div>
+        {/* routes table */}
+        <Card className="p-0">
+          <CardContent className="p-0">
+            <div className="border-b border-zinc-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
+              Kernel route table (IPv4)
+            </div>
+            <ScrollWrap>
+              <Table className="min-w-[420px] text-sm">
+                <TableHeader className="sticky top-0 z-10 bg-card">
+                  <TableRow>
+                    <TableHead>Destination</TableHead>
+                    <TableHead>Gateway</TableHead>
+                    <TableHead>Device</TableHead>
+                    <TableHead className="text-right">Metric</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {routes.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="py-6 text-center text-sm text-zinc-500">
+                        No routes.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    routes.map((r, i) => (
+                      <TableRow key={`${r.destination}-${r.iface}-${i}`} className={cn(r.isDefault && "bg-zinc-500/5")}>
+                        <TableCell className="font-mono text-xs">
+                          {r.isDefault ? (
+                            <Badge variant="outline" className="mr-1 border-zinc-400 px-1 py-0 text-[9px] font-normal text-zinc-500">
+                              default
+                            </Badge>
+                          ) : null}
+                          {r.destination}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-zinc-500">{r.gateway}</TableCell>
+                        <TableCell className="font-mono text-xs">{r.iface}</TableCell>
+                        <TableCell className="text-right tabular-nums text-zinc-500">{r.metric}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </ScrollWrap>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ping tool */}
+      <Card className="p-0">
+        <CardContent className="space-y-3 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Ping probe (source-interface scoped)</p>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-56">
+              <FieldLabel hint="IPv4 or hostname">Host</FieldLabel>
+              <Input
+                value={pingHost}
+                onChange={(e) => setPingHost(e.target.value)}
+                placeholder="1.1.1.1"
+                className="h-9 font-mono text-xs"
+                aria-label="Ping host"
+              />
+            </div>
+            <div className="w-44">
+              <FieldLabel hint="binds -I">Source interface</FieldLabel>
+              <Select value={pingIface || "any"} onValueChange={(v) => setPingIface(v === "any" ? "" : v)}>
+                <SelectTrigger className="h-9" aria-label="Ping source interface">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">any (routing table)</SelectItem>
+                  {ports.map((p) => (
+                    <SelectItem key={p.name} value={p.name}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-24">
+              <FieldLabel hint="max 4">Packets</FieldLabel>
+              <Select value={pingCount} onValueChange={setPingCount}>
+                <SelectTrigger className="h-9" aria-label="Ping packet count">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["1", "2", "3", "4"].map((n) => (
+                    <SelectItem key={n} value={n}>
+                      {n}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              size="sm"
+              className="h-9 bg-zinc-700 text-white hover:bg-zinc-800"
+              disabled={pingMut2.isPending || pingHost.trim() === ""}
+              onClick={() => pingMut2.mutate()}
+              aria-label="Run ping"
+            >
+              <Icons.Radar className="mr-1 h-3.5 w-3.5" /> {pingMut2.isPending ? "Probing…" : "Run"}
+            </Button>
+            {pingResult2?.lossPct != null && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-xs",
+                  pingResult2.lossPct === 0
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                )}
+              >
+                loss {pingResult2.lossPct}%
+                {pingResult2.avgMs != null ? ` · avg ${pingResult2.avgMs} ms` : ""}
+              </Badge>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setPlan(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          {pingResult2 && (
+            <pre className="max-h-48 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] leading-snug dark:border-zinc-800 dark:bg-zinc-900">
+              {pingResult2.error ?? pingResult2.output}
+            </pre>
+          )}
+        </CardContent>
+      </Card>
+      <p className="text-xs text-zinc-400">Inventory/ARP/routes auto-refresh every 10 s. Errors/drops ≠ 0 are highlighted — check them first when a link misbehaves.</p>
     </div>
   );
 }

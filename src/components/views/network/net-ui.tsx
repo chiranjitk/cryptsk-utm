@@ -254,6 +254,8 @@ export function IfaceConfigSummary({ iface, className }: { iface: Iface; classNa
           const prefix = cfgNumber(c, "cidrPrefix");
           text = ip ? `${ip}${prefix != null ? `/${prefix}` : ""}` : "static";
         }
+        const gw = cfgString(c, "gateway");
+        if (gw) text += ` · gw ${gw}`;
         break;
       }
       case "vlan": {
@@ -262,23 +264,29 @@ export function IfaceConfigSummary({ iface, className }: { iface: Iface; classNa
         const ip = cfgString(c, "ip");
         const prefix = cfgNumber(c, "cidrPrefix");
         if (ip) text += ` · ${ip}${prefix != null ? `/${prefix}` : ""}`;
+        const gw = cfgString(c, "gateway");
+        if (gw) text += ` · gw ${gw}`;
         break;
       }
       case "bridge": {
         const members = cfgStringArray(c, "members");
-        text = `bridge · ${members.length} member${members.length === 1 ? "" : "s"}`;
+        text = `bridge · ${members.length > 0 ? members.join(",") : "no members"}`;
         if (cfgBool(c, "stp")) text += ` · ${cfgString(c, "stpMode") ?? "stp"}`;
         if (cfgBool(c, "igmpSnooping")) text += " · igmp";
         const ip = cfgString(c, "ip");
         const prefix = cfgNumber(c, "cidrPrefix");
         if (ip) text += ` · ${ip}${prefix != null ? `/${prefix}` : ""}`;
+        const gw = cfgString(c, "gateway");
+        if (gw) text += ` · gw ${gw}`;
         break;
       }
       case "bond": {
-        text = `bond · ${cfgString(c, "mode") ?? "—"}${cfgStringArray(c, "members").length > 0 ? ` · ${cfgStringArray(c, "members").length} link(s)` : ""}`;
+        text = `bond · ${cfgString(c, "mode") ?? "—"}${cfgStringArray(c, "members").length > 0 ? ` · ${cfgStringArray(c, "members").join(",")}` : ""}`;
         const ip = cfgString(c, "ip");
         const prefix = cfgNumber(c, "cidrPrefix");
         if (ip) text += ` · ${ip}${prefix != null ? `/${prefix}` : ""}`;
+        const gw = cfgString(c, "gateway");
+        if (gw) text += ` · gw ${gw}`;
         break;
       }
       case "gre": {

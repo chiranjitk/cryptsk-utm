@@ -151,21 +151,21 @@ export function buildApplyPlan(view: IfaceRuleView, os: RealInterface | undefine
       case "bridge": {
         steps.push({ cmd: `ip link add name ${name} type bridge`, summary: "create bridge" });
         const stp = view.config["stp"] === true;
-        steps.push({ cmd: `ip link set ${name} type bridge stp_state ${stp ? 1 : 0}`, summary: `STP ${stp ? "on" : "off"}` });
+        steps.push({ cmd: `ip link set dev ${name} type bridge stp_state ${stp ? 1 : 0}`, summary: `STP ${stp ? "on" : "off"}` });
         if (stp) {
           const mode = view.config["stpMode"] === "rstp" ? "mstp" : "stp";
-          steps.push({ cmd: `ip link set ${name} type bridge stp_protocol ${mode}`, summary: `STP protocol ${mode}` });
+          steps.push({ cmd: `ip link set dev ${name} type bridge stp_protocol ${mode}`, summary: `STP protocol ${mode}` });
           const prio = view.config["stpPriority"];
           if (typeof prio === "number") {
-            steps.push({ cmd: `ip link set ${name} type bridge stp_priority ${prio}`, summary: `STP priority ${prio}` });
+            steps.push({ cmd: `ip link set dev ${name} type bridge stp_priority ${prio}`, summary: `STP priority ${prio}` });
           }
           const fd = view.config["forwardDelay"];
           if (typeof fd === "number") {
-            steps.push({ cmd: `ip link set ${name} type bridge forward_delay ${fd}`, summary: `forward delay ${fd}s` });
+            steps.push({ cmd: `ip link set dev ${name} type bridge forward_delay ${fd}`, summary: `forward delay ${fd}s` });
           }
         }
         if (view.config["igmpSnooping"] === true) {
-          steps.push({ cmd: `ip link set ${name} type bridge mcast_snooping 1`, summary: "IGMP snooping on" });
+          steps.push({ cmd: `ip link set dev ${name} type bridge mcast_snooping 1`, summary: "IGMP snooping on" });
         }
         break;
       }
@@ -174,11 +174,11 @@ export function buildApplyPlan(view: IfaceRuleView, os: RealInterface | undefine
         steps.push({ cmd: `ip link add name ${name} type bond mode ${mode}`, summary: `create bond (${mode})` });
         if (mode === "802.3ad") {
           const rate = view.config["lacpRate"] === "fast" ? "fast" : "slow";
-          steps.push({ cmd: `ip link set ${name} type bond lacp_rate ${rate}`, summary: `LACP rate ${rate}` });
+          steps.push({ cmd: `ip link set dev ${name} type bond lacp_rate ${rate}`, summary: `LACP rate ${rate}` });
         }
         const miimon = view.config["miimon"];
         if (typeof miimon === "number" && miimon > 0) {
-          steps.push({ cmd: `ip link set ${name} type bond miimon ${miimon}`, summary: `miimon ${miimon}ms` });
+          steps.push({ cmd: `ip link set dev ${name} type bond miimon ${miimon}`, summary: `miimon ${miimon}ms` });
         }
         break;
       }

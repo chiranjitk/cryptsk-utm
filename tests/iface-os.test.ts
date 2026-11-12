@@ -102,10 +102,10 @@ describe("buildApplyPlan", () => {
     );
     const cmds = plan.steps.map((s) => s.cmd);
     expect(cmds).toContain("ip link add name br0 type bridge");
-    expect(cmds).toContain("ip link set br0 type bridge stp_state 1");
-    expect(cmds).toContain("ip link set br0 type bridge stp_protocol mstp");
-    expect(cmds).toContain("ip link set br0 type bridge stp_priority 4096");
-    expect(cmds).toContain("ip link set br0 type bridge forward_delay 10");
+    expect(cmds).toContain("ip link set dev br0 type bridge stp_state 1");
+    expect(cmds).toContain("ip link set dev br0 type bridge stp_protocol mstp");
+    expect(cmds).toContain("ip link set dev br0 type bridge stp_priority 4096");
+    expect(cmds).toContain("ip link set dev br0 type bridge forward_delay 10");
     expect(cmds).toContain("ip link set eth0 down");
     expect(cmds).toContain("ip link set eth0 master br0");
     expect(cmds).toContain("ip link set eth1 master br0");
@@ -118,8 +118,8 @@ describe("buildApplyPlan", () => {
     );
     const cmds = plan.steps.map((s) => s.cmd);
     expect(cmds).toContain("ip link add name bond0 type bond mode 802.3ad");
-    expect(cmds).toContain("ip link set bond0 type bond lacp_rate fast");
-    expect(cmds).toContain("ip link set bond0 type bond miimon 100");
+    expect(cmds).toContain("ip link set dev bond0 type bond lacp_rate fast");
+    expect(cmds).toContain("ip link set dev bond0 type bond miimon 100");
   });
 
   test("L3 addressing emits addr replace + default route + secondary + mss", () => {
