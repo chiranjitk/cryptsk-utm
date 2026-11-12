@@ -130,3 +130,30 @@ describe("protectedIfaces", () => {
     }
   });
 });
+
+// ── L2 conversion strips kernel addressing (BR-L2-L3 convergence) ──────────
+
+describe("L2 conversion address handling", () => {
+  test("l2 port with kernel IPv4 emits ip addr del steps", () => {
+    const plan = buildApplyPlan(
+      view({ name: "ens34", mode: "l2" }),
+      os({ name: "ens34", ipv4: ["20.20.30.2", "20.20.30.3"] }),
+    );
+    const cmds = plan.steps.map((s) => s.cmd);
+    expect(cmds).toContain("ip addr del 20.20.30.2 dev ens34");
+    expect(cmds).toContain("ip addr del 20.20.30.3 dev ens34");
+    expect(cmds).not.toContain("ip addr replace 20.20.30.2/24 dev ens34");
+  });
+
+  test("l2 port with clean kernel emits no addressing steps", () => {
+    const plan = buildApplyPlan(view({ name: "ens34", mode: "l2" }), os({ name: "ens34" }));
+    expect(plan.steps.filter((s) => s.cmd.startsWith("ip addr"))).toHaveLength(0);
+  });
+
+  test("l2 port with kernel IPv4 reports ip-extra drift", () => {
+    const { diffIfaceOs } = require("@/lib/network/iface-os") as typeof import("@/lib/network/iface-os");
+    const d = diffIfaceOs(view({ name: "ens34", mode: "l2" }), os({ name: "ens34", ipv4: ["20.20.30.2"] }));
+    expect(d.inSync).toBe(false);
+    expect(d.drift).toContainEqual({ field: "ip-extra", db: "(l2 — no addressing)", os: "20.20.30.2" });
+  });
+});

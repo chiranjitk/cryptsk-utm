@@ -65,6 +65,9 @@ export function diffIfaceOs(view: IfaceRuleView, os: RealInterface | undefined):
         drift.push({ field: "ip-extra", db: ip, os: extra.join(", ") });
       }
     }
+  } else if (view.mode !== "l3" && os.ipv4.length > 0) {
+    // L2 ports must be address-free (BR-L2-L3) — kernel addresses are drift
+    drift.push({ field: "ip-extra", db: "(l2 — no addressing)", os: os.ipv4.join(", ") });
   }
 
   return { managed: true, inSync: drift.length === 0, drift };
@@ -110,6 +113,13 @@ function addrSteps(
   hostDefaultDev: string | null | undefined,
 ): OsPlanStep[] {
   const steps: OsPlanStep[] = [];
+  // L2 conversion — the rule engine (BR-L2-L3) forbids addressing on L2 ports,
+  // so convergence strips whatever IPv4 the port still carries
+  if (view.mode !== "l3" && os && os.ipv4.length > 0) {
+    for (const a of os.ipv4) {
+      steps.push({ cmd: `ip addr del ${a} dev ${name}`, summary: "strip address (L2 port carries no L3)" });
+    }
+  }
   if (view.mode !== "l3") return steps;
 
   const ip = typeof view.config["ip"] === "string" ? (view.config["ip"] as string) : null;
