@@ -97,6 +97,7 @@ import {
   type Mirror,
   type MirrorDirection,
   type OsApplyResp,
+  type OsStateResp,
   type SecondaryIp,
   type StpMode,
   type ZoneRef,
@@ -118,6 +119,7 @@ import {
 } from "./net-ui";
 
 const IFACES_KEY = ["network", "interfaces"] as const;
+const OS_STATE_KEY = ["network", "os-state"] as const;
 const LLDP_KEY = ["network", "lldp"] as const;
 const MAC_KEY = ["network", "mac-table"] as const;
 const MIRRORS_KEY = ["network", "port-mirrors"] as const;
@@ -276,6 +278,13 @@ export function InterfacesView() {
 
   const ifacesQuery = useQuery({ queryKey: IFACES_KEY, queryFn: () => netApi.listIfaces() });
   const zonesQuery = useQuery({ queryKey: NET_ZONES_KEY, queryFn: () => netApi.listZones() });
+  const osStateQuery = useQuery({
+    queryKey: OS_STATE_KEY,
+    queryFn: () => netApi.getOsState(),
+    // gate flips only on pm2 env change — refresh occasionally, not per keystroke
+    refetchInterval: 60_000,
+  });
+  const applyEnabled = osStateQuery.data?.applyEnabled ?? null; // null = unknown/loading
 
   useRealtime(["metrics", "config"], {
     onMetricsTick: (t: MetricsTickPayload) => {
@@ -659,7 +668,12 @@ export function InterfacesView() {
         </Card>
         <p className="flex items-center gap-1.5 text-xs text-zinc-400">
           <Icons.Info className="h-3.5 w-3.5" />
-          Physical ports are never deletable — disable instead. Ref. = objects referencing the interface (delete is hidden while &gt; 0). Amber dots mark out-of-band kernel changes; apply is plan-preview on this install.
+          Physical ports are never deletable — disable instead. Ref. = objects referencing the interface (delete is hidden while &gt; 0).{" "}
+          {applyEnabled === false
+            ? "Amber dots mark out-of-band kernel changes; apply is plan-preview on this install (CONSOLE_OS_APPLY is off)."
+            : applyEnabled === true
+              ? "Edits apply to the host kernel immediately; amber dots mark out-of-band kernel changes — use Apply to repair them."
+              : "Amber dots mark out-of-band kernel changes."}
         </p>
       </TabsContent>
 

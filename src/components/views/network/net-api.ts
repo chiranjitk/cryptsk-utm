@@ -38,6 +38,18 @@ export interface OsApplyResp {
   results?: Array<{ cmd: string; ok: boolean; stderr?: string }>;
 }
 
+/** GET /api/v1/interfaces/os-state — gate status + drift snapshot. */
+export interface OsStateResp {
+  applyEnabled: boolean;
+  capturedAt: string;
+  managed: Array<{
+    name: string;
+    inSync: boolean;
+    drift: Array<{ field: string; db?: unknown; os?: unknown }>;
+  }>;
+  unmanaged: string[];
+}
+
 /** Live kernel facts merged into every interface row (vendor-parity columns). */
 export interface IfaceLive {
   operState: string;
@@ -393,6 +405,7 @@ export const netApi = {
       headers: JSON_HEADERS,
       body: JSON.stringify(name ? { name } : {}),
     }),
+  getOsState: () => netFetch<OsStateResp>("/api/v1/interfaces/os-state"),
 
   // diagnostics (ARP / routes / counters / ping — vendor Diagnostics section)
   listArp: () => netFetchList<ArpEntry>("/api/v1/network/arp"),
