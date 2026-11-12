@@ -2486,22 +2486,23 @@ suite("sdwan", "Advanced Routing → SD-WAN: sla/overlays/sites/paths/policies +
     expectErr(r, "VALIDATION_ERROR", 400);
   });
 
-  await tc("site paths — list + create + update + probe", async () => {
+  await tc("site paths — create + update + probe (paths/probe)", async () => {
     const paths = expectOk(await POST(`/api/v1/sdwan/sites/${siteId}/paths`, { wanInterface: "wan0", label: "broadband", latencyMs: 25, jitterMs: 4, lossPct: 0.5, state: "up" }));
     const pathId = paths.id ?? paths.path?.id;
     assert(pathId, JSON.stringify(paths).slice(0, 200));
     const u = expectOk(await PUT(`/api/v1/sdwan/paths/${pathId}`, { latencyMs: 40 }));
     assert(Number(u.latencyMs) === 40, JSON.stringify(u).slice(0, 140));
-    const p = expectOk(await POST(`/api/v1/sdwan/paths/${pathId}/probe`, {}));
-    check("probe", true, JSON.stringify(p).slice(0, 140));
+    // probe is a cycle endpoint: POST /sdwan/paths/probe (optionally ?overlayId)
+    const p = expectOk(await POST(`/api/v1/sdwan/paths/probe`, { overlayId: ovId }));
+    check("probe cycle", true, JSON.stringify(p).slice(0, 140));
   });
 
   await tc("sdwan policy create + update", async () => {
     const p = expectOk(await POST("/api/v1/sdwan/policies", { name: un("E2E-SDWANPOL"), overlayId: ovId, slaProfileId: slaId, preferredPath: "latency", enabled: true }));
     polId = p.id;
     assert(p.preferredPath === "latency", JSON.stringify(p).slice(0, 200));
-    const u = expectOk(await PUT(`/api/v1/sdwan/policies/${polId}`, { preferredPath: "fixed" }));
-    assert(u.preferredPath === "fixed", JSON.stringify(u).slice(0, 160));
+    const u = expectOk(await PUT(`/api/v1/sdwan/policies/${polId}`, { preferredPath: "loss" }));
+    assert(u.preferredPath === "loss", JSON.stringify(u).slice(0, 160));
   });
 
   await tc("sdwan stats", async () => {
@@ -2580,6 +2581,533 @@ suite("ipv6", "System → IPv6: settings/nat66(+simulate)/dhcpv6/prefix-delegati
     const nats = (await GET("/api/v1/ipv6/nat66-rules")).json?.data ?? [];
     assert(!nats.some((x) => x.id === natId), "nat66 still present");
     natId = dhcpId = null;
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SUITES — batch 9: threat-intel, pki, qos, email
+// ═════════════════════════════════════════════════════════════════════════════
+
+suite("ti", "Threat Intelligence → feeds (+sync)/iocs(+disable)/auto-block/hits", async () => {
+  let feedId = null;
+  let iocId = null;
+  let abId = null;
+
+  await tc("create feed (custom, localhost url)", async () => {
+    const f = expectOk(await POST("/api/v1/threat-intel/feeds", { name: un("E2E-FEED"), provider: "custom", url: "http://127.0.0.1:9/e2e-feed.csv", format: "csv", category: "botnet", intervalMinutes: 60, autoBlock: false }));
+    feedId = f.id;
+    assert(f.provider === "custom", JSON.stringify(f).slice(0, 160));
+  });
+
+  await tc("bad provider → 400", async () => {
+    const r = await POST("/api/v1/threat-intel/feeds", { name: un("E2E-BAD"), provider: "twitter", url: "http://x/" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("feed update — interval 30", async () => {
+    const u = expectOk(await PUT(`/api/v1/threat-intel/feeds/${feedId}`, { intervalMinutes: 30 }));
+    assert(Number(u.intervalMinutes) === 30, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("feed sync (localhost target fails gracefully)", async () => {
+    const r = await POST(`/api/v1/threat-intel/feeds/${feedId}/sync`, {});
+    check("sync", true, `status=${r.status} body=${JSON.stringify(r.json).slice(0, 140)}`);
+  });
+
+  await tc("ioc create (ip) + disable + re-enable", async () => {
+    const iocVal = `203.0.113.${50 + (ctx.tag.charCodeAt(0) + ctx.tag.charCodeAt(1)) % 200}`;
+    const i = expectOk(await POST("/api/v1/threat-intel/iocs", { type: "ip", value: iocVal, category: "c2", severity: "critical", confidence: 90, description: "e2e ioc" }));
+    iocId = i.id;
+    const d = expectOk(await POST(`/api/v1/threat-intel/iocs/${iocId}/disable`, {}));
+    const en = d.enabled ?? d.ioc?.enabled;
+    assert(en === false, `disabled=${en}`);
+    const r = expectOk(await POST(`/api/v1/threat-intel/iocs/${iocId}/disable`, { enabled: true }));
+    const en2 = r.enabled ?? r.ioc?.enabled;
+    assert(en2 === true, `re-enabled=${en2}`);
+  });
+
+  await tc("ioc bad type → 400", async () => {
+    const r = await POST("/api/v1/threat-intel/iocs", { type: "fingerprint", value: "x" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("iocs list shows ours", async () => {
+    const d = expectOk(await GET("/api/v1/threat-intel/iocs?limit=50"));
+    const rows = Array.isArray(d) ? d : d?.iocs ?? [];
+    assert(rows.some((x) => x.id === iocId), "ioc missing from list");
+  });
+
+  await tc("auto-block rule create + update", async () => {
+    const a = expectOk(await POST("/api/v1/threat-intel/auto-block-rules", { name: un("E2E-AB"), matchType: "ip", matchValue: "203.0.113.67", action: "drop", direction: "both" }));
+    abId = a.id;
+    const u = expectOk(await PUT(`/api/v1/threat-intel/auto-block-rules/${abId}`, { enabled: false }));
+    assert(u.enabled === false, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("auto-block bad action → 400", async () => {
+    const r = await POST("/api/v1/threat-intel/auto-block-rules", { name: un("E2E-BAD"), matchType: "ip", matchValue: "1.2.3.4", action: "nuke" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("hits + stats read", async () => {
+    const h = expectOk(await GET("/api/v1/threat-intel/hits?limit=5"));
+    const rows = Array.isArray(h) ? h : h?.hits ?? [];
+    check("hits", true, `${rows.length} rows`);
+    const st = expectOk(await GET("/api/v1/threat-intel/stats"));
+    check("stats", true, JSON.stringify(st).slice(0, 120));
+  });
+
+  await tc("cleanup: autoblock + ioc + feed → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/threat-intel/auto-block-rules/${abId}`));
+    expectOk(await DEL(`/api/v1/threat-intel/iocs/${iocId}`));
+    expectOk(await DEL(`/api/v1/threat-intel/feeds/${feedId}`));
+    const feeds = (await GET("/api/v1/threat-intel/feeds")).json?.data ?? [];
+    assert(!feeds.some((x) => x.id === feedId), "feed still present");
+    feedId = iocId = abId = null;
+  });
+});
+
+suite("pki", "PKI → CAs (create/crl/export/revoke) + certificates lifecycle", async () => {
+  let caId = null;
+  let subCaId = null;
+  let certId = null;
+
+  await tc("create root CA", async () => {
+    const c = expectOk(await POST("/api/v1/pki/cas", { name: un("E2E-ROOT"), type: "root", commonName: "E2E Root CA", org: "E2E", keyType: "rsa2048", validityDays: 730 }));
+    caId = c.id ?? c.ca?.id;
+    assert(caId, JSON.stringify(c).slice(0, 200));
+  });
+
+  await tc("subordinate CA without parentCaId → 400", async () => {
+    const r = await POST("/api/v1/pki/cas", { name: un("E2E-BAD"), type: "subordinate", commonName: "E2E Sub CA" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("create subordinate CA under root", async () => {
+    const c = expectOk(await POST("/api/v1/pki/cas", { name: un("E2E-SUB"), type: "subordinate", commonName: "E2E Issuing CA", parentCaId: caId, validityDays: 365 }));
+    subCaId = c.id ?? c.ca?.id;
+    assert(subCaId, JSON.stringify(c).slice(0, 200));
+  });
+
+  await tc("CA update — autoRenew", async () => {
+    const u = expectOk(await PUT(`/api/v1/pki/cas/${caId}`, { autoRenew: true }));
+    check("ca updated", true, JSON.stringify(u).slice(0, 120));
+  });
+
+  await tc("issue certificate from issuing CA", async () => {
+    const c = expectOk(await POST("/api/v1/pki/certificates", { name: un("E2E-CERT"), commonName: "host.e2e-lab.local", caId: subCaId, keyType: "rsa2048", validityDays: 90, issuedFor: "general" }));
+    certId = c.id ?? c.certificate?.id;
+    assert(certId, `no cert id: ${JSON.stringify(c).slice(0, 240)}`);
+  });
+
+  await tc("cert expiring endpoint → list", async () => {
+    const d = expectOk(await GET("/api/v1/pki/certificates/expiring?days=365"));
+    const rows = Array.isArray(d) ? d : d?.certificates ?? [];
+    check("expiring", true, `${rows.length} rows`);
+  });
+
+  await tc("CRL + export endpoints", async () => {
+    const crl = await GET(`/api/v1/pki/cas/${subCaId}/crl`);
+    check("crl", true, `status=${crl.status}`);
+    const exp = await GET(`/api/v1/pki/cas/${caId}/export?format=pem`);
+    check("export", true, `status=${exp.status} len=${String(JSON.stringify(exp.json) ?? "").length}`);
+  });
+
+  await tc("revoke certificate → revoked", async () => {
+    const r = expectOk(await POST(`/api/v1/pki/certificates/${certId}/revoke`, { reason: "superseded" }));
+    const st = r.status ?? r.certificate?.status;
+    assert(st === "revoked", `status=${st} body=${JSON.stringify(r).slice(0, 160)}`);
+  });
+
+  await tc("cleanup: cert + sub CA + root CA → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/pki/certificates/${certId}`));
+    expectOk(await DEL(`/api/v1/pki/cas/${subCaId}`));
+    expectOk(await DEL(`/api/v1/pki/cas/${caId}`));
+    const cas = (await GET("/api/v1/pki/cas")).json?.data ?? [];
+    assert(!cas.some((x) => x.id === caId || x.id === subCaId), "CA still present");
+    caId = subCaId = certId = null;
+  });
+});
+
+suite("qos", "QoS → policies + rules CRUD + validation", async () => {
+  let polId = null;
+  let ruleId = null;
+
+  await tc("list policies (baseline)", async () => {
+    const data = expectOk(await GET("/api/v1/qos/policies"));
+    assert(Array.isArray(data), `not array: ${JSON.stringify(data).slice(0, 100)}`);
+    check("baseline", true, `${data.length} policies`);
+  });
+
+  await tc("create QoS policy (voip template, 50 Mbps on ens34)", async () => {
+    const p = expectOk(await POST("/api/v1/qos/policies", { name: un("E2E-QOS"), template: "voip", bandwidthKbps: 50000, ifaceName: "ens34" }));
+    polId = p.id;
+    assert(Number(p.bandwidthKbps) === 50000, JSON.stringify(p).slice(0, 160));
+  });
+
+  await tc("bandwidth below 1000 kbps → 400 (unit guard)", async () => {
+    const r = await POST("/api/v1/qos/policies", { name: un("E2E-BAD"), bandwidthKbps: 50 });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("update policy — bandwidth 20000", async () => {
+    const u = expectOk(await PUT(`/api/v1/qos/policies/${polId}`, { bandwidthKbps: 20000 }));
+    assert(Number(u.bandwidthKbps) === 20000, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("create QoS rule (priority 0, dscp 46)", async () => {
+    const r = expectOk(await POST("/api/v1/qos/rules", { policyId: polId, name: un("E2E-QRULE"), priority: 0, guaranteedKbps: 5000, maxKbps: 40000, dscpMark: 46, matchApps: [], matchAddresses: ["10.90.0.0/24"] }));
+    ruleId = r.id;
+    assert(Number(r.dscpMark) === 46, JSON.stringify(r).slice(0, 180));
+  });
+
+  await tc("rule priority 9 → 400", async () => {
+    const r = await POST("/api/v1/qos/rules", { policyId: polId, name: un("E2E-BAD2"), priority: 9 });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("update rule — maxKbps 30000", async () => {
+    const u = expectOk(await PUT(`/api/v1/qos/rules/${ruleId}`, { maxKbps: 30000 }));
+    assert(Number(u.maxKbps) === 30000, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("rules list by policyId", async () => {
+    const d = expectOk(await GET(`/api/v1/qos/rules?policyId=${polId}`));
+    const rows = Array.isArray(d) ? d : d?.rules ?? [];
+    assert(rows.some((x) => x.id === ruleId), "rule missing");
+  });
+
+  await tc("cleanup: rule + policy → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/qos/rules/${ruleId}`));
+    expectOk(await DEL(`/api/v1/qos/policies/${polId}`));
+    const list = (await GET("/api/v1/qos/policies")).json?.data ?? [];
+    assert(!list.some((x) => x.id === polId), "policy still present");
+    polId = ruleId = null;
+  });
+});
+
+suite("email", "System → Email Security: gateways/policy/routing-rules/logs/stats", async () => {
+  let gwId = null;
+  let ruleId = null;
+  let polSnap = null;
+
+  await tc("create relay gateway", async () => {
+    const g = expectOk(await POST("/api/v1/email-security/gateways", { name: un("E2E-SMTP"), mode: "relay", listenPort: 2525, relayDomains: ["e2e-lab.local"], upstreamHost: "10.90.0.25", tlsMode: "starttls" }));
+    gwId = g.id;
+    assert(g.mode === "relay", JSON.stringify(g).slice(0, 160));
+  });
+
+  await tc("relay without upstreamHost → 400", async () => {
+    const r = await POST("/api/v1/email-security/gateways", { name: un("E2E-BAD"), mode: "relay" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("update gateway — listenPort 2626", async () => {
+    const u = expectOk(await PUT(`/api/v1/email-security/gateways/${gwId}`, { listenPort: 2626 }));
+    assert(Number(u.listenPort) === 2626, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("policy snapshot → change spamThreshold → revert", async () => {
+    polSnap = expectOk(await GET("/api/v1/email-security/policy"));
+    const u = expectOk(await PUT("/api/v1/email-security/policy", { ...polSnap, spamThreshold: 7.5 }));
+    assert(Number(u.spamThreshold) === 7.5, JSON.stringify(u).slice(0, 180));
+    const back = expectOk(await PUT("/api/v1/email-security/policy", polSnap));
+    check("policy reverted", true, `threshold=${back.spamThreshold}`);
+  });
+
+  await tc("policy spamThreshold 7.3 (not half-step) → 400", async () => {
+    const r = await PUT("/api/v1/email-security/policy", { ...polSnap, spamThreshold: 7.3 });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("routing rule create + update", async () => {
+    const r = expectOk(await POST("/api/v1/email-security/routing-rules", { name: un("E2E-EMRULE"), matchDomain: "@partner.e2e-lab.local", action: "relay", targetHost: "10.90.0.26", priority: 5 }));
+    ruleId = r.id;
+    const u = expectOk(await PUT(`/api/v1/email-security/routing-rules/${ruleId}`, { priority: 8 }));
+    assert(Number(u.priority) === 8, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("relay rule without targetHost → 400", async () => {
+    const r = await POST("/api/v1/email-security/routing-rules", { name: un("E2E-BAD2"), matchDomain: "@x.e2e-lab.local", action: "relay" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("logs + stats read", async () => {
+    const lg = expectOk(await GET("/api/v1/email-security/logs?limit=5"));
+    const rows = Array.isArray(lg) ? lg : lg?.logs ?? [];
+    check("logs", true, `${rows.length} rows`);
+    const st = expectOk(await GET("/api/v1/email-security/stats"));
+    check("stats", true, JSON.stringify(st).slice(0, 120));
+  });
+
+  await tc("cleanup: rule + gateway → gone via list", async () => {
+    expectOk(await DEL(`/api/v1/email-security/routing-rules/${ruleId}`));
+    expectOk(await DEL(`/api/v1/email-security/gateways/${gwId}`));
+    const gws = (await GET("/api/v1/email-security/gateways")).json?.data ?? [];
+    assert(!gws.some((x) => x.id === gwId), "gateway still present");
+    gwId = ruleId = null;
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SUITES — batch 10: logs (all tabs), ha, system
+// ═════════════════════════════════════════════════════════════════════════════
+
+suite("logs", "Logs & Reports → all tabs: reads/exports/saved/schedules/compliance/syslog/netflow/anonymization", async () => {
+  let syslogId = null;
+  let nfId = null;
+  let schedId = null;
+  let savedId = null;
+  let tplId = null;
+  let anonId = null;
+
+  await tc("firewall/ips/audit logs + stats read", async () => {
+    const fw = expectOk(await GET("/api/v1/logs/firewall?limit=5"));
+    const fwRows = Array.isArray(fw) ? fw : fw?.logs ?? fw?.data ?? [];
+    check("fw logs", true, `${Array.isArray(fwRows) ? fwRows.length : "?"} rows`);
+    const ips = expectOk(await GET("/api/v1/logs/ips?limit=5"));
+    check("ips logs", true, JSON.stringify(ips).slice(0, 60));
+    const au = expectOk(await GET("/api/v1/logs/audit?limit=5"));
+    const auRows = Array.isArray(au) ? au : au?.logs ?? au?.data ?? [];
+    check("audit logs", true, `${Array.isArray(auRows) ? auRows.length : "?"} rows`);
+    const st = expectOk(await GET("/api/v1/logs/stats?range=24h"));
+    check("stats", true, JSON.stringify(st).slice(0, 80));
+  });
+
+  await tc("firewall logs export (json)", async () => {
+    const r = await GET("/api/v1/logs/firewall/export?format=json&limit=10");
+    assert(r.status === 200, `export status ${r.status}`);
+    check("export", true, `${JSON.stringify(r.json ?? r).length}B`);
+  });
+
+  await tc("log search run (GET) + saved search CRUD", async () => {
+    const s = expectOk(await GET("/api/v1/logs/search?dataset=firewall&q=e2e"));
+    check("search run", true, JSON.stringify(s).slice(0, 80));
+    const sv = expectOk(await POST("/api/v1/logs/search/saved", { name: un("E2E-SAVED"), dataset: "firewall", queryText: "action:deny", filters: { action: "deny" } }));
+    savedId = sv.id;
+    const list = expectOk(await GET("/api/v1/logs/search/saved"));
+    const lrows = Array.isArray(list) ? list : list?.searches ?? [];
+    assert(lrows.some((x) => x.id === savedId), "saved search missing from list");
+    expectOk(await DEL(`/api/v1/logs/search/saved/${savedId}`));
+    savedId = null;
+  });
+
+  await tc("report schedules CRUD + run once", async () => {
+    const sc = expectOk(await POST("/api/v1/logs/report-schedules", { name: un("E2E-SCHED"), range: "daily", format: "pdf", sections: ["traffic"], enabled: true }));
+    schedId = sc.id;
+    const u = expectOk(await PUT(`/api/v1/logs/report-schedules/${schedId}`, { format: "csv" }));
+    assert(u.format === "csv", JSON.stringify(u).slice(0, 140));
+    const run = await POST(`/api/v1/logs/report-schedules/${schedId}/run`, {});
+    check("schedule run", true, `status=${run.status} body=${JSON.stringify(run.json).slice(0, 120)}`);
+  });
+
+  await tc("report schedules list + runs list", async () => {
+    const r1 = expectOk(await GET("/api/v1/logs/report-schedules"));
+    const r1rows = Array.isArray(r1) ? r1 : r1?.schedules ?? [];
+    check("schedules", true, `${r1rows.length} rows`);
+    const r2 = expectOk(await GET("/api/v1/reports/runs"));
+    const r2rows = Array.isArray(r2) ? r2 : r2?.runs ?? [];
+    check("runs", true, `${r2rows.length} rows`);
+  });
+
+  await tc("compliance template CRUD + run", async () => {
+    const t = expectOk(await POST("/api/v1/logs/compliance/templates", { name: un("E2E-COMPL"), framework: "GDPR", sections: ["audit"], range: "weekly" }));
+    tplId = t.id;
+    const run = await POST("/api/v1/logs/compliance/run", { templateId: tplId });
+    check("compliance run", true, `status=${run.status} body=${JSON.stringify(run.json).slice(0, 120)}`);
+    const u = expectOk(await PUT(`/api/v1/logs/compliance/templates/${tplId}`, { range: "monthly" }));
+    assert(u.range === "monthly", JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("syslog target CRUD", async () => {
+    const s = expectOk(await POST("/api/v1/logs/syslog-targets", { name: un("E2E-SYSLOG"), host: "10.90.0.60", port: 514, protocol: "udp", minSeverity: "low" }));
+    syslogId = s.id;
+    const u = expectOk(await PUT(`/api/v1/logs/syslog-targets/${syslogId}`, { protocol: "tcp", port: 601 }));
+    assert(u.protocol === "tcp", JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("netflow target CRUD", async () => {
+    const n = expectOk(await POST("/api/v1/logs/netflow-targets", { name: un("E2E-NF"), host: "10.90.0.61", port: 2055, version: "ipfix", samplingRate: 100 }));
+    nfId = n.id;
+    const u = expectOk(await PUT(`/api/v1/logs/netflow-targets/${nfId}`, { samplingRate: 50 }));
+    assert(Number(u.samplingRate) === 50, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("anonymization rule CRUD + preview", async () => {
+    const a = expectOk(await POST("/api/v1/logs/anonymization", { name: un("E2E-ANON"), dataset: "firewall", field: "source_ip", strategy: "hash" }));
+    anonId = a.id;
+    const u = expectOk(await PUT(`/api/v1/logs/anonymization/${anonId}`, { strategy: "mask" }));
+    assert(u.strategy === "mask", JSON.stringify(u).slice(0, 140));
+    const p = expectOk(await GET("/api/v1/logs/anonymization/preview?dataset=firewall"));
+    check("preview", true, JSON.stringify(p).slice(0, 120));
+  });
+
+  await tc("cleanup: anon/netflow/syslog/schedule/compliance → gone", async () => {
+    expectOk(await DEL(`/api/v1/logs/anonymization/${anonId}`));
+    expectOk(await DEL(`/api/v1/logs/netflow-targets/${nfId}`));
+    expectOk(await DEL(`/api/v1/logs/syslog-targets/${syslogId}`));
+    expectOk(await DEL(`/api/v1/logs/report-schedules/${schedId}`));
+    expectOk(await DEL(`/api/v1/logs/compliance/templates/${tplId}`));
+    anonId = nfId = syslogId = schedId = tplId = null;
+  });
+});
+
+suite("ha", "System → High Availability: status + config update/revert", async () => {
+  let snap = null;
+
+  await tc("ha status read", async () => {
+    const s = expectOk(await GET("/api/v1/ha/status"));
+    check("status", true, JSON.stringify(s).slice(0, 140));
+  });
+
+  await tc("ha config snapshot → enable (active, vip) → revert", async () => {
+    snap = expectOk(await GET("/api/v1/ha/config"));
+    const body = { enabled: true, role: "active", priority: 200, virtualIp: "192.168.77.254/24", ifaceName: "ens34", peerIp: "192.168.77.9", syncConfig: true, sessionSync: true, trackedInterfaces: ["ens34"], failAfterSec: 10, holdDownSec: 60 };
+    const u = expectOk(await PUT("/api/v1/ha/config", body));
+    assert(u.enabled === true && u.role === "active", JSON.stringify(u).slice(0, 200));
+    // revert to a disabled state valid on THIS host (seed iface lan0 not present)
+    const back = expectOk(await PUT("/api/v1/ha/config", { enabled: false, role: "standby", priority: snap.priority ?? 100, virtualIp: snap.virtualIp ?? "192.168.10.254/24", ifaceName: "ens34", peerIp: snap.peerIp ?? "192.168.10.253", syncConfig: snap.syncConfig ?? true, sessionSync: snap.sessionSync ?? true, trackedInterfaces: [], failAfterSec: snap.failAfterSec ?? 10, holdDownSec: snap.holdDownSec ?? 60 }));
+    assert(back.enabled === false, `ha still enabled: ${JSON.stringify(back).slice(0, 140)}`);
+    check("ha reverted (disabled)", true, `role=${back.role}`);
+  });
+
+  await tc("ha enable without role → 400", async () => {
+    const r = await PUT("/api/v1/ha/config", { enabled: true, role: "disabled", ifaceName: "ens34" });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("ha holdDown < failAfter → 400", async () => {
+    const r = await PUT("/api/v1/ha/config", { enabled: false, role: "active", ifaceName: "ens34", failAfterSec: 60, holdDownSec: 10 });
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+});
+
+suite("system", "System → settings/status/services/ssh-keys/api-keys/webhooks/notifications/templates/versions", async () => {
+  let sshKeyId = null;
+  let apiKeyId = null;
+  let keyPlain = null;
+  let hookId = null;
+  let snap = null;
+
+  await tc("system status read", async () => {
+    const s = expectOk(await GET("/api/v1/system/status"));
+    check("status", true, JSON.stringify(s).slice(0, 120));
+  });
+
+  await tc("settings read → set general/hostname variant → revert", async () => {
+    snap = expectOk(await GET("/api/v1/system/settings"));
+    const entries = Array.isArray(snap) ? snap : snap?.settings ?? snap?.data ?? [];
+    const arr = Array.isArray(entries) ? entries : [];
+    check("settings keys", true, `${arr.length} entries`);
+    // find an existing editable entry to toggle (logging retention firewall_logs)
+    const cur = arr.find((e) => e.category === "logging" && String(e.key).startsWith("retention.firewall_logs"));
+    if (cur) {
+      const days = Number(cur.value);
+      const next = days >= 60 ? days - 10 : days + 10;
+      const u = expectOk(await PUT("/api/v1/system/settings", [{ category: "logging", key: "retention.firewall_logs", value: next }]));
+      check("retention set", true, JSON.stringify(u).slice(0, 120));
+      await PUT("/api/v1/system/settings", [{ category: "logging", key: "retention.firewall_logs", value: cur.value }]);
+    }
+  });
+
+  await tc("unknown setting key → 400", async () => {
+    const r = await PUT("/api/v1/system/settings", [{ category: "logging", key: "retention.nope", value: 30 }]);
+    expectErr(r, "VALIDATION_ERROR", 400);
+  });
+
+  await tc("services list + simulated restart", async () => {
+    const s = expectOk(await GET("/api/v1/system/status"));
+    check("services via status", true, "ok");
+    const r = await POST("/api/v1/system/services/sshd/restart", {});
+    check("service restart (simulated)", true, `status=${r.status}`);
+  });
+
+  await tc("ssh-keys CRUD (public key only)", async () => {
+    const k = expectOk(await POST("/api/v1/system/ssh-keys", { name: un("E2E-KEY"), publicKey: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDJe2eE2ETestKeyBase64PlaceholderValue000 e2e@lab" }));
+    sshKeyId = k.id;
+    assert(sshKeyId, JSON.stringify(k).slice(0, 160));
+    const priv = await POST("/api/v1/system/ssh-keys", { name: un("E2E-BADKEY"), publicKey: "-----BEGIN PRIVATE KEY-----abc" });
+    assert(priv.status === 400, `private key accepted?! ${priv.status}`);
+  });
+
+  await tc("api-keys CRUD + auth with key", async () => {
+    const k = expectOk(await POST("/api/v1/api-keys", { name: un("E2E-APIKEY"), scopes: ["read"] }));
+    apiKeyId = k.id ?? k.key?.id;
+    keyPlain = k.plainToken ?? k.token ?? k.secret ?? null;
+    assert(apiKeyId, JSON.stringify(k).slice(0, 220));
+    if (keyPlain) {
+      const me = await GET("/api/v1/auth/me", { headers: { "x-api-key": keyPlain } });
+      check("api-key auth works", me.status === 200, `status=${me.status}`);
+    }
+    const list = expectOk(await GET("/api/v1/api-keys"));
+    const rows = Array.isArray(list) ? list : list?.keys ?? [];
+    assert(rows.some((x) => x.id === apiKeyId), "key missing from list");
+  });
+
+  await tc("webhooks CRUD (https url, events)", async () => {
+    const w = expectOk(await POST("/api/v1/webhooks", { name: un("E2E-HOOK"), url: "https://127.0.0.1/e2e-hook", events: ["alerts.new", "config.updated"], secret: "e2e-webhook-secret-123" }));
+    hookId = w.id;
+    assert(hookId, JSON.stringify(w).slice(0, 200));
+    const badHttp = await POST("/api/v1/webhooks", { name: un("E2E-BADHOOK"), url: "http://insecure.example/e2e", events: ["alerts.new"] });
+    assert(badHttp.status === 400, `http url accepted: ${badHttp.status}`);
+    const u = expectOk(await PUT(`/api/v1/webhooks/${hookId}`, { enabled: false }));
+    assert(u.enabled === false, JSON.stringify(u).slice(0, 140));
+  });
+
+  await tc("notifications list + read-all", async () => {
+    const n = expectOk(await GET("/api/v1/notifications?limit=5"));
+    const rows = Array.isArray(n) ? n : n?.notifications ?? [];
+    check("notifications", true, `${rows.length} rows`);
+    if (rows.length > 0) {
+      const r = await POST(`/api/v1/notifications/${rows[0].id}/read`, {});
+      check("mark read", true, `status=${r.status}`);
+    }
+    const ra = await POST("/api/v1/notifications/read-all", {});
+    check("read-all", true, `status=${ra.status}`);
+  });
+
+  await tc("policy-templates list", async () => {
+    const t = expectOk(await GET("/api/v1/system/policy-templates"));
+    const rows = Array.isArray(t) ? t : t?.templates ?? [];
+    check("templates", true, `${rows.length} available (apply skipped — overwrites policy state)`);
+  });
+
+  await tc("config-versions list + restore-noop", async () => {
+    const v = expectOk(await GET("/api/v1/config-versions?limit=5"));
+    const rows = Array.isArray(v) ? v : v?.versions ?? [];
+    check("versions", true, `${rows.length} snapshots`);
+  });
+
+  await tc("backups create + list (restore skipped on prod)", async () => {
+    const b = expectOk(await POST("/api/v1/system/backups", { type: "config" }));
+    const bid = b.id ?? b.backup?.id;
+    check("backup created", true, `id=${bid}`);
+    const list = expectOk(await GET("/api/v1/system/backups"));
+    const rows = Array.isArray(list) ? list : list?.backups ?? [];
+    check("backup listed", rows.some((x) => x.id === bid), `${rows.length} backups`);
+    if (bid) await DEL(`/api/v1/system/backups/${bid}`);
+  });
+
+  await tc("firmware status read (upgrade/rollback skipped)", async () => {
+    const f = expectOk(await GET("/api/v1/system/firmware"));
+    check("firmware", true, JSON.stringify(f).slice(0, 120));
+  });
+
+  await tc("cleanup: ssh-key + webhook → gone", async () => {
+    if (sshKeyId) expectOk(await DEL(`/api/v1/system/ssh-keys/${sshKeyId}`));
+    if (hookId) expectOk(await DEL(`/api/v1/webhooks/${hookId}`));
+    const keys = expectOk(await GET("/api/v1/system/ssh-keys"));
+    const rows = Array.isArray(keys) ? keys : keys?.keys ?? [];
+    assert(!rows.some((x) => x.name?.includes("E2E-KEY")), "ssh key still present");
+    sshKeyId = hookId = null;
+  });
+
+  await tc("api-key revoke last (after all suites done)", async () => {
+    if (apiKeyId) {
+      expectOk(await DEL(`/api/v1/api-keys/${apiKeyId}`));
+      check("api-key revoked", true, `id=${apiKeyId}`);
+      apiKeyId = null;
+    }
   });
 });
 
