@@ -651,7 +651,12 @@ class HostCollector {
     }
   }
 
-  /** Upsert REAL host interfaces into the networkInterface table. */
+  /** Upsert REAL host interfaces into the networkInterface table.
+   *  MERGE semantics (BUG-6 fix): the collector owns the LIVE facts (mac,
+   *  ipv4/ipv6 observation, operState, carrier) only — it must never clobber
+   *  the console's desired-state fields (ip, cidrPrefix, gateway, wanType,
+   *  dns, secondaryIps, lldp, speed, duplex) nor the operator-set role/mtu.
+   *  The previous replace-everything update wiped L3 config every 30 ticks. */
   private async syncRealInterfaces(): Promise<void> {
     const real = await readInterfaces();
     if (real.length === 0) return;
@@ -659,17 +664,35 @@ class HostCollector {
     const existingNames = new Set(existing.map((i) => i.name));
 
     for (const iface of real) {
-      const type = iface.name === "lo" ? "loopback" : /(\.|:)/.test(iface.name) && /eth|ens|enp/.test(iface.name) ? "physical" : iface.name.startsWith("wg") ? "physical" : "physical";
+      // kernel pseudo-link — not a real interface, must never become a row
+      if (iface.name === "bonding_masters") continue;
+      const type = iface.name === "lo" ? "loopback" : "physical";
       const role = iface.isDefaultRoute ? "wan" : iface.name === "lo" ? "unused" : iface.ipv4.length > 0 ? "lan" : "unused";
-      const config = JSON.stringify({ mac: iface.mac, ipv4: iface.ipv4, ipv6: iface.ipv6.slice(0, 4), operState: iface.operState, carrier: iface.carrier, source: "host-sync" });
       if (existingNames.has(iface.name)) {
+        // merge: refresh live facts inside the existing config JSON
+        const prev = await db.networkInterface
+          .findFirst({ where: { tenantId: 1, name: iface.name }, select: { config: true } })
+          .catch(() => null);
+        let merged: Record<string, unknown> = {};
+        try {
+          merged = JSON.parse(prev?.config ?? "{}") as Record<string, unknown>;
+        } catch {
+          merged = {};
+        }
+        merged.mac = iface.mac;
+        merged.ipv4 = iface.ipv4;
+        merged.ipv6 = iface.ipv6.slice(0, 4);
+        merged.operState = iface.operState;
+        merged.carrier = iface.carrier;
+        merged.source = "host-sync";
         await db.networkInterface
           .updateMany({
             where: { tenantId: 1, name: iface.name },
-            data: { mtu: iface.mtu ?? 1500, config, role: role === "wan" ? "wan" : role },
+            data: { config: JSON.stringify(merged) },
           })
           .catch(() => {});
       } else {
+        const config = JSON.stringify({ mac: iface.mac, ipv4: iface.ipv4, ipv6: iface.ipv6.slice(0, 4), operState: iface.operState, carrier: iface.carrier, source: "host-sync" });
         await db.networkInterface
           .create({
             data: { tenantId: 1, name: iface.name, type, mode: "l3", role, mtu: iface.mtu ?? 1500, enabled: iface.operState !== "down", config, description: "discovered by host collector (real interface)" },

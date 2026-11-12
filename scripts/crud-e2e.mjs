@@ -2378,7 +2378,7 @@ suite("dynroute", "Advanced Routing → BGP/OSPF/BFD/prefix-lists/route-maps/com
   await tc("prefix-list create (ipv4 2 entries)", async () => {
     const p = expectOk(await POST("/api/v1/dynamic-routing/prefix-lists", { name: un("E2E-PL"), family: "ipv4", entries: [{ seq: 10, action: "permit", prefix: "10.220.0.0/16", ge: 16, le: 24 }, { seq: 20, action: "deny", prefix: "0.0.0.0/0" }] }));
     plId = p.id;
-    assert(p.entries?.length === 2, JSON.stringify(p).slice(0, 160));
+    assert(p.entryCount === 2 || JSON.parse(p.entries).length === 2, JSON.stringify(p).slice(0, 160));
   });
 
   await tc("prefix-list bad family cidr → 400", async () => {
@@ -2389,7 +2389,7 @@ suite("dynroute", "Advanced Routing → BGP/OSPF/BFD/prefix-lists/route-maps/com
   await tc("route-map create (match prefix-list)", async () => {
     const r = expectOk(await POST("/api/v1/dynamic-routing/route-maps", { name: un("E2E-RM"), entries: [{ seq: 10, action: "permit", matchPrefixListId: plId, setLocalPref: 200 }] }));
     rmId = r.id;
-    assert(r.entries?.length === 1, JSON.stringify(r).slice(0, 160));
+    assert(r.entryCount === 1 || JSON.parse(r.entries).length === 1, JSON.stringify(r).slice(0, 160));
   });
 
   await tc("route-map entry without match → 400", async () => {
@@ -2398,13 +2398,14 @@ suite("dynroute", "Advanced Routing → BGP/OSPF/BFD/prefix-lists/route-maps/com
   });
 
   await tc("community-list create", async () => {
-    const c = expectOk(await POST("/api/v1/dynamic-routing/community-lists", { name: un("E2E-CL"), entries: [{ seq: 10, action: "permit", community: "65000:100" }] }));
+    const c = expectOk(await POST("/api/v1/dynamic-routing/community-lists", { name: un("E2E-CL"), type: "standard", entries: ["65000:100"] }));
     clId = c.id;
-    assert(c.entries?.[0]?.community === "65000:100", JSON.stringify(c).slice(0, 160));
+    const entries = typeof c.entries === "string" ? JSON.parse(c.entries) : c.entries;
+    assert(entries?.[0] === "65000:100", JSON.stringify(c).slice(0, 160));
   });
 
   await tc("community-list bad tag → 400", async () => {
-    const r = await POST("/api/v1/dynamic-routing/community-lists", { name: un("E2E-BAD3"), entries: [{ seq: 10, action: "permit", community: "notatag" }] });
+    const r = await POST("/api/v1/dynamic-routing/community-lists", { name: un("E2E-BAD3"), type: "standard", entries: ["notatag"] });
     expectErr(r, "VALIDATION_ERROR", 400);
   });
 
@@ -2496,7 +2497,7 @@ suite("sdwan", "Advanced Routing → SD-WAN: sla/overlays/sites/paths/policies +
   });
 
   await tc("sdwan policy create + update", async () => {
-    const p = expectOk(await POST("/api/v1/sdwan/policies", { name: un("E2E-SDWANPOL"), slaProfileId: slaId, preferredPath: "latency", enabled: true }));
+    const p = expectOk(await POST("/api/v1/sdwan/policies", { name: un("E2E-SDWANPOL"), overlayId: ovId, slaProfileId: slaId, preferredPath: "latency", enabled: true }));
     polId = p.id;
     assert(p.preferredPath === "latency", JSON.stringify(p).slice(0, 200));
     const u = expectOk(await PUT(`/api/v1/sdwan/policies/${polId}`, { preferredPath: "fixed" }));
