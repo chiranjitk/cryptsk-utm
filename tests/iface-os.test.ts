@@ -102,9 +102,8 @@ describe("buildApplyPlan", () => {
     );
     const cmds = plan.steps.map((s) => s.cmd);
     expect(cmds).toContain("ip link add name br0 type bridge");
-    expect(cmds).toContain("ip link set dev br0 type bridge stp_state 1");
-    expect(cmds).toContain("ip link set dev br0 type bridge stp_protocol mstp");
-    expect(cmds).toContain("ip link set dev br0 type bridge stp_priority 4096");
+    expect(cmds).toContain("ip link set dev br0 type bridge stp_state 2");
+    expect(cmds).toContain("ip link set dev br0 type bridge priority 4096");
     expect(cmds).toContain("ip link set dev br0 type bridge forward_delay 10");
     expect(cmds).toContain("ip link set eth0 down");
     expect(cmds).toContain("ip link set eth0 master br0");

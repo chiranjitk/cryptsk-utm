@@ -96,7 +96,12 @@ function linkAdminSteps(name: string, view: IfaceRuleView, os: RealInterface | u
     return steps;
   }
   if (!os) {
-    // freshly created links (bridges/bonds are born admin-down) — force up
+    // freshly created links (bridges/bonds are born admin-down) — force up.
+    // Only types the planner can conjure; a missing physical/tunnel must not
+    // get an up step (hardware cannot be conjured — exec would just fail).
+    if (view.type !== "vlan" && view.type !== "bridge" && view.type !== "bond" && view.type !== "loopback") {
+      return steps;
+    }
     steps.push({ cmd: `ip link set ${name} up`, summary: "bring new interface up" });
     return steps;
   }
@@ -184,13 +189,17 @@ export function buildApplyPlan(
       case "bridge": {
         steps.push({ cmd: `ip link add name ${name} type bridge`, summary: "create bridge" });
         const stp = view.config["stp"] === true;
-        steps.push({ cmd: `ip link set dev ${name} type bridge stp_state ${stp ? 1 : 0}`, summary: `STP ${stp ? "on" : "off"}` });
+        // iproute2 grammar (verified on iproute2 6.15): stp_state 0=off 1=stp
+        // 2=rstp — there is no stp_protocol / stp_priority attribute
+        const rstp = view.config["stpMode"] === "rstp";
+        steps.push({
+          cmd: `ip link set dev ${name} type bridge stp_state ${stp ? (rstp ? 2 : 1) : 0}`,
+          summary: `STP ${stp ? (rstp ? "RSTP" : "on") : "off"}`,
+        });
         if (stp) {
-          const mode = view.config["stpMode"] === "rstp" ? "mstp" : "stp";
-          steps.push({ cmd: `ip link set dev ${name} type bridge stp_protocol ${mode}`, summary: `STP protocol ${mode}` });
           const prio = view.config["stpPriority"];
           if (typeof prio === "number") {
-            steps.push({ cmd: `ip link set dev ${name} type bridge stp_priority ${prio}`, summary: `STP priority ${prio}` });
+            steps.push({ cmd: `ip link set dev ${name} type bridge priority ${prio}`, summary: `bridge priority ${prio}` });
           }
           const fd = view.config["forwardDelay"];
           if (typeof fd === "number") {

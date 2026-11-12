@@ -8,6 +8,9 @@ import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { renumberNatRules } from "./positions";
 
+/** Minimal tx surface — avoids importing Prisma namespace into the hot path. */
+type NatTx = Pick<typeof db, "addressObject" | "natRule">;
+
 export type NatRuleBody = {
   name?: string | null;
   enabled: boolean;
@@ -90,12 +93,15 @@ export async function reorderNatRules(tenantId: number, orderedIds: number[]): P
   });
 }
 
-/** Find-or-create an /32 address object for a raw helper IP. */
-async function ensureAddressObject(tenantId: number, ip: string, prefix: string): Promise<number> {
+/** Find-or-create an /32 address object for a raw helper IP.
+ *  MUST run on the transaction client — a nested write through the global db
+ *  client deadlocks on SQLite (the interactive tx holds the write lock) and
+ *  the 5s tx timeout aborts the whole helper (seen on prod). */
+async function ensureAddressObject(tenantId: number, ip: string, prefix: string, tx: NatTx): Promise<number> {
   const name = `${prefix}_${ip.replace(/\./g, "_")}`;
-  const existing = await db.addressObject.findFirst({ where: { tenantId, name } });
+  const existing = await tx.addressObject.findFirst({ where: { tenantId, name } });
   if (existing) return existing.id;
-  const created = await db.addressObject.create({
+  const created = await tx.addressObject.create({
     data: { tenantId, name, type: "ip", value: ip, description: "Created by the 1:1 NAT helper" },
   });
   return created.id;
@@ -112,8 +118,8 @@ export async function createOneToOnePair(
     const max = await tx.natRule.aggregate({ where: { tenantId }, _max: { position: true } });
     let pos = (max._max.position ?? 0) + 1;
 
-    const pubId = await ensureAddressObject(tenantId, input.publicIp, "PUB");
-    const hostId = await ensureAddressObject(tenantId, input.internalHost, "HOST");
+    const pubId = await ensureAddressObject(tenantId, input.publicIp, "PUB", tx);
+    const hostId = await ensureAddressObject(tenantId, input.internalHost, "HOST", tx);
 
     const dnat = await tx.natRule.create({
       data: {
