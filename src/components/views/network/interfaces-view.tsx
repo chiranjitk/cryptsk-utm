@@ -951,8 +951,14 @@ function IfaceEditor(props: {
 
   // physical edit state
   const pppoeCfg = (editing?.config?.["pppoe"] ?? {}) as { user?: string; password?: string; service?: string };
-  const [wanType, setWanType] = useState<"static" | "dhcp" | "pppoe">(
-    (cfgString(editing?.config, "wanType") as "static" | "dhcp" | "pppoe" | null) ?? "static",
+  // "unset" = the port has never been given WAN addressing (no wanType + no ip
+  // in the desired-state config). Sending WAN-free PUTs for such ports keeps
+  // MTU/zone/role edits from being hijacked by the static-IP requirement.
+  const hasWanCfg =
+    cfgString(editing?.config, "wanType") != null || cfgString(editing?.config, "ip") != null;
+  const [wanType, setWanType] = useState<"static" | "dhcp" | "pppoe" | "unset">(
+    (cfgString(editing?.config, "wanType") as "static" | "dhcp" | "pppoe" | null) ??
+      (hasWanCfg ? "static" : "unset"),
   );
   const [ip, setIp] = useState(cfgString(editing?.config, "ip") ?? "");
   const [prefix, setPrefix] = useState(cfgNumber(editing?.config, "cidrPrefix")?.toString() ?? "24");
@@ -1151,6 +1157,10 @@ function IfaceEditor(props: {
     // logical per-type fields ride the validated `config` patch.
     if (editing.type === "physical") {
       if (mode === "l3") {
+        // unconfigured port — WAN-free PUT so the service leaves L3 config alone
+        if (wanType === "unset") {
+          return { name: editing.name, mode, enabled: editing.enabled, ...common, speed, duplex, lldp };
+        }
         if (wanType === "static") {
           if (!isValidIpv4(ip)) return "A valid IPv4 address is required for static WAN";
           if (gateway.trim() !== "" && !isValidIpv4(gateway)) return "Gateway must be a valid IPv4 address";
@@ -1659,13 +1669,13 @@ function IfaceEditor(props: {
             <EditorSection title="WAN addressing">
               <RadioGroup
                 value={wanType}
-                onValueChange={(v) => setWanType(v as "static" | "dhcp" | "pppoe")}
+                onValueChange={(v) => setWanType(v as "static" | "dhcp" | "pppoe" | "unset")}
                 disabled={!l3Editable}
                 className="flex gap-4"
               >
-                {(["static", "dhcp", "pppoe"] as const).map((wt) => (
+                {(isEdit && !hasWanCfg ? (["unset", "static", "dhcp", "pppoe"] as const) : (["static", "dhcp", "pppoe"] as const)).map((wt) => (
                   <Label key={wt} className="flex cursor-pointer items-center gap-2 text-sm">
-                    <RadioGroupItem value={wt} /> {wt}
+                    <RadioGroupItem value={wt} /> {wt === "unset" ? "not configured" : wt}
                   </Label>
                 ))}
               </RadioGroup>
