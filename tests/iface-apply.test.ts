@@ -175,3 +175,12 @@ describe("buildApplyPlan creation MTU", () => {
     expect(plan.steps).toHaveLength(0);
   });
 });
+
+describe("loopback creation mapping", () => {
+  test("loopback maps to kernel dummy device (netlink cannot create loopback)", () => {
+    const plan = buildApplyPlan(view({ name: "lo-test", type: "loopback", mtu: 1500 }), undefined);
+    const cmds = plan.steps.map((s) => s.cmd);
+    expect(cmds).toContain("ip link add name lo-test type dummy");
+    expect(cmds.some((c) => c.includes("type loopback"))).toBe(false);
+  });
+});

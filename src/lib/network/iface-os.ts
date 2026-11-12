@@ -216,7 +216,9 @@ export function buildApplyPlan(
         break;
       }
       case "loopback":
-        steps.push({ cmd: `ip link add name ${name} type loopback`, summary: "create loopback" });
+        // appliance loopback interfaces map to kernel dummy devices — the
+        // kernel cannot create additional loopback-type links via netlink
+        steps.push({ cmd: `ip link add name ${name} type dummy`, summary: "create loopback (kernel dummy)" });
         break;
       default:
         // physical/tunnels cannot be conjured by the console
