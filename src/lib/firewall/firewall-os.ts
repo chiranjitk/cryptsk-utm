@@ -284,6 +284,21 @@ async function writeState(state: ApplyState | null): Promise<void> {
   await fs.writeFile(path.join(NFT_DIR, "state.json"), JSON.stringify(state, null, 2), "utf8");
 }
 
+/** Remove superseded/stale artefacts: armed scripts >60min, generated rulesets
+ *  and confirm flags >24h, backups >7d (restore points). */
+async function housekeepArtefacts(): Promise<void> {
+  await runTool(
+    `find ${JSON.stringify(NFT_DIR)} -name "rollback-*.sh" -mmin +60 -delete 2>/dev/null; ` +
+      `find ${JSON.stringify(NFT_DIR)} \( -name "ruleset-*.nft" -o -name "confirm-*" \) -mmin +1440 -delete 2>/dev/null; ` +
+      `find ${JSON.stringify(NFT_DIR)} -name "backup-*.nft" -mtime +7 -delete 2>/dev/null`,
+    5000,
+  );
+}
+
+function rollbackScriptPath(ts: string): string {
+  return path.join(NFT_DIR, `rollback-${ts}.sh`);
+}
+
 export async function readApplyState(): Promise<ApplyState | null> {
   try {
     const raw = await fs.readFile(path.join(NFT_DIR, "state.json"), "utf8");
@@ -357,6 +372,7 @@ export async function applyFirewallNft(tenantId: number, opts: ApplyOptions = {}
   // 1. syntax/commit pre-check — never touch the kernel on a broken plan
   const file = path.join(NFT_DIR, `ruleset-${ts}.nft`);
   await fs.mkdir(NFT_DIR, { recursive: true });
+  void housekeepArtefacts();
   await fs.writeFile(file, plan.file, "utf8");
   const check = await runTool(`nft -c -f ${JSON.stringify(file)}`, 10000);
   results.push({ step: "nft -c check", ok: check.ok, detail: check.ok ? undefined : check.stderr || check.error });
@@ -378,7 +394,7 @@ export async function applyFirewallNft(tenantId: number, opts: ApplyOptions = {}
 
   // 3. arm the detached rollback timer (survives console restarts)
   const confirmFile = path.join(NFT_DIR, `confirm-${ts}`);
-  const rollbackScript = path.join(NFT_DIR, `rollback-${ts}.sh`);
+  const rollbackScript = rollbackScriptPath(ts);
   await fs.writeFile(
     rollbackScript,
     [
@@ -388,6 +404,9 @@ export async function applyFirewallNft(tenantId: number, opts: ApplyOptions = {}
       `if [ -f ${JSON.stringify(confirmFile)} ]; then exit 0; fi`,
       `/usr/sbin/nft -f ${JSON.stringify(backupFile)}`,
       `rm -f ${JSON.stringify(rollbackScript)}`,
+      `# clear the pending window if it still belongs to THIS apply (a newer`,
+      `# apply supersedes it and owns the file — never touch that one)`,
+      `if grep -qF ${JSON.stringify(`"ts": "${ts}"`)} ${JSON.stringify(path.join(NFT_DIR, "state.json"))} 2>/dev/null; then rm -f ${JSON.stringify(path.join(NFT_DIR, "state.json"))}; fi`,
     ].join("\n"),
     "utf8",
   );
@@ -474,6 +493,7 @@ export async function applyFirewallNft(tenantId: number, opts: ApplyOptions = {}
   if (mode === "auto") {
     await fs.writeFile(confirmFile, new Date().toISOString(), "utf8").catch(() => {});
     await writeState(null);
+    await fs.rm(rollbackScript, { force: true }).catch(() => {});
     outcome.confirmDeadlineAt = null;
     persistence.push({ step: "auto-confirm", ok: true, detail: "auto-converge mode — commit confirmed immediately (health verified)" });
   }
@@ -488,6 +508,7 @@ export async function confirmFirewallApply(ts: string): Promise<{ confirmed: boo
   if (!target) return { confirmed: false, ts };
   await fs.writeFile(target.confirmFile, new Date().toISOString(), "utf8");
   await writeState(null);
+  await fs.rm(rollbackScriptPath(ts), { force: true }).catch(() => {});
   return { confirmed: true, ts };
 }
 
@@ -509,6 +530,7 @@ export async function rollbackFirewall(ts?: string): Promise<{ rolledBack: boole
   if (state) {
     await fs.writeFile(state.confirmFile, "rollback", "utf8").catch(() => {});
     await writeState(null);
+    await fs.rm(rollbackScriptPath(state.ts), { force: true }).catch(() => {});
   }
   const health = await probeWanHealth();
   return {
