@@ -372,9 +372,19 @@ export async function execWanOsPlan(plan: WanOsPlan): Promise<WanOsApplyOutcome>
 }
 
 /** Full converge pass (input → plan → exec). Never throws. */
-export async function convergeWanOs(): Promise<WanOsApplyOutcome> {
+export async function convergeWanOs(
+  liveStates?: Record<string, "up" | "degraded" | "down" | "unknown">,
+): Promise<WanOsApplyOutcome> {
   try {
     const input = await buildWanOsInput();
+    if (liveStates) {
+      // the engine's in-memory probe states are the CURRENT health decision —
+      // DB rows can lag a just-persisted transition (write/converge race)
+      for (const w of input.wans) {
+        const s = liveStates[w.iface];
+        if (s) w.state = s;
+      }
+    }
     const { readKernelPbrRules } = await import("./pbr-os");
     const kernel = await readKernelPbrRules();
     const plan = buildWanOsConvergePlan(input, kernel);

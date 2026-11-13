@@ -498,8 +498,16 @@ class HostCollector {
       }
     }
     if (transitioned || this.tickNo % (WAN_EVERY * 6) === 0) {
-      // kernel policy routing follows the health decision (G2)
-      await convergeWanOs().catch(() => {});
+      // kernel policy routing follows the health decision (G2) — live runtime
+      // states are authoritative (DB rows can lag the just-persisted transition)
+      const liveStates: Record<string, "up" | "degraded" | "down" | "unknown"> = {};
+      for (const [iface, rt] of this.wanProbes) liveStates[iface] = rt.state;
+      const outcome = await convergeWanOs(liveStates).catch(() => null);
+      if (outcome && outcome.plan.steps.length > 0 && (verbose || !outcome.applied)) {
+        console.log(
+          `[host-collector] wan-os converge ${outcome.applied ? "applied" : "FAILED"} (egress ${outcome.plan.activeEgress?.iface ?? "offline"}, ${outcome.plan.steps.length} steps)`,
+        );
+      }
     }
   }
 
