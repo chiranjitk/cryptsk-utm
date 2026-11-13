@@ -265,6 +265,11 @@ export function buildWanOsConvergePlan(input: WanOsInput, kernel: KernelPbrRule[
     return { steps, egressTable: null, managedTables, activeEgress: null, reasons };
   }
 
+  // flush-then-install: multipath (no metric) and single-path (metric 1)
+  // defaults are DIFFERENT kernel keys — `replace` alone would stack a stale
+  // entry; the managed table must hold exactly the current decision
+  steps.push({ cmd: `ip route flush table ${WAN_EGRESS_TABLE}`, summary: `flush egress table ${WAN_EGRESS_TABLE} (decision changed)` });
+
   const allLb = upWans.length >= 2 && upWans.every((w) => w.mode === "load_balance");
   if (allLb) {
     const nh = upWans

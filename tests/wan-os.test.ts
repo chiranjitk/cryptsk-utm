@@ -61,6 +61,7 @@ describe("buildWanOsConvergePlan — secondary WAN source routing", () => {
       { cmd: `ip route replace 20.20.30.0/24 dev ens34 src 20.20.30.1 table ${WAN_TABLE_BASE}`, summary: expect.any(String) },
       { cmd: `ip route replace default via 20.20.30.254 dev ens34 src 20.20.30.1 metric 1 table ${WAN_TABLE_BASE}`, summary: expect.any(String) },
       { cmd: `ip rule add priority ${WAN_PRIO_BASE} from 20.20.30.1 table ${WAN_TABLE_BASE}`, summary: expect.any(String) },
+      { cmd: `ip route flush table ${WAN_EGRESS_TABLE}`, summary: expect.any(String) },
       { cmd: `ip route replace default via 20.20.30.254 dev ens34 src 20.20.30.1 metric 1 table ${WAN_EGRESS_TABLE}`, summary: expect.any(String) },
     ]);
     expect(plan.activeEgress).toEqual({ iface: "ens34", style: "priority" });
