@@ -648,6 +648,25 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-13 — Sandbox reboot recovery (app down → restored) + scripts/sandbox-recovery.sh
+
+- **Incident:** the sandbox machine rebooted (~18:16). The platform reset wiped the npm
+  global pm2 install, replaced `.env` with the 50-byte stub (`DATABASE_URL=file:db/custom.db`,
+  no AUTH_SECRET), and the platform watchdog auto-started `bun run dev` directly —
+  next-server ballooned to 2.5 GB of the 4 GB box (no `--max-old-space-size` cap) and `GET /`
+  timed out. `db/cryptsk.db` survived as schema-only (untracked per §14 git hygiene) —
+  **all rows gone, users table empty → login 401 despite correct credentials.**
+- **Recovery (all verified):** killed stray watchdog processes → restored full `.env`
+  (fresh secrets, ADAPTER_MODE=host) → reinstalled pm2 → `pm2 start ecosystem.config.cjs`
+  (memory cap 1400M restored) → re-ran idempotent seed (8 users, 5000 FW logs, 300 IPS
+  events) → golden path 200 (login/dashboard/notifications, 45 ms static).
+- **New: `scripts/sandbox-recovery.sh`** — idempotent one-shot for exactly this failure
+  mode: restores `.env` if stubbed, `bun install` if node_modules pruned, `db:push` +
+  seed if the users table is empty, installs pm2 if wiped, kills stray watchdog
+  `next dev` on :3000/:3003, starts ecosystem + `pm2 save`, polls until `GET /` → 200
+  then probes `POST /api/v1/auth/login`. Run `bash scripts/sandbox-recovery.sh` after
+  any sandbox reboot. QA passes 5-a/5-b code fully intact (spot-checked CommandDialog).
+
 ### 2026-11-13 — Feature enhancement QA pass (command palette + login demo credentials + cert-feed retry)
 
 - **Scope:** 3 small additive enhancements (agent 5-b, follows the 5-a polish pass). Client-only;
