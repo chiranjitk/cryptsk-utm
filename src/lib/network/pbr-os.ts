@@ -569,6 +569,62 @@ export function pbrHealthRegressed(baseline: PbrWanHealth, after: PbrWanHealth):
   return after.gatewayOk === false || after.internetOk === false;
 }
 
+// ── shared rule preparation (match resolution + egress next-hop) ────────────
+
+export interface PreparedPbrRule {
+  view: PbrRuleView;
+  src: Array<{ id: number; cidr: string | null }>;
+  dst: Array<{ id: number; cidr: string | null }>;
+  svc: ResolvedServiceSelector[];
+  svcSelectors: number;
+  egress: EgressGateway | null;
+  /** plan compiled as-if-confirmed — used for the match-all pre-check + preview */
+  confirmedPlan: PbrOsPlan;
+  /** true when the confirmed plan would install a selector-less catch-all entry */
+  matchAll: boolean;
+}
+
+/** Resolve match objects + egress next-hop for every rule (egress cached per iface). */
+export async function preparePbrRules(views: PbrRuleView[], tenantId: number): Promise<PreparedPbrRule[]> {
+  const egressCache = new Map<string, EgressGateway>();
+  const prepared: PreparedPbrRule[] = [];
+  for (const view of views) {
+    const [src, dst, svc] = await Promise.all([
+      resolvePbrCidrs(tenantId, view.srcAddrIds),
+      resolvePbrCidrs(tenantId, view.dstAddrIds),
+      resolveServiceSelectors(tenantId, view.serviceIds),
+    ]);
+    let egress: EgressGateway | null = null;
+    if (!view.gateway && view.outgoingIface) {
+      if (!egressCache.has(view.outgoingIface)) {
+        egressCache.set(view.outgoingIface, await resolveEgressGateway(view.outgoingIface));
+      }
+      egress = egressCache.get(view.outgoingIface) ?? null;
+    }
+    const confirmedPlan = buildPbrApplyPlan(view, src, dst, svc, {
+      confirmMatchAll: true,
+      egressGateway: egress?.gateway ?? null,
+      egressDev: egress?.dev ?? null,
+    });
+    const srcCidrs = src.map((s) => s.cidr).filter((c): c is string => c !== null);
+    const dstCidrs = dst.map((d) => d.cidr).filter((c): c is string => c !== null);
+    prepared.push({
+      view,
+      src,
+      dst,
+      svc,
+      svcSelectors: svc.length,
+      egress,
+      confirmedPlan,
+      matchAll:
+        confirmedPlan.configOnly === false &&
+        view.enabled &&
+        pbrCombosHaveCatchAll(buildPbrCombos(srcCidrs, dstCidrs), compileServiceSelectors(svc).selectors),
+    });
+  }
+  return prepared;
+}
+
 export type PbrKernelState = "disabled" | "in-kernel" | "missing" | "config-only";
 
 /** Kernel state for one rule (null kernel → null = unknown). */

@@ -27,22 +27,17 @@ import { z } from "zod";
 import { shapePbrRule } from "@/lib/network/shapes";
 import {
   buildPbrApplyPlan,
-  buildPbrCombos,
   buildPbrTeardownPlan,
-  compileServiceSelectors,
-  pbrCombosHaveCatchAll,
   pbrHealthRegressed,
   pbrKernelState,
+  preparePbrRules,
   probeWanHealth,
   readKernelPbrRules,
-  resolveEgressGateway,
-  resolvePbrCidrs,
-  resolveServiceSelectors,
-  type EgressGateway,
   type PbrKernelState,
   type PbrOsPlanStep,
   type PbrRuleView,
   type PbrWanHealth,
+  type PreparedPbrRule,
 } from "@/lib/network/pbr-os";
 import { convergeRouteSafe } from "@/lib/network/route-apply";
 
@@ -68,59 +63,6 @@ function viewOf(row: { id: number; name: string; position: number; enabled: bool
   };
 }
 
-interface PreparedRule {
-  view: PbrRuleView;
-  src: Array<{ id: number; cidr: string | null }>;
-  dst: Array<{ id: number; cidr: string | null }>;
-  svc: Awaited<ReturnType<typeof resolveServiceSelectors>>;
-  svcSelectors: number;
-  egress: EgressGateway | null;
-  /** plan compiled as-if-confirmed — used for the match-all pre-check + preview */
-  confirmedPlan: ReturnType<typeof buildPbrApplyPlan>;
-  matchAll: boolean;
-}
-
-/** Resolve match objects + egress next-hop for every rule (egress cached per iface). */
-async function prepareRules(views: PbrRuleView[], tenantId: number): Promise<PreparedRule[]> {
-  const egressCache = new Map<string, EgressGateway>();
-  const prepared: PreparedRule[] = [];
-  for (const view of views) {
-    const [src, dst, svc] = await Promise.all([
-      resolvePbrCidrs(tenantId, view.srcAddrIds),
-      resolvePbrCidrs(tenantId, view.dstAddrIds),
-      resolveServiceSelectors(tenantId, view.serviceIds),
-    ]);
-    let egress: EgressGateway | null = null;
-    if (!view.gateway && view.outgoingIface) {
-      if (!egressCache.has(view.outgoingIface)) {
-        egressCache.set(view.outgoingIface, await resolveEgressGateway(view.outgoingIface));
-      }
-      egress = egressCache.get(view.outgoingIface) ?? null;
-    }
-    const confirmedPlan = buildPbrApplyPlan(view, src, dst, svc, {
-      confirmMatchAll: true,
-      egressGateway: egress?.gateway ?? null,
-      egressDev: egress?.dev ?? null,
-    });
-    const srcCidrs = src.map((s) => s.cidr).filter((c): c is string => c !== null);
-    const dstCidrs = dst.map((d) => d.cidr).filter((c): c is string => c !== null);
-    prepared.push({
-      view,
-      src,
-      dst,
-      svc,
-      svcSelectors: svc.length,
-      egress,
-      confirmedPlan,
-      matchAll:
-        confirmedPlan.configOnly === false &&
-        view.enabled &&
-        pbrCombosHaveCatchAll(buildPbrCombos(srcCidrs, dstCidrs), compileServiceSelectors(svc).selectors),
-    });
-  }
-  return prepared;
-}
-
 interface ConvergeOutcome {
   id: number;
   name: string;
@@ -138,7 +80,7 @@ interface ConvergeOutcome {
 }
 
 /** Teardown + apply one prepared rule. installed=true when kernel steps ran. */
-async function convergeOne(p: PreparedRule): Promise<ConvergeOutcome> {
+async function convergeOne(p: PreparedPbrRule): Promise<ConvergeOutcome> {
   const view = p.view;
   const applyPlan = buildPbrApplyPlan(view, p.src, p.dst, p.svc, {
     confirmMatchAll: true,
@@ -190,7 +132,7 @@ export const POST = route({ area: "network", bodySchema: applyBody, section: "ro
   const rows = await db.pbrRule.findMany({ where: { tenantId: auth.tenantId }, orderBy: { position: "asc" } });
   const views = rows.map(viewOf);
 
-  const prepared = await prepareRules(views, auth.tenantId);
+  const prepared = await preparePbrRules(views, auth.tenantId);
 
   // match-all hard gate: selector-less ip rules capture every flow (the
   // 2026-11-14 outage class) — install only behind an explicit confirmation
@@ -265,7 +207,7 @@ export const GET = route({ area: "network" }, async ({ auth }) => {
   const rows = await db.pbrRule.findMany({ where: { tenantId: auth.tenantId }, orderBy: { position: "asc" } });
   const kernel = await readKernelPbrRules().catch(() => null);
   const views = rows.map(viewOf);
-  const prepared = await prepareRules(views, auth.tenantId);
+  const prepared = await preparePbrRules(views, auth.tenantId);
   const data: Array<{
     id: number;
     name: string;

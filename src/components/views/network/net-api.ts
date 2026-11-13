@@ -271,6 +271,8 @@ export interface PbrRow {
   description: string | null;
   /** live kernel policy state (null = host without iproute2) */
   kernelState?: PbrKernelState | null;
+  /** true when an enabled rule carries no match (steers all flows) */
+  matchAll?: boolean;
   /** resolved match summary — what the rule actually enforces */
   matches?: {
     src: string[];

@@ -4,6 +4,9 @@
  *      (in-kernel | missing | config-only | disabled | null) computed from
  *      the compiled match plan + live `ip rule`, plus the resolved match
  *      summary (src/dst CIDRs + service selectors) for UI transparency.
+ *      Plans compile as-if-confirmed with the egress next-hop resolved from
+ *      the interface's live default route (same prepare path as the apply
+ *      route — the Kernel column never lies about installability).
  * POST /api/v1/pbr-rules — create; every address/service id must exist in
  *      the mixed object∪group sets, outgoingIface must resolve, position
  *      defaults to max+1 and an explicitly occupied slot is rejected with
@@ -18,13 +21,12 @@ import { assertIfacesExist } from "@/lib/network/iface-service";
 import { shapePbrRule } from "@/lib/network/shapes";
 import { loadAddressIdSet, loadServiceIdSet } from "@/lib/firewall/refs";
 import {
-  buildPbrApplyPlan,
   compileServiceSelectors,
   pbrKernelState,
+  preparePbrRules,
   readKernelPbrRules,
-  resolvePbrCidrs,
-  resolveServiceSelectors,
   type PbrKernelState,
+  type PreparedPbrRule,
 } from "@/lib/network/pbr-os";
 
 export const dynamic = "force-dynamic";
@@ -41,25 +43,17 @@ async function assertPbrRefs(tenantId: number, body: PbrBody): Promise<void> {
   if (body.outgoingIface) await assertIfacesExist(tenantId, [body.outgoingIface]);
 }
 
-/** Resolved match summary for one rule (UI transparency + kernel badge). */
-async function resolveMatches(tenantId: number, srcIds: number[], dstIds: number[], svcIds: number[]) {
-  const [src, dst, svc] = await Promise.all([
-    resolvePbrCidrs(tenantId, srcIds),
-    resolvePbrCidrs(tenantId, dstIds),
-    resolveServiceSelectors(tenantId, svcIds),
-  ]);
-  const compiled = compileServiceSelectors(svc);
+/** Resolved match summary for one prepared rule (UI transparency + kernel badge). */
+function matchesSummary(p: PreparedPbrRule) {
+  const compiled = compileServiceSelectors(p.svc);
   return {
-    src,
-    dst,
-    svc,
-    summary: {
-      src: src.map((s) => s.cidr).filter((c): c is string => c !== null),
-      dst: dst.map((d) => d.cidr).filter((c): c is string => c !== null),
-      services: compiled.selectors.map((s) => [s.ipproto, s.sport ? `sport ${s.sport}` : "", s.dport ? `dport ${s.dport}` : ""].filter(Boolean).join(" ")),
-      srcUnresolved: src.filter((s) => s.cidr === null).length,
-      dstUnresolved: dst.filter((d) => d.cidr === null).length,
-    },
+    src: p.src.map((s) => s.cidr).filter((c): c is string => c !== null),
+    dst: p.dst.map((d) => d.cidr).filter((c): c is string => c !== null),
+    services: compiled.selectors.map((s) =>
+      [s.ipproto, s.sport ? `sport ${s.sport}` : "", s.dport ? `dport ${s.dport}` : ""].filter(Boolean).join(" "),
+    ),
+    srcUnresolved: p.src.filter((s) => s.cidr === null).length,
+    dstUnresolved: p.dst.filter((d) => d.cidr === null).length,
   };
 }
 
@@ -69,6 +63,21 @@ export const GET = route({ area: "network", querySchema: netListQuery }, async (
     orderBy: { position: "asc" },
   });
   const kernel = await readKernelPbrRules().catch(() => null);
+  const shapedRows = rows.map((row) => shapePbrRule(row));
+  const prepared = await preparePbrRules(
+    shapedRows.map((s) => ({
+      id: s.id,
+      name: s.name,
+      position: s.position,
+      enabled: s.enabled,
+      srcAddrIds: s.srcAddrIds,
+      dstAddrIds: s.dstAddrIds,
+      serviceIds: s.serviceIds,
+      outgoingIface: s.outgoingIface,
+      gateway: s.gateway,
+    })),
+    auth.tenantId,
+  );
   const data: Array<{
     id: number;
     name: string;
@@ -82,6 +91,7 @@ export const GET = route({ area: "network", querySchema: netListQuery }, async (
     description: string | null;
     createdAt: Date | null;
     kernelState: PbrKernelState | null;
+    matchAll: boolean;
     matches: {
       src: string[];
       dst: string[];
@@ -90,28 +100,17 @@ export const GET = route({ area: "network", querySchema: netListQuery }, async (
       dstUnresolved: number;
     };
   }> = [];
-  for (const row of rows) {
-    const shaped = shapePbrRule(row);
-    const view = {
-      id: shaped.id,
-      name: shaped.name,
-      position: shaped.position,
-      enabled: shaped.enabled,
-      srcAddrIds: shaped.srcAddrIds,
-      dstAddrIds: shaped.dstAddrIds,
-      serviceIds: shaped.serviceIds,
-      outgoingIface: shaped.outgoingIface,
-      gateway: shaped.gateway,
-    };
-    const resolved = await resolveMatches(auth.tenantId, shaped.srcAddrIds, shaped.dstAddrIds, shaped.serviceIds);
-    // honest kernel state via compiled plan (service rules may be enforceable now)
-    const plan = buildPbrApplyPlan(view, resolved.src, resolved.dst, resolved.svc);
+  for (const shaped of shapedRows) {
+    const p = prepared.find((x) => x.view.id === shaped.id);
     data.push({
       ...shaped,
       description: shaped.description ?? null,
       createdAt: shaped.createdAt ?? null,
-      kernelState: pbrKernelState(view, kernel, { configOnly: plan.configOnly }),
-      matches: resolved.summary,
+      kernelState: p ? pbrKernelState(p.view, kernel, { configOnly: p.confirmedPlan.configOnly }) : null,
+      matchAll: p?.matchAll ?? false,
+      matches: p
+        ? matchesSummary(p)
+        : { src: [], dst: [], services: [], srcUnresolved: 0, dstUnresolved: 0 },
     });
   }
   return { data };
