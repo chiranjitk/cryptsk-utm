@@ -71,3 +71,6 @@ dev.log
 db/backups/
 agent/cryptsk-agent
 .tools/
+
+# local screenshots
+/*.png
