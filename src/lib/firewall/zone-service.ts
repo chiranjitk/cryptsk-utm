@@ -11,6 +11,15 @@ import { ApiError } from "@/lib/api/errors";
 export const PROTECTED_ZONES = ["WAN", "LAN"];
 
 /**
+ * Protected zones are matched CASE-INSENSITIVELY: appliances name them
+ * wan/lan (lowercase) as often as WAN/LAN — protection by exact name left
+ * lowercase variants exposed to delete/rename.
+ */
+export function isProtectedZoneName(name: string): boolean {
+  return PROTECTED_ZONES.includes(name.toUpperCase());
+}
+
+/**
  * DbClient — the global prisma client OR an interactive-transaction client.
  * Zone sync runs INSIDE $transaction blocks on the write paths; using the
  * global client there self-deadlocks on SQLite (the tx holds the write lock,
@@ -84,7 +93,7 @@ export async function detachZoneMembers(zoneId: number, client: DbClient = db): 
 }
 
 export function assertZoneNotProtected(name: string, action: string): void {
-  if (PROTECTED_ZONES.includes(name)) {
+  if (isProtectedZoneName(name)) {
     throw ApiError.conflict(`Zone '${name}' is protected and cannot be ${action}`, { protected: true });
   }
 }

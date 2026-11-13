@@ -402,9 +402,10 @@ export function fmtDateTime(ts: string | null): string {
   return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-/** True for WAN/LAN — the service-layer protected zones (delete hidden). */
+/** True for WAN/LAN in ANY case — the service-layer protected zones (delete hidden). */
 export function isProtectedZone(name: string): boolean {
-  return name === "WAN" || name === "LAN";
+  const n = name.toUpperCase();
+  return n === "WAN" || n === "LAN";
 }
 
 /** 1:1 NAT pairs share the `1:1:<uuid>` comment marker (nat-rules POST). */
