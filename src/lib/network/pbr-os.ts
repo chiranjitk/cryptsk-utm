@@ -11,8 +11,10 @@
  *     single ports or ranges (kernel ≥4.17 fib_rule_port_range). Anything
  *     not expressible (bogus port tokens, >64 fan-out) stays CONFIG-ONLY and
  *     reports honestly instead of pretending to be enforced
- *   • egress: gateway → `default via <gw> dev <if> onlink table <t>`;
- *     iface → `default dev <if> table <t>`
+ *   • egress: gateway → `default via <gw> dev <if> onlink metric 1 table <t>`;
+ *     iface → `default dev <if> metric 1 table <t>` — table-scoped default
+ *     always carries metric 1 so the route-apply default-route guard (primary
+ *     default protection, 2026-11-13 outage) accepts the step
  *
  * Red-line safety: `ip rule` in the 5000+ priority range and tables 10000+
  * never collide with strongSwan's rule 220/table 220, never touch the nft
@@ -288,12 +290,14 @@ export function buildPbrApplyPlan(
   }
 
   const steps: PbrOsPlanStep[] = [];
+  // table-scoped default MUST carry metric >= 1 — route-apply.ts refuses bare
+  // default ops (`metric 0` would shadow the interface-managed primary default)
   const egress = rule.gateway
     ? rule.outgoingIface
-      ? `default via ${rule.gateway} dev ${rule.outgoingIface} onlink`
-      : `default via ${rule.gateway} onlink`
+      ? `default via ${rule.gateway} dev ${rule.outgoingIface} onlink metric 1`
+      : `default via ${rule.gateway} onlink metric 1`
     : rule.outgoingIface
-      ? `default dev ${rule.outgoingIface}`
+      ? `default dev ${rule.outgoingIface} metric 1`
       : null;
   if (!egress) {
     return { ...base, table: null, configOnly: true, reason: "no egress — invalid rule (validated upstream)" };

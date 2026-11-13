@@ -27,13 +27,13 @@ describe("buildPbrApplyPlan", () => {
     const plan = buildPbrApplyPlan(rule(), [], []);
     expect(plan.configOnly).toBe(false);
     expect(plan.table).toBe(PBR_TABLE_BASE + 1);
-    expect(plan.steps[0].cmd).toBe(`ip route replace default dev ens34 table ${PBR_TABLE_BASE + 1}`);
+    expect(plan.steps[0].cmd).toBe(`ip route replace default dev ens34 metric 1 table ${PBR_TABLE_BASE + 1}`);
     expect(plan.steps[1].cmd).toBe(`ip rule add priority ${PBR_PRIO_BASE + 10} table ${PBR_TABLE_BASE + 1}`);
   });
 
   it("gateway + iface egress uses via … dev … onlink", () => {
     const plan = buildPbrApplyPlan(rule({ gateway: "20.20.30.254" }), [], []);
-    expect(plan.steps[0].cmd).toBe(`ip route replace default via 20.20.30.254 dev ens34 onlink table ${PBR_TABLE_BASE + 1}`);
+    expect(plan.steps[0].cmd).toBe(`ip route replace default via 20.20.30.254 dev ens34 onlink metric 1 table ${PBR_TABLE_BASE + 1}`);
   });
 
   it("from/to selectors expand per CIDR pair", () => {
