@@ -295,7 +295,7 @@ export function WanView() {
           ) : (
             <div className="grid gap-4 lg:grid-cols-3">
               {/* decision */}
-              <div className="space-y-1.5 text-xs">
+              <div className="min-w-0 space-y-1.5 text-xs">
                 <p className="font-medium text-zinc-700 dark:text-zinc-200">Egress decision (table 240)</p>
                 <p className="text-zinc-500 dark:text-zinc-400">
                   primary default-route owner: {" "}
@@ -325,7 +325,7 @@ export function WanView() {
               </div>
 
               {/* managed kernel real estate + drift */}
-              <div className="space-y-1.5 text-xs">
+              <div className="min-w-0 space-y-1.5 text-xs">
                 <p className="font-medium text-zinc-700 dark:text-zinc-200">Managed kernel objects</p>
                 <p className="text-zinc-500 dark:text-zinc-400">
                   ip rule band 3200..3299: <span className="tabular-nums font-medium text-zinc-700 dark:text-zinc-200">{osStatusQuery.data.kernel.bandRules.length}</span>
@@ -358,7 +358,7 @@ export function WanView() {
               </div>
 
               {/* failover event log */}
-              <div className="space-y-1.5 text-xs">
+              <div className="min-w-0 space-y-1.5 text-xs">
                 <p className="font-medium text-zinc-700 dark:text-zinc-200">Failover event log (real transitions)</p>
                 {osStatusQuery.data.events.length === 0 ? (
                   <p className="text-[11px] text-zinc-400 dark:text-zinc-500">no up/down transitions recorded yet</p>
