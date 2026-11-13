@@ -73,49 +73,91 @@ export async function loadFirewallGenInput(tenantId: number): Promise<NftGenInpu
     }
   };
 
-  const rules: NftGenRule[] = ruleRows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    position: r.position,
-    enabled: r.enabled,
-    srcZoneIds: parseIds(r.srcZoneIds),
-    dstZoneIds: parseIds(r.dstZoneIds),
-    srcAddrs: ctx.expandAddr(parseIds(r.srcAddrIds)),
-    dstAddrs: ctx.expandAddr(parseIds(r.dstAddrIds)),
-    services: ctx.expandSvc(parseIds(r.serviceIds)),
-    srcMacs: safeStrArr(r.srcMacs),
-    applicationIds: safeStrArr(r.applicationIds),
-    userNames: ctx.userNames(parseIds(r.userIds)),
-    schedule: ctx.toSchedule(r.scheduleId),
-    action: r.action,
-    logging: r.logging,
-    rateLimit: r.rateLimit,
-  }));
+  /**
+   * SECURITY GUARD (defense-in-depth behind the API-level empty-group block):
+   * a rule whose referenced ids ALL fail to expand (empty group, dangling
+   * member) would compile clause-less — a match-any nft statement, i.e. an
+   * accidental allow-all. Such rules are excluded from the kernel input.
+   */
+  const brokenRefRules = new Set<number>();
+  const brokenRefNats = new Set<number>();
+  const broken = (rowIds: number[], expanded: unknown[]): boolean =>
+    rowIds.length > 0 && expanded.length === 0;
 
-  const natRules: NftGenNatRule[] = natRows.map((n) => ({
-    id: n.id,
-    name: n.name,
-    position: n.position,
-    enabled: n.enabled,
-    type: n.type,
-    srcAddrs: ctx.expandAddr(parseIds(n.srcAddrIds)),
-    dstAddrs: ctx.expandAddr(parseIds(n.dstAddrIds)),
-    services: ctx.expandSvc(parseIds(n.serviceIds)),
-    outgoingIface: n.outgoingIface,
-    translatedSrc: n.translatedSrc,
-    translatedSrcPool: parsePool(n.translatedSrcPool),
-    translatedDst: n.translatedDst,
-    translatedPort: n.translatedPort,
-    translatedPortRange: n.translatedPortRange,
-  }));
+  const rules: NftGenRule[] = [];
+  for (const r of ruleRows) {
+    const srcIds = parseIds(r.srcAddrIds);
+    const dstIds = parseIds(r.dstAddrIds);
+    const svcIds = parseIds(r.serviceIds);
+    const srcAddrs = ctx.expandAddr(srcIds);
+    const dstAddrs = ctx.expandAddr(dstIds);
+    const services = ctx.expandSvc(svcIds);
+    if (broken(srcIds, srcAddrs) || broken(dstIds, dstAddrs) || broken(svcIds, services)) {
+      brokenRefRules.add(r.id);
+      continue; // excluded — never widen to match-any
+    }
+    rules.push({
+      id: r.id,
+      name: r.name,
+      position: r.position,
+      enabled: r.enabled,
+      srcZoneIds: parseIds(r.srcZoneIds),
+      dstZoneIds: parseIds(r.dstZoneIds),
+      srcAddrs,
+      dstAddrs,
+      services,
+      srcMacs: safeStrArr(r.srcMacs),
+      applicationIds: safeStrArr(r.applicationIds),
+      userNames: ctx.userNames(parseIds(r.userIds)),
+      schedule: ctx.toSchedule(r.scheduleId),
+      action: r.action,
+      logging: r.logging,
+      rateLimit: r.rateLimit,
+    });
+  }
 
+  const natRules: NftGenNatRule[] = [];
+  for (const n of natRows) {
+    const srcIds = parseIds(n.srcAddrIds);
+    const dstIds = parseIds(n.dstAddrIds);
+    const svcIds = parseIds(n.serviceIds);
+    const srcAddrs = ctx.expandAddr(srcIds);
+    const dstAddrs = ctx.expandAddr(dstIds);
+    const services = ctx.expandSvc(svcIds);
+    // NAT treats empty matcher arrays as MATCH-ALL sides — a broken ref here
+    // widens the NAT itself (worse than a filter rule). Exclude + warn.
+    if (broken(srcIds, srcAddrs) || broken(dstIds, dstAddrs) || broken(svcIds, services)) {
+      brokenRefNats.add(n.id);
+      continue;
+    }
+    natRules.push({
+      id: n.id,
+      name: n.name,
+      position: n.position,
+      enabled: n.enabled,
+      type: n.type,
+      srcAddrs,
+      dstAddrs,
+      services,
+      outgoingIface: n.outgoingIface,
+      translatedSrc: n.translatedSrc,
+      translatedSrcPool: parsePool(n.translatedSrcPool),
+      translatedDst: n.translatedDst,
+      translatedPort: n.translatedPort,
+      translatedPortRange: n.translatedPortRange,
+      logging: n.logging,
+    });
+  }
   const zones = zoneRows.map((z) => ({
     id: z.id,
     name: z.name,
     interfaces: safeStrArr(z.interfaceNames),
   }));
 
-  return { rules, natRules, zones };
+  return { rules, natRules, zones, _brokenRefRules: [...brokenRefRules], _brokenRefNats: [...brokenRefNats] } as NftGenInput & {
+    _brokenRefRules: number[];
+    _brokenRefNats: number[];
+  };
 }
 
 // ── OS facts ────────────────────────────────────────────────────────────────
@@ -221,12 +263,35 @@ export function tableBlocksInSync(genFile: string, liveDump: string): boolean {
 }
 
 export async function buildFirewallPlan(tenantId: number): Promise<FirewallPlan> {
-  const [input, liveDump] = await Promise.all([loadFirewallGenInput(tenantId), readNftRuleset().then((r) => r.ruleset)]);
+  const [loaded, liveDump] = await Promise.all([loadFirewallGenInput(tenantId), readNftRuleset().then((r) => r.ruleset)]);
+  const { _brokenRefRules = [], _brokenRefNats = [], ...input } = loaded as NftGenInput & {
+    _brokenRefRules?: number[];
+    _brokenRefNats?: number[];
+  };
   const facts = await readOsFacts(liveDump);
   const gen = generateNftRuleset({
     ...input,
     osInterfaces: facts.interfaces.map((i) => i.name),
   });
+  // surface the excluded broken-ref rules as loud warnings (honesty at apply time)
+  for (const id of _brokenRefRules) {
+    (gen.warnings as NftGenWarning[]).push({
+      scope: "rule",
+      id,
+      name: `rule #${id}`,
+      code: "broken-ref-excluded",
+      message: `rule #${id} references object/group ids that resolve to NOTHING — excluded from enforcement (would otherwise match ALL traffic)`,
+    });
+  }
+  for (const id of _brokenRefNats) {
+    (gen.warnings as NftGenWarning[]).push({
+      scope: "nat",
+      id,
+      name: `nat #${id}`,
+      code: "broken-ref-excluded",
+      message: `NAT rule #${id} references object/group ids that resolve to NOTHING — excluded from enforcement (would otherwise NAT ALL traffic)`,
+    });
+  }
   const applied = facts.consoleTablePresent;
   const inSync = applied ? tableBlocksInSync(gen.file, liveDump) : false;
   const ipForwardRequired = gen.counts.forward > 0 || gen.counts.postrouting > 0 || gen.counts.prerouting > 0;
@@ -546,18 +611,21 @@ export interface RuleCounter {
   name: string;
   packets: number;
   bytes: number;
+  /** which DB table the comment belongs to (fw: / nat: prefix families) */
+  ruleKind: "firewall" | "nat";
 }
 
-/** Parse `fw:<id>:<name>` comment counters from a live table dump. */
+/** Parse `fw:<id>:<name>` / `nat:<id>:<name>` comment counters from a live table dump. */
 export function parseRuleCounters(liveDump: string): RuleCounter[] {
-  const byId = new Map<number, RuleCounter>();
+  const byId = new Map<string, RuleCounter>();
   const counterRe = /counter packets (\d+) bytes (\d+)/g;
-  const commentRe = /comment "fw:(\d+):([^"]*)"/;
+  const commentRe = /comment "(fw|nat):(\d+):([^"]*)"/;
   for (const line of liveDump.split("\n")) {
     if (!/^\s+/.test(line)) continue;
     const cm = commentRe.exec(line);
     if (!cm) continue;
-    const id = Number(cm[1]);
+    const kind = cm[1] === "nat" ? "nat" : "firewall";
+    const id = Number(cm[2]);
     counterRe.lastIndex = 0;
     let m: RegExpExecArray | null;
     let packets = 0;
@@ -566,24 +634,35 @@ export function parseRuleCounters(liveDump: string): RuleCounter[] {
       packets += Number(m[1]);
       bytes += Number(m[2]);
     }
-    const prev = byId.get(id);
+    const key = `${kind}:${id}`;
+    const prev = byId.get(key);
     if (prev) {
       prev.packets += packets;
       prev.bytes += bytes;
     } else {
-      byId.set(id, { ruleId: id, name: cm[2], packets, bytes });
+      byId.set(key, { ruleId: id, name: cm[3], packets, bytes, ruleKind: kind });
     }
   }
   return [...byId.values()].sort((a, b) => a.ruleId - b.ruleId);
 }
 
 /** Optional: push kernel counters into the DB hit fields (real hits). */
-export async function syncHitsFromKernel(tenantId: number): Promise<{ updated: number }> {
+export async function syncHitsFromKernel(tenantId: number): Promise<{ updated: number; natUpdated: number }> {
   const dump = (await readNftRuleset()).ruleset;
-  if (!new RegExp(`table inet ${NFT_TABLE_NAME}\\b`).test(dump)) return { updated: 0 };
+  if (!new RegExp(`table inet ${NFT_TABLE_NAME}\\b`).test(dump)) return { updated: 0, natUpdated: 0 };
   const counters = parseRuleCounters(dump);
   let updated = 0;
+  let natUpdated = 0;
   for (const c of counters) {
+    if (c.ruleKind === "nat") {
+      const row = await db.natRule.findFirst({ where: { id: c.ruleId, tenantId } }).catch(() => null);
+      if (!row) continue;
+      await db.natRule
+        .update({ where: { id: c.ruleId }, data: { hitCount: c.packets, lastHitAt: c.packets > 0 ? new Date() : row.lastHitAt } })
+        .catch(() => null);
+      natUpdated += 1;
+      continue;
+    }
     const row = await db.firewallRule.findFirst({ where: { id: c.ruleId, tenantId } }).catch(() => null);
     if (!row) continue;
     await db.firewallRule
@@ -591,7 +670,7 @@ export async function syncHitsFromKernel(tenantId: number): Promise<{ updated: n
       .catch(() => null);
     updated += 1;
   }
-  return { updated };
+  return { updated, natUpdated };
 }
 
 /** Live dump of only the console table (for status UI). */

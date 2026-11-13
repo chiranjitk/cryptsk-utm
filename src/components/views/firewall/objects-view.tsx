@@ -7,7 +7,7 @@
  * #/firewall/rules (ER_DIAGRAM §3 integrity surfacing).
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +43,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { isValidPortList, isValidTimezone, validateAddressValue } from "@/lib/validators/firewall";
+import { FirewallOsSync } from "./os-apply";
 import {
   api,
   fmtDateTime,
@@ -94,6 +95,8 @@ function timeInTz(tz: string): string {
 export function scheduleIsActiveNow(s: ScheduleObject): boolean {
   try {
     if (s.type === "always") return true;
+    // recurring windows may carry an expiry ("repeats until") — expired means off
+    if (s.endsAt && Date.now() >= new Date(s.endsAt).getTime()) return false;
     if (s.type === "recurring" && s.recurrence) {
       const day = weekdayInTz(s.timezone || "UTC");
       if (!s.recurrence.days.includes(day)) return false;
@@ -113,9 +116,10 @@ export function scheduleIsActiveNow(s: ScheduleObject): boolean {
 
 function scheduleSummary(s: ScheduleObject): string {
   if (s.type === "always") return "always";
+  const expiry = s.endsAt && s.type === "recurring" ? ` · until ${fmtDateTime(s.endsAt)}` : "";
   if (s.type === "recurring" && s.recurrence) {
     const days = s.recurrence.days.map((d) => WEEKDAYS[d - 1] ?? String(d)).join(",");
-    return `${days} ${s.recurrence.start}–${s.recurrence.end} · ${s.timezone}`;
+    return `${days} ${s.recurrence.start}–${s.recurrence.end} · ${s.timezone}${expiry}`;
   }
   if (s.type === "onetime") return `${fmtDateTime(s.startsAt)} → ${fmtDateTime(s.endsAt)}`;
   return s.type;
@@ -162,6 +166,13 @@ interface ConflictState {
 export function ObjectsView() {
   useFwConfigInvalidation();
   const queryClient = useQueryClient();
+
+  // "active now" badges are wall-clock dependent — re-render every 30s
+  const [nowTick, setNowTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setNowTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
 
   const addrQuery = useQuery({ queryKey: ["firewall", "objects", "address"], queryFn: api.listAddressObjects });
   const addrGrpQuery = useQuery({ queryKey: ["firewall", "objects", "address-groups"], queryFn: api.listAddressGroups });
@@ -234,16 +245,22 @@ export function ObjectsView() {
   const q = search.trim().toLowerCase();
 
   const addresses = useMemo(
-    () => (addrQuery.data?.data ?? []).filter((a) => (q ? a.name.toLowerCase().includes(q) : true)),
-    [addrQuery.data, q],
+    () =>
+      (addrQuery.data?.data ?? []).filter((a) =>
+        q ? a.name.toLowerCase().includes(q) || a.value.toLowerCase().includes(q) : true,
+      ),
+    [addrQuery.data, q, nowTick],
   );
   const addrGroups = useMemo(
     () => (addrGrpQuery.data?.data ?? []).filter((g) => (q ? g.name.toLowerCase().includes(q) : true)),
     [addrGrpQuery.data, q],
   );
   const services = useMemo(
-    () => (svcQuery.data?.data ?? []).filter((s) => (q ? s.name.toLowerCase().includes(q) : true)),
-    [svcQuery.data, q],
+    () =>
+      (svcQuery.data?.data ?? []).filter((s) =>
+        q ? s.name.toLowerCase().includes(q) || (s.dstPort ?? "").includes(q) || (s.srcPort ?? "").includes(q) || s.protocol.includes(q) : true,
+      ),
+    [svcQuery.data, q, nowTick],
   );
   const svcGroups = useMemo(
     () => (svcGrpQuery.data?.data ?? []).filter((g) => (q ? g.name.toLowerCase().includes(q) : true)),
@@ -251,7 +268,7 @@ export function ObjectsView() {
   );
   const schedules = useMemo(
     () => (schedQuery.data?.data ?? []).filter((s) => (q ? s.name.toLowerCase().includes(q) : true)),
-    [schedQuery.data, q],
+    [schedQuery.data, q] // active-now badges refresh via the nowTick re-render
   );
 
   const rowActions = (path: string, name: string, id: number, onEdit: () => void) => (
@@ -304,6 +321,7 @@ export function ObjectsView() {
             <TabsTrigger value="service-groups">Service Groups</TabsTrigger>
             <TabsTrigger value="schedules">Schedules</TabsTrigger>
           </TabsList>
+          <FirewallOsSync />
           <div className="relative ml-auto">
             <Icons.Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search objects…" className="h-9 w-48 pl-8" aria-label="Search objects" />
@@ -647,8 +665,13 @@ function AddressObjectDialog(props: { state: AddressDialogState; onOpenChange: (
       const body = { name: name.trim(), type, value: value.trim(), description: description.trim() || null };
       return editing ? api.generic.update<AddressObject>(`/api/v1/address-objects/${editing.id}`, body) : api.generic.create<AddressObject>("/api/v1/address-objects", body);
     },
-    onSuccess: () => {
-      toastOk(editing ? "Address object updated" : "Address object created", name.trim());
+    onSuccess: (res) => {
+      const dup = (res as { duplicateOf?: { id: number; name: string } | null }).duplicateOf;
+      if (dup) {
+        toastOk("Saved — note: duplicate value", `'${name.trim()}' shares its value with existing object '${dup.name}' — consider merging`);
+      } else {
+        toastOk(editing ? "Address object updated" : "Address object created", name.trim());
+      }
       props.onOpenChange(false);
       props.onSaved();
     },
@@ -772,6 +795,8 @@ function GroupDialog(props: {
 
   const submit = () => {
     if (!name.trim()) return setError("Name is required");
+    if (memberIds.length === 0)
+      return setError("Groups need at least one member — an empty group referenced by a rule would match ALL traffic");
     setError(null);
     mut.mutate();
   };
@@ -983,6 +1008,7 @@ function ScheduleDialog(props: { state: ScheduleDialogState; onOpenChange: (open
   const [timezone, setTimezone] = useState(editing?.timezone ?? "UTC");
   const [startsAt, setStartsAt] = useState(toLocalInput(editing?.startsAt ?? null));
   const [endsAt, setEndsAt] = useState(toLocalInput(editing?.endsAt ?? null));
+  const [recEndsAt, setRecEndsAt] = useState(toLocalInput(editing?.endsAt ?? null));
   const [error, setError] = useState<string | null>(null);
 
   const draft: ScheduleObject = useMemo(
@@ -1014,7 +1040,11 @@ function ScheduleDialog(props: { state: ScheduleDialogState; onOpenChange: (open
         type,
         timezone: timezone.trim() || "UTC",
       };
-      if (type === "recurring") body.recurrence = { days, start, end };
+      if (type === "recurring") {
+        body.recurrence = { days, start, end };
+        // optional end date — recurring windows can expire (maintenance windows)
+        if (recEndsAt) body.endsAt = new Date(recEndsAt).toISOString();
+      }
       if (type === "onetime") {
         body.startsAt = startsAt ? new Date(startsAt).toISOString() : null;
         body.endsAt = endsAt ? new Date(endsAt).toISOString() : null;
@@ -1119,6 +1149,18 @@ function ScheduleDialog(props: { state: ScheduleDialogState; onOpenChange: (open
                   IANA timezone
                 </Label>
                 <Input id="sch-tz" value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Asia/Calcutta" className="mt-1.5 font-mono text-xs" />
+              </div>
+              <div>
+                <Label htmlFor="sch-rec-end" className="text-xs font-medium">
+                  Repeats until <span className="text-zinc-400">(optional expiry)</span>
+                </Label>
+                <Input
+                  id="sch-rec-end"
+                  type="datetime-local"
+                  value={recEndsAt}
+                  onChange={(e) => setRecEndsAt(e.target.value)}
+                  className="mt-1.5 text-xs"
+                />
               </div>
             </>
           )}

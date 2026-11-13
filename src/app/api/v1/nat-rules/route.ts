@@ -11,7 +11,7 @@ import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { fwListQuery, natPostBodySchema } from "@/lib/validators/firewall";
 import { shapeNatRule } from "@/lib/firewall/rule-shape";
-import { assertNewIdsValid } from "@/lib/firewall/refs";
+import { assertNewIdsValid, findEmptyGroupReferences } from "@/lib/firewall/refs";
 import { createNatRule, createOneToOnePair } from "@/lib/firewall/nat-service";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +64,13 @@ export const POST = route(
       qosPolicyId: null,
     });
     if (!idCheck.ok) throw ApiError.validation(idCheck.message, idCheck.details);
+    const emptyGroups = await findEmptyGroupReferences(auth.tenantId, body);
+    if (emptyGroups.length > 0) {
+      throw ApiError.validation(
+        `NAT rule references empty group(s): ${emptyGroups.map((g) => `'${g.groupName}' (${g.kind})`).join(", ")} — add members first`,
+        { emptyGroups },
+      );
+    }
 
     const created = await createNatRule(auth.tenantId, body);
     const row = await db.natRule.findUniqueOrThrow({ where: { id: created.id } });

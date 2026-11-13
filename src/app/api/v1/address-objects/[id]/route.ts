@@ -32,12 +32,16 @@ export const PUT = route(
       const dup = await db.addressObject.findFirst({ where: { tenantId: auth.tenantId, name: body.name } });
       if (dup) throw ApiError.conflict(`Address object '${body.name}' already exists`);
     }
+    const valueDup = await db.addressObject.findFirst({
+      where: { tenantId: auth.tenantId, type: body.type, value: body.value.trim(), id: { not: row.id } },
+      select: { id: true, name: true },
+    });
     const updated = await db.addressObject.update({
       where: { id: row.id },
       data: { name: body.name, type: body.type, value: body.value.trim(), description: body.description ?? null },
     });
     return {
-      data: shapeAddressObject(updated),
+      data: { ...shapeAddressObject(updated), duplicateOf: valueDup },
       audit: {
         action: "address_object.update",
         objectType: "address_object",
@@ -53,7 +57,7 @@ export const PUT = route(
 export const DELETE = route({ area: "firewall", section: "firewall" }, async ({ auth, params }) => {
   const { id } = idParamSchema.parse(params);
   const row = await findRow(auth.tenantId, id);
-  const refs = await addressObjectReferences(row.id);
+  const refs = await addressObjectReferences(auth.tenantId, row.id);
   if (refs.length) {
     throw ApiError.conflict(`Address object '${row.name}' is referenced by ${refs.length} rule(s)`, {
       referencedBy: refs,

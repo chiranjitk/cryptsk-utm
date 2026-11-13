@@ -53,11 +53,30 @@ export async function syncZoneMembers(
       data: { zoneId },
     });
   }
-  // guard: an iface should belong to at most one zone
+  // guard: an iface belongs to at most one zone — clear stale FK rows for
+  // THIS zone whose names are not listed anymore
   await client.networkInterface.updateMany({
     where: { tenantId, zoneId, name: { notIn: nextNames.length ? nextNames : ["__none__"] } },
     data: { zoneId: null },
   });
+
+  // CONSISTENCY FIX: this zone now OWNS `nextNames` — no other zone may list
+  // them. Ownership-based (not delta-based): zone rows are created with their
+  // names already set, so a prev/next delta would miss the create path and
+  // leave the interface visible in two zones (the exact divergence bug).
+  // Also repairs any historical JSON/FK divergence on every save.
+  if (nextNames.length) {
+    const otherZones = await client.zone.findMany({
+      where: { tenantId, id: { not: zoneId } },
+    });
+    for (const z of otherZones) {
+      const names = JSON.parse(z.interfaceNames) as string[];
+      const cleaned = names.filter((n) => !next.has(n));
+      if (cleaned.length !== names.length) {
+        await client.zone.update({ where: { id: z.id }, data: { interfaceNames: JSON.stringify(cleaned) } });
+      }
+    }
+  }
 }
 
 export async function detachZoneMembers(zoneId: number, client: DbClient = db): Promise<void> {

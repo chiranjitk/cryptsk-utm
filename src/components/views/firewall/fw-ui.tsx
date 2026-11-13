@@ -157,6 +157,7 @@ export function ConflictDialog(props: {
   error: unknown;
 }) {
   const refs: RefRow[] = referencedByOf(props.error);
+  const hasNatRef = refs.some((r) => r.ruleType === "nat");
   return (
     <AlertDialog open={props.open} onOpenChange={props.onOpenChange}>
       <AlertDialogContent>
@@ -172,7 +173,7 @@ export function ConflictDialog(props: {
             <p className="mb-2 text-xs font-medium text-zinc-500">Referenced by these rules:</p>
             <div className="flex flex-wrap gap-1.5">
               {refs.map((r, i) => (
-                <a key={`${r.ruleName}-${i}`} href="#/firewall/rules" className="inline-flex">
+                <a key={`${r.ruleName}-${i}`} href={r.ruleType === "nat" ? "#/firewall/nat" : "#/firewall/rules"} className="inline-flex">
                   <Badge
                     variant="outline"
                     className="border-zinc-600/40 bg-zinc-600/10 text-zinc-700 hover:bg-zinc-600/20 dark:text-zinc-500"
@@ -192,11 +193,15 @@ export function ConflictDialog(props: {
             className="bg-zinc-700 text-white hover:bg-zinc-800 focus-visible:ring-zinc-700"
             onClick={(e) => {
               e.preventDefault();
-              window.location.hash = "#/firewall/rules";
+              if (hasNatRef) {
+                window.location.hash = "#/firewall/nat";
+              } else {
+                window.location.hash = "#/firewall/rules";
+              }
               props.onOpenChange(false);
             }}
           >
-            Open firewall rules
+            {hasNatRef ? "Open NAT rules" : "Open firewall rules"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

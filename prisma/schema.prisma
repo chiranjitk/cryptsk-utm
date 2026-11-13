@@ -396,6 +396,7 @@ model NatRule {
   logging             String   @default("none") @map("logging") // none | summary | detail — NAT logging (spec §1.5)
   comment             String?
   hitCount            Int      @default(0) @map("hit_count")
+  lastHitAt           DateTime? @map("last_hit_at")
   createdAt           DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])

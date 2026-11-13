@@ -6,7 +6,7 @@
 import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { canonicalAppLabel } from "./app-catalog";
-import { assertNewIdsValid } from "./refs";
+import { assertNewIdsValid, findEmptyGroupReferences } from "./refs";
 import { renumberFirewallRules } from "./positions";
 
 export type FirewallRuleBody = {
@@ -50,6 +50,15 @@ async function assertRuleIdsValid(tenantId: number, body: FirewallRuleBody): Pro
   if (!check.ok) throw ApiError.validation(check.message, check.details);
   const normalized = normalizeAppLabels(body.applicationIds);
   body.applicationIds = normalized;
+  // SECURITY: an empty group historically compiled to a clause-less (match-any)
+  // nft statement — an accidental allow-all. Block rules referencing them.
+  const emptyGroups = await findEmptyGroupReferences(tenantId, body);
+  if (emptyGroups.length > 0) {
+    throw ApiError.validation(
+      `Rule references empty group(s): ${emptyGroups.map((g) => `'${g.groupName}' (${g.kind})`).join(", ")} — add members first (an empty group would match ALL traffic)`,
+      { emptyGroups },
+    );
+  }
 }
 
 export async function createRule(tenantId: number, body: FirewallRuleBody): Promise<{ id: number; name: string; position: number }> {

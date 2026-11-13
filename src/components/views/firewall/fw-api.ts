@@ -59,10 +59,9 @@ export interface NatRule {
   dstAddrIds: number[];
   serviceIds: number[];
   outgoingIface: string | null;
-  /** ip | "masq" | egress iface name (seed compat). The list shaper parses
-   * translatedSrcPool with a numeric filter, so string pools arrive empty. */
+  /** ip | "masq" | egress iface name (seed compat). */
   translatedSrc: string | null;
-  translatedSrcPool: Array<number | string>;
+  translatedSrcPool: string[];
   overload: boolean;
   translatedDst: string | null;
   translatedPort: number | null;
@@ -70,6 +69,7 @@ export interface NatRule {
   logging: LoggingLevel;
   comment: string | null;
   hitCount: number;
+  lastHitAt: string | null;
   createdAt: string;
 }
 
@@ -183,11 +183,15 @@ export interface ConflictRow {
   reason: "shadowed_by" | "conflicts_with" | "redundant";
   withRuleId: number;
   withRuleName: string;
+  /** NAT validate rows carry the chain leg the conflict applies to. */
+  leg?: "prerouting" | "postrouting";
 }
 
 export interface ValidateResult {
   ok: boolean;
   conflicts: ConflictRow[];
+  /** NAT validate adds generator-faithful advisories (pools, hairpin, DMZ-style dnat). */
+  warnings?: Array<{ code: string; message: string }>;
 }
 
 export interface RefRow {
@@ -283,6 +287,9 @@ export const api = {
   listSchedules: () => fwFetchList<ScheduleObject>("/api/v1/schedule-objects", "limit=200"),
   listUsers: () => fwFetchList<UserRow>("/api/v1/users", "limit=200"),
   listApps: () => fwFetch<{ apps: string[]; total: number }>("/api/v1/network/app-catalog"),
+  /** lightweight iface list for the Zones editor (real names, not free text) */
+  listInterfaceNames: () =>
+    fwFetchList<{ id: number; name: string; type: string; enabled: boolean; zoneId: number | null; zoneName: string | null }>("/api/v1/interfaces", "limit=200"),
 
   createRule: (body: FwRuleBody) =>
     fwFetch<FwRule>("/api/v1/firewall-rules", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) }),
@@ -341,6 +348,20 @@ export const api = {
       headers: JSON_HEADERS,
       body: JSON.stringify({ orderedIds }),
     }),
+  natHits: (id: number) =>
+    fwFetch<{ id: number; name: string | null; hitCount: number; lastHitAt: string | null }>(`/api/v1/nat-rules/${id}/hits`),
+  resetNatHits: (id: number) =>
+    fwFetch<{ id: number; hitCount: number }>(`/api/v1/nat-rules/${id}/hits/reset`, { method: "POST" }),
+  validateNat: (body: NatRuleBody, excludeRuleId?: number) =>
+    fwFetch<ValidateResult>("/api/v1/nat-rules/validate", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(excludeRuleId ? { rule: body, excludeRuleId } : { rule: body }),
+    }),
+  objectReferences: (type: "address" | "address-group" | "service" | "service-group" | "schedule" | "zone", id: number) =>
+    fwFetch<{ type: string; id: number; references: RefRow[]; total: number }>(
+      `/api/v1/objects/references?type=${type}&id=${id}`,
+    ),
 
   createZone: (body: { name: string; type: ZoneType; interfaceNames: string[]; description?: string | null }) =>
     fwFetch<Zone>("/api/v1/zones", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) }),

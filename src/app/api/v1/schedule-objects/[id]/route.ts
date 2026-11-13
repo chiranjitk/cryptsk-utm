@@ -60,7 +60,7 @@ export const PUT = route(
 export const DELETE = route({ area: "firewall", section: "firewall" }, async ({ auth, params }) => {
   const { id } = idParamSchema.parse(params);
   const row = await findRow(auth.tenantId, id);
-  const refs = await scheduleReferences(row.id);
+  const refs = await scheduleReferences(auth.tenantId, row.id);
   if (refs.length) {
     throw ApiError.conflict(`Schedule '${row.name}' is attached to ${refs.length} rule(s) — detach them first`, {
       referencedBy: refs,

@@ -3,8 +3,12 @@
 /**
  * #/firewall/zones — zone cards (M03 §4). WAN/LAN are service-layer protected:
  * Delete is hidden and the editor locks name/type (tooltip explains).
- * GET /api/v1/interfaces is not part of the live API yet, so the interface
- * multiselect degrades to a comma-separated input with suggestions.
+ *
+ * Enterprise upgrade (2026-11-16): the editor picks interfaces from the REAL
+ * /api/v1/interfaces catalog (checkbox list, live state shown) instead of a
+ * free-text input; each zone shows its rule usage ("Referenced by N rules");
+ * the page carries the OS apply/sync surface (FirewallOsSync) because zones
+ * materialize as iifname/oifname interface sets inside the kernel table.
  */
 
 import { useMemo, useState } from "react";
@@ -13,6 +17,7 @@ import * as Icons from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +40,7 @@ import {
   type Zone,
   type ZoneType,
 } from "./fw-api";
+import { FirewallOsSync } from "./os-apply";
 import {
   ConfirmDialog,
   ConflictDialog,
@@ -47,15 +53,37 @@ import {
 } from "./fw-ui";
 
 const ZONES_KEY = ["firewall", "zones"] as const;
+const IFACES_KEY = ["firewall", "iface-names"] as const;
 
 const ZONE_TYPES: ZoneType[] = ["L3", "L2", "VPN"];
+
+const ZONE_TYPE_HINTS: Record<ZoneType, string> = {
+  L3: "Routed L3 segments — policy matches iifname/oifname interface sets",
+  L2: "Bridged segments — members participate in L2 forwarding",
+  VPN: "Tunnel terminations — encrypted flows land in this zone",
+};
 
 export function ZonesView() {
   useFwConfigInvalidation();
   const queryClient = useQueryClient();
 
   const zonesQuery = useQuery({ queryKey: ZONES_KEY, queryFn: api.listZones });
+  const rulesQuery = useQuery({ queryKey: ["firewall", "rules"], queryFn: api.listRules, staleTime: 15_000 });
   const zones = useMemo(() => zonesQuery.data?.data ?? [], [zonesQuery.data]);
+  const rules = useMemo(() => rulesQuery.data?.data ?? [], [rulesQuery.data]);
+
+  // server-truth usage: zone id → referencing firewall rules (src/dst zone ids)
+  const usage = useMemo(() => {
+    const m = new Map<number, string[]>();
+    for (const r of rules) {
+      for (const zid of [...r.srcZoneIds, ...r.dstZoneIds]) {
+        const arr = m.get(zid) ?? [];
+        arr.push(r.name);
+        m.set(zid, arr);
+      }
+    }
+    return m;
+  }, [rules]);
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Zone | null>(null);
@@ -110,6 +138,7 @@ export function ZonesView() {
         <p className="mr-auto text-xs text-zinc-500">
           Zones group interfaces for zone-based policy. WAN and LAN are protected — they cannot be deleted or renamed.
         </p>
+        <FirewallOsSync />
         <Button size="sm" onClick={openCreate} className="bg-zinc-700 text-white hover:bg-zinc-800">
           <Icons.Plus className="mr-1 h-4 w-4" /> Add zone
         </Button>
@@ -142,6 +171,7 @@ export function ZonesView() {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {zones.map((z) => {
             const protectedZone = isProtectedZone(z.name);
+            const usedBy = usage.get(z.id) ?? [];
             return (
               <Card key={z.id} className="flex flex-col p-4">
                 <CardHeader className="flex-row items-start justify-between space-y-0 p-0 pb-3">
@@ -159,9 +189,32 @@ export function ZonesView() {
                         </TooltipProvider>
                       )}
                     </CardTitle>
-                    <Badge variant="outline" className="mt-1 w-fit border-zinc-500/30 bg-zinc-500/10 text-[10px] font-semibold text-zinc-600 dark:text-zinc-300">
-                      {z.type}
-                    </Badge>
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                      <Badge variant="outline" className="w-fit border-zinc-500/30 bg-zinc-500/10 text-[10px] font-semibold text-zinc-600 dark:text-zinc-300">
+                        {z.type}
+                      </Badge>
+                      <TooltipProvider delayDuration={100}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "w-fit cursor-default text-[10px] font-semibold",
+                                usedBy.length > 0
+                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                  : "border-zinc-400/30 bg-zinc-400/10 text-zinc-500",
+                              )}
+                            >
+                              <Icons.ShieldCheck className="mr-1 h-3 w-3" />
+                              {usedBy.length > 0 ? `used by ${usedBy.length} rule${usedBy.length === 1 ? "" : "s"}` : "unused"}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-64 text-xs">
+                            {usedBy.length > 0 ? usedBy.slice(0, 12).join(", ") + (usedBy.length > 12 ? ` +${usedBy.length - 12} more` : "") : "No firewall rules reference this zone"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
                   </div>
                   <div className="flex items-center gap-1">
                     <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Edit zone ${z.name}`} onClick={() => openEdit(z)}>
@@ -192,7 +245,7 @@ export function ZonesView() {
                       ))
                     )}
                   </div>
-                  <p className="mt-auto text-xs text-zinc-500">{z.description ?? "—"}</p>
+                  <p className="mt-auto text-xs text-zinc-500">{z.description ?? ZONE_TYPE_HINTS[z.type]}</p>
                 </CardContent>
               </Card>
             );
@@ -205,8 +258,11 @@ export function ZonesView() {
           open={editorOpen}
           onOpenChange={setEditorOpen}
           editing={editing}
-          knownIfaces={knownIfaces}
-          onSaved={() => void queryClient.invalidateQueries({ queryKey: ZONES_KEY })}
+          fallbackIfaces={knownIfaces}
+          onSaved={() => {
+            void queryClient.invalidateQueries({ queryKey: ZONES_KEY });
+            void queryClient.invalidateQueries({ queryKey: IFACES_KEY });
+          }}
         />
       )}
 
@@ -214,7 +270,7 @@ export function ZonesView() {
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
         title="Delete zone?"
-        description={`Delete zone '${deleting?.name ?? ""}'? Deletion is rejected while firewall rules still reference it; member interfaces are detached (zoneId cleared).`}
+        description={`Delete zone '${deleting?.name ?? ""}'? Deletion is rejected while firewall rules (or NAT rules on its interfaces) still reference it; member interfaces are detached (zoneId cleared).`}
         loading={deleteMut.isPending}
         onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
       />
@@ -234,24 +290,40 @@ function ZoneEditor(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing: Zone | null;
-  knownIfaces: string[];
+  fallbackIfaces: string[];
   onSaved: () => void;
 }) {
   const editing = props.editing;
   const locked = editing != null && isProtectedZone(editing.name);
 
+  const ifacesQuery = useQuery({ queryKey: IFACES_KEY, queryFn: api.listInterfaceNames, staleTime: 10_000 });
+  const catalog = useMemo(() => ifacesQuery.data?.data ?? [], [ifacesQuery.data]);
+
   const [name, setName] = useState(editing?.name ?? "");
   const [type, setType] = useState<ZoneType>(editing?.type ?? "L3");
-  const [ifacesRaw, setIfacesRaw] = useState((editing?.interfaceNames ?? []).join(", "));
+  const [selected, setSelected] = useState<string[]>(editing?.interfaceNames ?? []);
+  const [extraRaw, setExtraRaw] = useState("");
   const [description, setDescription] = useState(editing?.description ?? "");
   const [error, setError] = useState<string | null>(null);
 
-  const mut = useMutation({
-    mutationFn: () => {
-      const interfaceNames = ifacesRaw
+  // names in the catalog are checkbox-pickable; anything else typed into the
+  // extra field is appended (virtual ifaces not yet modeled stay possible)
+  const extraNames = useMemo(
+    () =>
+      extraRaw
         .split(",")
         .map((s) => s.trim())
-        .filter(Boolean);
+        .filter((n) => n && !catalog.some((c) => c.name === n) && !selected.includes(n)),
+    [extraRaw, catalog, selected],
+  );
+
+  const toggle = (ifaceName: string, on: boolean) => {
+    setSelected((prev) => (on ? [...new Set([...prev, ifaceName])] : prev.filter((n) => n !== ifaceName)));
+  };
+
+  const mut = useMutation({
+    mutationFn: () => {
+      const interfaceNames = [...selected, ...extraNames];
       const body = { name: name.trim(), type, interfaceNames, description: description.trim() || null };
       return editing ? api.updateZone(editing.id, body) : api.createZone(body);
     },
@@ -269,18 +341,23 @@ function ZoneEditor(props: {
     mut.mutate();
   };
 
+  const inOtherZone = (zoneId: number | null) =>
+    zoneId != null && (!editing || zoneId !== editing.id)
+      ? catalog.find((c) => c.zoneId === zoneId)
+      : null;
+
   return (
     <Dialog open onOpenChange={props.onOpenChange}>
-      <DialogContent className="w-[calc(100vw-1rem)] max-w-md">
+      <DialogContent className="w-[calc(100vw-1rem)] max-w-lg">
         <DialogHeader>
           <DialogTitle>{editing ? `Edit zone — ${editing.name}` : "Add zone"}</DialogTitle>
           <DialogDescription>
             {locked
               ? "WAN/LAN are protected: name and type are locked, interface membership and description remain editable."
-              : "Assign interfaces to the zone — membership syncs NetworkInterface.zoneId on both sides."}
+              : "Assign interfaces to the zone — membership syncs NetworkInterface.zoneId on both sides; an interface moving here leaves its previous zone automatically."}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
           <div>
             <Label htmlFor="zone-name" className="text-xs font-medium">
               Name
@@ -303,32 +380,83 @@ function ZoneEditor(props: {
               className="flex gap-4"
             >
               {ZONE_TYPES.map((t) => (
-                <Label key={t} className={cn("flex items-center gap-2 text-sm", !locked && "cursor-pointer")}>
-                  <RadioGroupItem value={t} /> {t}
-                </Label>
+                <TooltipProvider key={t} delayDuration={100}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Label key={t} className={cn("flex items-center gap-2 text-sm", !locked && "cursor-pointer")}>
+                        <RadioGroupItem value={t} /> {t}
+                      </Label>
+                    </TooltipTrigger>
+                    <TooltipContent className="text-xs">{ZONE_TYPE_HINTS[t]}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               ))}
             </RadioGroup>
           </div>
           <div>
-            <Label htmlFor="zone-ifaces" className="text-xs font-medium">
-              Interfaces
+            <Label className="text-xs font-medium">
+              Interfaces <span className="text-zinc-400">({selected.length} selected)</span>
             </Label>
+            {ifacesQuery.isLoading ? (
+              <div className="mt-2 space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-8 rounded-md" />
+                ))}
+              </div>
+            ) : catalog.length === 0 ? (
+              <p className="mt-2 text-xs text-zinc-500">
+                No interfaces modeled yet — type names below (validated against the interface catalog on save).
+              </p>
+            ) : (
+              <div className="mt-2 max-h-48 space-y-1 overflow-y-auto rounded-lg border border-zinc-200 p-2 dark:border-zinc-800">
+                {catalog.map((i) => {
+                  const other = inOtherZone(i.zoneId);
+                  return (
+                    <Label
+                      key={i.id}
+                      className={cn(
+                        "flex cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900",
+                        locked && "cursor-not-allowed opacity-70",
+                      )}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Checkbox
+                          checked={selected.includes(i.name)}
+                          onCheckedChange={(v) => !locked && toggle(i.name, v === true)}
+                          disabled={locked}
+                          aria-label={`Assign ${i.name} to zone`}
+                        />
+                        <span className="font-mono text-xs">{i.name}</span>
+                        {!i.enabled && (
+                          <Badge variant="outline" className="border-amber-500/40 text-[10px] text-amber-600">
+                            down
+                          </Badge>
+                        )}
+                      </span>
+                      {other && (
+                        <span className="text-[10px] text-zinc-400">in {other.zoneName ?? "another zone"} — moves here</span>
+                      )}
+                    </Label>
+                  );
+                })}
+              </div>
+            )}
             <Input
-              id="zone-ifaces"
-              value={ifacesRaw}
-              onChange={(e) => setIfacesRaw(e.target.value)}
-              placeholder="lan0, vlan10"
-              list="zone-iface-names"
-              className="mt-1.5 font-mono text-xs"
+              value={extraRaw}
+              onChange={(e) => setExtraRaw(e.target.value)}
+              placeholder="extra names, comma-separated (optional)"
+              disabled={locked}
+              className="mt-2 font-mono text-xs"
             />
-            <datalist id="zone-iface-names">
-              {props.knownIfaces.map((n) => (
-                <option key={n} value={n} />
-              ))}
-            </datalist>
-            <p className="mt-1 text-[11px] text-zinc-400">
-              Comma-separated interface names. Known: {props.knownIfaces.length ? props.knownIfaces.join(", ") : "none yet"}
-            </p>
+            {extraNames.length > 0 && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {extraNames.map((n) => (
+                  <Badge key={n} variant="outline" className="border-dashed border-zinc-400 font-mono text-[11px] text-zinc-500">
+                    {n}
+                  </Badge>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <Label htmlFor="zone-desc" className="text-xs font-medium">

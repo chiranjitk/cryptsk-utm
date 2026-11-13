@@ -39,6 +39,12 @@ export const POST = route(
   async ({ auth, body }) => {
     const dup = await db.addressObject.findFirst({ where: { tenantId: auth.tenantId, name: body.name } });
     if (dup) throw ApiError.conflict(`Address object '${body.name}' already exists`);
+    // duplicate-value awareness (non-blocking): the same value may exist under
+    // another name — the UI surfaces it as a warning toast, ops can merge.
+    const valueDup = await db.addressObject.findFirst({
+      where: { tenantId: auth.tenantId, type: body.type, value: body.value.trim() },
+      select: { id: true, name: true },
+    });
     const row = await db.addressObject.create({
       data: {
         tenantId: auth.tenantId,
@@ -49,8 +55,8 @@ export const POST = route(
       },
     });
     return {
-      data: shapeAddressObject(row),
-      audit: { action: "address_object.create", objectType: "address_object", objectId: row.id, objectName: row.name, after: { ...row } },
+      data: { ...shapeAddressObject(row), duplicateOf: valueDup },
+      audit: { action: "address_object.create", objectType: "address_object", objectId: row.id, objectName: row.name, after: { ...row, duplicateOf: valueDup } },
     };
   },
 );

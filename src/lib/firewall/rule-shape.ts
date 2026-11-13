@@ -102,12 +102,24 @@ export function shapeNatRule(r: {
   logging: string;
   comment: string | null;
   hitCount: number;
+  lastHitAt: Date | null;
   createdAt: Date;
 }) {
   const arr = (raw: string): number[] => {
     try {
       const v = JSON.parse(raw);
       return Array.isArray(v) ? v.filter((x): x is number => typeof x === "number") : [];
+    } catch {
+      return [];
+    }
+  };
+  // translatedSrcPool stores IPv4 STRINGS (UI stores IP literals, not ids) —
+  // parsing it with the numeric id filter silently emptied every pool on read,
+  // which then converted pool rules to masquerade on the next edit-save.
+  const ipArr = (raw: string): string[] => {
+    try {
+      const v = JSON.parse(raw);
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
     } catch {
       return [];
     }
@@ -124,7 +136,7 @@ export function shapeNatRule(r: {
     serviceIds: arr(r.serviceIds),
     outgoingIface: r.outgoingIface,
     translatedSrc: r.translatedSrc,
-    translatedSrcPool: arr(r.translatedSrcPool),
+    translatedSrcPool: ipArr(r.translatedSrcPool),
     overload: r.overload,
     translatedDst: r.translatedDst,
     translatedPort: r.translatedPort,
@@ -132,6 +144,7 @@ export function shapeNatRule(r: {
     logging: r.logging,
     comment: r.comment,
     hitCount: r.hitCount,
+    lastHitAt: r.lastHitAt,
     createdAt: r.createdAt,
   };
 }

@@ -62,7 +62,7 @@ export const PUT = route(
 export const DELETE = route({ area: "firewall", section: "firewall" }, async ({ auth, params }) => {
   const { id } = idParamSchema.parse(params);
   const row = await findRow(auth.tenantId, id);
-  const refs = await addressGroupReferences(row.id);
+  const refs = await addressGroupReferences(auth.tenantId, row.id);
   if (refs.length) {
     throw ApiError.conflict(`Address group '${row.name}' is referenced by ${refs.length} rule(s)`, {
       referencedBy: refs,

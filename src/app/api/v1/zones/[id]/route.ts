@@ -94,7 +94,7 @@ export const DELETE = route({ area: "firewall", section: "firewall" }, async ({ 
   const zone = await findZone(auth.tenantId, id);
   assertZoneNotProtected(zone.name, "deleted");
 
-  const refs = await zoneReferences(zone.id);
+  const refs = await zoneReferences(auth.tenantId, zone.id);
   if (refs.length) {
     throw ApiError.conflict(`Zone '${zone.name}' is referenced by ${refs.length} rule(s)`, { referencedBy: refs });
   }

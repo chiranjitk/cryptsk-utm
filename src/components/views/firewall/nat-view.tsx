@@ -69,9 +69,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { isValidPortList } from "@/lib/validators/firewall";
+import { poolRange } from "@/lib/firewall/nft-gen";
 import {
   api,
   IPV4_RE,
+  fmtDateTime,
   isOneToOnePair,
   type AddressObject,
   type LoggingLevel,
@@ -267,8 +269,25 @@ export function NatView() {
   const [deleting, setDeleting] = useState<NatRule | null>(null);
   const [oneToOneOpen, setOneToOneOpen] = useState(false);
   const [portFwdOpen, setPortFwdOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | NatType>("all");
 
-  const rules = useMemo(() => natQuery.data?.data ?? [], [natQuery.data]);
+  const allRules = useMemo(() => natQuery.data?.data ?? [], [natQuery.data]);
+  const rules = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    return allRules.filter((r) => {
+      if (typeFilter !== "all" && r.type !== typeFilter) return false;
+      if (!q) return true;
+      return (
+        (r.name ?? "").toLowerCase().includes(q) ||
+        (r.comment ?? "").toLowerCase().includes(q) ||
+        (r.outgoingIface ?? "").toLowerCase().includes(q) ||
+        (r.translatedDst ?? "").toLowerCase().includes(q) ||
+        (r.translatedSrc ?? "").toLowerCase().includes(q) ||
+        r.translatedSrcPool.some((p) => p.toLowerCase().includes(q))
+      );
+    });
+  }, [allRules, filter, typeFilter]);
 
   const addrMap = useMemo(() => {
     const m = new Map<number, { name: string; isGroup: boolean; count: number }>();
@@ -334,10 +353,22 @@ export function NatView() {
     onSettled: () => void queryClient.invalidateQueries({ queryKey: NAT_KEY }),
   });
 
+  const resetHitsMut = useMutation({
+    mutationFn: (id: number) => api.resetNatHits(id),
+    onSuccess: () => {
+      toastOk("Hit counters reset");
+      setHitsMenuFor(null);
+    },
+    onError: (err) => toastErr(err, "Reset failed"),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: NAT_KEY }),
+  });
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+
+  const [hitsMenuFor, setHitsMenuFor] = useState<number | null>(null);
 
   const onDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
@@ -371,6 +402,40 @@ export function NatView() {
         >
           <Icons.Plus className="mr-1 h-4 w-4" /> Add NAT rule
         </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Icons.Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+          <Input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter by name, comment, interface, IP…"
+            className="h-8 w-64 pl-8 text-xs"
+            aria-label="Filter NAT rules"
+          />
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {(["all", "snat", "dnat", "hairpin", "exempt"] as const).map((t) => (
+            <Button
+              key={t}
+              size="sm"
+              variant={typeFilter === t ? "default" : "outline"}
+              className={cn(
+                "h-7 px-2.5 text-xs",
+                typeFilter === t ? "bg-zinc-700 text-white hover:bg-zinc-800" : "text-zinc-600 dark:text-zinc-300",
+              )}
+              onClick={() => setTypeFilter(t)}
+            >
+              {t}
+            </Button>
+          ))}
+        </div>
+        {rules.length !== allRules.length && (
+          <span className="text-[11px] text-zinc-400">
+            {rules.length} of {allRules.length} rules
+          </span>
+        )}
       </div>
 
       <Card className="p-0">
@@ -431,6 +496,8 @@ export function NatView() {
                             setEditorOpen(true);
                           }}
                           onDelete={(rule) => setDeleting(rule)}
+                          onResetHits={(rule) => resetHitsMut.mutate(rule.id)}
+                          resetHitsPending={resetHitsMut.isPending}
                         />
                       ))}
                     </TableBody>
@@ -503,6 +570,8 @@ function SortableNatRow(props: {
   onEdit: (r: NatRule) => void;
   onDuplicate: (r: NatRule) => void;
   onDelete: (r: NatRule) => void;
+  onResetHits: (r: NatRule) => void;
+  resetHitsPending: boolean;
 }) {
   const { rule: r } = props;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: r.id });
@@ -602,7 +671,18 @@ function SortableNatRow(props: {
           </Tooltip>
         </TooltipProvider>
       </TableCell>
-      <TableCell className="text-right tabular-nums">{r.hitCount.toLocaleString()}</TableCell>
+      <TableCell className="text-right tabular-nums">
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="cursor-default">{r.hitCount.toLocaleString()}</span>
+            </TooltipTrigger>
+            <TooltipContent className="text-xs">
+              {r.hitCount > 0 ? `last hit ${fmtDateTime(r.lastHitAt)}` : "no hits yet — sync from kernel (Apply to Host → sync-hits)"}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </TableCell>
       <TableCell className="w-10 pr-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -610,12 +690,18 @@ function SortableNatRow(props: {
               <Icons.EllipsisVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
+          <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem onClick={() => props.onEdit(r)}>
               <Icons.Pencil className="mr-2 h-4 w-4" /> Edit
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => props.onDuplicate(r)}>
               <Icons.Copy className="mr-2 h-4 w-4" /> Duplicate
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => props.onResetHits(r)}
+              disabled={props.resetHitsPending || r.hitCount === 0}
+            >
+              <Icons.RotateCcw className="mr-2 h-4 w-4" /> Reset hit counters
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => props.onDelete(r)} className="text-rose-600 focus:text-rose-600 dark:text-rose-400">
@@ -648,8 +734,26 @@ function NatEditor(props: {
     return f;
   });
   const [error, setError] = useState<string | null>(null);
+  const [validation, setValidation] = useState<{
+    conflicts: Array<{ reason: string; withRuleName: string; leg?: string }>;
+    warnings: Array<{ code: string; message: string }>;
+    blocking: boolean;
+  } | null>(null);
 
-  const set = <K extends keyof NatForm>(key: K, value: NatForm[K]) => setForm((prev) => ({ ...prev, [key]: value }));
+  const set = <K extends keyof NatForm>(key: K, value: NatForm[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setValidation(null); // stale once any field changes
+  };
+
+  /** contiguous pools compile to a kernel round-robin range; gapped pools are
+   *  excluded from enforcement — surface that BEFORE saving, not at apply. */
+  const poolAdvisory = useMemo(() => {
+    if (form.type !== "snat" || form.snatMode !== "pool") return null;
+    const ips = form.poolRaw.split(/[,\s]+/).map((s) => s.trim()).filter((s) => IPV4_RE.test(s));
+    if (ips.length < 2) return null;
+    const range = poolRange(ips);
+    return range ? `Contiguous pool ${range.lo}–${range.hi} — enforced as a kernel round-robin range.` : "Non-contiguous pool — nftables cannot express it as one statement; this rule will be EXCLUDED from enforcement. Use consecutive addresses (e.g. .5–.10).";
+  }, [form.type, form.snatMode, form.poolRaw]);
 
   const addrPickerObjects = useMemo(
     () => props.addresses.map((a) => ({ id: a.id, name: a.name, sub: a.value })),
@@ -682,13 +786,34 @@ function NatEditor(props: {
     onError: (err) => toastErr(err, editing ? "Update failed" : "Create failed"),
   });
 
-  const submit = () => {
+  // validate-then-save: shadow/conflict detection + generator-faithful
+  // advisories — a shadowed NAT rule silently never fires in the kernel
+  const validateMut = useMutation({
+    mutationFn: async () => {
+      const body = buildNatBody(form);
+      return api.validateNat(body, editing?.id);
+    },
+  });
+
+  const submit = async () => {
     const v = validateNatForm(form);
     if (v) {
       setError(v);
       return;
     }
     setError(null);
+    try {
+      const res = await validateMut.mutateAsync();
+      const blocking = res.conflicts.filter((c) => c.reason !== "redundant");
+      setValidation({
+        conflicts: res.conflicts,
+        warnings: res.warnings ?? [],
+        blocking: blocking.length > 0,
+      });
+      if (blocking.length > 0) return; // operator must fix the shadow first
+    } catch {
+      // validator unavailable → save anyway (server still enforces integrity)
+    }
     saveMut.mutate();
   };
 
@@ -718,11 +843,26 @@ function NatEditor(props: {
                 <Input id="nat-name" value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="MASQ_LAN_WAN" className="mt-1.5" />
               </div>
               <div>
-                <FieldLabel>Type</FieldLabel>
+                <FieldLabel hint={editing ? "changing type resets the translation fields" : undefined}>Type</FieldLabel>
                 <Select
                   value={form.type}
-                  onValueChange={(v) => set("type", v as NatType)}
-                  disabled={Boolean(editing)}
+                  onValueChange={(v) => {
+                    const next = v as NatType;
+                    setForm((prev) => ({
+                      ...prev,
+                      type: next,
+                      // reset translation fields that belong to other types
+                      snatMode: "masq",
+                      translatedSrcIp: "",
+                      poolRaw: "",
+                      translatedDst: "",
+                      hairpinTranslatedSrc: "",
+                      portMode: "single",
+                      translatedPort: "",
+                      translatedPortRange: "",
+                    }));
+                    setValidation(null);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -832,10 +972,22 @@ function NatEditor(props: {
                       className="font-mono text-xs"
                     />
                   </div>
+                  {poolAdvisory && (
+                    <p
+                      className={cn(
+                        "rounded-md px-3 py-2 text-xs",
+                        poolAdvisory.includes("EXCLUDED")
+                          ? "border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                          : "border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+                      )}
+                    >
+                      {poolAdvisory}
+                    </p>
+                  )}
                   <div className="flex items-center justify-between rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
                     <div>
                       <p className="text-sm font-medium">Overload (PAT)</p>
-                      <p className="text-[11px] text-zinc-500">Port-address translation across the pool; off = 1:1 rotation</p>
+                      <p className="text-[11px] text-zinc-500">Port-address translation across the pool; off = 1:1 rotation (kernel enforces PAT regardless)</p>
                     </div>
                     <Switch checked={form.overload} onCheckedChange={(v) => set("overload", v)} />
                   </div>
@@ -936,14 +1088,44 @@ function NatEditor(props: {
           {error && (
             <p className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-600 dark:text-rose-400">{error}</p>
           )}
+
+          {validation && validation.conflicts.length > 0 && (
+            <div
+              className={cn(
+                "rounded-md border px-3 py-2 text-xs",
+                validation.blocking
+                  ? "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                  : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+              )}
+            >
+              <p className="font-medium">{validation.blocking ? "Save blocked — NAT conflicts:" : "NAT advisories (non-blocking):"}</p>
+              <ul className="mt-1 list-disc pl-4">
+                {validation.conflicts.map((c, i) => (
+                  <li key={i}>
+                    {c.reason.replace("_", " ")} by <span className="font-medium">{c.withRuleName}</span> ({c.leg} leg)
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {validation && validation.warnings.length > 0 && (
+            <div className="rounded-md border border-zinc-300 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
+              <p className="font-medium">Enforcement notes (how this rule reaches nftables):</p>
+              <ul className="mt-1 list-disc pl-4">
+                {validation.warnings.map((w, i) => (
+                  <li key={i}>{w.message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={saveMut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
-            {saveMut.isPending ? "Saving…" : editing ? "Save changes" : "Create NAT rule"}
+          <Button onClick={() => void submit()} disabled={saveMut.isPending || validateMut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
+            {saveMut.isPending ? "Saving…" : validateMut.isPending ? "Validating…" : editing ? "Save changes" : "Create NAT rule"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1054,25 +1236,25 @@ function PortForwardDialog(props: {
 
   const mut = useMutation({
     mutationFn: async () => {
-      const ext = Number(extPort);
+      const ext = extPort.trim(); // single port or list "8080-8090,9000"
       const inPort = Number(internalPort);
       // 1) reuse or create the matching service object so dnat + allow rule match precisely
       const existing = props.services.find(
-        (s) => s.protocol === proto && (s.dstPort ?? "") === String(ext),
+        (s) => s.protocol === proto && (s.dstPort ?? "") === ext,
       );
       const svcId = existing
         ? existing.id
         : (
             await api.generic.create<ServiceObject>("/api/v1/service-objects", {
-              name: `pf-${proto}-${ext}`,
+              name: `pf-${proto}-${ext.replace(/[^a-z0-9-]/gi, "-")}`,
               protocol: proto,
-              dstPort: String(ext),
+              dstPort: ext,
             })
           ).id;
 
-      // 2) the dnat rule
+      // 2) the dnat rule — external ports map to the internal port
       await api.createNat({
-        name: `port-fwd-${proto}-${ext}`,
+        name: `port-fwd-${proto}-${ext.replace(/[^a-z0-9-]/gi, "-")}`,
         enabled: true,
         type: "dnat",
         srcAddrIds: [],
@@ -1094,7 +1276,7 @@ function PortForwardDialog(props: {
         const hostObj = props.addresses.find((a) => a.value === internalHost.trim());
         const wanZone = props.zones.find((z) => z.name === "WAN");
         await api.createRule({
-          name: `allow-port-fwd-${proto}-${ext}`,
+          name: `allow-port-fwd-${proto}-${ext.replace(/[^a-z0-9-]/gi, "-")}`,
           enabled: true,
           action: "allow",
           logging: "summary",
@@ -1121,9 +1303,9 @@ function PortForwardDialog(props: {
   });
 
   const submit = () => {
-    const ext = Number(extPort);
+    const ext = extPort.trim();
     const inPort = Number(internalPort);
-    if (!Number.isInteger(ext) || ext < 1 || ext > 65535) return setError("External port must be 1–65535");
+    if (!isValidPortList(ext) || ext === "0") return setError("External port must be 1–65535 or a list like 8080-8090,9000");
     if (!IPV4_RE.test(internalHost.trim())) return setError("Internal host must be a valid IPv4");
     if (!Number.isInteger(inPort) || inPort < 1 || inPort > 65535) return setError("Internal port must be 1–65535");
     setError(null);
@@ -1153,9 +1335,15 @@ function PortForwardDialog(props: {
           </div>
           <div>
             <Label htmlFor="pf-ext" className="text-xs font-medium">
-              External port
+              External port <span className="text-zinc-400">(single or range list)</span>
             </Label>
-            <Input id="pf-ext" type="number" value={extPort} onChange={(e) => setExtPort(e.target.value)} placeholder="8080" className="mt-1.5" />
+            <Input
+              id="pf-ext"
+              value={extPort}
+              onChange={(e) => setExtPort(e.target.value)}
+              placeholder="8080 or 8080-8090,9000"
+              className="mt-1.5 font-mono text-xs"
+            />
           </div>
           <div>
             <FieldLabel>Protocol</FieldLabel>

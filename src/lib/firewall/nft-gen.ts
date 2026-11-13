@@ -77,6 +77,7 @@ export interface NftGenNatRule {
   translatedDst: string | null;
   translatedPort: number | null;
   translatedPortRange: string | null;
+  logging: string; // none | summary | detail
 }
 
 export interface NftGenInput {
@@ -233,6 +234,16 @@ function logFragments(rule: NftGenRule): string[] {
   if (rule.logging === "none") return [];
   const prefix = `fw:${rule.id}:${sanitizeComment(rule.name, 16)}`;
   if (rule.logging === "detail") {
+    return [`limit rate 100/second burst 200 packets log prefix ${JSON.stringify(prefix)} flags all`];
+  }
+  return [`limit rate 10/second burst 20 packets log prefix ${JSON.stringify(prefix)}`];
+}
+
+/** Same rate-limited logging contract as filter rules, `nat:` prefix family. */
+function natLogFragments(nat: NftGenNatRule): string[] {
+  if (nat.logging === "none") return [];
+  const prefix = `nat:${nat.id}:${sanitizeComment(nat.name ?? "", 16)}`;
+  if (nat.logging === "detail") {
     return [`limit rate 100/second burst 200 packets log prefix ${JSON.stringify(prefix)} flags all`];
   }
   return [`limit rate 10/second burst 20 packets log prefix ${JSON.stringify(prefix)}`];
@@ -429,7 +440,52 @@ function validIp(v: string | null | undefined): string | null {
   return v && IPV4_RE.test(v) ? v : null;
 }
 
-/** Compile one NAT rule into 0..2 chain statements. */
+function ipToInt(ip: string): number {
+  const [a, b, c, d] = ip.split(".").map(Number);
+  return ((a << 24) >>> 0) + (b << 16) + (c << 8) + d;
+}
+
+/**
+ * NAT pool → nft translation. The kernel accepts `snat to <lo>-<hi>` ranges
+ * (round-robin), so a CONTIGUOUS pool is fully enforceable. A non-contiguous
+ * pool has no single-statement nft equivalent → excluded with a warning
+ * (never widened to a subnet the operator did not configure).
+ */
+export function poolRange(pool: string[]): { lo: string; hi: string } | null {
+  const ips = [...new Set(pool.filter((p) => validIp(p)))];
+  if (ips.length < 2) return null;
+  const sorted = ips.map((ip) => ({ ip, n: ipToInt(ip) })).sort((a, b) => a.n - b.n);
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].n !== sorted[i - 1].n + 1) return null; // gap → not expressible
+  }
+  return { lo: sorted[0].ip, hi: sorted[sorted.length - 1].ip };
+}
+
+/** "5000-5100,6000" → VALIDATED port tokens, one per nft rule (empty = invalid token present). */
+function parsePortTokens(raw: string): string[] | null {
+  const tokens = raw
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  if (tokens.length === 0) return null;
+  const out: string[] = [];
+  for (const t of tokens) {
+    if (/^\d{1,5}$/.test(t)) {
+      const p = Number(t);
+      if (p < 1 || p > 65535) return null;
+      out.push(t);
+    } else if (/^\d{1,5}-\d{1,5}$/.test(t)) {
+      const [lo, hi] = t.split("-").map(Number);
+      if (lo < 1 || hi > 65535 || lo > hi) return null;
+      out.push(t);
+    } else {
+      return null;
+    }
+  }
+  return out;
+}
+
+/** Compile one NAT rule into 0..n chain statements. */
 function compileNatRule(nat: NftGenNatRule, osInterfaces: string[] | undefined, warn: (w: NftGenWarning) => void): NatClause[] {
   const out: NatClause[] = [];
   const label = nat.name ?? `nat#${nat.id}`;
@@ -448,11 +504,12 @@ function compileNatRule(nat: NftGenNatRule, osInterfaces: string[] | undefined, 
     warn({ scope: "nat", id: nat.id, name: label, code: "iface-invalid", message: `invalid outgoing interface ${JSON.stringify(nat.outgoingIface)} — ignored` });
   }
 
-  const matchParts = [saddr, daddr, oif, svc].filter(Boolean).join(" ");
+  const logParts = natLogFragments(nat);
 
   if (nat.type === "exempt") {
     // NO-NAT: accept in the nat chain stops translation for these flows
-    out.push({ hook: "postrouting", line: `${matchParts} accept comment ${JSON.stringify(comment)}` });
+    const parts = [saddr, daddr, oif, svc, ...logParts, "accept"].filter(Boolean).join(" ");
+    out.push({ hook: "postrouting", line: `${parts} comment ${JSON.stringify(comment)}` });
     return out;
   }
 
@@ -477,35 +534,70 @@ function compileNatRule(nat: NftGenNatRule, osInterfaces: string[] | undefined, 
       const pool = nat.translatedSrcPool.filter((p) => validIp(p));
       if (pool.length === 1) target = `snat to ${pool[0]}`;
       else {
-        warn({ scope: "nat", id: nat.id, name: label, code: "nat-pool-unsupported", message: "multi-address NAT pools are not expressible in this generator — rule excluded" });
-        return out;
+        const range = poolRange(pool);
+        if (range) {
+          // contiguous pool → kernel round-robin range (fully enforceable)
+          target = range.lo === range.hi ? `snat to ${range.lo}` : `snat to ${range.lo}-${range.hi}`;
+        } else {
+          warn({ scope: "nat", id: nat.id, name: label, code: "nat-pool-unsupported", message: "non-contiguous NAT pools are not expressible as a single nft statement — rule excluded (use a contiguous range like 203.0.113.5-203.0.113.10)" });
+          return out;
+        }
       }
+    }
+    if (!target && nat.type === "hairpin") {
+      // hairpin's postrouting leg is a SOURCE rewrite that defaults to
+      // masquerade — translatedSrc is optional on hairpin rules
+      target = "masquerade";
     }
     if (!target) {
       warn({ scope: "nat", id: nat.id, name: label, code: "nat-no-translate", message: `SNAT rule has no usable translation target — rule excluded` });
       return out;
     }
-    const parts = [matchParts, extraOif, target].filter(Boolean).join(" ");
+    const parts = [saddr, daddr, oif, svc, extraOif, ...logParts, target].filter(Boolean).join(" ");
     out.push({ hook: "postrouting", line: `${parts} comment ${JSON.stringify(comment)}` });
 
     if (nat.type === "hairpin") {
-      // hairpin = DNAT (prerouting) + post-DNAT masquerade (postrouting):
+      // hairpin = DNAT (prerouting) + post-DNAT source rewrite (postrouting):
       // external-facing VIP folds back to an internal host, then the source
-      // is masqueraded so replies hairpin through the box
+      // is rewritten so replies hairpin through the box. A translatedSrc IP
+      // is honored (static snat); 'masq'/unset falls back to masquerade.
       const hostIp = validIp(nat.translatedDst);
       if (!hostIp) {
         warn({ scope: "nat", id: nat.id, name: label, code: "nat-no-translate", message: "hairpin rule without a valid translated destination — rule excluded" });
         return out;
       }
-      const hpParts = [saddr, `ip daddr ${hostIp}`, "masquerade"].filter(Boolean).join(" ");
+      const srcRewrite =
+        validIp(nat.translatedSrc) && nat.translatedSrc !== "masq" ? `snat to ${nat.translatedSrc}` : "masquerade";
+      if (!(validIp(nat.translatedSrc) && nat.translatedSrc !== "masq")) {
+        warn({ scope: "nat", id: nat.id, name: label, code: "nat-hairpin-masq", message: "no hairpin translatedSrc set — the source rewrite defaults to masquerade" });
+      }
+      const hpParts = [saddr, `ip daddr ${hostIp}`, ...logParts, srcRewrite].filter(Boolean).join(" ");
       out.push({ hook: "postrouting", line: `${hpParts} comment ${JSON.stringify(`${comment}:hairpin`)}` });
 
-      // prerouting DNAT leg — mirror of the dnat branch (public daddr → host)
+      // prerouting DNAT leg — mirror of the dnat branch (public daddr → host);
+      // every validated port token gets its own rule (port ranges split).
       const iif = nat.outgoingIface && IFACE_RE.test(nat.outgoingIface) ? `iifname ${JSON.stringify(nat.outgoingIface)}` : null;
       const daddrPlain = daddr ? daddr.replace(/^ip daddr /, "") : null;
       const preMatch = [iif, daddrPlain ? `ip daddr ${daddrPlain}` : null, svc].filter(Boolean).join(" ");
-      const target2 = nat.translatedPort != null && nat.translatedPort >= 1 && nat.translatedPort <= 65535 ? `dnat to ${hostIp}:${nat.translatedPort}` : `dnat to ${hostIp}`;
-      out.push({ hook: "prerouting", line: `${preMatch} ${target2} comment ${JSON.stringify(comment)}` });
+      const portTokens =
+        nat.translatedPort != null && nat.translatedPort >= 1 && nat.translatedPort <= 65535
+          ? [String(nat.translatedPort)]
+          : nat.translatedPortRange
+            ? parsePortTokens(nat.translatedPortRange)
+            : null;
+      if (nat.translatedPortRange && (!portTokens || portTokens.length === 0)) {
+        warn({ scope: "nat", id: nat.id, name: label, code: "nat-port-unsupported", message: "invalid translated port range — hairpin prerouting leg excluded" });
+        return out;
+      }
+      if (portTokens) {
+        for (const tok of portTokens) {
+          const parts2 = [preMatch, ...logParts, `dnat to ${hostIp}:${tok}`].filter(Boolean).join(" ");
+          out.push({ hook: "prerouting", line: `${parts2} comment ${JSON.stringify(comment)}` });
+        }
+      } else {
+        const parts2 = [preMatch, ...logParts, `dnat to ${hostIp}`].filter(Boolean).join(" ");
+        out.push({ hook: "prerouting", line: `${parts2} comment ${JSON.stringify(comment)}` });
+      }
     }
     return out;
   }
@@ -516,36 +608,35 @@ function compileNatRule(nat: NftGenNatRule, osInterfaces: string[] | undefined, 
       warn({ scope: "nat", id: nat.id, name: label, code: "nat-no-translate", message: "DNAT rule without a valid translated destination — rule excluded" });
       return out;
     }
-    let portPart: string | null = null;
-    if (nat.translatedPort != null && nat.translatedPort >= 1 && nat.translatedPort <= 65535) {
-      portPart = String(nat.translatedPort);
-    } else if (nat.translatedPortRange) {
-      const ranges = parseRangeForDnat(nat.translatedPortRange);
-      if (ranges.length === 1) portPart = ranges[0];
-      else {
-        warn({ scope: "nat", id: nat.id, name: label, code: "nat-port-unsupported", message: "multi-range DNAT port lists are not expressible — rule excluded" });
-        return out;
-      }
+    // every validated port token becomes its own prerouting rule — port
+    // ranges like "5000-5100,6000" are perfectly kernel-expressible one per rule
+    const portTokens =
+      nat.translatedPort != null && nat.translatedPort >= 1 && nat.translatedPort <= 65535
+        ? [String(nat.translatedPort)]
+        : nat.translatedPortRange
+          ? parsePortTokens(nat.translatedPortRange)
+          : null;
+    if (nat.translatedPortRange && (!portTokens || portTokens.length === 0)) {
+      warn({ scope: "nat", id: nat.id, name: label, code: "nat-port-unsupported", message: "invalid translatedPortRange — rule excluded" });
+      return out;
     }
     const iif = nat.outgoingIface && IFACE_RE.test(nat.outgoingIface) ? `iifname ${JSON.stringify(nat.outgoingIface)}` : null;
     const pub = daddr ? daddr.replace(/^ip daddr /, "") : null;
     const preMatch = [iif, pub ? `ip daddr ${pub}` : null, svc].filter(Boolean).join(" ");
-    const target = portPart ? `dnat to ${hostIp}:${portPart}` : `dnat to ${hostIp}`;
-    out.push({ hook: "prerouting", line: `${preMatch} ${target} comment ${JSON.stringify(comment)}` });
+    if (!svc && !portTokens) {
+      // honest warning, still enforced: DMZ-style "everything to this host"
+      warn({ scope: "nat", id: nat.id, name: label, code: "nat-dnat-unconstrained", message: `DNAT matches ALL ports/protocols on ${pub ?? "the interface address"} (DMZ-style) — verify this is intended` });
+    }
+    const targets = portTokens ? portTokens.map((t) => `dnat to ${hostIp}:${t}`) : [`dnat to ${hostIp}`];
+    for (const target of targets) {
+      const parts = [preMatch, ...logParts, target].filter(Boolean).join(" ");
+      out.push({ hook: "prerouting", line: `${parts} comment ${JSON.stringify(comment)}` });
+    }
     return out;
   }
 
   warn({ scope: "nat", id: nat.id, name: label, code: "nat-type-invalid", message: `unknown NAT type '${nat.type}' — rule excluded` });
   return out;
-}
-
-/** "5000-5100,6000" → expressible single token list (empty when multi-range). */
-function parseRangeForDnat(raw: string): string[] {
-  const tokens = raw
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
-  return tokens;
 }
 
 // ── assembly ────────────────────────────────────────────────────────────────

@@ -136,13 +136,13 @@ export const addressObjectBodySchema = z
 
 export const addressGroupBodySchema = z.object({
   name: z.string().min(1).max(64),
-  memberIds: z.array(z.number().int().min(1)).default([]),
+  memberIds: z.array(z.number().int().min(1)).min(1, "Address groups need at least one member"),
   description: z.string().max(512).nullable().optional(),
 });
 
 export const serviceGroupBodySchema = z.object({
   name: z.string().min(1).max(64),
-  memberIds: z.array(z.number().int().min(1)).default([]),
+  memberIds: z.array(z.number().int().min(1)).min(1, "Service groups need at least one member"),
   description: z.string().max(512).nullable().optional(),
 });
 

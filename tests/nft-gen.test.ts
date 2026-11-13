@@ -46,6 +46,7 @@ const nat = (over: Partial<NftGenNatRule> = {}): NftGenNatRule => ({
   translatedDst: null,
   translatedPort: null,
   translatedPortRange: null,
+  logging: "none",
   ...over,
 });
 

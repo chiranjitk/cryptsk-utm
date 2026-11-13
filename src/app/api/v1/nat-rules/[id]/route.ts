@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { idParamSchema, natRuleBodySchema } from "@/lib/validators/firewall";
 import { shapeNatRule } from "@/lib/firewall/rule-shape";
 import { updateNatRule } from "@/lib/firewall/nat-service";
-import { assertNewIdsValid } from "@/lib/firewall/refs";
+import { assertNewIdsValid, findEmptyGroupReferences } from "@/lib/firewall/refs";
 import { renumberNatRules } from "@/lib/firewall/positions";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +41,13 @@ export const PUT = route(
       qosPolicyId: null,
     });
     if (!idCheck.ok) throw ApiError.validation(idCheck.message, idCheck.details);
+    const emptyGroups = await findEmptyGroupReferences(auth.tenantId, body);
+    if (emptyGroups.length > 0) {
+      throw ApiError.validation(
+        `NAT rule references empty group(s): ${emptyGroups.map((g) => `'${g.groupName}' (${g.kind})`).join(", ")} — add members first`,
+        { emptyGroups },
+      );
+    }
     await updateNatRule(auth.tenantId, id, body);
     const after = await db.natRule.findUniqueOrThrow({ where: { id } });
     return {
