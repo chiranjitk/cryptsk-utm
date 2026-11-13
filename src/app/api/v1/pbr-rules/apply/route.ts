@@ -1,10 +1,23 @@
 /**
  * POST /api/v1/pbr-rules/apply — converge policy-based routing rules onto the
  * kernel (pbr-os planner → route-apply executor, gated by CONSOLE_OS_APPLY).
- * Body: { id? } — one rule, or all rules: enabled → replace (teardown then
- * apply), disabled → withdraw. Service-matched rules report config-only
- * honestly (fwmark datapath is a planned dataplane change).
- * GET — plan preview (no exec) for the UI confirm dialog.
+ *
+ * Body: { id?, confirmMatchAll? } — one rule, or all rules: enabled → replace
+ * (teardown then apply), disabled → withdraw.
+ *
+ * Enterprise safety (2026-11-14 WAN-outage class fix):
+ *   • match-all rules (no src/dst/service match → selector-less ip rule that
+ *     captures every flow, management egress included) require an explicit
+ *     confirmMatchAll — unconfirmed applies are rejected with 422
+ *   • iface-only egress resolves its next-hop from the interface's live
+ *     default route; device-only policy defaults are never installed
+ *   • commit-confirm: WAN health (gateway + public ICMP probe) is snapshotted
+ *     before and after the apply; a measured regression triggers an automatic
+ *     rollback of everything this request installed, then re-verification —
+ *     the response carries the full health report per outcome
+ *
+ * GET — plan preview (no exec) for the UI confirm dialog; plans are compiled
+ * as-if-confirmed (the UI dialog carries the match-all warning).
  */
 
 import { route } from "@/lib/api/handler";
@@ -14,20 +27,31 @@ import { z } from "zod";
 import { shapePbrRule } from "@/lib/network/shapes";
 import {
   buildPbrApplyPlan,
+  buildPbrCombos,
   buildPbrTeardownPlan,
+  compileServiceSelectors,
+  pbrCombosHaveCatchAll,
+  pbrHealthRegressed,
+  pbrKernelState,
+  probeWanHealth,
   readKernelPbrRules,
+  resolveEgressGateway,
   resolvePbrCidrs,
   resolveServiceSelectors,
-  pbrKernelState,
+  type EgressGateway,
   type PbrKernelState,
   type PbrOsPlanStep,
   type PbrRuleView,
+  type PbrWanHealth,
 } from "@/lib/network/pbr-os";
 import { convergeRouteSafe } from "@/lib/network/route-apply";
 
 export const dynamic = "force-dynamic";
 
-const applyBody = z.object({ id: z.number().int().min(1).optional() });
+const applyBody = z.object({
+  id: z.number().int().min(1).optional(),
+  confirmMatchAll: z.boolean().optional(),
+});
 
 function viewOf(row: { id: number; name: string; position: number; enabled: boolean; srcAddrIds: string; dstAddrIds: string; serviceIds: string; outgoingIface: string | null; gateway: string | null; description?: string | null; createdAt?: Date }): PbrRuleView {
   const s = shapePbrRule(row);
@@ -44,40 +68,104 @@ function viewOf(row: { id: number; name: string; position: number; enabled: bool
   };
 }
 
-async function convergeOne(view: PbrRuleView) {
-  const [src, dst, svc] = await Promise.all([
-    resolvePbrCidrs(1, view.srcAddrIds),
-    resolvePbrCidrs(1, view.dstAddrIds),
-    resolveServiceSelectors(1, view.serviceIds),
-  ]);
-  const applyPlan = buildPbrApplyPlan(view, src, dst, svc);
+interface PreparedRule {
+  view: PbrRuleView;
+  src: Array<{ id: number; cidr: string | null }>;
+  dst: Array<{ id: number; cidr: string | null }>;
+  svc: Awaited<ReturnType<typeof resolveServiceSelectors>>;
+  svcSelectors: number;
+  egress: EgressGateway | null;
+  /** plan compiled as-if-confirmed — used for the match-all pre-check + preview */
+  confirmedPlan: ReturnType<typeof buildPbrApplyPlan>;
+  matchAll: boolean;
+}
+
+/** Resolve match objects + egress next-hop for every rule (egress cached per iface). */
+async function prepareRules(views: PbrRuleView[], tenantId: number): Promise<PreparedRule[]> {
+  const egressCache = new Map<string, EgressGateway>();
+  const prepared: PreparedRule[] = [];
+  for (const view of views) {
+    const [src, dst, svc] = await Promise.all([
+      resolvePbrCidrs(tenantId, view.srcAddrIds),
+      resolvePbrCidrs(tenantId, view.dstAddrIds),
+      resolveServiceSelectors(tenantId, view.serviceIds),
+    ]);
+    let egress: EgressGateway | null = null;
+    if (!view.gateway && view.outgoingIface) {
+      if (!egressCache.has(view.outgoingIface)) {
+        egressCache.set(view.outgoingIface, await resolveEgressGateway(view.outgoingIface));
+      }
+      egress = egressCache.get(view.outgoingIface) ?? null;
+    }
+    const confirmedPlan = buildPbrApplyPlan(view, src, dst, svc, {
+      confirmMatchAll: true,
+      egressGateway: egress?.gateway ?? null,
+      egressDev: egress?.dev ?? null,
+    });
+    const srcCidrs = src.map((s) => s.cidr).filter((c): c is string => c !== null);
+    const dstCidrs = dst.map((d) => d.cidr).filter((c): c is string => c !== null);
+    prepared.push({
+      view,
+      src,
+      dst,
+      svc,
+      svcSelectors: svc.length,
+      egress,
+      confirmedPlan,
+      matchAll:
+        confirmedPlan.configOnly === false &&
+        view.enabled &&
+        pbrCombosHaveCatchAll(buildPbrCombos(srcCidrs, dstCidrs), compileServiceSelectors(svc).selectors),
+    });
+  }
+  return prepared;
+}
+
+interface ConvergeOutcome {
+  id: number;
+  name: string;
+  position: number;
+  state: PbrKernelState | null;
+  configOnly: boolean;
+  os: {
+    gate: "on" | "off";
+    applied: boolean;
+    reason: string;
+    plan: { name: string; osName: string | null; steps: PbrOsPlanStep[] };
+    results?: Array<{ cmd: string; ok: boolean; stderr?: string; soft?: boolean }>;
+  };
+  installed: boolean;
+}
+
+/** Teardown + apply one prepared rule. installed=true when kernel steps ran. */
+async function convergeOne(p: PreparedRule): Promise<ConvergeOutcome> {
+  const view = p.view;
+  const applyPlan = buildPbrApplyPlan(view, p.src, p.dst, p.svc, {
+    confirmMatchAll: true,
+    egressGateway: p.egress?.gateway ?? null,
+    egressDev: p.egress?.dev ?? null,
+  });
+
+  const srcCidrCount = p.src.filter((s) => s.cidr).length;
+  const dstCidrCount = p.dst.filter((d) => d.cidr).length;
+  const teardown = buildPbrTeardownPlan(view, srcCidrCount, dstCidrCount, Math.max(1, p.svcSelectors));
 
   if (!view.enabled) {
-    const teardown = buildPbrTeardownPlan(
-      view,
-      src.filter((s) => s.cidr).length,
-      dst.filter((d) => d.cidr).length,
-      Math.max(1, applyPlan.steps.length - 1),
-    );
     const os = await convergeRouteSafe(async () => ({ name: teardown.name, osName: null, steps: teardown.steps }));
     const fresh = await readKernelPbrRules().catch(() => null);
     return {
       id: view.id,
       name: view.name,
       position: view.position,
-      state: pbrKernelState(view, fresh, { configOnly: applyPlan.configOnly }),
-      configOnly: applyPlan.configOnly,
-      os: { gate: os.gate, applied: os.applied, reason: os.reason, plan: os.plan, results: os.results },
+      state: pbrKernelState(view, fresh),
+      configOnly: false,
+      installed: false,
+      os: { gate: os.gate, applied: os.applied, reason: os.reason, plan: { name: teardown.name, osName: null, steps: teardown.steps }, results: os.results },
     };
   }
 
+  const configOnly = applyPlan.configOnly;
   // replace semantics: withdraw old policy first, then install fresh
-  const teardown = buildPbrTeardownPlan(
-    view,
-    src.filter((s) => s.cidr).length,
-    dst.filter((d) => d.cidr).length,
-    Math.max(1, applyPlan.steps.length - 1),
-  );
   const t0 = await convergeRouteSafe(async () => ({ name: teardown.name, osName: null, steps: teardown.steps }));
   const os = await convergeRouteSafe(async () => ({ name: applyPlan.name, osName: view.outgoingIface, steps: applyPlan.steps }));
   const fresh = await readKernelPbrRules().catch(() => null);
@@ -85,8 +173,9 @@ async function convergeOne(view: PbrRuleView) {
     id: view.id,
     name: view.name,
     position: view.position,
-    state: pbrKernelState(view, fresh, { configOnly: applyPlan.configOnly }),
-    configOnly: applyPlan.configOnly,
+    state: pbrKernelState(view, fresh, { configOnly }),
+    configOnly,
+    installed: !configOnly && os.applied === true,
     os: {
       gate: os.gate,
       applied: os.applied,
@@ -100,18 +189,71 @@ async function convergeOne(view: PbrRuleView) {
 export const POST = route({ area: "network", bodySchema: applyBody, section: "routing" }, async ({ auth, body }) => {
   const rows = await db.pbrRule.findMany({ where: { tenantId: auth.tenantId }, orderBy: { position: "asc" } });
   const views = rows.map(viewOf);
-  const outcomes: Array<Awaited<ReturnType<typeof convergeOne>>> = [];
-  if (body.id) {
-    const view = views.find((v) => v.id === body.id);
-    if (!view) throw ApiError.notFound(`PBR rule ${body.id} not found`);
-    outcomes.push(await convergeOne(view));
-  } else {
-    for (const view of views) outcomes.push(await convergeOne(view));
+
+  const prepared = await prepareRules(views, auth.tenantId);
+
+  // match-all hard gate: selector-less ip rules capture every flow (the
+  // 2026-11-14 outage class) — install only behind an explicit confirmation
+  if (body.confirmMatchAll !== true) {
+    const offenders = prepared.filter((p) => p.matchAll);
+    if (offenders.length > 0) {
+      throw ApiError.validation(
+        `match-all policy route${offenders.length === 1 ? "" : "s"} ${offenders
+          .map((o) => `'${o.view.name}'`)
+          .join(", ")} would steer ALL traffic (including the appliance's own management egress) into ${
+          offenders.length === 1 ? "its" : "their"
+        } policy table — add a source/destination/service match, or re-send the apply with confirmMatchAll: true`,
+      );
+    }
   }
+
+  // commit-confirm: baseline WAN health before any kernel mutation
+  const baseline = await probeWanHealth();
+
+  const outcomes: ConvergeOutcome[] = [];
+  if (body.id) {
+    const p = prepared.find((x) => x.view.id === body.id);
+    if (!p) throw ApiError.notFound(`PBR rule ${body.id} not found`);
+    outcomes.push(await convergeOne(p));
+  } else {
+    for (const p of prepared) outcomes.push(await convergeOne(p));
+  }
+
+  // post-apply verification + automatic rollback (FortiGate commit-confirm)
+  const after = await probeWanHealth();
+  let rolledBack = false;
+  let rollbackReason: string | null = null;
+  let postRollback: PbrWanHealth | null = null;
+  if (pbrHealthRegressed(baseline, after)) {
+    rolledBack = true;
+    rollbackReason = `WAN health regressed after apply (gateway ${
+      after.gatewayOk === false ? "unreachable" : "ok"
+    } / public probe ${after.internetOk === false ? "unreachable" : after.internetOk === null ? "unknown" : "ok"} vs healthy baseline) — policy rules were withdrawn automatically to restore the forwarding path`;
+    for (const p of prepared) {
+      if (!p.view.enabled) continue;
+      const teardown = buildPbrTeardownPlan(
+        p.view,
+        p.src.filter((s) => s.cidr).length,
+        p.dst.filter((d) => d.cidr).length,
+        Math.max(1, p.svcSelectors),
+      );
+      await convergeRouteSafe(async () => ({ name: teardown.name, osName: null, steps: teardown.steps }));
+    }
+    postRollback = await probeWanHealth();
+    // re-read kernel so the reported states reflect the rolled-back reality
+    const fresh = await readKernelPbrRules().catch(() => null);
+    for (const o of outcomes) {
+      const p = prepared.find((x) => x.view.id === o.id);
+      if (p) o.state = pbrKernelState(p.view, fresh, { configOnly: o.configOnly });
+      o.installed = false;
+    }
+  }
+
+  const health = { baseline, after, rolledBack, rollbackReason, postRollback };
   return {
-    data: outcomes,
+    data: outcomes.map((o) => ({ ...o, health })),
     audit: {
-      action: "pbr.os-apply",
+      action: rolledBack ? "pbr.os-apply-rollback" : "pbr.os-apply",
       objectType: "pbr_rule",
       objectId: body.id,
       objectName: body.id ? (views.find((v) => v.id === body.id)?.name ?? "?") : "all",
@@ -122,6 +264,8 @@ export const POST = route({ area: "network", bodySchema: applyBody, section: "ro
 export const GET = route({ area: "network" }, async ({ auth }) => {
   const rows = await db.pbrRule.findMany({ where: { tenantId: auth.tenantId }, orderBy: { position: "asc" } });
   const kernel = await readKernelPbrRules().catch(() => null);
+  const views = rows.map(viewOf);
+  const prepared = await prepareRules(views, auth.tenantId);
   const data: Array<{
     id: number;
     name: string;
@@ -129,26 +273,21 @@ export const GET = route({ area: "network" }, async ({ auth }) => {
     enabled: boolean;
     state: PbrKernelState | null;
     configOnly: boolean;
+    matchAll: boolean;
     reason: string;
     plan: PbrOsPlanStep[];
   }> = [];
-  for (const row of rows) {
-    const view = viewOf(row);
-    const [src, dst, svc] = await Promise.all([
-      resolvePbrCidrs(auth.tenantId, view.srcAddrIds),
-      resolvePbrCidrs(auth.tenantId, view.dstAddrIds),
-      resolveServiceSelectors(auth.tenantId, view.serviceIds),
-    ]);
-    const plan = buildPbrApplyPlan(view, src, dst, svc);
+  for (const p of prepared) {
     data.push({
-      id: view.id,
-      name: view.name,
-      position: view.position,
-      enabled: view.enabled,
-      state: pbrKernelState(view, kernel, { configOnly: plan.configOnly }),
-      configOnly: plan.configOnly,
-      reason: plan.reason,
-      plan: plan.steps,
+      id: p.view.id,
+      name: p.view.name,
+      position: p.view.position,
+      enabled: p.view.enabled,
+      state: pbrKernelState(p.view, kernel, { configOnly: p.confirmedPlan.configOnly }),
+      configOnly: p.confirmedPlan.configOnly,
+      matchAll: p.matchAll,
+      reason: p.confirmedPlan.reason,
+      plan: p.confirmedPlan.steps,
     });
   }
   return { data };

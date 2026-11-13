@@ -11,10 +11,21 @@
  *     single ports or ranges (kernel ≥4.17 fib_rule_port_range). Anything
  *     not expressible (bogus port tokens, >64 fan-out) stays CONFIG-ONLY and
  *     reports honestly instead of pretending to be enforced
- *   • egress: gateway → `default via <gw> dev <if> onlink metric 1 table <t>`;
- *     iface → `default dev <if> metric 1 table <t>` — table-scoped default
- *     always carries metric 1 so the route-apply default-route guard (primary
- *     default protection, 2026-11-13 outage) accepts the step
+ *   • egress: explicit gateway → `default via <gw> dev <if> onlink metric 1
+ *     table <t>`; iface-only → the next-hop is AUTO-RESOLVED from that
+ *     interface's current default route (`ip route show default`). A
+ *     device-only policy default (`default dev <if>`) is NEVER installed:
+ *     it makes the kernel ARP every destination directly on the wire,
+ *     blackholing all off-link traffic (WAN-outage class, 2026-11-14: two
+ *     PBR rules killed gateway/WAN reachability). No resolvable next-hop →
+ *     the rule stays config-only
+ *   • match-all rules (no src/dst/service match → selector-less `ip rule`
+ *     entries) install ONLY behind an explicit confirmation flag; the apply
+ *     route rejects unconfirmed ones with 422
+ *   • commit-confirm safety: probeWanHealth() snapshots gateway+internet
+ *     reachability before/after apply; pbrHealthRegressed() drives the
+ *     apply route's automatic rollback when a policy steers traffic into a
+ *     blackhole
  *
  * Red-line safety: `ip rule` in the 5000+ priority range and tables 10000+
  * never collide with strongSwan's rule 220/table 220, never touch the nft
@@ -50,6 +61,63 @@ export interface PbrOsPlan {
   configOnly: boolean;
   reason: string;
   steps: PbrOsPlanStep[];
+}
+
+/** Options for kernel-plan compilation (confirmation + resolved egress). */
+export interface PbrApplyOptions {
+  /** explicit user acknowledgment that a match-all rule steers every flow */
+  confirmMatchAll?: boolean;
+  /** next-hop resolved from the egress interface's current default route */
+  egressGateway?: string | null;
+  egressDev?: string | null;
+}
+
+export interface EgressGateway {
+  gateway: string | null;
+  dev: string | null;
+}
+
+/** `ip route show` output → the via/dev of the default route on `iface`. */
+export function parseEgressGateway(routeShow: string, iface: string): EgressGateway {
+  for (const line of routeShow.split("\n")) {
+    const t = line.trim();
+    if (!t.startsWith("default")) continue;
+    const f = t.split(/\s+/);
+    let via: string | null = null;
+    let dev: string | null = null;
+    for (let i = 1; i < f.length; i++) {
+      if (f[i] === "via" && f[i + 1]) via = f[++i];
+      else if (f[i] === "dev" && f[i + 1]) dev = f[++i];
+    }
+    if (dev === iface) return { gateway: via, dev };
+  }
+  return { gateway: null, dev: null };
+}
+
+/** `ip route show` output → the first default via (any device). */
+export function parseFirstDefaultGateway(routeShow: string): string | null {
+  for (const line of routeShow.split("\n")) {
+    const t = line.trim();
+    if (!t.startsWith("default")) continue;
+    const m = /\bvia (\S+)/.exec(t);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/**
+ * Kernel-side next-hop resolution for iface-only PBR egress: reads the live
+ * `ip route show default` and returns the via/dev pair whose dev matches the
+ * egress interface. A device-only default (no via) surfaces as gateway null —
+ * callers must treat that as "not resolvable" (see the planner).
+ */
+export async function resolveEgressGateway(iface: string | null): Promise<EgressGateway> {
+  if (!iface) return { gateway: null, dev: null };
+  const { hasTool, runTool } = await import("@/lib/host/tools");
+  if (!(await hasTool("ip"))) return { gateway: null, dev: null };
+  const r = await runTool("ip route show default 2>/dev/null", 4000);
+  if (!r.ok) return { gateway: null, dev: null };
+  return parseEgressGateway(r.stdout, iface);
 }
 
 /** resolve object/group ids → individual CIDR strings (null = unresolvable type). */
@@ -217,6 +285,29 @@ function tableFor(position: number): number {
   return PBR_TABLE_BASE + position;
 }
 
+export function buildPbrCombos(srcCidrs: string[], dstCidrs: string[]): Array<[string | null, string | null]> {
+  const srcs = srcCidrs.length > 0 ? srcCidrs : [null];
+  const dsts = dstCidrs.length > 0 ? dstCidrs : [null];
+  const out: Array<[string | null, string | null]> = [];
+  for (const s of srcs) for (const d of dsts) out.push([s, d]);
+  return out;
+}
+
+/**
+ * True when at least one compiled entry matches EVERY flow: a from/to-less
+ * combo combined with a selector-less (any-protocol) service list. Such an
+ * entry steers all traffic — including the appliance's own egress — into the
+ * policy table, and is guarded behind explicit confirmation.
+ */
+export function pbrCombosHaveCatchAll(
+  combos: Array<[string | null, string | null]>,
+  selectors: CompiledServiceSelector[],
+): boolean {
+  return combos.some(
+    ([s, d]) => s === null && d === null && (selectors.length === 0 || selectors.some((sel) => !sel.ipproto && !sel.sport && !sel.dport)),
+  );
+}
+
 /**
  * Build the kernel application plan for ONE rule (replace semantics: callers
  * run the teardown plan first, then this plan).
@@ -226,6 +317,7 @@ export function buildPbrApplyPlan(
   src: Array<{ id: number; cidr: string | null }>,
   dst: Array<{ id: number; cidr: string | null }>,
   svc: ResolvedServiceSelector[] = [],
+  opts?: PbrApplyOptions,
 ): PbrOsPlan {
   const table = rule.enabled ? tableFor(rule.position) : null;
   const base: PbrOsPlan = {
@@ -275,10 +367,7 @@ export function buildPbrApplyPlan(
 
   // cartesian (src × dst) × service selectors, empty match side = "all" —
   // bounded by PBR_COMBO_CAP for sanity
-  const srcs = srcCidrs.length > 0 ? srcCidrs : [null];
-  const dsts = dstCidrs.length > 0 ? dstCidrs : [null];
-  const cidrCombos: Array<[string | null, string | null]> = [];
-  for (const s of srcs) for (const d of dsts) cidrCombos.push([s, d]);
+  const cidrCombos = buildPbrCombos(srcCidrs, dstCidrs);
   const totalCombos = cidrCombos.length * services.selectors.length;
   if (totalCombos > PBR_COMBO_CAP) {
     return {
@@ -289,17 +378,43 @@ export function buildPbrApplyPlan(
     };
   }
 
+  // match-all guard: a selector-less ip rule captures EVERY flow (management
+  // egress included) — installs only behind an explicit confirmation
+  if (pbrCombosHaveCatchAll(cidrCombos, services.selectors) && opts?.confirmMatchAll !== true) {
+    return {
+      ...base,
+      table: null,
+      configOnly: true,
+      reason:
+        "match-all rule (no source/destination/service match) would steer ALL traffic — including the appliance's own egress — into its policy table; add a match, or re-apply with explicit confirmation",
+    };
+  }
+
   const steps: PbrOsPlanStep[] = [];
   // table-scoped default MUST carry metric >= 1 — route-apply.ts refuses bare
   // default ops (`metric 0` would shadow the interface-managed primary default)
-  const egress = rule.gateway
-    ? rule.outgoingIface
+  let egress: string;
+  let egressNote = "";
+  if (rule.gateway) {
+    egress = rule.outgoingIface
       ? `default via ${rule.gateway} dev ${rule.outgoingIface} onlink metric 1`
-      : `default via ${rule.gateway} onlink metric 1`
-    : rule.outgoingIface
-      ? `default dev ${rule.outgoingIface} metric 1`
-      : null;
-  if (!egress) {
+      : `default via ${rule.gateway} onlink metric 1`;
+  } else if (rule.outgoingIface) {
+    // iface-only egress: the next-hop MUST come from the interface's live
+    // default route — a device-only policy default ARPs every destination and
+    // blackholes all off-link traffic (WAN-outage class, 2026-11-14)
+    const via = opts?.egressGateway ?? null;
+    if (!via) {
+      return {
+        ...base,
+        table: null,
+        configOnly: true,
+        reason: `iface-only egress on ${rule.outgoingIface} has no resolvable next-hop — a device-only policy default would blackhole every off-link destination; set an explicit gateway`,
+      };
+    }
+    egress = `default via ${via} dev ${rule.outgoingIface} onlink metric 1`;
+    egressNote = `next-hop ${via} auto-resolved from ${rule.outgoingIface}'s current default route`;
+  } else {
     return { ...base, table: null, configOnly: true, reason: "no egress — invalid rule (validated upstream)" };
   }
   steps.push({ cmd: `ip route replace ${egress} table ${table}`, summary: `table ${table}: ${egress}` });
@@ -332,7 +447,10 @@ export function buildPbrApplyPlan(
   return {
     ...base,
     steps,
-    reason: steps.length > 0 ? `kernel policy tables + ip rule entries (${totalCombos} match combo${totalCombos === 1 ? "" : "s"})` : "no CIDR pairs to enforce",
+    reason:
+      steps.length > 0
+        ? `kernel policy tables + ip rule entries (${totalCombos} match combo${totalCombos === 1 ? "" : "s"})${egressNote ? ` — ${egressNote}` : ""}`
+        : "no CIDR pairs to enforce",
   };
 }
 
@@ -404,6 +522,51 @@ export function parseKernelPbrRules(out: string): KernelPbrRule[] {
     rows.push({ priority, from, to, table, ipproto, sport, dport, stats, raw });
   }
   return rows;
+}
+
+// ── commit-confirm WAN health probes ────────────────────────────────────
+
+export const PBR_INTERNET_PROBE_IP = "1.1.1.1";
+
+export interface PbrWanHealth {
+  /** current default gateway (via), null when unresolvable */
+  gateway: string | null;
+  /** gateway ICMP reachable; null = probe not possible */
+  gatewayOk: boolean | null;
+  /** internet probe (1.1.1.1) reachable; null = probe not possible */
+  internetOk: boolean | null;
+  checkedAt: string;
+}
+
+/**
+ * ICMP health snapshot of the default forwarding path. Gateway + one public
+ * probe: the gateway alone cannot catch the device-route blackhole class
+ * (on-link ARP still answers for the gateway), the public probe can.
+ */
+export async function probeWanHealth(): Promise<PbrWanHealth> {
+  const snap = (gatewayOk: boolean | null, internetOk: boolean | null, gateway: string | null): PbrWanHealth => ({
+    gateway,
+    gatewayOk,
+    internetOk,
+    checkedAt: new Date().toISOString(),
+  });
+  const { hasTool, runTool } = await import("@/lib/host/tools");
+  if (!(await hasTool("ip")) || !(await hasTool("ping"))) return snap(null, null, null);
+  const r = await runTool("ip route show default 2>/dev/null", 4000);
+  const gw = r.ok ? parseFirstDefaultGateway(r.stdout) : null;
+  const gwPing = gw ? await runTool(`ping -c 2 -W 2 ${JSON.stringify(gw)}`, 9000) : null;
+  const netPing = await runTool(`ping -c 2 -W 2 ${PBR_INTERNET_PROBE_IP}`, 9000);
+  return snap(gw ? gwPing?.ok === true : null, netPing.ok, gw);
+}
+
+/**
+ * Rollback decision: the policy apply is blamed only when the WAN path was
+ * healthy BEFORE the apply and measurably regressed AFTER (gateway or public
+ * probe definitively dead). Pre-existing outages never trigger churn.
+ */
+export function pbrHealthRegressed(baseline: PbrWanHealth, after: PbrWanHealth): boolean {
+  if (baseline.gatewayOk !== true) return false;
+  return after.gatewayOk === false || after.internetOk === false;
 }
 
 export type PbrKernelState = "disabled" | "in-kernel" | "missing" | "config-only";

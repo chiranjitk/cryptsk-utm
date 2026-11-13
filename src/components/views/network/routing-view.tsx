@@ -613,14 +613,31 @@ function PbrTab() {
 
   const rules = useMemo(() => [...(pbrQuery.data?.data ?? [])].sort((a, b) => a.position - b.position), [pbrQuery.data]);
 
+  // match-all rules steer every flow (management egress included) — the apply
+  // confirm dialog must warn loudly before the user acknowledges the sync
+  const matchAllTargets = useMemo(() => {
+    const isCatchAll = (r: PbrRow) => r.srcAddrIds.length === 0 && r.dstAddrIds.length === 0 && r.serviceIds.length === 0;
+    if (applyingRule === "all") return rules.filter(isCatchAll);
+    if (applyingRule && applyingRule !== "all" && isCatchAll(applyingRule)) return [applyingRule];
+    return [];
+  }, [applyingRule, rules]);
+
   const pbrApplyMut = useMutation({
-    mutationFn: (target: PbrRow | "all") => netApi.applyPbr(target === "all" ? undefined : target.id),
+    mutationFn: (target: PbrRow | "all") => netApi.applyPbr(target === "all" ? undefined : target.id, true),
     onSuccess: (outcomes) => {
-      for (const o of outcomes) {
-        if (o.os.gate === "off") toastOk(`Policy route ${o.name} — plan preview only`, o.os.reason);
-        else if (o.configOnly) toastOk(`Policy route ${o.name} — config-only`, "kernel cannot express this match — see the plan preview for the reason");
-        else if (o.os.applied) toastOk(`Policy route ${o.name}`, "applied to the kernel");
-        else toastErr(new NetApiError("OS_APPLY", o.os.reason), `Policy route ${o.name}`);
+      const rolledBack = outcomes.find((o) => o.health?.rolledBack)?.health;
+      if (rolledBack) {
+        toastErr(
+          new NetApiError("OS_ROLLBACK", rolledBack.rollbackReason ?? "WAN health regressed after apply"),
+          "Policy routes auto-rolled-back",
+        );
+      } else {
+        for (const o of outcomes) {
+          if (o.os.gate === "off") toastOk(`Policy route ${o.name} — plan preview only`, o.os.reason);
+          else if (o.configOnly) toastOk(`Policy route ${o.name} — config-only`, "kernel cannot express this match — see the plan preview for the reason");
+          else if (o.os.applied) toastOk(`Policy route ${o.name}`, "applied to the kernel — WAN health verified");
+          else toastErr(new NetApiError("OS_APPLY", o.os.reason), `Policy route ${o.name}`);
+        }
       }
       setApplyingRule(null);
     },
@@ -700,7 +717,7 @@ function PbrTab() {
         <Icons.Info className="h-4 w-4" />
         <AlertTitle>Policy-based routing</AlertTitle>
         <AlertDescription>
-          Rules converge into real kernel policy tables (<code className="font-mono">ip rule</code> + dedicated lookup tables, priorities 5000+). Address matches use from/to selectors; <b>service</b> matches compile to kernel protocol selectors (<code className="font-mono">ipproto tcp dport 443</code> style). Only matches the kernel cannot express stay config-only — the Kernel column reports it honestly. PBR evaluates before multi-WAN mode selection.
+          Rules converge into real kernel policy tables (<code className="font-mono">ip rule</code> + dedicated lookup tables, priorities 5000+). Address matches use from/to selectors; <b>service</b> matches compile to kernel protocol selectors (<code className="font-mono">ipproto tcp dport 443</code> style). Iface-only egress auto-resolves its next-hop from the interface's current default route — device-only policy defaults are never installed, and every apply is verified with gateway/internet health probes plus automatic rollback. Match-all rules (no match selected) require explicit confirmation. PBR evaluates before multi-WAN mode selection.
         </AlertDescription>
       </Alert>
 
@@ -784,6 +801,11 @@ function PbrTab() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-1.5">
+                          {r.srcAddrIds.length === 0 && r.dstAddrIds.length === 0 && r.serviceIds.length === 0 ? (
+                            <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                              match-all
+                            </Badge>
+                          ) : null}
                           <ObjectChips ids={r.srcAddrIds} map={addrById} />
                           <Icons.ArrowRight className="h-3 w-3 shrink-0 text-zinc-400" />
                           <ObjectChips ids={r.dstAddrIds} map={addrById} />
@@ -911,9 +933,14 @@ function PbrTab() {
         onOpenChange={(open) => !open && setApplyingRule(null)}
         title="Sync policy routes to the kernel?"
         description={
-          applyingRule === "all"
-            ? "Every rule converges: enabled rules install ip rule entries (priorities 5000+) + dedicated lookup tables — address matches use from/to selectors, service matches compile to ipproto/sport/dport selectors; disabled rules withdraw theirs. Kernel-inexpressible matches stay config-only."
-            : `Converge '${applyingRule?.name ?? ""}' into the kernel (gated by the appliance OS-apply policy).`
+          matchAllTargets.length > 0
+            ? `WARNING: ${matchAllTargets.map((r) => `'${r.name}'`).join(", ")} ${matchAllTargets.length === 1 ? "has" : "have"} no source/destination/service match — a match-all policy route steers ALL traffic (including the appliance's own egress) into its policy table. The next-hop is auto-resolved from the egress interface's current default route, and WAN health is verified with automatic rollback after the apply. ` +
+              (applyingRule === "all"
+                ? "Every rule converges: enabled rules install ip rule entries (priorities 5000+) + dedicated lookup tables; disabled rules withdraw theirs."
+                : `Converge '${applyingRule?.name ?? ""}' into the kernel (gated by the appliance OS-apply policy).`)
+            : applyingRule === "all"
+              ? "Every rule converges: enabled rules install ip rule entries (priorities 5000+) + dedicated lookup tables — address matches use from/to selectors, service matches compile to ipproto/sport/dport selectors; disabled rules withdraw theirs. Kernel-inexpressible matches stay config-only. WAN health is verified with automatic rollback after the apply."
+              : `Converge '${applyingRule?.name ?? ""}' into the kernel (gated by the appliance OS-apply policy). WAN health is verified with automatic rollback after the apply.`
         }
         loading={pbrApplyMut.isPending}
         onConfirm={() => applyingRule && pbrApplyMut.mutate(applyingRule)}
@@ -1118,6 +1145,12 @@ function PbrEditor(props: {
             </div>
           </EditorSection>
 
+          {srcIds.length === 0 && dstIds.length === 0 && svcIds.length === 0 ? (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+              No match selected — this policy route will steer ALL traffic (including the appliance&apos;s own egress) into its policy table. Add at least one match unless this is intentional; match-all rules require an explicit confirmation at kernel sync.
+            </p>
+          ) : null}
+
           <EditorSection title="Egress">
             <RadioGroup value={egress} onValueChange={(v) => setEgress(v as "iface" | "gateway")} className="flex gap-4">
               <Label className="flex cursor-pointer items-center gap-2 text-sm">
@@ -1149,7 +1182,12 @@ function PbrEditor(props: {
                 aria-label="Next-hop gateway"
               />
             )}
-            <p className="text-[11px] text-zinc-400">Exactly one required — switching the radio clears the other on save.</p>
+            <p className="text-[11px] text-zinc-400">
+              Exactly one required — switching the radio clears the other on save.
+              {egress === "iface"
+                ? " The next-hop gateway is auto-resolved from this interface's current default route at apply time; without a resolvable next-hop the rule stays config-only (a device-only policy default would blackhole off-link traffic)."
+                : ""}
+            </p>
           </EditorSection>
 
           <div className="flex items-center justify-between">

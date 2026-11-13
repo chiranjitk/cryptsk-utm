@@ -397,6 +397,24 @@ export interface PbrApplyOutcome {
   state: PbrKernelState | null;
   configOnly: boolean;
   os: OsApplyResp & { plan: OsPlan; gate: "on" | "off" };
+  /** commit-confirm health report (present on POST applies) */
+  health?: PbrHealthReport;
+}
+
+export interface PbrHealthSnapshot {
+  gateway: string | null;
+  gatewayOk: boolean | null;
+  internetOk: boolean | null;
+  checkedAt: string;
+}
+
+/** commit-confirm WAN health — automatic rollback report */
+export interface PbrHealthReport {
+  baseline: PbrHealthSnapshot;
+  after: PbrHealthSnapshot;
+  rolledBack: boolean;
+  rollbackReason: string | null;
+  postRollback: PbrHealthSnapshot | null;
 }
 
 export interface PbrBody {
@@ -582,14 +600,14 @@ export const netApi = {
       headers: JSON_HEADERS,
       body: JSON.stringify({ position }),
     }),
-  applyPbr: (id?: number) =>
+  applyPbr: (id?: number, confirmMatchAll?: boolean) =>
     netFetch<PbrApplyOutcome[]>("/api/v1/pbr-rules/apply", {
       method: "POST",
       headers: JSON_HEADERS,
-      body: JSON.stringify(id ? { id } : {}),
+      body: JSON.stringify({ id, confirmMatchAll: confirmMatchAll === true }),
     }),
   previewPbrPlans: () =>
-    netFetch<Array<{ id: number; name: string; position: number; enabled: boolean; state: PbrKernelState | null; configOnly: boolean; reason: string; plan: Array<{ cmd: string; summary: string }> }>>("/api/v1/pbr-rules/apply"),
+    netFetch<Array<{ id: number; name: string; position: number; enabled: boolean; state: PbrKernelState | null; configOnly: boolean; matchAll?: boolean; reason: string; plan: Array<{ cmd: string; summary: string }> }>>("/api/v1/pbr-rules/apply"),
   togglePbr: (id: number, enabled: boolean) =>
     netFetch<PbrRow>(`/api/v1/pbr-rules/${id}/toggle`, {
       method: "PATCH",
