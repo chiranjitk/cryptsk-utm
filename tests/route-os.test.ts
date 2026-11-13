@@ -121,6 +121,61 @@ describe("buildRouteApplyPlan", () => {
     expect(plan.steps.map((s) => s.cmd)).toEqual(["ip route del 10.99.99.0/24 via 20.20.30.254 dev ens34 metric 5"]);
   });
 
+  it("REGRESSION (2026-11-13 outage): a metric-1 default view must NOT delete the metric-0 primary default", () => {
+    const kernel = parseKernelRoutes(`
+default via 103.244.7.217 dev ens32 onlink
+default via 20.20.30.254 dev ens34 metric 1`) as KernelRoute[];
+    const floatView: RouteRuleView = {
+      id: 8, destinationCidr: "0.0.0.0/0", gateway: "20.20.30.254", interfaceName: "ens34", distance: 1, blackhole: false, enabled: true,
+    };
+    const plan = buildRouteApplyPlan(floatView, kernel, [floatView]);
+    // only its own metric-1 slot may be touched — the metric-0 primary survives
+    expect(plan.steps.map((s) => s.cmd)).toEqual([
+      "ip route replace 0.0.0.0/0 via 20.20.30.254 dev ens34 metric 1",
+    ]);
+    expect(plan.steps.some((s) => s.cmd.includes("103.244.7.217"))).toBe(false);
+  });
+
+  it("REGRESSION: metric-slot scope — connected metric-0 routes survive any static-row apply", () => {
+    const kernel = parseKernelRoutes(`
+20.20.30.0/24 dev ens34 proto kernel scope link src 20.20.30.1`) as KernelRoute[];
+    const rowOnSameDest: RouteRuleView = {
+      id: 3, destinationCidr: "20.20.30.0/24", gateway: null, interfaceName: "ens34", distance: 2, blackhole: false, enabled: true,
+    };
+    const plan = buildRouteApplyPlan(rowOnSameDest, kernel, [rowOnSameDest]);
+    // installs its metric-2 entry; the kernel connected route (metric 0) is untouched
+    expect(plan.steps.map((s) => s.cmd)).toEqual(["ip route replace 20.20.30.0/24 dev ens34 metric 2"]);
+  });
+
+  it("previous-footprint cleanup: distance change 5→6 withdraws the old metric-5 entry", () => {
+    const kernel = parseKernelRoutes(`
+10.99.99.0/24 via 20.20.30.1 dev ens34 metric 5
+default via 103.244.7.217 dev ens32 metric 1`) as KernelRoute[];
+    const previous: RouteRuleView = view({ gateway: "20.20.30.1" }); // pre-edit row (distance 5, via 20.20.30.1)
+    const plan = buildRouteApplyPlan(view({ distance: 6 }), kernel, [view({ distance: 6 })], previous);
+    expect(plan.steps.map((s) => s.cmd)).toEqual([
+      "ip route del 10.99.99.0/24 via 20.20.30.1 dev ens34 metric 5",
+      "ip route replace 10.99.99.0/24 via 20.20.30.254 dev ens34 metric 6",
+    ]);
+  });
+
+  it("previous-footprint never swallows foreign entries (exact via/dev/metric/type match required)", () => {
+    const kernel = parseKernelRoutes(`
+default via 103.244.7.217 dev ens32 metric 1
+default via 103.244.7.217 dev ens32 metric 5`) as KernelRoute[];
+    const newRow: RouteRuleView = {
+      id: 9, destinationCidr: "0.0.0.0/0", gateway: "103.244.7.217", interfaceName: "ens32", distance: 5, blackhole: false, enabled: true,
+    };
+    // previous has a DIFFERENT gateway — must not match either kernel entry
+    const previous: RouteRuleView = {
+      id: 9, destinationCidr: "0.0.0.0/0", gateway: "20.20.30.254", interfaceName: "ens34", distance: 1, blackhole: false, enabled: true,
+    };
+    const plan = buildRouteApplyPlan(newRow, kernel, [newRow], previous);
+    expect(plan.steps.map((s) => s.cmd)).toEqual([
+      "ip route replace 0.0.0.0/0 via 103.244.7.217 dev ens32 metric 5",
+    ]);
+  });
+
   it("inert rows (no gw, no dev) produce no steps", () => {
     const plan = buildRouteApplyPlan(view({ gateway: null, interfaceName: null }), null);
     expect(plan.steps).toHaveLength(0);

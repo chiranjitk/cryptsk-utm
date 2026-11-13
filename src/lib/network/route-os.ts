@@ -112,7 +112,7 @@ export function kernelRouteState(view: RouteRuleView, kernel: KernelRoute[] | nu
 
 function delCmd(k: KernelRoute): string {
   return k.blackhole
-    ? `ip route del blackhole ${k.dest}`
+    ? `ip route del blackhole ${k.dest}${k.metric ? ` metric ${k.metric}` : ""}`
     : `ip route del ${k.dest}${k.via ? ` via ${k.via}` : ""}${k.dev ? ` dev ${k.dev}` : ""}${k.metric ? ` metric ${k.metric}` : ""}`;
 }
 
@@ -120,6 +120,13 @@ function delCmd(k: KernelRoute): string {
  * Convergence plan for one route row.
  *   • removes drifted entries for the destination that NO other enabled row
  *     owns (sibling-aware — ECMP members survive),
+ *   • METRIC-SCOPED: an entry is only "stale" for THIS row when its metric
+ *     equals the row's distance — foreign entries on the same destination
+ *     (e.g. the kernel-managed metric-0 primary default installed by the
+ *     interface module, or the user's own metric-1 production default) are
+ *     NEVER touched by a row carrying a different metric. This is the guard
+ *     that keeps a static 0.0.0.0/0 from deleting the appliance's primary
+ *     default (the 2026-11-13 outage root cause — do not relax it),
  *   • installs the desired entry with idempotent `ip route replace`,
  *   • disabled rows only withdraw their own stale entries.
  */
@@ -127,6 +134,8 @@ export function buildRouteApplyPlan(
   view: RouteRuleView,
   kernel: KernelRoute[] | null,
   siblings: RouteRuleView[] = [],
+  /** the pre-edit row (PUT flows) — its exact historical footprint is withdrawn */
+  previous?: RouteRuleView | null,
 ): OsPlan {
   const steps: OsPlanStep[] = [];
   const dest = fibDest(view.destinationCidr);
@@ -136,9 +145,17 @@ export function buildRouteApplyPlan(
     const ownedElsewhere = new Set(
       kernel.filter((k) => otherEnabled.some((s) => routeMatchesRow(k, s))).map((k) => k.raw),
     );
+    const isMine =
+      (k: KernelRoute) =>
+        // METRIC-SCOPED slot: this row's distance slot on this destination
+        (k.metric === view.distance && k.dest === dest) ||
+        // the row's own pre-edit footprint (distance-change cleanup) — exact
+        // via/dev/metric/type match, so foreign entries (e.g. a metric-0
+        // primary default) can never fall in here
+        (previous != null && routeMatchesRow(k, previous));
     const stale = kernel.filter(
       (k) =>
-        k.dest === dest &&
+        isMine(k) &&
         !ownedElsewhere.has(k.raw) &&
         (view.enabled ? !routeMatchesRow(k, view) : routeMatchesRow(k, view)),
     );

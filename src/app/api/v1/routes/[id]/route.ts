@@ -11,7 +11,7 @@ import { db } from "@/lib/db";
 import { idParamSchema, routeCreateSchema } from "@/lib/validators/network";
 import { assertIfacesExist } from "@/lib/network/iface-service";
 import { shapeStaticRoute } from "@/lib/network/shapes";
-import { readKernelRoutes, kernelRouteState, buildRouteDeletePlan } from "@/lib/network/route-os";
+import { readKernelRoutes, kernelRouteState, buildRouteDeletePlan, buildRouteApplyPlan, type KernelRoute } from "@/lib/network/route-os";
 import { convergeRouteSafe } from "@/lib/network/route-apply";
 import { conflictRouteIssues, hardRouteIssues, validateRouteMutation, type RouteRuleView } from "@/lib/network/route-rules";
 
@@ -65,10 +65,19 @@ export const PUT = route(
         description: body.description ?? null,
       },
     });
-    const kernel = await readKernelRoutes().catch(() => null);
+
+    // auto-converge (gated, best-effort — same contract as interface writes):
+    // previous-aware plan withdraws the pre-edit footprint, installs the new one
+    const kernel = (await readKernelRoutes().catch(() => null)) as KernelRoute[] | null;
+    const siblings = (await db.staticRoute.findMany({ where: { tenantId: auth.tenantId } })) as unknown as RouteRuleView[];
+    const os = await convergeRouteSafe(async () =>
+      buildRouteApplyPlan(updated as unknown as RouteRuleView, kernel, siblings, before as unknown as RouteRuleView),
+    );
+
     return {
       data: shapeStaticRoute(updated),
-      osState: kernelRouteState(updated as unknown as RouteRuleView, kernel),
+      osState: kernelRouteState(updated as unknown as RouteRuleView, await readKernelRoutes().catch(() => null)),
+      os,
       info: issues.filter((i) => i.kind === "info"),
       audit: {
         action: "route.update",

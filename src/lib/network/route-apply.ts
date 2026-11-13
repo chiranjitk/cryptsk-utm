@@ -33,6 +33,21 @@ export interface OsApplyOutcome {
 const ROUTE_EXEC_WHITELIST =
   /^ip (route (replace|del|add|flush)|rule (add|del)) [a-z0-9].*$/;
 
+/**
+ * Default-route hard guard: any add/replace/del on the default destination
+ * MUST carry an explicit `metric >= 1`. Bare default operations would touch
+ * the kernel-managed primary default (metric 0) — the exact mechanism behind
+ * the 2026-11-13 outage. This belt-and-suspenders guard holds even if the
+ * planner regresses.
+ */
+const DEFAULT_DEST_STEP = /^ip route (replace|del|add) (?:blackhole )?(0\.0\.0\.0\/0|default)(\s|$)/;
+
+function defaultStepGuarded(cmd: string): boolean {
+  if (!DEFAULT_DEST_STEP.test(cmd)) return true;
+  const m = /\bmetric (\d+)\b/.exec(cmd);
+  return m !== null && Number(m[1]) >= 1;
+}
+
 function execGuard(plan: OsPlan): OsApplyOutcome | null {
   if (process.env.CONSOLE_OS_APPLY !== "1") {
     return {
@@ -55,6 +70,9 @@ async function execPlan(plan: OsPlan): Promise<OsApplyOutcome> {
   for (const step of plan.steps) {
     if (!ROUTE_EXEC_WHITELIST.test(step.cmd)) {
       return { gate: "on", applied: false, reason: "refused: plan step failed the iproute2 whitelist — execution aborted", plan };
+    }
+    if (!defaultStepGuarded(step.cmd)) {
+      return { gate: "on", applied: false, reason: "refused: default-route step without explicit metric >= 1 (primary default protection)", plan };
     }
     // loopback is never a valid static-route egress or policy-table device
     if (/(^|\s)dev lo(\s|$)/.test(step.cmd)) {
