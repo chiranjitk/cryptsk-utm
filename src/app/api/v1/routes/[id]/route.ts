@@ -69,9 +69,10 @@ export const PUT = route(
     // auto-converge (gated, best-effort — same contract as interface writes):
     // previous-aware plan withdraws the pre-edit footprint, installs the new one
     const kernel = (await readKernelRoutes().catch(() => null)) as KernelRoute[] | null;
-    const siblings = (await db.staticRoute.findMany({ where: { tenantId: auth.tenantId } })) as unknown as RouteRuleView[];
+    const siblingRows = await db.staticRoute.findMany({ where: { tenantId: auth.tenantId } });
+    const siblingsAfter: RouteRuleView[] = siblingRows;
     const os = await convergeRouteSafe(async () =>
-      buildRouteApplyPlan(updated as unknown as RouteRuleView, kernel, siblings, before as unknown as RouteRuleView),
+      buildRouteApplyPlan(updated as unknown as RouteRuleView, kernel, siblingsAfter, before as unknown as RouteRuleView),
     );
 
     return {

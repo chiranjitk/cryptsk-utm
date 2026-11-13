@@ -100,10 +100,11 @@ export const POST = route(
     });
 
     // auto-converge (gated, best-effort — same contract as interface writes)
-    const kernel = (await readKernelRoutes().catch(() => null)) as import("@/lib/network/route-os").KernelRoute[] | null;
-    const siblings = (await db.staticRoute.findMany({ where: { tenantId: auth.tenantId } })) as unknown as RouteRuleView[];
+    const kernel = (await readKernelRoutes().catch(() => null)) as KernelRoute[] | null;
+    const siblingRows = await db.staticRoute.findMany({ where: { tenantId: auth.tenantId } });
+    const siblingsAfter: RouteRuleView[] = siblingRows;
     const os = await convergeRouteSafe(async () =>
-      buildRouteApplyPlan(created as unknown as RouteRuleView, kernel, siblings),
+      buildRouteApplyPlan(created as unknown as RouteRuleView, kernel, siblingsAfter),
     );
 
     return {
