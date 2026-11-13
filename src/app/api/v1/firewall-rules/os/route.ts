@@ -79,7 +79,7 @@ export const POST = route({ area: "firewall", bodySchema, section: "firewall" },
           action: outcome.rolledBack ? "firewall.os-apply-rollback" : "firewall.os-apply",
           objectType: "firewall_policy",
           objectName: `mode=${body.mode ?? "manual"}`,
-          result: outcome.applied && !outcome.rolledBack ? "success" : "rolled-back",
+          result: outcome.applied && !outcome.rolledBack ? "success" : "failure",
         },
       };
     }
@@ -89,7 +89,7 @@ export const POST = route({ area: "firewall", bodySchema, section: "firewall" },
       if (!r.confirmed) throw ApiError.notFound("no pending apply window for this ts (already confirmed or expired)");
       return {
         data: r,
-        audit: { action: "firewall.os-confirm", objectType: "firewall_policy", objectId: body.ts },
+        audit: { action: "firewall.os-confirm", objectType: "firewall_policy", objectName: body.ts },
       };
     }
     case "rollback": {
@@ -100,7 +100,7 @@ export const POST = route({ area: "firewall", bodySchema, section: "firewall" },
           action: "firewall.os-rollback",
           objectType: "firewall_policy",
           objectName: r.file ?? undefined,
-          result: r.rolledBack ? "success" : "failed",
+          result: r.rolledBack ? "success" : "failure",
         },
       };
     }
