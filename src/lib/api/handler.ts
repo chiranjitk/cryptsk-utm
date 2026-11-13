@@ -232,6 +232,18 @@ export function route<TBody = undefined, TQuery = undefined, TResult = unknown>(
               : `${req.method} ${req.nextUrl.pathname}`,
             userId: effectiveAuth.userId,
           }).catch(() => {});
+          // Real-time OS convergence: every firewall/NAT policy mutation
+          // (rules, NAT, zones, objects) converges the nftables policy a
+          // beat later. OS-apply routes (firewall.os-*) already manage the
+          // kernel themselves — scheduling another apply would race the
+          // commit-confirm window.
+          if (
+            (opts.section === "firewall" || opts.section === "nat") &&
+            !payload.audit?.action?.startsWith("firewall.os-")
+          ) {
+            const { scheduleFirewallConverge } = await import("@/lib/firewall/firewall-converge");
+            scheduleFirewallConverge(effectiveAuth.tenantId);
+          }
         }
       }
 

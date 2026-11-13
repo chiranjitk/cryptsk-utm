@@ -82,6 +82,7 @@ import {
   type ServiceObject,
   type Zone,
 } from "./fw-api";
+import { FirewallOsSync } from "./os-apply";
 import {
   ConfirmDialog,
   EditorSection,
@@ -349,6 +350,7 @@ export function NatView() {
 
   return (
     <div className="space-y-4">
+      <FirewallOsSync />
       <div className="flex flex-wrap items-center gap-2">
         <p className="mr-auto text-xs text-zinc-500">
           NAT is evaluated before the firewall rules — dnat/hairpin rewrite first, exempt skips NAT, snat translates on the way out.

@@ -74,6 +74,7 @@ import {
   type ServiceObject,
   type Zone,
 } from "./fw-api";
+import { FirewallOsSync } from "./os-apply";
 import {
   ActionBadge,
   ConfirmDialog,
@@ -675,6 +676,7 @@ export function RulesView() {
     <div className="space-y-4">
       {/* toolbar */}
       <div className="flex flex-col gap-3">
+        <FirewallOsSync />
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Icons.Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
