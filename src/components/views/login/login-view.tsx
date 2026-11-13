@@ -6,11 +6,21 @@
  */
 
 import { useState } from "react";
+import { ChevronsUpDown, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { BrandLogo } from "@/components/shell/brand-logo";
+
+/** Seeded demo accounts (prisma/seed.ts §Users) — Fill buttons populate the form, never auto-submit. */
+const DEMO_ACCOUNTS = [
+  { username: "admin", password: "admin123", role: "super_admin" },
+  { username: "socuser", password: "socuser123", role: "soc_analyst" },
+  { username: "netops", password: "netops123", role: "network_admin" },
+  { username: "viewer", password: "viewer123", role: "auditor" },
+] as const;
 
 export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [username, setUsername] = useState("admin");
@@ -53,7 +63,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-base">Sign in</CardTitle>
-          <CardDescription>Use your console account (seed: admin / admin123)</CardDescription>
+          <CardDescription>Use your console account — or expand the demo credentials below</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">
@@ -66,6 +76,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 minLength={1}
+                aria-describedby={error ? "login-error" : undefined}
               />
             </div>
             <div className="space-y-1.5">
@@ -78,10 +89,11 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={1}
+                aria-describedby={error ? "login-error" : undefined}
               />
             </div>
             {error ? (
-              <p role="alert" className="rounded-md bg-rose-500/10 px-3 py-2 text-sm text-rose-600 dark:text-rose-400">
+              <p id="login-error" role="alert" className="rounded-md bg-rose-500/10 px-3 py-2 text-sm text-rose-600 dark:text-rose-400">
                 {error}
               </p>
             ) : null}
@@ -89,6 +101,47 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
               {busy ? "Signing in…" : "Sign in"}
             </Button>
           </form>
+
+          {/* demo-credentials helper — fills the fields only; submit stays a deliberate action */}
+          <Collapsible className="pt-1">
+            <CollapsibleTrigger className="group flex min-h-11 w-full items-center justify-between rounded-md px-1 py-2 text-xs text-zinc-500 transition-colors hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 dark:hover:text-zinc-300 sm:min-h-0">
+              <span className="flex items-center gap-1.5">
+                <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
+                Demo credentials
+              </span>
+              <ChevronsUpDown className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180" aria-hidden="true" />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-1.5 pt-1">
+              {DEMO_ACCOUNTS.map((a) => (
+                <div
+                  key={a.username}
+                  className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-2.5 py-1.5 dark:border-zinc-800"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-mono text-xs">
+                      {a.username} / {a.password}
+                    </p>
+                    <p className="text-[10px] text-zinc-400">{a.role}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 shrink-0 text-xs"
+                    aria-label={`Fill credentials for ${a.username} (${a.role})`}
+                    onClick={() => {
+                      setUsername(a.username);
+                      setPassword(a.password);
+                      setError(null);
+                    }}
+                  >
+                    Fill
+                  </Button>
+                </div>
+              ))}
+              <p className="px-1 text-[10px] text-zinc-400">Fill only populates the fields — review and press Sign in.</p>
+            </CollapsibleContent>
+          </Collapsible>
         </CardContent>
       </Card>
 

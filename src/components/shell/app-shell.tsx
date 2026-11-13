@@ -6,9 +6,11 @@
  * and refresh all work via hash. No other Next.js routes exist.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
+import { motion, useReducedMotion } from "framer-motion";
 import * as Icons from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -96,6 +98,12 @@ function Icon({ name, className }: { name: string; className?: string }) {
   return <C className={className} />;
 }
 
+// platform hint for the ⌘/Ctrl+K badge — external-store pattern keeps hydration safe
+// (server snapshot "Ctrl+K", client re-renders to ⌘K after hydration; no state, no effect)
+const emptySubscribe = () => () => {};
+const getIsApple = () => /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+const getIsAppleServer = () => false;
+
 function SidebarNav({ current, onNavigate }: { current: string; onNavigate?: () => void }) {
   return (
     <nav aria-label="Console navigation" className="flex flex-col gap-4 px-3 py-4">
@@ -113,7 +121,7 @@ function SidebarNav({ current, onNavigate }: { current: string; onNavigate?: () 
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
+                      "flex min-h-11 items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
                       active
                         ? "bg-zinc-600/10 font-medium text-zinc-700 dark:text-zinc-500"
                         : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/60",
@@ -138,13 +146,39 @@ export function AppShell() {
   const queryClient = useQueryClient();
   const { resolvedTheme, setTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const shortcutHint = useSyncExternalStore(emptySubscribe, getIsApple, getIsAppleServer) ? "\u2318K" : "Ctrl+K";
   const setupGate = useSetupCompleted();
+  const reduceMotion = useReducedMotion();
+
+  const navigateTo = useCallback((path: string) => {
+    setPaletteOpen(false);
+    if (window.location.hash !== `#${path}`) window.location.hash = path;
+  }, [setPaletteOpen]);
+
+  const skipToContent = useCallback(() => {
+    document.getElementById("main-content")?.focus();
+  }, []);
 
   const meQuery = useQuery<Me>({
     queryKey: ["auth", "me"],
     queryFn: () => fetchApi<Me>("/api/v1/auth/me"),
     retry: false,
   });
+
+  // ⌘/Ctrl+K opens the command palette — bound only while the shell (not login/setup) is mounted.
+  const shellMounted = !!meQuery.data && !meQuery.isError && !meQuery.isLoading && (setupGate.isLoading || setupGate.completed);
+  useEffect(() => {
+    if (!shellMounted) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shellMounted]);
 
   // config:updated → invalidate everything (section-aware refinement lands with M03+)
   useRealtime(["metrics", "alerts", "config"], {
@@ -215,6 +249,14 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      {/* skip-to-content — button (not hash anchor) so routing hash stays intact */}
+      <button
+        type="button"
+        onClick={skipToContent}
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-md focus:outline-none focus:ring-2 focus:ring-ring"
+      >
+        Skip to main content
+      </button>
       <div className="flex flex-1">
         {/* desktop sidebar */}
         <aside className="sticky top-0 hidden h-screen w-60 shrink-0 border-r border-zinc-200 dark:border-zinc-800 lg:block">
@@ -227,7 +269,7 @@ export function AppShell() {
             {/* mobile menu */}
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation">
+                <Button variant="ghost" size="icon" className="size-11 lg:hidden" aria-label="Open navigation">
                   <Icons.Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
@@ -251,9 +293,23 @@ export function AppShell() {
             </Badge>
 
             <div className="ml-auto flex items-center gap-1.5">
+              {/* command-palette trigger — keyboard parity via the global ⌘/Ctrl+K listener */}
+              <Button
+                variant="outline"
+                className="h-11 gap-2 px-3 text-xs text-zinc-500 lg:h-9"
+                aria-label="Open command palette"
+                onClick={() => setPaletteOpen(true)}
+              >
+                <Icons.Search className="h-4 w-4" />
+                <span className="hidden sm:inline">Search…</span>
+                <kbd className="hidden h-5 items-center rounded border border-zinc-200 bg-zinc-100 px-1.5 font-mono text-[10px] font-medium text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 md:inline-flex">
+                  {shortcutHint}
+                </kbd>
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
+                className="size-11 lg:size-9"
                 aria-label="Toggle dark mode"
                 onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
               >
@@ -262,7 +318,7 @@ export function AppShell() {
               <NotificationCenter />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="gap-2 px-2">
+                  <Button variant="ghost" className="h-11 gap-2 px-2 lg:h-9">
                     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-500/15 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
                       {me.username.slice(0, 2).toUpperCase()}
                     </span>
@@ -284,7 +340,14 @@ export function AppShell() {
           </header>
 
           {/* view area */}
-          <main className="flex-1 p-4 md:p-6">
+          <main id="main-content" tabIndex={-1} className="flex-1 p-4 md:p-6 focus:outline-none">
+            {/* subtle 180ms fade/rise on hash change; opacity-only for reduced motion (UI_DESIGN_SYSTEM §7) */}
+            <motion.div
+              key={routePath}
+              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+            >
             {view.path === "/dashboard" ? (
               <DashboardView />
             ) : view.path === "/firewall/rules" ? (
@@ -374,7 +437,42 @@ export function AppShell() {
             ) : (
               <PlaceholderView view={view} />
             )}
+            </motion.div>
           </main>
+
+          {/* global command palette — ⌘/Ctrl+K, Esc closes, Enter navigates, arrows move (cmdk) */}
+          <CommandDialog open={paletteOpen} onOpenChange={setPaletteOpen}>
+            <CommandInput placeholder="Search views and commands…" />
+            <CommandList>
+              <CommandEmpty>No matching view or command.</CommandEmpty>
+              {NAV_GROUPS.map((group) => (
+                <CommandGroup key={group.label} heading={group.label}>
+                  {group.paths.map((p) => {
+                    const paletteView = viewFor(p)!;
+                    return (
+                      <CommandItem key={p} value={`${paletteView.title} ${p}`} onSelect={() => navigateTo(p)}>
+                        <Icon name={paletteView.icon} className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{paletteView.title}</span>
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              ))}
+              <CommandSeparator />
+              <CommandGroup heading="Preferences">
+                <CommandItem
+                  value="Toggle dark mode theme"
+                  onSelect={() => {
+                    setTheme(resolvedTheme === "dark" ? "light" : "dark");
+                    setPaletteOpen(false);
+                  }}
+                >
+                  {resolvedTheme === "dark" ? <Icons.Sun className="h-4 w-4 shrink-0" /> : <Icons.Moon className="h-4 w-4 shrink-0" />}
+                  <span>Toggle dark mode</span>
+                </CommandItem>
+              </CommandGroup>
+            </CommandList>
+          </CommandDialog>
 
           {/* sticky footer — pushes down naturally on overflow (min-h-screen + mt-auto) */}
           <footer className="mt-auto border-t border-zinc-200 px-4 py-3 text-xs text-zinc-500 dark:border-zinc-800">

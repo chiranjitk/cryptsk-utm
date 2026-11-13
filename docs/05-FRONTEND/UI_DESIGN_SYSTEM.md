@@ -307,6 +307,26 @@ payload columns. Never render raw JSON blobs as plain text (PROJECT_MEMORY §13)
 Every form in the console (login, rule editor, settings, objects) uses `FormSection` +
 react-hook-form + zodResolver; see STATE_AND_DATA_FLOW §6.
 
+### 5.11 CommandPalette (shell-level, app-shell.tsx)
+
+Global `Cmd/Ctrl+K` palette built on `ui/command.tsx` (cmdk inside a Radix Dialog, via
+`CommandDialog`). Scope rules:
+
+- Items: every hash-navigation destination from `nav-config.tsx`, grouped by `NAV_GROUPS`
+  heading, plus a "Preferences" group with a **Toggle dark mode** command (next-themes).
+  Navigation = set `window.location.hash` (never pushState — the shell listens to
+  `hashchange`).
+- Keyboard contract: `Cmd/Ctrl+K` toggles (listener bound only while the shell is
+  mounted — not on `#/login` or the setup wizard), `Esc` closes, `↑/↓` move the
+  selection, `Enter` navigates/runs; the input autofocuses on open.
+- Discoverability: a topbar trigger (Search icon + "Search…" + `kbd` platform hint —
+  `⌘K` on Apple platforms via a hydration-safe `useSyncExternalStore` probe, `Ctrl+K`
+  elsewhere) sits left of the theme toggle. This is the ONLY global search UI; do not
+  add per-view search overlays that duplicate it.
+- The sr-only `DialogHeader` (title + description) must stay INSIDE `DialogContent` in
+  `ui/command.tsx` so the "Command Palette" heading does not leak into the page heading
+  outline while the dialog is closed.
+
 ## 6. States
 
 | State | Rule |

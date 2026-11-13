@@ -177,7 +177,30 @@ export function DashboardView() {
   }
 
   const s = summaryQuery.data;
-  if (!s) return <p className="text-sm text-rose-600">Failed to load dashboard summary.</p>;
+  if (!s) {
+    // inline error state with actionable retry (UI_DESIGN_SYSTEM §6) — never a dead end
+    return (
+      <div className="grid gap-4">
+        <div
+          role="alert"
+          className="flex flex-col items-start justify-between gap-3 rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 sm:flex-row sm:items-center"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-rose-600 dark:text-rose-400">Failed to load dashboard summary</p>
+            <p className="mt-0.5 truncate text-xs text-zinc-500">
+              {summaryQuery.error instanceof Error && summaryQuery.error.message
+                ? summaryQuery.error.message
+                : "The appliance did not respond — check connectivity and retry."}
+            </p>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => void summaryQuery.refetch()} disabled={summaryQuery.isFetching}>
+            <Icons.RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", summaryQuery.isFetching && "animate-spin")} />
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const wanRows = s.wanStatus.map((w) => ({ ...w, state: wanOverride[w.iface] ?? w.state }));
   const threats = [...liveThreats, ...(s.recentThreats ?? [])].slice(0, 12);
@@ -511,7 +534,20 @@ export function DashboardView() {
           </CardHeader>
           <CardContent className="p-4 pt-0 md:p-6 md:pt-0">
             {certsQuery.isError ? (
-              <p className="text-sm text-zinc-400">Certificate expiry feed unavailable.</p>
+              // inline error with retry — same pattern as the summary-error state above; never a dead end
+              <div role="alert" className="flex flex-col gap-2">
+                <p className="text-sm text-zinc-400">Certificate expiry feed unavailable.</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="self-start"
+                  onClick={() => void certsQuery.refetch()}
+                  disabled={certsQuery.isFetching}
+                >
+                  <Icons.RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", certsQuery.isFetching && "animate-spin")} />
+                  Retry
+                </Button>
+              </div>
             ) : certsQuery.isLoading ? (
               <div className="space-y-2">
                 <Skeleton className="h-10 rounded-lg" />

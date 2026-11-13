@@ -45,7 +45,7 @@ Module specs: [M01](../06-MODULES/M01-DASHBOARD.md) … [M11](../06-MODULES/M11-
 ```mermaid
 flowchart TB
     subgraph Shell["AppShell (src/components/shell/)"]
-        TOP["Topbar: menu button (mobile) · breadcrumbs · notifications bell<br/>· theme toggle · user menu (avatar dropdown)"]
+        TOP["Topbar: menu button (mobile) · breadcrumbs · command palette trigger (⌘/Ctrl+K)<br/>· notifications bell · theme toggle · user menu (avatar dropdown)"]
         subgraph BODY["flex row"]
             NAV["Sidebar: CRYPTSK wordmark + ShieldCheck<br/>11 nav groups from viewRegistry<br/>collapse toggle (icon rail)"]
             MAIN["Main content: ViewRenderer → active view<br/>scrollable, p-4/p-6, max-w constraints"]
@@ -60,6 +60,8 @@ flowchart TB
   md, hidden into a `Sheet` on mobile. Active item: emerald primary treatment; group
   headers are muted `text-xs` labels. Collapse state persists in `ui-store`.
 - **Topbar:** mobile menu button (opens the sidebar `Sheet`), breadcrumbs (tabbed views),
+  command-palette trigger (opens the `Cmd/Ctrl+K` palette — UI_DESIGN_SYSTEM §5.11;
+  hash-navigation destinations from `nav-config` + theme toggle command),
   notifications bell (`Popover` listing notifications; unread count badge;
   `alerts:new` pushes into it), theme toggle (`Sun`/`Moon` via next-themes), user menu
   (`DropdownMenu`: username + role, "Logout" → `POST /api/v1/auth/logout` → `#/login`).

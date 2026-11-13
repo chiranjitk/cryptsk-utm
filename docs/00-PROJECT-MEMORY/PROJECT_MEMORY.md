@@ -648,6 +648,95 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-13 — Feature enhancement QA pass (command palette + login demo credentials + cert-feed retry)
+
+- **Scope:** 3 small additive enhancements (agent 5-b, follows the 5-a polish pass). Client-only;
+  zero API/schema/route changes, no mini-service touches. Audit found the mission's
+  "dashboard quick-actions strip" ALREADY present (dashboard-view "Quick actions" card, 6 hash
+  actions, from the Logo-v3/dashboard-v2 session) and the notification unread badge ALREADY
+  present (`useUnreadCount` + rose/amber/zinc badge) — both skipped as duplicates; the
+  sanctioned cert-feed Retry follow-up took the freed slot.
+- **app-shell.tsx — global command palette:** `Cmd/Ctrl+K` opens a `CommandDialog`
+  (ui/command.tsx, first consumer of the previously-unused cmdk primitive) listing every
+  hash destination grouped by `NAV_GROUPS` heading + a "Preferences" group with a Toggle
+  dark mode command. Keyboard contract: Cmd/Ctrl+K toggle (window keydown, bound only while
+  the shell is mounted — not login/setup), Esc closes, arrows move (cmdk native), Enter
+  navigates by setting `window.location.hash` (closes first; no-op if already on the view).
+  Topbar trigger button (Search icon + "Search…" + `kbd` hint, `h-11 lg:h-9` touch target,
+  aria-label) sits left of the theme toggle. Platform hint (`⌘K` vs `Ctrl+K`) uses
+  `useSyncExternalStore` with a server snapshot — React-Compiler lint forbids
+  setState-in-effect, and the external-store probe is the hydration-safe replacement.
+- **ui/command.tsx (1-line a11y fix):** the sr-only `DialogHeader` (title/description) sat
+  OUTSIDE `DialogContent` in this repo's generated file — it rendered (as a ghost h2 in the
+  page heading outline) even while the dialog was closed. Moved inside `DialogContent`
+  (matches upstream shadcn). Surfaced only now because the palette is the primitive's first
+  consumer.
+- **login-view.tsx — demo-credentials helper:** Collapsible under the sign-in form listing 4
+  seeded accounts (admin/super_admin, socuser/soc_analyst, netops/network_admin, viewer/
+  auditor — prisma/seed.ts §Users) with per-row "Fill" buttons that populate username+password
+  and clear the error — fill only, NEVER auto-submit. Trigger ≥44px on mobile, Radix
+  aria-expanded/keyboard inherited, per-button aria-labels.
+- **dashboard-view.tsx — cert-feed retry (Task 5-a follow-up):** the "Needs attention"
+  certificate-feed error was a bare dead-end `<p>` ("Certificate expiry feed unavailable.") →
+  inline `role="alert"` block + Retry button (RefreshCw, spins while `isFetching`, disabled
+  during refetch) — mirrors the summary-error pattern 5-a established; targets the existing
+  GET /api/v1/pki/certificates/expiring feed, no contract change.
+- **Docs:** UI_DESIGN_SYSTEM §5.11 CommandPalette (scope + keyboard contract + "only global
+  search UI" rule); PAGE_MAP §2 topbar line/bullet mention the palette trigger.
+- **Verified:** `bun run lint` clean (fixed 2 React-Compiler findings introduced by the
+  palette: useCallback deps + setState-in-effect); dev.log zero compile errors, `GET /` 200;
+  curl golden path re-run (login admin/admin123 → `{data}` envelopes for summary /
+  notifications?unread=true / pki certificates expiring; no-cookie → 401); agent-browser E2E:
+  login view collapsible expand → Fill populates fields without submitting → Sign in works;
+  palette opens via topbar trigger AND Ctrl+K, typing "firewall rules" filters to one option,
+  Enter navigates to `#/firewall/rules`, Esc closes, ArrowDown moves selection, "toggle dark"
+  command flips theme live. All 3 enhancements verified in-browser.
+- **Recommended, NOT done (out of scope / needs owner):** palette is nav+theme only — future
+  candidates: command actions (create rule, restart service) once a shared action registry
+  exists; per-view deep links with tab fragments (`#/network/interfaces?tab=lldp`) in palette
+  items; mobile menu could embed a "Search…" row reusing the same dialog. The 5-a flagged
+  primary-button red-vs-zinc doc conflict (UI_DESIGN_SYSTEM §2 hard rule 2) still needs an
+  owner ruling.
+
+### 2026-11-13 — UI polish QA pass (shell a11y + touch targets + dashboard error state + scrollbar styles)
+
+- **Scope:** QA/polish audit + surgical fixes across the global shell and the highest-traffic
+  views (dashboard, login, firewall rules editor). 7 code files touched, no visual-identity
+  redesign, no API changes.
+- **app-shell.tsx:** skip-to-content button (sr-only → visible on focus; a BUTTON targeting
+  `#main-content` via `.focus()` — an `<a href="#main-content">` would corrupt the ROUTING
+  hash and bounce the view registry); `main` gets `id="main-content" tabIndex={-1}`; sidebar
+  links `min-h-11` (44px touch target, PROJECT_MEMORY §9) + explicit
+  `focus-visible:ring-2 ring-ring/60` (base layer only sets outline-color, no visible ring);
+  topbar menu/theme/bell/profile triggers ≥44px on mobile (`size-11 lg:size-9`).
+- **app-shell.tsx:** framer-motion view transition keyed by `routePath` — 180ms ease-out
+  fade + 8px rise, gated by `useReducedMotion()` (reduced users get opacity-only), per
+  UI_DESIGN_SYSTEM §7. Children keep their identity per view, realtime state unaffected.
+- **globals.css:** added the slim scrollbar styles the design system always promised
+  (UI_DESIGN_SYSTEM §4 / PROJECT_MEMORY §9) — `scrollbar-width: thin` + zinc-400/zinc-700
+  thumbs (Firefox `scrollbar-color` + webkit pseudo-elements), plus a global
+  `prefers-reduced-motion` reduce block.
+- **dashboard-view.tsx:** query-error path was a bare `<p>` dead end → inline alert with
+  error message + Retry button (spinner while `isFetching`), `role="alert"` (§6 ErrorState rule).
+- **login-view.tsx:** error paragraph gets `id="login-error"` and both inputs
+  `aria-describedby` it while visible.
+- **rule-editor.tsx:** action RadioGroup cards (sr-only radio inputs) now show a
+  `has-[:focus-visible]` ring — keyboard users can see which action card is focused.
+- **fw-ui.tsx:** header comment said "Blue theme … allow = blue soft" — stale; corrected to
+  the ADR-019 rev-2 zinc/rose/orange matrix (comment only).
+- **notification-center.tsx:** bell trigger `size-11 lg:size-9` (44px mobile target).
+- **Verified:** `bun run lint` clean; `GET /` → 200 in dev.log after hot reload, zero
+  compile/runtime error lines; curl golden path (login admin/admin123 → cookie →
+  `/api/v1/dashboard/summary` returns data JSON); agent-browser: login → dashboard →
+  `#/firewall/rules` all render, skip link + landmarks + row aria-labels present, console clean.
+- **Flagged, NOT changed (needs owner decision):** UI_DESIGN_SYSTEM §2 hard rule 2 says solid
+  primary buttons are brand red (`bg-red-700 text-white`), but the codebase-wide primary
+  action style is `bg-zinc-700 text-white hover:bg-zinc-800` (login submit, Add rule, dialog
+  confirms… ~110 sites in ~40 files — the de-red overlay outcome). Either the doc or the
+  buttons must move; mass-recoloring is a visual-identity change and was out of scope here.
+  Also: rules-table filter chips are ~28px tall (below the 44px mobile target) — left as-is
+  for desktop density; consider `min-h-11` on mobile in a future pass.
+
 ### 2026-11-09 — FIRST PRODUCTION DEPLOY: Debian 13 appliance LIVE (103.244.7.219) + de-red overlay pass
 
 - **Owner handed over the production box**: Debian 13 (trixie), 103.244.7.219, SSH :22222, 4 CPU /

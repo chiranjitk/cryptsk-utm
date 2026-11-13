@@ -510,7 +510,7 @@ export function RuleEditor(props: {
                 <Label
                   key={a}
                   className={cn(
-                    "flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-2.5 text-sm",
+                    "flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-2.5 text-sm has-[:focus-visible]:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/60",
                     form.action === a && "border-zinc-500/50 bg-zinc-500/5",
                   )}
                 >

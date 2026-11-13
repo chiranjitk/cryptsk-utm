@@ -2,9 +2,9 @@
 
 /**
  * Shared UI atoms for the M03 firewall views — composed only from
- * src/components/ui primitives. Blue theme per UI_DESIGN_SYSTEM §2 (ADR-019):
- * allow = blue soft, deny = rose solid, drop = rose outline, reject = orange
- * soft; emerald is reserved for true health/active badges only.
+ * src/components/ui primitives. Action palette per UI_DESIGN_SYSTEM §2.3
+ * (ADR-019 rev 2): allow = zinc soft, deny = rose solid, drop = rose outline,
+ * reject = orange soft; emerald is reserved for true health/active badges only.
  */
 
 import { useMemo, useState } from "react";

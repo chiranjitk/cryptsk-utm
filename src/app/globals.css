@@ -122,4 +122,40 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Slim scrollbars for long lists (UI_DESIGN_SYSTEM §4, PROJECT_MEMORY §9) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.705 0.01 286) transparent; /* zinc-400 */
+  }
+  .dark * {
+    scrollbar-color: oklch(0.444 0.006 286) transparent; /* zinc-700 */
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+    background-color: oklch(0.705 0.01 286); /* zinc-400 */
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background-color: oklch(0.444 0.006 286); /* zinc-700 */
+  }
+  /* Respect prefers-reduced-motion: keep only opacity-style feedback
+     (UI_DESIGN_SYSTEM §7 — JS-side transitions gate on useReducedMotion) */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }

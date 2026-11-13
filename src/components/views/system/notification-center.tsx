@@ -95,7 +95,7 @@ export function NotificationCenter() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={`Notifications (${unread.count} unread)`} className="relative">
+        <Button variant="ghost" size="icon" aria-label={`Notifications (${unread.count} unread)`} className="relative size-11 lg:size-9">
           <Icons.Bell className="h-4.5 w-4.5" />
           {unread.count > 0 ? (
             <span
