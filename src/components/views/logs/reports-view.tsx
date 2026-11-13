@@ -4,13 +4,13 @@
  * #/logs/reports (M09 §4) — 3 tabs: Reports | Scheduled | Forwarding.
  * Reports tab builds cards + charts from the LOCKED /logs/stats payload
  * (range 1h|24h/7d; series + ipsBySeverity — ENDPOINTS §11), uses the ADR-019
- * chart palette (blue/teal/emerald/amber/rose/zinc — never indigo), a print
+ * chart palette (zinc/amber/orange/rose family — never blue/teal/emerald/indigo), a print
  * stylesheet rendered inline (browser print = the Phase-1 PDF path), and
  * CSV/JSON downloads via /logs/reports/export. Scheduled + Forwarding tabs
  * CRUD report schedules and syslog/NetFlow targets (audited, section system).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,14 +41,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Area, AreaChart, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { cn } from "@/lib/utils";
-import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import { ConfirmDialog, DensityToggle, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk, ROW_FLASH_CLASS, useTableDensity } from "../firewall/fw-ui";
 import { logsApi, type LogStats, type NetflowTargetDTO, type ReportScheduleDTO, type StatsRange, type SyslogTargetDTO } from "./logs-api";
 import { fmtTs } from "./logs-ui";
 
-// ADR-019 chart series palette (locked: blue, teal, emerald, amber, rose, zinc — no indigo)
-const CHART = { blue: "#b91c1c", teal: "#14b8a6", emerald: "#10b981", amber: "#f59e0b", rose: "#f43f5e", zinc: "#71717a" } as const;
-const ACTION_COLOR: Record<string, string> = { allow: CHART.blue, deny: CHART.rose, drop: CHART.amber, reject: CHART.zinc };
-const SEV_COLOR: Record<string, string> = { critical: CHART.rose, high: CHART.amber, medium: CHART.blue, low: CHART.teal, info: CHART.zinc };
+// ADR-019 §2.5 locked chart palette (rev 2: zinc leads, red keeps its alarm value —
+// NO blue/teal/emerald/indigo series; severity pie mirrors the §5.15 events-bar recipe)
+const CHART = { rose600: "#e11d48", rose500: "#fb7185", rose: "#f43f5e", amber: "#f59e0b", orange: "#f97316", zinc: "#71717a", zincLight: "#a1a1aa", zincPale: "#d4d4d8" } as const;
+// §2.3 rule-action mapping: allow = zinc calm-permit, deny/drop = rose family, reject = orange
+const ACTION_COLOR: Record<string, string> = { allow: CHART.zinc, deny: CHART.rose600, drop: CHART.rose, reject: CHART.orange };
+// §2.4 severity ladder as chart tones (§5.15 parity): critical rose-600, high rose-400, medium amber, low/info zinc
+const SEV_COLOR: Record<string, string> = { critical: CHART.rose600, high: CHART.rose500, medium: CHART.amber, low: CHART.zincLight, info: CHART.zincPale };
 
 const RANGES: StatsRange[] = ["1h", "24h", "7d"];
 
@@ -63,6 +66,23 @@ function actionTotals(stats: LogStats): Record<string, number> {
   const out: Record<string, number> = {};
   for (const s of stats.series) out[s.key] = s.points.reduce((a, p) => a + p.count, 0);
   return out;
+}
+
+/** fmtElapsed pattern (R4 vpn-api) applied to "how long ago" — <1m / 12m / 5h 07m / 3d 04:12. */
+function fmtAgo(ts: string | null, now: number): string {
+  if (!ts) return "never";
+  const start = Date.parse(ts);
+  if (Number.isNaN(start)) return "never";
+  const ref = now || Date.now();
+  let sec = Math.floor((ref - start) / 1000);
+  if (sec < 0) sec = 0;
+  if (sec < 60) return "just now";
+  const mins = Math.floor(sec / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ${String(mins % 60).padStart(2, "0")}m ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ${String(hrs % 24).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")} ago`;
 }
 
 // ── inline print stylesheet (component-scoped rules, M09 §4 tab 1) ─────────
@@ -182,7 +202,7 @@ function ReportsTab() {
           <Icons.Clock className="mr-1 h-3 w-3" />
           {stats.data ? `${fmtTs(stats.data.from)} → ${fmtTs(stats.data.to)} · ${stats.data.bucketMinutes}m buckets` : "loading…"}
         </Badge>
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => window.print()}>
             <Icons.Printer className="h-3.5 w-3.5" />
             Print
@@ -210,8 +230,8 @@ function ReportsTab() {
         <QueryError error={stats.error} onRetry={() => void stats.refetch()} />
       ) : derived ? (
         <>
-          {/* cards row */}
-          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          {/* cards row — single column below 480px: the mono tabular values cannot shrink (§5.18 min-content rule) */}
+          <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 xl:grid-cols-4">
             <StatCard
               label="Total flows"
               value={derived.total.toLocaleString()}
@@ -242,13 +262,13 @@ function ReportsTab() {
             />
           </div>
 
-          {/* charts */}
+          {/* charts — cards are grid items: min-w-0 + clipped content keep recharts' inline px width from widening the page (§5.18) */}
           <div className="grid gap-4 lg:grid-cols-3">
-            <Card className="lg:col-span-2">
+            <Card className="min-w-0 lg:col-span-2">
               <CardHeader className="p-4 pb-2 md:p-6 md:pb-2">
                 <CardTitle className="text-sm font-medium">Action trend (stacked)</CardTitle>
               </CardHeader>
-              <CardContent className="p-4 pt-0 md:p-6 md:pt-0">
+              <CardContent className="min-w-0 overflow-hidden p-4 pt-0 md:p-6 md:pt-0">
                 {derived.total === 0 ? (
                   <EmptyChart title="Action trend" />
                 ) : (
@@ -276,11 +296,11 @@ function ReportsTab() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="min-w-0">
               <CardHeader className="p-4 pb-2 md:p-6 md:pb-2">
                 <CardTitle className="text-sm font-medium">Action mix</CardTitle>
               </CardHeader>
-              <CardContent className="p-4 pt-0 md:p-6 md:pt-0">
+              <CardContent className="min-w-0 overflow-hidden p-4 pt-0 md:p-6 md:pt-0">
                 {derived.total === 0 ? (
                   <EmptyChart title="Action mix" />
                 ) : (
@@ -315,11 +335,11 @@ function ReportsTab() {
               </CardContent>
             </Card>
 
-            <Card className="lg:col-span-3">
+            <Card className="min-w-0 lg:col-span-3">
               <CardHeader className="p-4 pb-2 md:p-6 md:pb-2">
                 <CardTitle className="text-sm font-medium">Threat mix (IPS by severity)</CardTitle>
               </CardHeader>
-              <CardContent className="p-4 pt-0 md:p-6 md:pt-0">
+              <CardContent className="min-w-0 overflow-hidden p-4 pt-0 md:p-6 md:pt-0">
                 {derived.critHigh === 0 && derived.s.ipsBySeverity.every((e) => e.count === 0) ? (
                   <EmptyChart title="Threat mix" />
                 ) : (
@@ -486,22 +506,45 @@ function ScheduledTab() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<ReportScheduleDTO | null>(null);
   const [deleting, setDeleting] = useState<ReportScheduleDTO | null>(null);
+  const [runPendingId, setRunPendingId] = useState<number | null>(null);
+  const [flashId, setFlashId] = useState<number | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 60 s clock heartbeat (R4 sessions-view pattern) keeps the relative last-run labels fresh
+  const [, setClock] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setClock((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
   const query = useQuery({ queryKey: ["logs", "schedules"], queryFn: () => logsApi.listSchedules() });
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["logs", "schedules"] });
 
+  /** R2 row-flash pattern — timer ref set in the event context, cleared on unmount. */
+  const flash = (id: number) => {
+    setFlashId(id);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlashId(null), 1600);
+  };
+
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => logsApi.updateSchedule(id, { enabled }),
-    onSuccess: invalidate,
+    onSuccess: (_r, vars) => {
+      flash(vars.id);
+      invalidate();
+    },
     onError: (e) => toastErr(e, "Toggle failed"),
   });
   const run = useMutation({
-    mutationFn: (id: number) => logsApi.runSchedule(id),
+    mutationFn: (id: number) => {
+      setRunPendingId(id);
+      return logsApi.runSchedule(id);
+    },
     onSuccess: (r) => {
       invalidate();
       toastOk("Report generated", `lastRunAt ${fmtTs(r.lastRunAt)} — open the Reports tab for the live view, or export CSV/JSON`);
     },
     onError: (e) => toastErr(e, "Run failed"),
+    onSettled: () => setRunPendingId(null),
   });
   const del = useMutation({
     mutationFn: (id: number) => logsApi.deleteSchedule(id),
@@ -514,25 +557,30 @@ function ScheduledTab() {
   });
 
   const rows = query.data ?? [];
+  const [density] = useTableDensity("logs-reports-scheduled");
 
   return (
     <div className="grid gap-3">
-      <div className="no-print flex items-center justify-between">
+      <div className="no-print flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-zinc-500">Engine-driven schedules bump <span className="font-mono">lastRunAt</span> on their window; Run now generates immediately.</p>
-        <Button
-          size="sm"
-          className="h-8 gap-1.5"
-          onClick={() => {
-            setEditing(null);
-            setEditorOpen(true);
-          }}
-        >
-          <Icons.Plus className="h-3.5 w-3.5" />
-          New schedule
-        </Button>
+        <div className="flex items-center gap-2">
+          <DensityToggle storageKey="logs-reports-scheduled" label="Schedule table density" />
+          <Button
+            size="sm"
+            className="h-11 gap-1.5 lg:h-8"
+            onClick={() => {
+              setEditing(null);
+              setEditorOpen(true);
+            }}
+          >
+            <Icons.Plus className="h-3.5 w-3.5" />
+            New schedule
+          </Button>
+        </div>
       </div>
 
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
+      {/* table — card is the grid item: min-w-0 stops the min-w table's min-content from widening the page */}
+      <div className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-800">
         {query.isLoading ? (
           <TableSkeleton rows={4} cols={7} />
         ) : query.isError ? (
@@ -540,7 +588,8 @@ function ScheduledTab() {
         ) : rows.length === 0 ? (
           <EmptyBlock icon={<Icons.CalendarClock className="h-6 w-6" />} title="No schedules yet" description="Create a daily/weekly/monthly report schedule." />
         ) : (
-          <Table>
+          <div className="overflow-x-auto">
+            <Table className={cn("min-w-[880px]", density === "compact" && "[&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs")}>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
@@ -555,7 +604,7 @@ function ScheduledTab() {
             </TableHeader>
             <TableBody>
               {rows.map((s) => (
-                <TableRow key={s.id}>
+                <TableRow key={s.id} className={cn(flashId === s.id && ROW_FLASH_CLASS)}>
                   <TableCell className="text-sm font-medium">{s.name}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[11px] capitalize text-zinc-600 dark:text-zinc-300">
@@ -578,7 +627,9 @@ function ScheduledTab() {
                     </span>
                   </TableCell>
                   <TableCell className="max-w-40 truncate text-xs">{s.recipients ?? "—"}</TableCell>
-                  <TableCell className="whitespace-nowrap text-xs tabular-nums">{s.lastRunAt ? fmtTs(s.lastRunAt) : <span className="text-zinc-400">never</span>}</TableCell>
+                  <TableCell className="whitespace-nowrap text-xs tabular-nums" title={s.lastRunAt ? `Last run ${fmtTs(s.lastRunAt)}` : undefined}>
+                    {s.lastRunAt ? <span className="text-zinc-600 dark:text-zinc-300">{fmtAgo(s.lastRunAt, Date.now())}</span> : <span className="text-zinc-400">never</span>}
+                  </TableCell>
                   <TableCell>
                     <Switch checked={s.enabled} onCheckedChange={(enabled) => toggle.mutate({ id: s.id, enabled })} aria-label={`Toggle ${s.name}`} />
                   </TableCell>
@@ -588,11 +639,11 @@ function ScheduledTab() {
                         variant="ghost"
                         size="sm"
                         className="h-7 px-2"
-                        title="Run now"
-                        disabled={run.isPending}
+                        title={runPendingId === s.id ? "Generating…" : "Run now"}
+                        disabled={runPendingId !== null}
                         onClick={() => run.mutate(s.id)}
                       >
-                        <Icons.Play className="h-3.5 w-3.5" />
+                        {runPendingId === s.id ? <Icons.Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icons.Play className="h-3.5 w-3.5" />}
                       </Button>
                       <Button
                         variant="ghost"
@@ -615,6 +666,7 @@ function ScheduledTab() {
               ))}
             </TableBody>
           </Table>
+          </div>
         )}
       </div>
 
@@ -849,6 +901,9 @@ function ForwardingTab() {
   const [syslogEditor, setSyslogEditor] = useState<{ open: boolean; initial: SyslogTargetDTO | null }>({ open: false, initial: null });
   const [netflowEditor, setNetflowEditor] = useState<{ open: boolean; initial: NetflowTargetDTO | null }>({ open: false, initial: null });
   const [deleting, setDeleting] = useState<{ kind: "syslog" | "netflow"; row: SyslogTargetDTO | NetflowTargetDTO } | null>(null);
+  const [flashId, setFlashId] = useState<number | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [density] = useTableDensity("logs-reports-forwarding");
 
   const syslog = useQuery({ queryKey: ["logs", "syslog-targets"], queryFn: () => logsApi.listSyslogTargets() });
   const netflow = useQuery({ queryKey: ["logs", "netflow-targets"], queryFn: () => logsApi.listNetflowTargets() });
@@ -858,14 +913,27 @@ function ForwardingTab() {
     void queryClient.invalidateQueries({ queryKey: ["logs", "netflow-targets"] });
   };
 
+  /** R2 row-flash pattern — timer ref set in the event context. */
+  const flash = (id: number) => {
+    setFlashId(id);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlashId(null), 1600);
+  };
+
   const toggleSyslog = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => logsApi.updateSyslogTarget(id, { enabled }),
-    onSuccess: invalidate,
+    onSuccess: (_r, vars) => {
+      flash(vars.id);
+      invalidate();
+    },
     onError: (e) => toastErr(e, "Toggle failed"),
   });
   const toggleNetflow = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => logsApi.updateNetflowTarget(id, { enabled }),
-    onSuccess: invalidate,
+    onSuccess: (_r, vars) => {
+      flash(vars.id);
+      invalidate();
+    },
     onError: (e) => toastErr(e, "Toggle failed"),
   });
   const del = useMutation({
@@ -884,22 +952,25 @@ function ForwardingTab() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      {/* syslog card */}
-      <Card>
+      {/* syslog card — grid item min-w-0 + inner overflow wrapper keeps the table inside (§5.18) */}
+      <Card className="min-w-0">
         <CardHeader className="flex-row items-center justify-between space-y-0 p-4 md:p-6">
           <CardTitle className="flex items-center gap-2 text-sm font-medium">
             <Icons.FileText className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             Syslog targets
           </CardTitle>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 gap-1.5"
-            onClick={() => setSyslogEditor({ open: true, initial: null })}
-          >
-            <Icons.Plus className="h-3.5 w-3.5" />
-            Add
-          </Button>
+          <div className="flex items-center gap-2">
+            <DensityToggle storageKey="logs-reports-forwarding" label="Forwarding table density" />
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-11 gap-1.5 lg:h-8"
+              onClick={() => setSyslogEditor({ open: true, initial: null })}
+            >
+              <Icons.Plus className="h-3.5 w-3.5" />
+              Add
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="p-4 pt-0 md:p-6 md:pt-0">
           {syslog.isLoading ? (
@@ -909,7 +980,8 @@ function ForwardingTab() {
           ) : syslogRows.length === 0 ? (
             <EmptyBlock icon={<Icons.FileText className="h-6 w-6" />} title="No syslog targets" description="Forward logs to a SIEM collector (udp/tcp/tls)." />
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+            <Table className={cn("min-w-[620px]", density === "compact" && "[&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs")}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -923,7 +995,7 @@ function ForwardingTab() {
               </TableHeader>
               <TableBody>
                 {syslogRows.map((t) => (
-                  <TableRow key={t.id}>
+                  <TableRow key={t.id} className={cn(flashId === t.id && ROW_FLASH_CLASS)}>
                     <TableCell className="text-sm font-medium">{t.name}</TableCell>
                     <TableCell className="whitespace-nowrap font-mono text-xs">
                       {t.host}:{t.port}
@@ -963,12 +1035,13 @@ function ForwardingTab() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
 
       {/* netflow card */}
-      <Card>
+      <Card className="min-w-0">
         <CardHeader className="flex-row items-center justify-between space-y-0 p-4 md:p-6">
           <CardTitle className="flex items-center gap-2 text-sm font-medium">
             <Icons.Network className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
@@ -992,7 +1065,8 @@ function ForwardingTab() {
           ) : netflowRows.length === 0 ? (
             <EmptyBlock icon={<Icons.Network className="h-6 w-6" />} title="No NetFlow targets" description="Export flows to a collector (v5/v9/ipfix, 1-in-N sampling)." />
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+            <Table className={cn("min-w-[560px]", density === "compact" && "[&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs")}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -1005,7 +1079,7 @@ function ForwardingTab() {
               </TableHeader>
               <TableBody>
                 {netflowRows.map((t) => (
-                  <TableRow key={t.id}>
+                  <TableRow key={t.id} className={cn(flashId === t.id && ROW_FLASH_CLASS)}>
                     <TableCell className="text-sm font-medium">{t.name}</TableCell>
                     <TableCell className="whitespace-nowrap font-mono text-xs">
                       {t.host}:{t.port}
@@ -1033,6 +1107,7 @@ function ForwardingTab() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>

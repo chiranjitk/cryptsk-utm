@@ -70,7 +70,7 @@ import { BackupsView } from "@/components/views/system/backups-view";
 import { NotificationCenter } from "@/components/views/system/notification-center";
 import { SetupWizard, useSetupCompleted } from "@/components/views/setup/setup-wizard";
 import { BrandLogo } from "@/components/shell/brand-logo";
-import { fetchApi, useRealtime } from "@/lib/realtime";
+import { fetchApi, useRealtime, useRealtimeStatus, type RealtimeStatus } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
 type Me = {
@@ -97,6 +97,15 @@ function Icon({ name, className }: { name: string; className?: string }) {
   const C = (Icons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[name] ?? Icons.Circle;
   return <C className={className} />;
 }
+
+// topbar realtime dot — emerald = connected (true health semantics), amber =
+// connecting/reconnecting, rose = offline (initial connect failed). UI_DESIGN_SYSTEM §5.12.
+const RT_DOT: Record<RealtimeStatus, { dot: string; label: string; pulse?: boolean }> = {
+  connected: { dot: "bg-emerald-500", label: "Realtime stream connected" },
+  connecting: { dot: "bg-amber-500", label: "Realtime stream connecting" },
+  reconnecting: { dot: "bg-amber-500", label: "Realtime stream reconnecting", pulse: true },
+  offline: { dot: "bg-rose-500", label: "Realtime stream offline" },
+};
 
 // platform hint for the ⌘/Ctrl+K badge — external-store pattern keeps hydration safe
 // (server snapshot "Ctrl+K", client re-renders to ⌘K after hydration; no state, no effect)
@@ -150,6 +159,7 @@ export function AppShell() {
   const shortcutHint = useSyncExternalStore(emptySubscribe, getIsApple, getIsAppleServer) ? "\u2318K" : "Ctrl+K";
   const setupGate = useSetupCompleted();
   const reduceMotion = useReducedMotion();
+  const rtStatus = useRealtimeStatus();
 
   const navigateTo = useCallback((path: string) => {
     setPaletteOpen(false);
@@ -228,6 +238,7 @@ export function AppShell() {
 
   const me = meQuery.data;
   const view: ViewDef = viewFor(routePath) ?? VIEWS[0];
+  const sectionLabel = NAV_GROUPS.find((g) => g.paths.includes(routePath))?.label;
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -279,7 +290,18 @@ export function AppShell() {
               </SheetContent>
             </Sheet>
 
-            <h1 className="truncate text-sm font-semibold">{view.title}</h1>
+            {/* section label (nav-config group for routePath) keeps orientation on mobile where the sidebar is hidden */}
+            <h1 className="flex min-w-0 items-baseline gap-2 text-sm font-semibold">
+              {sectionLabel ? (
+                <>
+                  <span className="shrink-0 text-[11px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                    {sectionLabel}
+                  </span>
+                  <span aria-hidden="true" className="shrink-0 text-zinc-300 dark:text-zinc-700">/</span>
+                </>
+              ) : null}
+              <span className="truncate">{view.title}</span>
+            </h1>
             <Badge
               variant="outline"
               className={cn(
@@ -291,6 +313,13 @@ export function AppShell() {
             >
               {me.dataPlane === "simulated" ? "Simulated" : "Live"}
             </Badge>
+            {/* realtime transport indicator — reuses the singleton socket via useRealtimeStatus (no new connection) */}
+            <span role="status" aria-label={RT_DOT[rtStatus].label} title={RT_DOT[rtStatus].label} className="flex shrink-0 items-center px-0.5">
+              <span
+                aria-hidden="true"
+                className={cn("h-2 w-2 rounded-full", RT_DOT[rtStatus].dot, RT_DOT[rtStatus].pulse && "animate-pulse")}
+              />
+            </span>
 
             <div className="ml-auto flex items-center gap-1.5">
               {/* command-palette trigger — keyboard parity via the global ⌘/Ctrl+K listener */}

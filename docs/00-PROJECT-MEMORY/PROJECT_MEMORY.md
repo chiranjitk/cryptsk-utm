@@ -441,15 +441,16 @@ QoS, Logs & Reports, HA, System. Full layouts per view: `docs/05-FRONTEND/PAGE_M
 
 | Token | Value | Notes |
 |---|---|---|
-| Color hard rule | **NO indigo, NO blue** (any `indigo-*`, `blue-*`) | platform rule; applies to charts too |
-| Brand primary | emerald (`--primary` = emerald-500 dark / emerald-600 light) | buttons, active nav |
-| Accent | teal | charts secondary, focus rings may use standard ring token |
-| Semantic allow/healthy | emerald-500 | allow rules, UP states |
+| Color hard rule | **NO indigo, NO blue, NO teal** (any `indigo-*`, `blue-*`, `teal-*` class or series hex) | platform rule; applies to charts too |
+| Brand primary | zinc-700 buttons (`bg-zinc-700 hover:bg-zinc-800 text-white`), active nav `bg-zinc-600/10` | primary buttons/nav are zinc (ADR-019 rev 2/rev 3); brand hue = logo glyph, focus ring `--primary`, links, `--chart-1` |
+| Accent | zinc-500 | charts secondary, TX series — neutral (rev 2) |
+| Semantic allow | zinc soft (calm-permit) | allow rules — red/rose is danger-only (rev 2) |
+| Semantic up/healthy | emerald-600 | UP/online/health states — the ONLY emerald usage |
 | Semantic warn/degraded | amber-500 | degraded WAN, warnings |
-| Semantic block/critical | rose-600 | deny/drop rules, critical alerts |
+| Semantic block/critical | rose-600 | deny/drop rules, critical alerts, destructive confirms |
 | Neutrals | zinc | backgrounds, borders, text (dark: zinc-950 base) |
-| Charts palette | emerald, teal, amber, rose, orange, violet, zinc | ordered series colors |
-| Theme | dark default, light available (next-themes, class strategy) | |
+| Charts palette | red-700, zinc-500, amber-500, rose-500, orange-500, zinc-400, slate-500 | LOCKED §2.5 order (`--chart-1…7`); rx = red-700, tx = zinc-500 |
+| Theme | light default (`defaultTheme="light"`), dark fully supported (next-themes, class strategy) | ADR-019 enterprise white surfaces |
 | Radius | shadcn default (`--radius`) | do not change |
 | Density | cards `p-4`/`p-6`, grids `gap-4`/`gap-6` | consistency rule |
 | Long lists | `max-h-96 overflow-y-auto` + custom scrollbar styles | logs, tables |
@@ -457,7 +458,7 @@ QoS, Logs & Reports, HA, System. Full layouts per view: `docs/05-FRONTEND/PAGE_M
 | Footer | sticky bottom via `min-h-screen flex flex-col` + `mt-auto` | only console login/marketing surfaces need it |
 | Motion | framer-motion, subtle (150–250ms), respect reduced motion | |
 | Icons | lucide only | no other icon sets |
-| Logo | text wordmark "CRYPTSK" + ShieldCheck lucide glyph | no image assets needed |
+| Logo | `BrandLogo` hexagon ring-keyhole SVG mark (red gradient) + "CRYPTSK" wordmark (`components/shell/brand-logo.tsx`; favicon `src/app/icon.svg`) | no image assets |
 
 ---
 
@@ -647,6 +648,848 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 ---
 
 ## 15. SESSION LOG (append-only — newest on top)
+
+### 2026-11-13 — QA marathon Round 10 (cross-cutting regression + final polish)
+
+- **Scope:** final sweep — close remaining cheap deferred items, rg cross-cutting audits,
+  doc/code reconciliation, full regression. 4 code files + 3 docs (7/10 budget). Zero API/
+  schema/route changes; all confirms untouched.
+- **Deferred outcomes:** (1) R2 firewall-rules filter chips CLOSED — zone/tag pills + chip-row
+  "Clear all" moved to the R6 44 px chip recipe (`inline-flex h-11 … lg:h-7 lg:py-1`), row
+  kebab `h-11 w-11 lg:h-8 lg:w-8`; verified in-browser: chips measure 44 px at 390 px, 28 px
+  at ≥lg. (2) R9 email gateways/routing density CLOSED — `useTableDensity("email-gateways"|
+  "email-routing")` + DensityToggle in flex-wrap headers, `[&_th/_td]` compact selectors,
+  `overflow-auto` + min-w 860/760 px, and §5.14 ROW_FLASH added to the gateway enable toggle
+  (routing already had it); toggle click-verified in-browser. SSL policy ROW_FLASH stays
+  CLOSED-not-applicable: the policy enable switch is a detail-panel control, not a table row
+  (R9's audit re-confirmed — bypass rows already flash). (3) Primary-button doc conflict
+  RESOLVED: UI_DESIGN_SYSTEM §2 hard rule 2 rewritten to **rev 3 — zinc primary as-built**
+  (`bg-zinc-700 text-white hover:bg-zinc-800`, 161 sites; red/rose danger-only + retained
+  brand surfaces logo/focus-ring/links/`--chart-1`), ADR-019 gained REVISION 2, PROJECT_MEMORY
+  §9 stale emerald/teal/dark-default rows rewritten to the ADR-019 reality (zinc buttons,
+  light default, locked chart order, BrandLogo). NO code sweep — zinc was already the standard.
+- **rg sweeps:** `text-blue|bg-blue|indigo` → only comments; but reports-view's `CHART`
+  constant carried REAL teal-500/emerald-500 hexes and painted `allow`/`medium` series red —
+  re-pointed to the locked recipes (§5.15 severity tones, §2.3 action mapping: allow zinc,
+  deny rose-600, drop rose-500, reject orange), comment + header updated; browser shows the
+  new fills (#71717a/#e11d48/#f43f5e/#f97316). `Math.random` → only legit uses: shadcn
+  SidebarMenuSkeleton width jitter (loading shimmer) + vpn-ui `generateSecret()` masked PSK
+  placeholder (SIMULATION_LAYER §9) — no honest-data violations. `size-7|h-7 w-7` → 39
+  residual sites across per-module views (ghost row buttons without the lg: escalation);
+  fixed only the in-scope ones per the ≤6/≤10-file caps (rules-view ×2); rest documented as
+  known residual, not a regression.
+- **NEW FIND (regression sweep): dashboard 390 px horizontal overflow (sw 462 vs 390).**
+  Root cause = the §5.18 R6 pass-2 Recharts rule was never applied to the dashboard's own
+  card grids: ResponsiveContainer's inline-px width propagated through grid-item cards
+  (throughput + apps donut) AND through flex rows with `truncate` text (threat feed header
+  badges + top-rules rows) whose intrinsic min-content inflates the auto grid track. Fixed
+  in dashboard-view.tsx with the locked recipe: `min-w-0` (+`overflow-hidden` on
+  CardContent) on the throughput card, apps-donut card + its wrapper, threat-feed card, and
+  top-rules card; threat header badge row became `flex-wrap`. Verified: dashboard sw==cw at
+  390 px AND at 1280 px; charts re-measure to the real width.
+- **Regression:** `bun run lint` clean (exit 0); dev.log no compile/runtime errors (only
+  honest host-collector degradation noise: "system scope bus Host is down" + wan-os converge
+  "egress offline" — sandbox has no systemd bus/egress); curl golden path login 200 →
+  /dashboard/summary, /firewall-rules, /ips/events, /logs/firewall?limit=5, /system/status
+  all 200 {data}; no-cookie → 401; GET / → 200. agent-browser E2E: 7 views (dashboard,
+  firewall rules, ips events, logs search, system settings, vpn sessions, email security)
+  at 1280 px + 390 px — zero horizontal overflow everywhere (dashboard was the one failure,
+  fixed above), empty/loading states render (content-security tables honestly empty per
+  seeded DB), console clean throughout; reports pie + email density toggle exercised live
+  with no errors. NO dangerous mutations executed — confirm dialogs untouched.
+- **Known residual (documented, non-blocking):** 37 pre-existing `h-7 w-7` ghost row buttons
+  in sdwan/ipv6/federation/nac/iocs/feeds/waf/logs views lack the `lg:` mobile escalation —
+  cosmetic desktop-consistent pattern, below the per-file edit caps this round; a future
+  mechanical pass can sweep them file-by-file. Nav path correction noted: email security is
+  `#/email/security` (R9 log entry's "#/web/email-security" label is wrong in prose only).
+- **Marathon status: 10/10 rounds complete** — every one of the 46 hash views now carries
+  the shared atom registry (scaffolds, chips w/ honest counts, density, ROW_FLASH, 44 px
+  touch targets, validation parity, wide-table containment); the last cross-cutting debt
+  (dashboard containment, doc conflicts) is closed.
+
+### 2026-11-13 — QA marathon Round 9 (url-filter/app-control/ssl/waf/email)
+
+- **Scope:** the remaining content-security views (#/web/url-filter, #/web/app-control,
+  #/web/ssl-inspection, #/web/waf, #/web/email-security). Audit-first finding: ALL five
+  views had good shells/stats strips/empty states/named delete confirms but NONE carried
+  the R2–R8 atom recipes — zero density toggles, zero ROW_FLASH, no wide-table min-w
+  wrappers, no per-field validation, no copyText, several h-7 icon buttons. Closed the
+  real gaps with the established recipes only; zero API changes, zero schema/route
+  changes, 5 code files + 2 docs (7/9 budget).
+- **url-filter-view.tsx:** logs action Select → R6 chips (all/allowed/blocked/warned,
+  `DECISION_CLS` tones, 24h counts from the shared stats key, count-less while loading)
+  + search input wired to the EXISTING server-side `?q=` param (route already accepted
+  it — UI exposed it at last) + DensityToggle + overflow-auto/min-w-[760px]; categories
+  tab gained the enable/disable count summary strip ("n of m categories enabled" +
+  "n blocking" badges, only after server rows load — no fake 0s) absorbing the old
+  bottom "Saving rule set…" line; custom-lists delete + policy-card edit/delete buttons
+  44 px pass; filter-aware honest empty state + Clear.
+- **app-control-view.tsx:** rules table gained category filter chips derived from the
+  loaded rules' nDPI categories (only when >1, honest per-category empty + Clear),
+  ROW_FLASH on toggle/action/bandwidth mutations (flash variables.id), density
+  (`app-control-rules`), min-w-[880px] + overflow-auto, 44 px delete; logs card gained
+  a client-side app/client search (endpoint has no q param — loaded-window filter, the
+  footer says "n of m loaded entries match") + density + min-w + 44 px refresh/select.
+- **ssl-inspection-view.tsx:** bypass-rules table gained a value/reason search (n-of-m
+  badge, per-filter honest empty + Clear), ROW_FLASH on bypass toggle, density
+  (`ssl-bypass`) + min-w; logs table density (`ssl-logs`) + min-w-[680px] + overflow-auto;
+  bypass delete/add-bypass buttons 44 px. SNI mono/truncate + stats strip were already
+  shipped — untouched.
+- **waf-view.tsx:** NEW payload preview — log rows with `payloadSnippet` render a
+  `payload` pill that expands a full-width detail row with a DiagOutputBlock-style mono
+  block (`max-h-56 overflow-auto break-words`, `n chars` label, net-ui copyText Copy);
+  message cell became min-w-0 flex (truncate + pill); exclusion editor reached §5.16
+  validation parity (matchValue required/≤256, ruleId positive int, INVALID_CLS +
+  FieldErrorText + aria + focus-first-invalid + clear-on-edit, Save no longer silently
+  disabled); disabled vhosts got a rose status pill + dimmed card; log table density +
+  min-w-[920px], vhost/action selects 44 px.
+- **email-security-view.tsx:** quarantine RELEASE is now confirm-first — the row button
+  opens a ConfirmDialog naming the message ("Release \"<subject>\"?" with from → to
+  consequence copy) instead of a bare mutate (§5.6 dangerous-action rule; the released
+  row flashes on settle); routing-rules toggle gained ROW_FLASH; mail log gained
+  DensityToggle + min-w-[820px] + overflow-auto; gateways/routing row buttons 44 px.
+  Mail-log search + verdict filter were already present (untouched).
+- **Verified:** `bun run lint` clean; dev.log no compile/runtime errors (one transient
+  Turbopack duplicate-const during editing — caught by the GET / 500 and fixed, root
+  back to 200); curl golden path (login admin/admin123 → 200; /url-filter/policies,
+  /url-filter/logs?q=…, /app-control/policies, /ssl-inspection/policies, /waf/policies,
+  /waf/logs, /email-security/stats, /email-security/logs?q=… all 200 {data}; no-cookie
+  variants → 401; `/` → 200). NOTE: the content-security tables are empty in the seeded
+  DB (pre-existing — seed populates other modules), so views show honest empty states;
+  UI contracts verified against the empty envelope. agent-browser E2E: url-filter chips
+  render with 24h counts, blocked-chip click + search text → "No log entries match the
+  filters" + Clear restores; WAF + email-security render empty states with density
+  toggles/44 px selects; 390 px viewport shows no horizontal overflow on url-filter, waf,
+  email-security; browser console clean. NO mutations executed — no test data created.
+- **Skipped (audit: already shipped / locked / no backend to support):** app-control
+  rule reorder (rules have no order/priority field in the DTO — inventing one needs a
+  schema change, banned this round); email routing-rules reorder (priority is
+  server-enforced unique, edit dialog already covers it); WAF vhost/policy editors
+  validation parity (single-message errors, deferred — exclusion editor was the
+  mission-listed one); ssl policy ROW_FLASH (policy toggle is a detail-row switch, not a
+  table row — bypass rows covered instead); stats strips (all five already had them).
+- **Noted for a future round:** gateway/routing tables in email-security have no density
+  toggle (header space tight; mail log covers the pattern); app-control logs could adopt
+  chips once the backend adds a free-text param.
+- **File budget:** 5 code (url-filter-view, app-control-view, ssl-inspection-view,
+  waf-view, email-security-view) + 2 docs (UI_DESIGN_SYSTEM §5.21, PROJECT_MEMORY) = 7/9.
+
+### 2026-11-13 — QA marathon Round 8 (system/PKI/HA)
+
+- **Scope:** M10 system surfaces (#/system/settings incl. health/firmware/SSH/templates
+  cards, #/system/backups, #/system/api-keys, notification-center untouched) + PKI
+  (#/pki/authorities, #/pki/certificates) + HA (#/ha). Audit-first found MOST of the
+  mission list already shipped (service chips + restart toast, resource gauges with tone
+  colors, firmware check spinner + history table, typed-RESTORE restore dialog,
+  API-key scope chips + show-once gated reveal + copy + revoke naming the key, SSH
+  fingerprint mono + server fieldErrors, PKI search/filters/expiring chip + revoke-with-
+  reason naming the cert + CRL download feedback, HA status tone badges + sync chips +
+  tracked ifaces + holdDown client check — verified live, NOT re-implemented). Closed the
+  REAL gaps. One additive NEW route (documented-but-missing backup download, R6 audit-
+  export precedent); zero schema/route-shape changes; 6 code files + 3 docs (9/9).
+- **system-view.tsx:** (1) service restart is now CONFIRM-FIRST (M10 §5.6 dangerous-action
+  rule — it was a bare mutate on click): chip button opens a ConfirmDialog naming the
+  service with data-plane-aware consequence copy (host: systemctl + packet-processing
+  blips; simulated: ~2 s apply), per-service spinner while pending (`restart.variables ===
+  svc.name`); (2) firmware upgrade confirm upgraded to a TYPED-version AlertDialog (type
+  the target version to enable confirm — restores the M10 §5.6 typed rule the UI had
+  dropped; R2 os-apply parity), rollback confirm names the previous history version
+  (`history[history.length - 2]`); (3) SSH keys: fingerprint cell gained a copy icon
+  button (net-ui copyText, 44 px mobile), add-key dialog gained §5.16 validation parity
+  (name 1–64 + OpenSSH-line/private-key pre-checks mirroring validators system.ts, rose
+  ring + role="alert" + focus first invalid + clear-on-edit + server fieldErrors merge;
+  Save no longer silently disabled), remove confirm names the key AND fingerprint
+  ("sessions authenticated with it stop working"), table wrapped overflow-x-auto +
+  min-w-[640px]; (4) template apply confirm now names the template and lists its sections
+  (`firewall: … · nat: …`) instead of the generic overwrite warning.
+- **backups-view.tsx:** id/note/type search with its own honest empty state + Clear;
+  Created cell stacks an AgeBadge (<24 h emerald / 1–6 d zinc / ≥7 d amber, absolute in
+  title); create-dialog note dropped silent maxLength truncation for a ≤200 submit
+  pre-check (INVALID_CLS + role="alert" — the error explains the limit instead of hiding
+  it); table overflow-x-auto + min-w-[760px] + h-11 lg:h-8 row buttons.
+- **api-keys-view.tsx:** Created column now relative (fmtRelative, absolute in title —
+  parity with Last used); keys + webhooks tables wrapped overflow-x-auto + min-w-[820]/
+  [900] + 44 px row-control pass. Show-once reveal NOT given a countdown (locked M11 §5.1
+  pattern — the "I have saved it" gate is stronger than auto-hide; skipped honestly).
+- **ha-view.tsx:** editor gained full §5.16 validation parity — per-field client
+  pre-checks at submit mirroring haConfigSchema (priority 1–255 int, virtualIp CIDR shape,
+  peerIp IPv4 shape, failAfterSec 3–3600, holdDownSec 0–86400 AND ≥ failAfterSec, enabled
+  ⇒ role+peerIp), INVALID_CLS rose rings + aria-invalid/describedby + role="alert" +
+  focus-first-invalid + clear-on-edit, server fieldErrors merge on 400, Save enabled
+  (errors explained, not silently blocked — replaces the holdDownInvalid/enableInvalid
+  silent disables which kept their inline messages); tracked-interface chips h-11 lg:h-7.
+- **certificates-view.tsx:** NEW expiring-certificate highlight strip (fed by the EXISTING
+  GET /pki/certificates/expiring?days=30) under the filter card — soonest-first chips with
+  mission-specified days-left tones (rose ≤7d, amber 8–30d; ExpiryPill's 30/90 scale
+  unchanged), click = "Expiring ≤30d" filter, strip hidden when none (honest-empty);
+  cert table overflow-auto + min-w-[880px]; search/filter chip/kebab 44 px pass.
+- **NEW `GET /api/v1/system/backups/[id]/download`** (the round's real bug find): the
+  endpoint documented in M10 §3/ENDPOINTS §13 behind the "Download" row action had NO
+  route file — curl 404 confirmed. Additive route (R6 audit-export precedent): area
+  `backups` read floor (mirrors the list endpoint), the EXISTING service `readBackupFile`
+  (which was already written "served by the download endpoint") + `Content-Disposition
+  attachment; filename="cryptsk-backup-<id>.json"` per the locked naming, `Cache-Control:
+  no-store`, read-only (reads not audited per AUTH_AND_RBAC §4). Verified 200 w/cookie on
+  a temp backup, 404 no-cookie + 404 unknown id; openapi manifest rows live in §7.2
+  (already listed — the doc promised it, the code now matches).
+- **pki-ui.tsx stale "blue" header comment: found + NOT fixed (budget)** — the file's only
+  drift is its docstring claiming "root CA = solid blue" while every class is zinc/rose;
+  comment-only, left for a cleanup round (noted below).
+- **Verified:** `bun run lint` clean (two transient unterminated-literal parsing errors
+  from smart-quote corruption during editing caught by lint and fixed before verify);
+  `tsc --noEmit` — zero errors in all touched files (4 latent `.next/dev/types` generated-
+  file errors are dev-artifact noise, not source); dev.log zero compile/runtime errors
+  (pre-existing ost-collector/systemctl noise only — the sandbox's honest "service states
+  unreadable" signal); curl golden path (login admin/admin123 → 200; /api/v1/system/status
+  200 {data}; /api/v1/pki/certificates 200 {data}; /api/v1/pki/certificates/expiring 200;
+  /api/v1/ha/status 200 {data}; `/` 200; no-cookie variants → 401); NEW download route:
+  200 w/cookie (attachment header + exact seeded JSON round-trip) / 401 no-cookie / 404
+  unknown id; agent-browser E2E via
+  the :81 gateway — service chip → confirm dialog opens naming the service → CANCELLED
+  (no restart issued), firmware "Upgrade now" → typed-version dialog opens, wrong text
+  leaves confirm disabled, CANCELLED (no upgrade), template Apply dialog names template +
+  sections → CANCELLED, SSH add dialog empty submit → "Name is required" + "Public key is
+  required" with focus on name, private-key paste → the honest private-key rejection,
+  backups search filters rows + Clear restores, HA editor priority 400 + save →
+  "Priority must be an integer between 1 and 255" + focus on priority + rose ring, error
+  clears on edit (NOT SAVED), PKI strip chips render with days-left tones, 390 px
+  overflow-free on all touched views, browser console clean. NO mutations executed — all
+  confirms cancelled; no test data created.
+- **Skipped (audit: already shipped / locked — do NOT duplicate):** API-key reveal
+  auto-hide countdown (M11 §5.1 show-once gate is the locked, stronger pattern); PKI
+  revoke/issue/CRL flows (complete); HA failover/sync chips + honest-empty disabled state;
+  setup-completeness banner (demo seed sets setup.completed=true — the banner would never
+  render; honest skip); firmware "staged result banner" (upgrade endpoint returns state
+  only — no plan/results stages exist to map, inventing stages would lie); resource-gauge
+  refresh button (5 s refetchInterval already covers freshness).
+- **Noted for a future round:** pki-api.ts `expiryTone()` is dead code with a stale
+  "blue >90d" comment, and pki-ui.tsx's header docstring still claims the retired "blue
+  enterprise theme" (both comment-only/dead — cleanup-round candidates; not edited here
+  to hold the 9-file budget).
+- **File budget:** 6 code (system-view, backups-view, api-keys-view, ha-view,
+  certificates-view, NEW backups/[id]/download route) + 3 docs (UI_DESIGN_SYSTEM §5.20,
+  M10-SYSTEM §3/§4, PROJECT_MEMORY) = 9/9.
+
+### 2026-11-13 — QA marathon Round 7 (identity & DNS/DHCP)
+
+- **Scope:** M07 identity views (#/identity/users incl. RADIUS/Directory/Auth tabs,
+  #/identity/sessions, #/identity/portal) + M06 DHCP view (#/dns-dhcp/dhcp). Audit-first
+  found MOST of the mission list already shipped (users role badges + server q search over
+  username/email; sessions expire-confirm naming the user + user/IP search + ticking lastSeen;
+  voucher generation with count/TTL/bandwidth + one-time reveal + Copy all + CSV + state chips +
+  revoke confirm; DNS records search/zone/type filters + settings server-error feedback —
+  verified live, NOT re-implemented). Closed the REAL gaps. Zero API/schema/route changes;
+  5 code files + 4 docs (9/9).
+- **users-view.tsx:** (1) Last-login column now relative — fmtElapsed (§5.16 pattern, local)
+  renders "never" / "<1m ago" / "12m ago" / "5h 07m ago" / "3d 04:12 ago" in tabular-nums with
+  the absolute timestamp in the title, kept fresh by a 60 s heartbeat; (2) user editor +
+  reset-password + group editor validation parity (§5.16 recipe): per-field client pre-checks at
+  submit — username `^[a-z0-9._-]{3,32}$` (M07 §5.1), email format, password length/complexity
+  prefetched from the EXISTING GET /auth-settings (30 s staleTime; server stays authoritative,
+  its fieldErrors merge into the same bag) — INVALID_CLS rose ring + role="alert" text +
+  aria-invalid/describedby + focus FIRST invalid + errors clear on edit + Save no longer
+  silently disabled; (3) 44 px pass: search input/Add buttons/row kebab/group edit+delete now
+  `h-11 lg:h-9/8/7`.
+- **sessions-view.tsx:** emerald "N active now" summary chip (role="status", pulsing dot,
+  tabular-nums) beside the live badge — rendered ONLY when method=all AND the search box is
+  empty (otherwise the loaded count is filter-scoped and the chip would lie); method chips +
+  search input 44 px; expire icon button 44 px; Table min-w-[860px] in the existing
+  overflow-x-auto shell (§5.16 wide-table pattern). Session DTO has NO idle/absolute-expiry
+  fields — no invented expiry columns (honest).
+- **portal-view.tsx:** (1) voucher code search input (client filter on the masked code, composes
+  with the state chips in one `rows` memo — the masked-CSV export exports the filtered set);
+  (2) revoke ConfirmDialog now names the masked code ("Revoke voucher …5M45?"); (3) generator
+  validation parity — count 1–500 / TTL 1–720 / bandwidth positive-integer pre-checked per-field
+  at submit (rose ring + alert text + focus-first-invalid + clear-on-edit), button no longer
+  silently disabled; (4) 44 px chips/CSV/revoke controls.
+- **identity-panels.tsx:** RADIUS reveal UX — revealed secret row gains a copy icon button
+  (net-ui copyText, toast on success/failure) and a role="status" "auto-hides in Ns" countdown;
+  the 15 s auto-hide is driven by the reveal timestamp + 1 s tick heartbeat (setState only
+  inside the interval callback — the react-hooks/set-state-in-effect rule forbids synchronous
+  setState in the effect body; caught by lint, fixed before verify); "Hide secret" still clears
+  immediately; Test buttons + row kebabs (RADIUS + Directory) 44 px.
+- **dhcp-view.tsx:** (1) tab-trigger count badges — "Reservations 4" / "Leases 21 active" —
+  computed in DhcpView from the SAME query keys the tabs use (["dhcp","reservations"],
+  ["dhcp","subnets"]; TanStack dedupes, zero extra requests); leases count is the sum of
+  activeLeaseCount labeled "N active" (exactly what the field measures); counts render only when
+  loaded; (2) subnet pool utilization bar per IPv4 card — pool size derived client-side from
+  rangeStart/rangeEnd via ipv4ToInt uint32 math, fill = activeLeaseCount/poolSize, `h-1.5`
+  rounded bar with role="progressbar" (aria min/max/now/label), emerald <60 % / amber ≥60 % /
+  rose ≥85 %, 2 % minimum width so a near-empty pool still shows a sliver; IPv6 renders nothing
+  (config-only label stays); verified live: lan0 18/101 = 18 %, dmz0 3/51 = 6 %; (3) subnet
+  enable/disable toggle now flashes the card (§5.14 ROW_FLASH_CLASS + flashId/timer-ref recipe);
+  (4) lease Expire confirm names the lease — IP in the title, "MAC (hostname) must re-request
+  an address…" in the description; (5) leases table min-w-[820px], reservations min-w-[560px],
+  state chips + search 44 px.
+- **Verified:** `bun run lint` clean (one set-state-in-effect violation caught and fixed
+  mid-round); `tsc --noEmit` zero errors in all 5 touched files (pre-existing strictness debt
+  elsewhere unchanged — identity-api AuthSettings import etc., files untouched this round);
+  dev.log zero compile/runtime errors in the edit window (pre-existing ost-collector/systemctl
+  noise only); curl golden path (login admin/admin123 → 200; /api/v1/users 200 {data};
+  /api/v1/dhcp/leases 200 {data+meta}; /api/v1/dns/records 200 {data+meta}; `/` 200; no-cookie
+  users → 401); agent-browser E2E via the :81 gateway: users view shows "<1m ago"/"never"
+  cells; Add User empty submit → "Username is required" + "An initial password is required"
+  alerts with focus on username; password "abc" → "Must be at least 8 characters (auth policy)"
+  with focus on password (policy prefetched); test user created → toasted → deleted via
+  confirm (API count back to 0 — no test data); sessions view "6 active now" chip, expire
+  dialog names "a.smith", Escape leaves session untouched; portal: count 501 → inline "Count
+  must be an integer between 1 and 500" + focus on count, 3 vouchers generated → reveal dialog
+  (Copy all/Download CSV) → search "5M45" filters 3→1 rows → revoke dialog titles
+  "Revoke voucher …5M45?" → revoked (3→2), remaining QA vouchers deleted via the same locked
+  DELETE endpoint (list back to 0 — voucher store was empty before this round); RADIUS reveal
+  → copy button → "Shared secret copied" toast + "auto-hides in 15s" countdown ticking →
+  secret re-masked to "••••••••" after 15 s; DHCP tab counts "Reservations 4"/"Leases 21
+  active" match the API; utilization bars 18 %/6 % match API pool math; dmz0 toggle flashes
+  (.fw-row-flash observed ~1 s after click) and was restored to enabled; lease Expire dialog
+  names MAC+hostname, cancelled (lease untouched); ALL touched views (users/sessions/portal/
+  dhcp/dns) scrollWidth == 390 at 390 px and clean at 1280 px; console error scan: only the
+  pre-existing ["auth","me"] empty-body race during hot-reload windows (fetchApi edge in
+  realtime.ts — untouched this round, not reproducible outside recompile windows).
+- **Skipped (audit: already present — do NOT duplicate):** users role badges (identity-ui
+  RoleBadge), users server-side q search, sessions expire-confirm + user/IP search + ticking
+  lastSeen, voucher one-time reveal/Copy all/CSV/state chips, DHCP lease MAC/IP/hostname server
+  search, DNS records search/zone/type Selects + settings server-error inline feedback,
+  DNS policy last-enabled delete warning. DNS record-type chips: the working Select already
+  covers the filter — swapping it for chips is redesign, not a gap. DNS policy/record toggle
+  ROW_FLASH: only cosmetic piece missing in M06 DNS view — skipped on the 9-file budget
+  (toggle feedback exists via opacity + invalidation; DHCP got the flash as the representative
+  recipe). Session idle/absolute-expiry columns: IdentitySessionDTO has no such fields —
+  inventing them is forbidden; startedAt/lastSeen relative columns already shipped.
+- **File budget:** 5 code (users-view, sessions-view, portal-view, identity-panels,
+  dhcp-view) + 4 docs (UI_DESIGN_SYSTEM §5.19, M07-IDENTITY §4/§7, M06-DNS-DHCP §4,
+  PROJECT_MEMORY) = 9/9.
+
+### 2026-11-13 — QA marathon Round 6 pass 3 (logs views — pivots + mobile gaps)
+
+- **Context:** third R6 pass. Audit re-confirmed EVERY pass-1/pass-2 claim present in the
+  tree (search presets + duration footer, saved rail + confirm delete, firewall chips + CSV
+  tooltip + density, IPS tone chips + confirm-first suppress, audit facets + result chips +
+  JSON viewer + CSV export, live-tail pause/autoscroll/jump, reports relative last-run +
+  run-now + flash, compliance status badges, all six views overflow-free at 390 px) — all
+  verified live, NOT re-implemented, NOT reverted. This pass closed the remaining REAL gaps.
+  Zero API/schema/route changes; 5 code files + 4 docs (9/9 budget).
+- **Cross-view deep-link pivots (new R6 pass 3 pattern, UI_DESIGN_SYSTEM §5.18):**
+  (1) firewall-logs-view detail drawer gained "src in Log Search" / "dst in Log Search"
+  buttons → `#/logs/search?q=<ip>` (drawer closed first, then hash set — rules-view
+  `?search=` pattern; shell keys views by routePath so the target view remounts);
+  (2) search-view reads the param one-shot via lazy `useState(readQDeepLink)` initializers
+  for `qInput`+`q` (no effect, no render-path window reads);
+  (3) ips-logs-view detail drawer gained "Open sid in IPS triage" → `#/ips/events?sid=<sid>`;
+  (4) events-view (M04) mirrors with `readSidDeepLink()` one-shot for `sidInput` AND widens
+  its default 24 h window to "all time" when a sid is deep-linked (the target event may be
+  older than the window). Verified E2E both pivots desktop + 390 px.
+- **search-view mobile saved-search chips:** the left rail is `hidden lg:block`, so saved
+  searches were UNREACHABLE below 1024 px — real gap. Added a `lg:hidden` chip row (only
+  when saved searches exist): 44 px pill = apply button (min-w-0 truncate) + bordered w-11
+  delete button reusing the shared ConfirmDialog; same saved-searches query, no duplicate
+  state. Verified: container display none at 1280 px, flex with 2 buttons at 390 px, apply
+  prefills q, delete → confirm → API list back to 0 (temp saved search removed — no test data).
+- **audit-view JsonFieldViewer copy buttons:** each before/after pane with state data gets a
+  ghost icon Button calling net-ui `copyText(text, "JSON copied")` (R5 atom reuse — clipboard
+  + toast). IMPORTANT: the copy control is a SIBLING of the collapse button inside a flex
+  header row, never nested inside a `<button>` (invalid HTML/a11y). 44 px hit area mobile
+  (`h-11 w-11 lg:h-6 lg:w-6`), per-pane aria-label, renders only when the pane has data.
+  Headless E2E could only exercise the FAILURE path (Chromium denies clipboard write) —
+  which correctly showed the honest "Copy failed" toast; success path is the identical
+  shipped net-ui code path verified in R5.
+- **Verified:** `bun run lint` clean; `tsc --noEmit` zero errors in all 5 touched files
+  (34 PRE-EXISTING type errors elsewhere — auth-me, firewall-os, wan-os, net-ui, api-keys,
+  handler.ts, mock-engine… — none introduced or touched this round; dev-server compiles
+  and serves everything 200, so they are latent strictness debt for a typing round, not
+  this one); dev.log zero compile/runtime errors in the edit
+  window (pre-existing ost-collector + internal-events 401 noise only); curl golden path
+  (login 200; logs/firewall?limit=5 200 {data} 5000 total; logs/audit 200 {data}; `/` 200;
+  no-cookie audit 401); agent-browser E2E via :81 gateway — search `?q=` deep link prefills
+  the query box (row "172.16.20.181 → 203.0.113.73 allow" returned), firewall src pivot and
+  IPS triage pivot navigate + prefill correctly (sid 2035344 → events-view sid input + "all
+  time" active + 1 row), audit copy button wired (honest failure toast in headless), mobile
+  chips apply/delete round trip, ALL touched views (search/firewall/ips/audit/ips-events)
+  overflow-free at 390 px, pivot buttons 44 px, browser console clean.
+- **No test data left:** the one temp saved search ("R6P3 pivot test") created for the chip
+  test was deleted through the UI (API confirms 0 saved searches); pivots and deep links are
+  read-only; no schedules/targets touched.
+- **Skipped (audit: no real gap / not implementable — do NOT duplicate):** live-tail
+  autoscroll toggle (already shipped R6 pass 1), search result CSV export for ips dataset
+  (no IPS export endpoint exists; endpoint shapes locked — honest skip), audit action-filter
+  chips (server facets shape locked, q already ORs action), firewall zone/severity chips
+  (FirewallLogDTO has no zone/severity field), reports schedule next-run relative time
+  (DTO has no nextRunAt — engine-driven), syslog/netflow reachability test (no endpoint).
+- **File budget:** 5 code (search-view, firewall-logs-view, ips-logs-view, audit-view,
+  events-view) + 4 docs (M09-LOGGING, M04-IPS events filter-bar deep-link line,
+  UI_DESIGN_SYSTEM, PROJECT_MEMORY) = 9/9.
+
+### 2026-11-13 — QA marathon Round 6 pass 2 (logs views — verify + remaining gaps)
+
+- **Context:** re-run of the R6 assignment found the R6 entry below ALREADY in this log and
+  all its claims present in the tree (search preset chips + query-duration footer, firewall
+  stats-chips + CSV tooltip + density, IPS confirm-first suppress + tone chips + density,
+  audit facets/result chips/JSON viewer + density, live-tail paused overlay + jump-to-newest,
+  reports relative last-run + per-row Run now + ROW_FLASH) — verified live, NOT re-implemented
+  and NOT reverted. This pass closed the REAL gaps the audit surfaced. 9/9 file budget.
+- **NEW endpoint `GET /api/v1/logs/audit/export`** (the one R6 honestly skipped): fully
+  additive self-contained route (`src/app/api/v1/logs/audit/export/route.ts`) following the
+  reports-export inline precedent — zod schema mirrors `auditLogQuerySchema` minus
+  `facets`/`page`/`limit` (own `isoOrEmpty` + until≥since refine), RBAC `area: "audit"`
+  (same read matrix as the list endpoint), inline CSV builder (reuse of the firewall export's
+  csvCell/cap pattern), 10 000-row cap + `X-Row-Cap`, `Content-Disposition audit-log.csv`;
+  columns `timestamp,username,user_id,source_ip,action,object_type,object_id,object_name,
+  result,id` — before/after JSON states deliberately NOT in the CSV (drawer-only, stated in
+  the tooltip). Existing endpoint shapes untouched; openapi.ts manifest row added
+  ("expand, never rename" — served at `/api/v1/openapi.json`).
+- **audit-view.tsx:** Export CSV button in the filter bar (spinner while in flight, 44 px,
+  aria-label, columns+cap+JSON-note tooltip, success toast with row count + honest cap
+  message at 10 000) via a new `logsApi.exportAuditCsv` (logs-api.ts `downloadGet`); result
+  chips group got `flex-wrap` so the new export+density group wraps (its combined min-content
+  overflowed 390 px by 6 px — see §5.18 filter-bar rule); CAUGHT BY E2E: the first cut forgot
+  the `toastOk`/`toastErr` import → try-block threw "toastOk is not defined", the catch then
+  threw "toastErr is not defined" and BOTH errors were silent (request 200, no toast). Found
+  via a `window.unhandledrejection` probe during agent-browser testing — lesson: missing
+  import = silent success-path failure; verify toasts, not just network 200s.
+- **reports-view.tsx (page overflow fixed — was scrollWidth 505 at 390 px):** (1) recharts
+  containment — chart Cards `min-w-0` + CardContent `min-w-0 overflow-hidden`; the
+  ResponsiveContainer writes its measured width as INLINE PX on the inner wrapper, which
+  became the card's min-content and inflated the whole grid track permanently (bisected
+  element-by-element in the browser; §5.18 recharts rule documented); (2) toolbar `ml-auto`
+  group + `flex-wrap`, Print/CSV/JSON buttons now wrap; (3) stats cards
+  `grid-cols-1 min-[480px]:grid-cols-2 xl:grid-cols-4` (mono tabular values can't shrink);
+  (4) Scheduled table `overflow-x-auto` + `min-w-[880px]` + card `min-w-0` + DensityToggle
+  (`fw-density:logs-reports-scheduled`) beside "New schedule" (44 px button pass);
+  (5) Forwarding: both target tables wrapped (`min-w-[620px]`/`min-w-[560px]`), Cards
+  `min-w-0`, shared DensityToggle (`fw-density:logs-reports-forwarding`) in the syslog card
+  header, Add button 44 px.
+- **compliance-view.tsx (3 px overflow fixed):** framework cards `grid-cols-1
+  min-[440px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-5` (the nowrap "Run check" button set
+  the 2-up min-content above 390 px); templates + runs tables wrapped in `overflow-x-auto`
+  (`min-w-[760px]`/`min-w-[640px]`, runs keeps its `max-h-96` sticky-header scroll, now
+  `overflow-auto`), Cards `min-w-0`, one shared DensityToggle (`fw-density:logs-compliance`)
+  in the templates header, "New template" 44 px.
+- **Docs:** UI_DESIGN_SYSTEM §5.18 extended (density keys list, NEW recharts inline-px
+  containment rule with the 505→390 proof, filter-bar widest-child wrapping rule, export
+  button+tooltip recipe); M09-LOGGING §3 audit-export row + §4 audit filter-bar bullet +
+  Scheduled/Forwarding density+wrapper notes. `logs-audit` density key unchanged.
+- **Verified:** `bun run lint` clean; dev.log zero compile/runtime errors (dev-server restart
+  mid-round clean; pre-existing internal-events 401 + ost-collector noise only); curl golden
+  path (login admin/admin123 → 200; logs/firewall?limit=5, logs/audit, `/` → 200; no-cookie
+  audit → 401); NEW endpoint: 200 w/cookie (text/csv, correct header, 107 data rows newest-
+  first, `result=failure` filter honored), 401 no-cookie, 400 VALIDATION_ERROR on
+  `until < since` with `fieldErrors.until`; `/api/v1/openapi.json` lists the new row;
+  agent-browser E2E (fresh session, gateway :81): all SEVEN log module views overflow-free at
+  390 px AND 1280 px (search/firewall/ips/audit/live/compliance/reports — previously 505/396
+  overflows gone); audit Export hover tooltip renders the full column list; Export click →
+  "Audit CSV exported — 107 rows written" toast (Radix viewport verified) + dev.log 200;
+  density round trip with computed styles (Scheduled th 40 px→36 px, px 8→6, td fs 14→12,
+  `fw-density:logs-reports-scheduled=compact`, restored to comfortable); compliance +
+  forwarding toggles present (same fw-ui component); browser console clean.
+- **No test data left:** export endpoints are read-only (no rows created), no saved searches /
+  schedules / targets created this pass, density localStorage keys reset to defaults.
+- **Finding for a future round (NOT fixed here — dashboard is not a log view, budget spent):**
+  `#/dashboard` overflows at 390 px (scrollWidth 462) — R1's "Updated Xs ago · auto-refresh"
+  meta row (`justify-between`, no wrap, Refresh button) and the critical-events banner
+  (`flex items-center gap-3`, md:flex-row only) have min-content above the viewport; same
+  §5.18 wrapping rule applies. Recommend a flex-wrap pass in the next dashboard-touching round.
+- **File budget:** 9/9 — NEW audit/export route, logs-api.ts, audit-view.tsx,
+  reports-view.tsx, compliance-view.tsx, api/openapi.ts, UI_DESIGN_SYSTEM.md,
+  M09-LOGGING.md, PROJECT_MEMORY.md.
+
+### 2026-11-13 — QA marathon Round 6 (logs views)
+
+- **Scope:** M09 log views (#/logs/search, #/logs/firewall, #/logs/ips, #/logs/audit,
+  #/logs/live, #/logs/reports Scheduled+Forwarding — auto-QA marathon R6/10). Audit-first:
+  live-tail pause/resume + missed counter + autoscroll, search saved-search rail (apply +
+  delete confirm) + result count, firewall CSV export spinner + cap toast, IPS severity
+  multi-chips + q (covers sid/message) + M04 suppress reuse, audit user/objectType facets +
+  result chips + JSON before/after viewer, compliance run-now + status badges, syslog/
+  netflow CRUD — ALL ALREADY SHIPPED, skipped as duplicates. Zero API/schema/route changes;
+  6 code files + 3 docs (9/9).
+- **search-view.tsx:** (1) time-range preset chips 15m/1h/24h/7d/Custom — `since` pinned
+  into STATE at chip click (stable query key, no render-computed ticking ISO), Custom
+  lights up when the day inputs drive the range; (2) query duration in the footer
+  ("N events total · 34 ms query", measured around queryFn in a ref); (3) the local
+  SEVERITY_BADGE map deleted → locked logs-ui `SeverityBadge` import (tone drift fix:
+  high was orange, now rose-500 outline per M09 §5.4); toolbar 44 px pass
+  (`h-11 lg:h-9`); saved ranges restore as custom dates.
+- **firewall-logs-view.tsx:** action Select → filter chips with 24 h counts from the
+  LOCKED `/logs/stats` payload (shared `["logs","stats","24h"]` cache with the reports
+  tab; window-level, not filter-scoped — same honest pattern as R3 events chips);
+  CSV-column + 10k-cap tooltip on Export (shadcn Tooltip); DensityToggle
+  (`fw-density:logs-firewall`, compact trims cells, table `min-w-[960px]`); 44 px toolbar
+  pass; mono src/dst cells truncate with `title`.
+- **ips-logs-view.tsx:** (1) row + detail-sheet Suppress now mounts M04's confirm-first
+  `SuppressMenu` (dropdown → confirm dialog restating sid/severity/window) replacing the
+  bare 3-duration dialog; `onSuppressed` patches the page cache locally (computed
+  suppressedUntil) — M09 no-full-reload acceptance kept; (2) active severity chips take
+  `SEVERITY_TONE` from ips-ui (parity with #/ips/events triage chips); (3) DensityToggle
+  (`fw-density:logs-ips`, `min-w-[880px]`), 44 px chips/toolbar, message cell truncates
+  with title.
+- **audit-view.tsx:** DensityToggle (`fw-density:logs-audit`, `min-w-[780px]`), 44 px
+  result chips + toolbar. q already covers action search (service ORs
+  action/objectName/username) — dedicated action filter would need a new facets shape
+  (endpoint shape locked) — skipped honestly.
+- **live-tail-view.tsx:** paused overlay pill on the stream ("Paused — N new lines
+  buffered", amber, role="status", mirrors the Resume "+N missed" counter) + "Newest"
+  jump button when scrolled away from the newest (top) position (`onScroll` threshold,
+  smooth scroll back); 44 px kind chips + Pause/Clear buttons; row list `min-w-[720px]`.
+- **reports-view.tsx:** Scheduled tab — lastRunAt rendered relative ("just now / 12m ago /
+  3d 04:12 ago", absolute in title, 60 s setInterval heartbeat = R4 sessions pattern);
+  Run now per-row spinner (`runPendingId`, no more global disable); §5.14 ROW_FLASH_CLASS
+  on schedule + syslog + NetFlow enable/disable toggles (flashId + timer ref, R2
+  pattern). NOTE: the first attempt used net-ui's `useNowTick()` (Date.now() getSnapshot,
+  uncached) — React maximum-update-depth crash when a row rendered; replaced with the
+  heartbeat + `Date.now()` read at render. net-ui's own R5 usages unaffected (verified).
+- **Overflow discipline:** min-w tables initially widened the PAGE at 390 px (min-content
+  propagation through the auto grid track) — fixed with `min-w-0` on the grid-item card +
+  inner `overflow-x-auto` wrapper; all six log views verified overflow-free at 390 px
+  (pattern documented in UI_DESIGN_SYSTEM §5.18).
+- **Docs:** UI_DESIGN_SYSTEM new §5.18 (logs R6 atoms incl. the min-w-0 containment rule
+  and the Date.now()-getSnapshot footgun); M09-LOGGING §4 bullets synced (action chips +
+  counts, SEVERITY_TONE chips, confirm-first SuppressMenu, paused overlay + jump-to-newest,
+  density keys, relative last-run + per-row spinner + flash).
+- **Verified:** `bun run lint` clean; dev.log zero compile/runtime errors after hot reload
+  (pre-existing ost-collector/systemctl noise only; transient edit-window errors resolved);
+  curl golden path (login admin/admin123 → 200; logs/firewall?limit=5 200 {data};
+  logs/audit 200 {data}; logs/search 200 (preset-style `since` accepted);
+  logs/search/saved 200; logs/stats?range=24h 200; `/` 200; no-cookie → 401);
+  agent-browser E2E via the :81 gateway: search 15m preset → "0 events total · 19 ms
+  query" (honest — newest indexed event is the seed batch) and 7d → "1169 events total ·
+  22 ms"; saved search created via dialog ("since Nov 06, 08:41 PM" preview), applied,
+  deleted via ConfirmDialog — saved list back to 0, NO test data left; firewall chips
+  (allow 79/deny 26/drop 24/reject 27), deny chip → "1 active" + 25 deny rows, Clear
+  restores; density compact ↔ comfortable round trip; Export tooltip renders full CSV
+  column list; IPS critical chip → server-filtered 61 events (25 critical rows on page),
+  chip toggles off; Suppress dropdown → confirm dialog (CRITICAL badge, sid 2035344,
+  window preview "until Nov 14, 08:44 PM", honest no-reason note) → CANCELLED — event
+  untouched via API (action drop, no suppressedUntil); reports Scheduled: temp schedule
+  created via API → "never" cell → Run now → toast "Report generated" + "just now"
+  relative cell + lastRunAt bumped → schedule DELETED (DAILY-TRAFFIC untouched);
+  Forwarding SIEM-01 toggled on→off (flash path) — API state back to enabled:false,
+  buffered:0; all 6 log views + compliance at 390 px → no page-level overflow; R5
+  network/interfaces re-loaded clean after the useNowTick scare; browser console clean
+  post-edit-window.
+- **Skipped (audit: already shipped / not implementable — do NOT duplicate):** live-tail
+  pause/autoscroll mechanics; saved-search rail + confirm delete; export spinner + cap
+  toast; IPS q search + severity chips themselves; suppress M04 endpoint reuse (flow
+  upgraded, not duplicated); audit result chips/user facets/JSON viewer; compliance
+  run-now/status pills; syslog/netflow reachability test — NO test endpoint exists
+  (bufferedRows badge is the honest signal, kept); audit CSV export — no audit export
+  endpoint and endpoint shapes are locked (new endpoints allowed but "prefer existing"
+  wins; noted for a future round if the owner wants it); schedule nextRun — DTO has no
+  nextRunAt (engine-driven; honest "last run" relative only).
+- **Observation for future rounds:** net-ui `useNowTick()` getSnapshot returns `Date.now()`
+  uncached — a latent max-update-depth risk wherever it lands in fast-refetching subtrees;
+  consider a cached-tick store or the R4 heartbeat pattern if it ever misbehaves in the
+  network views.
+- **File budget:** 6 code (search-view, firewall-logs-view, ips-logs-view, audit-view,
+  live-tail-view, reports-view) + 3 docs (UI_DESIGN_SYSTEM, M09-LOGGING, PROJECT_MEMORY)
+  = 9/9.
+
+### 2026-11-13 — QA marathon Round 5 (network views)
+
+- **Scope:** M02 network views (#/network/interfaces incl. Diagnostics/LLDP/MAC/Mirroring
+  tabs, #/network/routing, #/network/wan — auto-QA marathon R5/10). Audit-first found the
+  round's mission list LARGELY ALREADY SHIPPED by the in-flight R5 work present in the
+  tree (net-ui "R5 atoms": DiagOutputBlock / recent-target chips / LastUpdatedLabel /
+  DataSourceBadge / INVALID_CLS+FieldErrorText; interfaces Diagnostics tab with host
+  ports+ARP+kernel routes+4 tools; routing search+density+RouteOsBadge; WAN probe spinner
+  + SLA colors + kernel enforcement panel + real failover event log — verified live rather
+  than re-implemented). This round finished the two REAL gaps and the docs debt. Zero
+  API/schema/route changes; 9 files total (5 code — of which interfaces-view got the new
+  edits — + 4 docs).
+- **interfaces-view.tsx (this round's code edits):** (1) OS-apply staged feedback parity
+  with the R2 firewall dialog — the row-menu "Preview apply plan" dialog now opens WHILE
+  the POST is in flight (`ApplyPlanRunning` spinning strip, role="status"), then renders
+  `ApplyPlanStages`: Guards (rose when the endpoint rejected the target, e.g. iface not
+  found), Plan (real convergence-step count from `plans[]`, zinc-dashed "zero steps — host
+  already matches the console"), Kernel (per-step exec results from `results[]`, rose
+  break-words stderr under failing steps, honest "not touched (preview only)" when the
+  gate is off) — all mapped from the EXISTING `POST /interfaces/apply` response, which is
+  single-interface by design (no bulk path invented); step cmds/results got break-words +
+  min-w-0 anti-overflow. (2) Per-row "Ping gateway" dialog switched from a bare `<pre>` to
+  the shared `DiagOutputBlock` (summary chips + n lines · m chars + Copy + scrollable mono
+  region) — one output recipe everywhere raw tool output renders.
+- **Docs:** UI_DESIGN_SYSTEM new §5.17 (network R5 atoms: DiagOutputBlock, recent-target
+  chips, freshness/provenance labels, kernel-sync badges, interfaces OS-apply staged
+  parity, validation + density keys); M02-NETWORK §4 rewritten to match the shipped view
+  (5 tabs incl. Diagnostics, kernel-truth columns + os-apply repair path, LLDP/MAC
+  search/density/CSV/freshness, routing search/kernel badges/validation, WAN SLA line +
+  kernel enforcement panel + per-policy probe spinner); PAGE_MAP network sections synced
+  (interfaces 5-tab heading + layout, routing layout, WAN layout — stale "probe history
+  line chart" replaced by the shipped kernel enforcement panel + failover event log).
+- **Verified:** `bun run lint` clean; dev.log zero compile/runtime errors after hot reload
+  (pre-existing ost-collector 401 noise only); curl golden path (login admin/admin123 →
+  200; interfaces/routes/network-routes/wan-policies/wan-os → 200 `{data}`; `/` 200;
+  no-cookie → 401); diagnostics probes to 127.0.0.1 only (tcp-check 200 connected 2 ms;
+  ping honestly returns the host's cap_net_raw limitation in raw output — shown as-is;
+  dns-lookup 200; all 401 without cookie); POST interfaces/apply (eth0) → 200 gate-off
+  plan preview; agent-browser E2E via the :81 gateway: Diagnostics tab → TCP probe
+  127.0.0.1:3000 → "connected · 4 ms" + "1 LINE · 33 CHARS" + Copy button + raw region;
+  wan0 "Preview apply plan" → staged strip renders Guards (gate-off reason) / Plan (1
+  convergence step) / Kernel (not touched — preview only); wan0 "Ping gateway" dialog →
+  "failed" badge + 4 LINES · 116 CHARS + Copy → "Copied" toast; routing search "10.50" →
+  "Clear (1/2)" + only the matching row, density + kernel badges present; WAN "Probe now"
+  on wan0 → per-card spinner → "Probe complete — wan0 is down" toast, kernel enforcement
+  panel + failover event log render; LLDP/MAC tabs show search + density + "updated just
+  now" + provenance badge; 390px viewport screenshot clean; browser console clean; NO test
+  data created (probes are read-only diagnostics; the one audited probe action is an
+  operator action on existing state).
+- **Skipped (audit: already shipped — do NOT duplicate):** diagnostics output blocks +
+  recent-target chips + per-tool spinners; host ports/ARP/kernel-routes cards; LLDP/MAC
+  search+density+freshness+CSV; routing search/density/kernel chips/per-field validation/
+  409 conflict confirm; PBR plan preview; WAN per-policy probe spinner, SLA state colors,
+  kernel enforcement panel, failover event log; interface carrier/drift/MAC-copy/refs.
+- **Not implementable (honest):** bulk "apply all interfaces" button — the apply endpoint
+  is explicitly single-interface (`body {name}` required, no bulk exec path) and endpoint
+  shapes are locked this round; WAN failover history BEYOND the shipped event log — events
+  live in the os-status response (memory), not a persisted model, so deeper history would
+  need an API change (forbidden).
+- **File budget:** 9/9 (interfaces-view, net-ui, net-api, routing-view, wan-view,
+  UI_DESIGN_SYSTEM, M02-NETWORK, PAGE_MAP, PROJECT_MEMORY).
+
+### 2026-11-13 — QA marathon Round 4 (VPN & SD-WAN)
+
+- **Scope:** M05 VPN views (#/vpn/sessions, #/vpn/configs incl. user-groups tab) + SD-WAN
+  (#/routing/sdwan; spec §2.5 — no dedicated module doc exists, nothing invalidated there).
+  Audit-first: session search (debounced, server `?q=`) + status filter + tunnel filter +
+  naming disconnect confirm; groups-panel EmptyBlock + member-count badge; SD-WAN
+  StatsStrip overlay summary; per-path MiniMeter tones (rose breach/amber near/zinc);
+  probe-now spinner + summary toast; all EmptyBlocks — ALL ALREADY SHIPPED, skipped as
+  duplicates. Zero API/schema/route changes; 6 files touched (4 code + 2 docs).
+- **sessions-view.tsx + vpn-api.ts:** new "Uptime" column — `fmtElapsed()` formats
+  connect-duration as `<1m` / `12m` / `5h 07m` / `3d 04:12` ("up for …" prefix, mono
+  tabular-nums, absolute connect time in `title`); a 60 s clock heartbeat keeps labels
+  fresh between the 15 s refetch. Disconnected rows render "—" with an honest tooltip
+  (VpnSession has NO `disconnectedAt` — no invented duration). Responsive pass: table
+  wrapped in `overflow-x-auto` + `min-w-[880px]`, mono source/assigned IP cells
+  `min-w-0 max-w-44 truncate` + `title`, skeleton cols 8→9, Disconnect button and
+  pagination Prev/Next now `h-11 lg:h-7/8` (44 px mobile touch targets).
+- **configs-view.tsx:** client-bundle download now shows pending state — RowMenu is
+  controlled; the bundle item's `onSelect` `preventDefault`s (menu stays open), swaps to
+  spinner + "Preparing bundle…" disabled while the POST to the EXISTING
+  `configs/{id}/client-bundle` is in flight, closes on settle; per-config pending slot
+  (`bundlePendingId`), success/failure toasts unchanged. `downloadFor` moved into
+  ConfigsView (same logic, first-peer default kept).
+- **sdwan-view.tsx:** (1) Density-toggle parity — `DensityToggle`/`useTableDensity` from
+  fw-ui on the policies table (`fw-density:sdwan-policies`, compact `min-w-[600px] text-xs
+  px-1.5 py-1`) and SLA table (`fw-density:sdwan-sla`, `min-w-[360px]` compact); keys
+  independent per table. (2) Editor validation parity with the R2 firewall rule editor
+  (`INVALID_CLS` + `FieldErrorText` atoms): PolicyEditor (name/overlay/DSCP regex/CIDR
+  regex/fixed-WAN-required) and SlaProfileEditor (name/latency 5–1000/jitter 1–500/loss
+  0–50) now validate per-field at submit — rose ring + `aria-invalid` +
+  `aria-describedby` error id + `role="alert"` text, scroll-to + focus FIRST invalid,
+  per-field errors clear on edit, Save no longer silently disabled on empty name; server
+  errors land on the name field. (3) Responsive: Sites/Policies/SLA scroll containers are
+  `overflow-auto` (x+y) with `min-w-[680/720/420px]`. (4) Stale header + section comments
+  corrected ("red-700 for up" / "up=blue" → actual zinc/amber/rose map per §2 health rule).
+- **Docs:** UI_DESIGN_SYSTEM new §5.16 (VPN/SD-WAN R4 atoms: connect-duration, bundle
+  pending state, editor-validation parity, wide-table overflow pattern).
+- **Verified:** `bun run lint` clean; dev.log zero compile/runtime errors after the edits
+  (dev server restart at 19:43 clean; only pre-existing ost-collector 401 noise); curl
+  golden path (login admin/admin123 → 200; vpn/sessions 200 incl. `?status=active&q=kim`;
+  vpn/configs 200; sdwan/paths + stats 200; `/` 200; no-cookie → 401 on both APIs);
+  agent-browser E2E via the :81 gateway: sessions table shows Uptime cells
+  ("up for 1h 17m", "up for 2d 01:17"), search "j.tanaka" → 1 row, disconnect confirm
+  names the session ("j.tanaka (assigned 10.99.1.12/32)…") and Escape-cancel leaves the
+  session untouched; configs row-menu bundle flow: click → "Preparing bundle…" disabled
+  spinner → menu closes + "Client bundle downloaded" toast; SD-WAN exercised on TEMP API
+  data (QA-R4 overlay/site×2/paths×3/SLA/policy — stats 1 up/1 degraded/1 down, meters +
+  state pills + probe-now refreshed lastProbeAt on all 3 paths), policies density
+  compact → `fw-density:sdwan-policies=compact` + compact classes on the table, SLA key
+  independent; SLA editor submit (empty + latency 5000) → "Name is required" +
+  "Latency max must be an integer between 5 and 1000 ms" alerts, focus on name,
+  rose ring + aria-invalid, name error clears on edit, latency error persists; policy
+  editor (empty name + bogus DSCP + bad CIDR) → 3 simultaneous alerts, focus on name,
+  Save clickable (not silently disabled); browser density pref reset afterwards; ALL QA
+  entities DELETED (8× DELETE 200), stats back to all-zero, sdwan view reloads to
+  "No overlays yet"; console clean.
+- **Skipped (audit: already shipped):** session user/IP search + status Select + disconnect
+  confirm naming the session; groups-panel empty state + inline count badges; config
+  TunnelStatusBadge recipes; SD-WAN StatsStrip summary; per-path SLA meters with tone
+  colors; probe-now spinner + toast; path StatePills; all SD-WAN EmptyBlocks.
+- **Not implementable (skipped honestly):** SD-WAN failover/event log timeline — no
+  SdwanEvent model and no event data in the stats endpoint (schema has only
+  Overlay/Site/Path/Policy); per-mission instruction skipped. Per-path "probe now"
+  button — the probe endpoint takes an overlayId only (existing shape locked, no API
+  change allowed); the per-overlay probe with spinner already covers it.
+- **Deferred:** single-message validation in the remaining SD-WAN editors
+  (Overlay/Site/Path) — parity was scoped to policies + SLA per the mission; sessions
+  "protocol filter chips" — no protocol field on sessions (tunnel Select covers it).
+
+### 2026-11-13 — QA marathon Round 3 (IPS & threat intel)
+
+- **Scope:** M04 IPS + M13 threat-intel views (auto-QA marathon R3/10). Audit-first: the
+  preset dialog ALREADY previews the bundle (chips + mode) — R3 adds the missing
+  replace-mode DIFF; feeds ALREADY have sync spinner + result toast — R3 adds the freshness
+  badge. Zero API/schema/route changes (mission hard rule); everything reuses existing
+  endpoints. Note: the threat-intel module is COMPLETELY EMPTY on the seeded DB (seed.ts
+  creates no feeds/IOCs) — all TI empty states are honest-empty by nature here.
+- **ips-ui.tsx:** `SuppressMenu` is confirm-first — the 24h/7d/forever dropdown items now
+  open `SuppressConfirmDialog` (severity badge + sid/category/message + duration RadioGroup
+  + computed "until" preview) before POSTing; dialog states plainly that the audit records
+  the duration and a reason note is NOT persisted (suppress endpoint request shape is
+  locked, M04 §3 — mission hard rule; reason input skipped with rationale). Suppress
+  trigger disabled on live-tail rows (synthetic negative ids would 404). New exports:
+  `SuppressDuration`, `SuppressContext`, `SEVERITY_TONE` (active-chip classes + legend dot
+  per severity, M04 §4 recipes).
+- **events-view.tsx:** (1) compact "Last 24 h by severity" stacked bar above the table —
+  recharts BarChart fed by the EXISTING `/api/v1/ips/events?since=<24h>&limit=100` fetched
+  page-by-page (cap 5 pages = most recent 500, noted inline when capped), hour-bucketed
+  client-side; series hexes critical #e11d48 / high #fb7185 / medium #f59e0b / low
+  #a1a1aa / info #d4d4d8 (zinc/amber/rose only); honest-empty line when the window has 0
+  events; refetch every 60 s + invalidated with the events query (shared key prefix).
+  (2) Severity filter chips show 24 h counts and take their severity tone when active
+  (chips double as the chart legend). (3) "hide suppressed" chip (aria-pressed) filters
+  `action = suppressed` rows on the rendered page + live buffer; suppressed rows render at
+  opacity-60; footer shows "n suppressed hidden on this page" (client-side filter over
+  server pagination, honestly labeled); chip resets with Clear.
+- **policies-view.tsx:** PresetDialog replace-mode diff — selecting a target policy renders
+  "Changes to <name>": mode before→after badges (ArrowRight), "Turning on (n)" (zinc) and
+  "Turning off (n)" (amber, the risk direction) category lists, "already matches this
+  bundle — no changes" when the diff is empty, plus the scope note (only category map +
+  mode are overwritten).
+- **ti-ui.tsx:** new `FreshnessBadge` — feed data recency: fresh (<24 h) emerald (the
+  module's ONLY emerald, sanctioned by UI_DESIGN_SYSTEM §2 health-only rule; task mandate
+  green/amber/rose), aging (<7 d) amber, stale (≥7 d) / never synced / sync error rose;
+  tooltip carries the details. Stale header comment fixed (old "no emerald in this module"
+  ruling replaced by the health-only exception).
+- **feeds-view.tsx:** FreshnessBadge rendered beside SyncStatusPill in each feed card
+  (recency vs sync-outcome separation).
+- **iocs-view.tsx:** bulk selection — Checkbox column + select-all header (indeterminate
+  state), `role="toolbar"` selection bar with "n selected / k will be disabled", Disable
+  selected button runs SEQUENTIAL calls to the EXISTING `POST /iocs/{id}/disable` with
+  in-button progress ("Disabling i/n…"), skips already-disabled rows, toast summary on
+  completion; selection is an id→DTO Map so it survives paging. Copy-to-clipboard icon
+  button on every value cell (mono value column was already present). Skeleton cols 9→10.
+- **auto-block-view.tsx:** block-list summary strip (5 Cards: Rules / Enabled / Auto-feed /
+  Manual / Hits — client-computed, feeds StatsStrip recipe) + toggle row flash via
+  `ROW_FLASH_CLASS` (flashId + timer ref, exact R2 rules-view pattern); footer line
+  recomposed as feeds·manual·hits.
+- **Docs:** UI_DESIGN_SYSTEM new §5.15 (IPS/TI triage atoms: severity chips/timeline
+  legend, confirm-first suppression, freshness badge, IOC bulk pattern, summary strip +
+  flash).
+- **Verified:** `bun run lint` clean (fixed recharts/shadcn Tooltip name collision — aliased
+  `Tooltip as ReTooltip`; transient duplicate-import compile error in dev.log during the
+  edit window, resolved); dev.log zero compile/runtime errors after hot reload (pre-existing
+  ost-collector 401 noise only); curl golden path (login admin/admin123 → 200;
+  ips/events 200 `{data}` + 401 no-cookie; threat-intel/feeds 200 `{data}` + 401 no-cookie;
+  `/` 200); agent-browser E2E via the :81 gateway: events view shows timeline card
+  ("5 events in window" + legend) + chip counts (critical 2 / medium 3 / high·low·info 0);
+  Suppress → 24 hours… → dialog (window preview + honest note) → Confirm → toast "sid
+  2035344 suppressed for 24h", row action=suppressed, then hide-suppressed click → row
+  gone + footer "1 suppressed hidden on this page" — event 108 RESTORED to its original
+  row values afterwards (prisma update from captured pre-state, no test data left);
+  preset Aggressive → Replace existing → BALANCED shows "Turning on (2): dos, info_leak"
+  (no mode change — BALANCED already inline_drop), dialog cancelled without applying;
+  feeds honest-empty → created QA-R3-Test Feed → badge "never synced" → Sync now → toast
+  "8 IOCs ingested" + badge "fresh" → IOCs view select-all → "Disabled 8 IOCs" toast +
+  all-disabled via API → feed + 8 IOCs + 2 minted hits DELETED, stats back to all-zero;
+  IOCs/auto-block honest-empty states re-verified after cleanup; console clean.
+- **Skipped (audit: already shipped):** preset bundle preview (present since M04 build);
+  feed sync spinner + result toast; IOC severity/category/type/feed filters; auto-block
+  honest-empty + recent-matches polling; events severity chips themselves (counts were the
+  gap). **Deferred by hard rule:** suppress REASON input — the locked `{duration}` request
+  shape has no persistence path for a note and this round forbids API shape changes; the
+  confirm dialog states this honestly. **Not implementable:** "expiry formatting for temp
+  blocks" — AutoBlockRule has no expiry field (schema untouched per rule).
+- **File budget:** 7 code files + 2 docs (9/9).
+
+### 2026-11-13 — QA marathon Round 2 (firewall UX)
+
+- **Scope:** M03 firewall views (auto-QA marathon R2/10). Audit-first: objects-view
+  "Referenced by" counts + hover popover (client-computed over the already-loaded fw/NAT rule
+  lists) and zones-view "used by N rules" badges were ALREADY present — candidate skipped as a
+  duplicate; `GET /api/v1/objects/references` exists but was intentionally not rewired
+  (prefer existing behavior, no endpoint change). Rules text search + zone/tag chips +
+  filtered/total clear button existed; optimistic toggle + reorder with rollback + toast
+  existed in BOTH views (upgrade = feedback, not mechanics).
+- **fw-ui.tsx — new shared atoms:** `useTableDensity(key)` (localStorage `fw-density:<key>`,
+  hydration-safe via `useSyncExternalStore` — server snapshot "comfortable", same pattern as
+  the app-shell platform probe) + `DensityToggle` dropdown (Rows3 icon, `h-11 lg:h-8` touch
+  target, aria-label) + `ROW_FLASH_CLASS` export. Per-table keys stay independent
+  (`firewall-rules` / `nat-rules`).
+- **globals.css:** `@keyframes fw-row-flash` (neutral zinc tint fading out over 1.5 s); the
+  existing `prefers-reduced-motion` block neutralizes it for reduced-motion users.
+- **rules-view.tsx:** (1) quick-filter row completed — new Action Select (all/allow/deny/
+  drop/reject) + Status Select (any/enabled/disabled) composing with search + zone + tag
+  filters; search haystack now ALSO covers resolved source/destination/service object names;
+  clear button renamed "Clear all (n/total)" and visibility counts all five filter surfaces;
+  (2) density toggle in toolbar — compact trims cells (`[&_td]:py-1 px-1.5 text-xs`,
+  `min-w-[880px]`) and HIDES the optional Sched/Guard/Hits columns (13→10, skeleton cols
+  follow); (3) toggle flash: `flashId` + `flashTimer` ref set in the toggle handler (event
+  context, no setState-in-effect) → affected row briefly carries `ROW_FLASH_CLASS`.
+- **nat-view.tsx — parity:** same DensityToggle (own storage key) + compact table classes +
+  identical toggle flash on `SortableNatRow`.
+- **rule-editor.tsx:** (1) "Review — this rule will match" strip at the top of the dialog —
+  live Zones → Addrs → Services → action flow with resolved chips (groups as `NAME +N`),
+  ActionBadge, logging level, schedule/limit/SYN/app/user/MAC counts — sanity-check before
+  save; (2) submit-time client validation (name required, MAC regex, conn/rate/SYN
+  thresholds positive) with scroll-to + focus + rose ring + `aria-invalid`/error text on the
+  FIRST invalid field; Save button no longer silently disabled on empty name/invalid MACs
+  (errors are explained instead); per-field errors clear on edit.
+- **os-apply.tsx:** staged apply feedback — `ApplyStagesRunning` (spinning strip,
+  `role="status"`) while the POST is in flight; after outcome an "Apply stages" strip maps
+  the real engine steps into Validate (gate/tool/nft -c) → Converge (backup/apply,
+  `rolledback`→amber RotateCcw) → Kernel status (rollback timer + persistence + auto-confirm)
+  with per-stage icons and failure details in scrollable min-w-0/break-words mono lists; the
+  result Alert is now a sticky banner (DialogContent `max-h-[85vh] overflow-y-auto`,
+  banner `sticky top-0` on `bg-background/95`) and no longer duplicates the persistence list.
+- **Verified:** `bun run lint` clean; dev.log zero compile/runtime errors after hot reloads
+  (pre-existing ost-collector noise only); curl golden path (login admin/admin123 → 200,
+  firewall-rules 200 `{data}` ×12, `/` 200, no-cookie → 401; objects/references 200);
+  agent-browser E2E via the :81 gateway: deny filter → "Clear all (3/12)" + only deny rows;
+  deny+disabled composes → 1/12; search "TRUSTED" (object name) → 2/12; density compact
+  hides Sched/Guard/Hits + `localStorage fw-density:firewall-rules=compact` (NAT key
+  independent); toggle flash present at t0, gone at t+2s; editor review strip renders
+  resolved chips ("TRUSTED +3 → MGMT_NET · tcp/22 → allow · log: summary"); empty-name
+  submit → "Name is required" + focus/scroll on #rule-name; bad-MAC submit → rose ring +
+  focus + in-view on the MAC input; test artifact rule deleted, table back to 12;
+  console clean. OS-apply outcome stages not triggerable in-sandbox (nft unavailable →
+  Apply disabled by design) — compile/lint verified only; re-check on an nft-capable host.
+- **Skipped (audit: already shipped):** objects/zones reference counts + popovers; NAT
+  empty-state/badges (already EmptyBlock/NatTypeChip from fw-ui); optimistic mechanics
+  (rollback + toast) — only the flash feedback was missing.
+- **Deferred to later rounds:** rules-table filter chips ~28px on mobile (44px pass,
+  still open from R1); palette deep links; server-side `?q=` pushdown (client filter is
+  fine at ≤200 rules).
+
+### 2026-11-13 — QA marathon Round 1 (dashboard & shell)
+
+- **Scope:** dashboard + global-shell enhancement round (auto-QA marathon R1/10). Audit-first:
+  throughput-history sparkline, severity-distribution card and a top-talkers card were all
+  ALREADY on the dashboard (live area chart + backfill, 24 h severity stacked bar, talkers
+  bars) — skipped as duplicates; the mobile nav drawer already had active-route highlight
+  (`aria-current="page"`), section-grouping parity (same `SidebarNav` renders both), Esc/outside
+  click close (Radix Sheet) and click-to-close — audit-verified in browser, no change needed.
+- **realtime.ts — `useRealtimeStatus()`:** new export returning `"connected" | "connecting" |
+  "reconnecting" | "offline"` from the EXISTING `getSocket()` singleton (module-level snapshot +
+  `useSyncExternalStore` — hydration-safe, no setState-in-effect, no second socket connection;
+  targeted `s.off(event, fn)` cleanup so it never strips other consumers' channel handlers).
+- **app-shell.tsx — topbar:** (1) section label + view title as the `h1` — section derived from
+  `NAV_GROUPS` by `routePath` ("FIREWALL / Firewall Rules"), closes PAGE_MAP §5's "Group / View"
+  promise and keeps orientation on mobile; (2) realtime status dot after the Live/Simulated badge
+  (`role="status"` + sr text + `title`: emerald connected / amber connecting-reconnecting
+  (pulsing) / rose offline) per UI_DESIGN_SYSTEM §5.12.
+- **dashboard-view.tsx:** (1) meta row above the banner — relative "Updated Xs ago"
+  (`dataUpdatedAt` + 5 s clock heartbeat) with an "auto-refresh every 30 s" note and a manual
+  Refresh button (spinner while `isFetching`, refetches summary + certs + rule counters,
+  `h-11 lg:h-8` touch target, aria-label); (2) "Top firewall rules (hits)" card in the
+  threats/apps row (now `lg:grid-cols-3`) — ranked top-5 by `hitCount` from the EXISTING
+  `GET /api/v1/firewall-rules?limit=200&enabled=true` payload (hitCount/lastHitAt already ship in
+  `shapeFirewallRule`; no new endpoint, no shape change): rank, name, §2.3 action chip,
+  mono `tabular-nums` hit count, relative "last hit"; skeleton/error+retry/empty states mirror the
+  cert-feed pattern; "All rules" link → `#/firewall/rules`.
+- **Docs:** PAGE_MAP §2 topbar bullet + `#/dashboard` layout sketch updated; UI_DESIGN_SYSTEM new
+  §5.12 (realtime dot) + §5.13 (topbar section label).
+- **Verified:** `bun run lint` clean (fixed 1 rules-of-hooks error — useMemo after early return);
+  dev.log zero compile/runtime errors after hot reload; curl golden path (login admin/admin123 →
+  summary 200 `{data}`, firewall-rules 200 with hitCount, `/` 200; no-cookie → 401 both);
+  agent-browser E2E via the :81 gateway (the browser-real path): topbar shows
+  "OVERVIEW / Dashboard" + "Realtime stream connected" (emerald) — on direct :3000 the gateway is
+  not in front so the dot honestly reads offline (same pre-existing sandbox condition, not a
+  regression); FW-hits card renders 5 ranked rules ("24,314 …" with §2.3 chips + last-hit times);
+  Refresh click → "Updated just now"; mobile 390px: drawer opens, Dashboard row carries
+  `aria-current="page"` inside the dialog, Escape closes, console clean.
+- **Deferred to later rounds:** "Top talkers" enrichment (already shipped as bytes bars),
+  per-view deep-link palette items, mobile search row in the drawer, rules-table filter-chip
+  touch-target pass, primary-button red-vs-zinc doc ruling (still needs owner).
 
 ### 2026-11-13 — Sandbox reboot recovery (app down → restored) + scripts/sandbox-recovery.sh
 

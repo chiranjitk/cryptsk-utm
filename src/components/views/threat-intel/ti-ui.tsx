@@ -2,13 +2,16 @@
 
 /**
  * Shared UI atoms for the M13 threat-intel views — composed only from
- * src/components/ui primitives. Blue theme per UI_DESIGN_SYSTEM §2:
- * severity critical = red, warning = amber, info = zinc; action chips
- * drop = red, reject = amber, quarantine_vlan = blue; "ok" sync state
- * = blue (emerald is reserved and FORBIDDEN in this module).
+ * src/components/ui primitives. Palette per UI_DESIGN_SYSTEM §2 (rev 2):
+ * severity critical = rose, warning = amber, info = zinc; action chips
+ * drop = rose, reject = amber, quarantine_vlan = zinc; neutral sync state
+ * = zinc. Emerald appears ONLY for true-health states (§2 health-only
+ * rule) — the feed freshness badge uses it for "fresh" (<24 h sync), and
+ * nowhere else in this module.
  */
 
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import * as Icons from "lucide-react";
 
@@ -120,7 +123,62 @@ export function CategoryChip({ category }: { category: string }) {
   );
 }
 
-// ── meters (thin blue bars — confidence 0-100, reputation 0-100) ─────────────
+// ── feed freshness (recency of last sync — health-only emerald per §2) ──────
+
+/**
+ * Data-recency badge for a threat feed: fresh (<24 h, emerald — true health),
+ * aging (<7 d, amber), stale (≥7 d, rose), never synced (rose). Sync OUTCOME
+ * (ok/error) stays on FeedsView's SyncStatusPill; this badge is only about
+ * how old the ingested data is.
+ */
+export function FreshnessBadge({ lastSyncAt, lastStatus }: { lastSyncAt: string | null; lastStatus: string }) {
+  let tone = "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400";
+  let dot = "bg-zinc-400";
+  let label = "never synced";
+  let tip = "Feed has never synced — run Sync now to ingest indicators";
+
+  if (lastStatus === "error") {
+    tone = "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400";
+    dot = "bg-rose-500";
+    label = "sync error";
+    tip = "Last sync attempt failed — feed data may be outdated";
+  } else if (lastSyncAt) {
+    const ageMs = Date.now() - Date.parse(lastSyncAt);
+    const ageH = Number.isNaN(ageMs) ? Infinity : ageMs / 3600_000;
+    if (ageH < 24) {
+      tone = "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
+      dot = "bg-emerald-500";
+      label = "fresh";
+      tip = "Synced within the last 24 h";
+    } else if (ageH < 24 * 7) {
+      tone = "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400";
+      dot = "bg-amber-500";
+      label = "aging";
+      tip = "Last sync was more than 24 h ago — consider syncing";
+    } else {
+      tone = "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400";
+      dot = "bg-rose-500";
+      label = "stale";
+      tip = "Last sync was more than 7 days ago";
+    }
+  }
+
+  return (
+    <TooltipProvider delayDuration={100}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="outline" className={cn("gap-1.5 font-medium", tone)} aria-label={`Feed freshness: ${label}`}>
+            <span className={cn("inline-block h-1.5 w-1.5 rounded-full", dot)} />
+            {label}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="text-xs">{tip}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+// ── meters (thin neutral bars — confidence 0-100, reputation 0-100) ─────────
 
 export function Meter({ value, label, tone = "blue" }: { value: number; label: string; tone?: "blue" | "red" }) {
   const clamped = Math.max(0, Math.min(100, value));

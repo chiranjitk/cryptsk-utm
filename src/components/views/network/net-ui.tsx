@@ -8,9 +8,12 @@
  * Role chips are configuration labels, never health — so no emerald there.
  */
 
+import { useRef, useState, useSyncExternalStore } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import * as Icons from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toastErr, toastOk } from "@/components/views/firewall/fw-ui";
 import {
   cfgBool,
   cfgNumber,
@@ -431,6 +434,225 @@ export function MirrorKernelBadge({
   );
 }
 
+// ── R5 QA-round atoms: diagnostics output, recent targets, freshness, validation ──
+
+/** Clipboard helper with toast feedback (shared by MAC copy + diag output). */
+export async function copyText(text: string, okTitle = "Copied"): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    toastOk(okTitle);
+  } catch {
+    toastErr(new Error("Clipboard unavailable in this browser context"), "Copy failed");
+  }
+}
+
+/** Live "second" ticker (10 s heartbeat) for relative updated-at labels.
+ *  useSyncExternalStore keeps SSR/hydration safe (server snapshot = 0). */
+const tickListeners = new Set<() => void>();
+let tickTimer: ReturnType<typeof setInterval> | null = null;
+function subscribeTick(cb: () => void): () => void {
+  tickListeners.add(cb);
+  if (tickTimer == null) {
+    tickTimer = setInterval(() => tickListeners.forEach((l) => l()), 10_000);
+  }
+  return () => {
+    tickListeners.delete(cb);
+    if (tickListeners.size === 0 && tickTimer != null) {
+      clearInterval(tickTimer);
+      tickTimer = null;
+    }
+  };
+}
+export function useNowTick(): number {
+  return useSyncExternalStore(
+    subscribeTick,
+    () => Date.now(),
+    () => 0,
+  );
+}
+
+/** Relative "updated Ns ago" stamp for derived-table refresh rows — reads the
+ *  TanStack Query `dataUpdatedAt`; renders nothing before the first fetch. */
+export function LastUpdatedLabel({ dataUpdatedAt, className }: { dataUpdatedAt?: number; className?: string }) {
+  const now = useNowTick();
+  if (!dataUpdatedAt) return null;
+  const sec = Math.max(0, Math.round(((now || dataUpdatedAt) - dataUpdatedAt) / 1000));
+  return (
+    <span
+      className={cn("inline-flex items-center gap-1 text-[11px] text-zinc-400 dark:text-zinc-500", className)}
+      title={`Snapshot taken ${new Date(dataUpdatedAt).toLocaleTimeString()}`}
+    >
+      <Icons.Clock className="h-3 w-3" />
+      {sec < 3 ? "updated just now" : `updated ${sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m`} ago`}
+    </span>
+  );
+}
+
+// ── recent-target chips (localStorage-backed, hydration-safe) ────────────────
+
+const RECENT_CAP = 4;
+const recentCache = new Map<string, string[]>();
+const recentListeners = new Set<() => void>();
+const EMPTY_RECENT: string[] = [];
+
+function readRecent(key: string): string[] {
+  try {
+    const raw = window.localStorage.getItem(`net-diag-recent:${key}`);
+    const arr: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr)
+      ? arr.filter((x): x is string => typeof x === "string").slice(0, RECENT_CAP)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function recentSnapshot(key: string): string[] {
+  let v = recentCache.get(key);
+  if (v == null) {
+    v = readRecent(key);
+    recentCache.set(key, v);
+  }
+  return v;
+}
+
+function pushRecent(key: string, value: string): void {
+  const v = value.trim();
+  if (!v) return;
+  const prev = recentSnapshot(key);
+  const next = [v, ...prev.filter((x) => x !== v)].slice(0, RECENT_CAP);
+  if (next.length === prev.length && next.every((x, i) => x === prev[i])) return;
+  recentCache.set(key, next);
+  try {
+    window.localStorage.setItem(`net-diag-recent:${key}`, JSON.stringify(next));
+  } catch {
+    // storage unavailable (private mode) — chips stay session-only
+  }
+  recentListeners.forEach((l) => l());
+}
+
+/** Most-recent diagnostic targets per tool (`net-diag-recent:<key>`).
+ *  Call the setter from a mutation's onSuccess so only completed runs count. */
+export function useRecentTargets(key: string): [string[], (value: string) => void] {
+  const targets = useSyncExternalStore(
+    (cb) => {
+      recentListeners.add(cb);
+      return () => {
+        recentListeners.delete(cb);
+      };
+    },
+    () => recentSnapshot(key),
+    () => EMPTY_RECENT,
+  );
+  return [targets, pushRecent];
+}
+
+/** Direct store write (stable module fn — React-Compiler-safe to call from
+ *  mutation onSuccess closures). */
+export const pushRecentTarget = pushRecent;
+
+/** Chip row for `useRecentTargets` — nothing rendered while empty. */
+export function RecentTargetChips(props: {
+  targets: string[];
+  label: string;
+  onPick: (value: string) => void;
+  className?: string;
+}) {
+  if (props.targets.length === 0) return null;
+  return (
+    <div role="group" aria-label={`Recent ${props.label} targets`} className={cn("flex flex-wrap items-center gap-1.5", props.className)}>
+      <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">recent:</span>
+      {props.targets.map((t) => (
+        <Button
+          key={t}
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-11 max-w-44 px-2 font-mono text-[11px] normal-case lg:h-7"
+          title={`Use ${t}`}
+          aria-label={`Use recent ${props.label} target ${t}`}
+          onClick={() => props.onPick(t)}
+        >
+          <span className="block min-w-0 truncate">{t}</span>
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+// ── diagnostics output block (scrollable mono output + copy + size summary) ──
+
+/** Vendor-style diagnostics output: summary chips row, a line/char count with a
+ *  Copy button, then the raw tool output in a scrollable mono block. */
+export function DiagOutputBlock(props: {
+  label: string;
+  output: string;
+  summary?: React.ReactNode;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const text = props.output ?? "";
+  const lineCount = text.length === 0 ? 0 : text.split("\n").length;
+
+  const onCopy = () => {
+    void copyText(text, `${props.label} output copied`).then(() => {
+      setCopied(true);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <div className={cn("space-y-1.5", props.className)}>
+      {props.summary ? (
+        <div className="flex flex-wrap items-center gap-2" role="status" aria-label={`${props.label} result summary`}>
+          {props.summary}
+        </div>
+      ) : null}
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+          {lineCount} {lineCount === 1 ? "line" : "lines"} · {text.length} chars
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-11 px-2.5 lg:h-7"
+          disabled={text.length === 0}
+          onClick={onCopy}
+          aria-label={`Copy ${props.label} output`}
+        >
+          {copied ? <Icons.Check className="mr-1 h-3.5 w-3.5 text-emerald-500" /> : <Icons.Copy className="mr-1 h-3.5 w-3.5 text-zinc-500 dark:text-zinc-400" />}
+          <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
+        </Button>
+      </div>
+      <pre
+        role="region"
+        aria-label={`${props.label} raw output`}
+        className="max-h-56 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] leading-snug whitespace-pre-wrap break-words dark:border-zinc-800 dark:bg-zinc-900"
+      >
+        {text || "no output"}
+      </pre>
+    </div>
+  );
+}
+
+// ── editor validation atoms (R2/R4 parity, UI_DESIGN_SYSTEM §5.16/§5.17) ────
+
+/** Rose ring applied to an invalid input/select (same recipe as rule-editor). */
+export const INVALID_CLS = "border-rose-500 ring-1 ring-rose-500/40 focus-visible:ring-rose-500";
+
+/** Per-field error text under an invalid control (rule-editor recipe). */
+export function FieldErrorText(props: { id: string; msg?: string }) {
+  if (!props.msg) return null;
+  return (
+    <p id={props.id} role="alert" className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
+      {props.msg}
+    </p>
+  );
+}
+
 /** Data-origin badge for derived tables — live kernel reads vs engine simulation. */
 export function DataSourceBadge({ source, className }: { source: string | undefined; className?: string }) {
   if (source === "live") {
@@ -446,3 +668,4 @@ export function DataSourceBadge({ source, className }: { source: string | undefi
     </Badge>
   );
 }
+

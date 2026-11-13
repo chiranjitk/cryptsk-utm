@@ -8,7 +8,7 @@
  */
 
 import { io, type Socket } from "socket.io-client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
 let socket: Socket | null = null;
 
@@ -24,6 +24,52 @@ export function getSocket(): Socket {
     });
   }
   return socket;
+}
+
+/**
+ * Realtime transport status, derived from the EXISTING singleton socket
+ * (getSocket) — no additional connection. Values:
+ *   "connected"    → green (socket.io connect fired)
+ *   "connecting"   → amber (initial handshake in flight)
+ *   "reconnecting" → amber (was connected, disconnected — auto-retry active)
+ *   "offline"      → rose (initial connect failed; socket.io keeps retrying)
+ */
+export type RealtimeStatus = "connected" | "connecting" | "reconnecting" | "offline";
+
+// module-level snapshot + external-store subscription keeps this hydration-safe
+// and avoids setState-in-effect (React-Compiler lint) — mirrors the ⌘K hint probe.
+let rtStatus: RealtimeStatus = "connecting";
+
+function rtSnapshot(): RealtimeStatus {
+  return rtStatus;
+}
+
+function rtSubscribe(onChange: () => void): () => void {
+  const s = getSocket();
+  const set = (next: RealtimeStatus) => {
+    if (rtStatus !== next) {
+      rtStatus = next;
+      onChange();
+    }
+  };
+  // already live (another useRealtime consumer bootstrapped the socket)
+  if (s.connected) set("connected");
+  const onConnect = () => set("connected");
+  const onDisconnect = () => set(s.connected ? "connected" : "reconnecting");
+  const onConnectError = () => set("offline");
+  s.on("connect", onConnect);
+  s.on("disconnect", onDisconnect);
+  s.on("connect_error", onConnectError);
+  return () => {
+    // targeted off() — never s.off(event) which would strip other consumers' handlers
+    s.off("connect", onConnect);
+    s.off("disconnect", onDisconnect);
+    s.off("connect_error", onConnectError);
+  };
+}
+
+export function useRealtimeStatus(): RealtimeStatus {
+  return useSyncExternalStore(rtSubscribe, rtSnapshot, () => "connecting" as RealtimeStatus);
 }
 
 export type MetricsTickPayload = {

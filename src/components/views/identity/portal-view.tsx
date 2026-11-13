@@ -9,7 +9,7 @@
  * volatile in sandbox (MockEngine in-memory, SCHEMA.md §6) — labeled.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +53,19 @@ const MODE_CAPTIONS: Record<string, string> = {
 };
 
 type VoucherStateFilter = "all" | "unused" | "used" | "expired";
+
+/** Rose ring applied to an invalid input (§5.16 recipe — same as the R2 rule-editor). */
+const INVALID_CLS = "border-rose-500 ring-1 ring-rose-500/40 focus-visible:ring-rose-500";
+
+/** Per-field error text under an invalid control (rule-editor recipe). */
+function FieldErrorText(props: { id: string; msg?: string }) {
+  if (!props.msg) return null;
+  return (
+    <p id={props.id} role="alert" className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
+      {props.msg}
+    </p>
+  );
+}
 
 export function PortalView() {
   const q = useQuery({ queryKey: ["portal", "profile"], queryFn: portalApi.get });
@@ -246,8 +259,9 @@ function VouchersCard({ mode, voucherTtlHours }: { mode: string; voucherTtlHours
   const queryClient = useQueryClient();
   const [genOpen, setGenOpen] = useState(false);
   const [reveal, setReveal] = useState<Array<{ id: number; code: string; expiresAt: string }> | null>(null);
-  const [revoke, setRevoke] = useState<{ id: number } | null>(null);
+  const [revoke, setRevoke] = useState<{ id: number; code: string } | null>(null);
   const [stateFilter, setStateFilter] = useState<VoucherStateFilter>("all");
+  const [search, setSearch] = useState("");
 
   const listQ = useQuery({
     queryKey: ["portal", "vouchers"],
@@ -267,8 +281,11 @@ function VouchersCard({ mode, voucherTtlHours }: { mode: string; voucherTtlHours
 
   const rows = useMemo(() => {
     const all = listQ.data ?? [];
-    return stateFilter === "all" ? all : all.filter((v) => v.state === stateFilter);
-  }, [listQ.data, stateFilter]);
+    const needle = search.trim().toLowerCase();
+    return all
+      .filter((v) => (stateFilter === "all" ? true : v.state === stateFilter))
+      .filter((v) => (needle ? v.codeMasked.toLowerCase().includes(needle) : true));
+  }, [listQ.data, stateFilter, search]);
 
   const downloadMaskedCsv = () => {
     const header = "code,createdAt,expiresAt,usedAt,state";
@@ -331,7 +348,7 @@ function VouchersCard({ mode, voucherTtlHours }: { mode: string; voucherTtlHours
                   onClick={() => setStateFilter(f)}
                   aria-pressed={stateFilter === f}
                   className={cn(
-                    "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                    "inline-flex h-11 items-center rounded-full border px-3 text-xs transition-colors lg:h-7 lg:px-2.5",
                     stateFilter === f
                       ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                       : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
@@ -340,7 +357,17 @@ function VouchersCard({ mode, voucherTtlHours }: { mode: string; voucherTtlHours
                   {f}
                 </button>
               ))}
-              <Button variant="outline" size="sm" className="ml-auto h-7 text-[11px]" onClick={downloadMaskedCsv}>
+              <div className="relative">
+                <Icons.Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.currentTarget.value)}
+                  placeholder="Search code…"
+                  aria-label="Search vouchers by code"
+                  className="h-11 w-40 pl-8 text-xs lg:h-9"
+                />
+              </div>
+              <Button variant="outline" size="sm" className="ml-auto h-11 text-[11px] lg:h-7" onClick={downloadMaskedCsv}>
                 <Icons.Download className="mr-1 h-3 w-3" /> CSV (masked)
               </Button>
             </div>
@@ -379,7 +406,7 @@ function VouchersCard({ mode, voucherTtlHours }: { mode: string; voucherTtlHours
                             <ConfirmDialog
                               open={revoke?.id === v.id}
                               onOpenChange={(o) => !o && setRevoke(null)}
-                              title="Revoke this voucher?"
+                              title={`Revoke voucher ${revoke?.code ?? ""}?`}
                               description="The code stops working immediately. This cannot be undone."
                               loading={delMut.isPending}
                               onConfirm={() => void delMut.mutateAsync(v.id)}
@@ -387,9 +414,9 @@ function VouchersCard({ mode, voucherTtlHours }: { mode: string; voucherTtlHours
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 text-zinc-400 hover:text-rose-500"
+                              className="h-11 w-11 lg:h-8 lg:w-8 text-zinc-400 hover:text-rose-500"
                               aria-label={`Revoke voucher ${v.codeMasked}`}
-                              onClick={() => setRevoke({ id: v.id })}
+                              onClick={() => setRevoke({ id: v.id, code: v.codeMasked })}
                             >
                               <Icons.Ban className="h-4 w-4" />
                             </Button>
@@ -500,6 +527,16 @@ function GenerateForm(props: {
   const [ttlHours, setTtlHours] = useState(() => String(props.voucherTtlHours));
   const [bandwidthKbps, setBandwidthKbps] = useState("");
   const [errs, setErrs] = useState<Record<string, string[]>>({});
+  const countRef = useRef<HTMLInputElement>(null);
+  const ttlRef = useRef<HTMLInputElement>(null);
+  const bwRef = useRef<HTMLInputElement>(null);
+
+  const clearErr = (key: string) => setErrs((prev) => {
+    if (!(key in prev)) return prev;
+    const next = { ...prev };
+    delete next[key];
+    return next;
+  });
 
   const gen = useMutation({
     mutationFn: () =>
@@ -515,6 +552,30 @@ function GenerateForm(props: {
     },
   });
 
+  /** Client pre-check (§5.16 parity) — the server's fieldErrors merge in on failure. */
+  const submit = () => {
+    const next: Record<string, string[]> = {};
+    const n = Number(count);
+    if (!count.trim() || !Number.isInteger(n) || n < 1 || n > 500) next.count = ["Count must be an integer between 1 and 500"];
+    const ttl = Number(ttlHours);
+    if (!ttlHours.trim() || !Number.isInteger(ttl) || ttl < 1 || ttl > 720) next.ttlHours = ["TTL must be an integer between 1 and 720 hours"];
+    if (bandwidthKbps.trim()) {
+      const bw = Number(bandwidthKbps);
+      if (!Number.isInteger(bw) || bw < 1) next.bandwidthKbps = ["Bandwidth must be a positive integer (kbps)"];
+    }
+    setErrs(next);
+    const first = ([
+      { key: "count", ref: countRef },
+      { key: "ttlHours", ref: ttlRef },
+      { key: "bandwidthKbps", ref: bwRef },
+    ] as const).find((f) => next[f.key]);
+    if (first) {
+      first.ref.current?.focus();
+      return;
+    }
+    void gen.mutateAsync();
+  };
+
   const n = Number(count);
   return (
     <>
@@ -525,25 +586,59 @@ function GenerateForm(props: {
         <div className="space-y-3">
           <div>
             <FieldLabel hint="1–500">Count</FieldLabel>
-            <Input type="number" value={count} onChange={(e) => setCount(e.currentTarget.value)} className={cn(errs.count && "border-rose-500")} />
-            {errs.count?.map((m) => (
-              <p key={m} className="mt-1 text-[11px] text-rose-500">{m}</p>
-            ))}
+            <Input
+              ref={countRef}
+              type="number"
+              value={count}
+              onChange={(e) => {
+                setCount(e.currentTarget.value);
+                clearErr("count");
+              }}
+              aria-invalid={!!errs.count}
+              aria-describedby={errs.count ? "voucher-count-error" : undefined}
+              className={cn(errs.count && INVALID_CLS)}
+            />
+            <FieldErrorText id="voucher-count-error" msg={errs.count?.[0]} />
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div>
               <FieldLabel hint="defaults to profile">TTL (hours)</FieldLabel>
-              <Input type="number" value={ttlHours} onChange={(e) => setTtlHours(e.currentTarget.value)} className={cn(errs.ttlHours && "border-rose-500")} />
+              <Input
+                ref={ttlRef}
+                type="number"
+                value={ttlHours}
+                onChange={(e) => {
+                  setTtlHours(e.currentTarget.value);
+                  clearErr("ttlHours");
+                }}
+                aria-invalid={!!errs.ttlHours}
+                aria-describedby={errs.ttlHours ? "voucher-ttl-error" : undefined}
+                className={cn(errs.ttlHours && INVALID_CLS)}
+              />
+              <FieldErrorText id="voucher-ttl-error" msg={errs.ttlHours?.[0]} />
             </div>
             <div>
               <FieldLabel hint="optional">Bandwidth (kbps)</FieldLabel>
-              <Input type="number" value={bandwidthKbps} onChange={(e) => setBandwidthKbps(e.currentTarget.value)} placeholder="profile default" className={cn(errs.bandwidthKbps && "border-rose-500")} />
+              <Input
+                ref={bwRef}
+                type="number"
+                value={bandwidthKbps}
+                onChange={(e) => {
+                  setBandwidthKbps(e.currentTarget.value);
+                  clearErr("bandwidthKbps");
+                }}
+                placeholder="profile default"
+                aria-invalid={!!errs.bandwidthKbps}
+                aria-describedby={errs.bandwidthKbps ? "voucher-bw-error" : undefined}
+                className={cn(errs.bandwidthKbps && INVALID_CLS)}
+              />
+              <FieldErrorText id="voucher-bw-error" msg={errs.bandwidthKbps?.[0]} />
             </div>
           </div>
         </div>
       <DialogFooter>
         <Button variant="outline" onClick={props.onClose}>Cancel</Button>
-        <Button onClick={() => void gen.mutateAsync()} disabled={gen.isPending || !n || n < 1 || n > 500}>
+        <Button onClick={submit} disabled={gen.isPending}>
           {gen.isPending ? "Generating…" : `Generate ${Number.isNaN(n) ? "" : n}`}
         </Button>
       </DialogFooter>

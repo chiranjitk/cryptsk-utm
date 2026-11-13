@@ -9,9 +9,12 @@
  * 24 h severity bar, live RX/TX speeds and traffic-window totals, top-talker
  * traffic bars, dedicated VPN tunnel panel, PKI expiring-certificates feed
  * and a system panel.
+ * v3 (QA marathon R1): relative "updated" label + manual refresh for the summary
+ * feeds, and a "Top firewall rules (hits)" ranked card from the existing
+ * GET /api/v1/firewall-rules payload (hitCount/lastHitAt already in the shape).
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,12 +40,27 @@ type Summary = {
 
 type CertLite = { commonName: string; daysUntilExpiry: number | null; notAfter: string | null; status: string };
 
+/** subset of shapeFirewallRule — hitCount/lastHitAt already ship in the list payload */
+type FwRuleLite = { id: number; name: string; action: string; enabled: boolean; hitCount: number; lastHitAt: string | null };
+
 type Point = { ts: string; label: string; rx: number; tx: number };
 
 const timeLabel = (ts: string) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const fmtBytes = (v: number) => (v >= 1e9 ? `${(v / 1e9).toFixed(1)} GB` : v >= 1e6 ? `${(v / 1e6).toFixed(0)} MB` : `${(v / 1e3).toFixed(0)} KB`);
 const fmtUptime = (s: number) => `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 const fmtSpeed = (kbps: number) => (kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mbps` : `${Math.round(kbps)} kbps`);
+
+/** relative timestamp for the "Updated …" label and rule last-hit lines */
+const relTime = (at: number, now: number) => {
+  const s = Math.max(0, Math.round((now - at) / 1000));
+  if (s < 10) return "just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const hh = Math.floor(m / 60);
+  if (hh < 24) return `${hh}h ago`;
+  return new Date(at).toLocaleDateString();
+};
 
 function tickToPoints(ticks: MetricsTickPayload[]): Point[] {
   const sum = (t: MetricsTickPayload, dir: "rxKbps" | "txKbps") => t.ifaces.reduce((s, i) => s + (i[dir] ?? 0), 0);
@@ -65,6 +83,14 @@ const SEV_BAR: Record<string, string> = {
   info: "bg-zinc-400 dark:bg-zinc-500",
 };
 const SEV_ORDER = ["critical", "high", "medium", "low", "info"] as const;
+
+// firewall action chips — UI_DESIGN_SYSTEM §2.3 rule-action matrix
+const FW_ACTION_STYLES: Record<string, string> = {
+  allow: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  deny: "border-transparent bg-rose-600 text-white",
+  drop: "border-rose-600/60 bg-transparent text-rose-500",
+  reject: "border-orange-500/40 bg-orange-500/10 text-orange-500",
+};
 
 function GaugeCard({ label, value, unit, pct, icon, tone }: { label: string; value: string; unit?: string; pct: number; icon: React.ReactNode; tone: string }) {
   return (
@@ -118,6 +144,30 @@ export function DashboardView() {
     refetchInterval: 300_000,
     retry: 1,
   });
+
+  // top firewall rules by hitCount — existing list endpoint already returns the counters
+  const fwRulesQuery = useQuery<FwRuleLite[]>({
+    queryKey: ["dashboard", "top-fw-hits"],
+    queryFn: () => fetchApi<FwRuleLite[]>("/api/v1/firewall-rules?limit=200&enabled=true"),
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
+  // 5 s heartbeat so the relative "Updated …" label stays honest between refetches
+  const [clock, setClock] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setClock(Date.now()), 5000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const topFwRules = useMemo(
+    () =>
+      (fwRulesQuery.data ?? [])
+        .filter((r) => r.hitCount > 0)
+        .sort((a, b) => b.hitCount - a.hitCount)
+        .slice(0, 5),
+    [fwRulesQuery.data],
+  );
 
   const [points, setPoints] = useState<Point[] | null>(null);
   const [wanOverride, setWanOverride] = useState<Record<string, string>>({});
@@ -243,6 +293,8 @@ export function DashboardView() {
   const certs = certsQuery.data ?? [];
   const expiringSoon = certs.filter((c) => (c.daysUntilExpiry ?? 999) <= 30);
 
+  const feedsFetching = summaryQuery.isFetching || certsQuery.isFetching;
+
   const quickActions = [
     { label: "Firewall Rules", hash: "#/firewall/rules", icon: Icons.ShieldCheck },
     { label: "IPS Events", hash: "#/ips/events", icon: Icons.Siren },
@@ -254,6 +306,34 @@ export function DashboardView() {
 
   return (
     <div className="grid gap-4">
+      {/* updated-at + manual refresh — summary, cert feed and rule counters */}
+      <div className="flex items-center justify-between gap-2">
+        <p className="truncate text-xs text-zinc-400">
+          {summaryQuery.dataUpdatedAt ? (
+            <>
+              Updated <span className="tabular-nums">{relTime(summaryQuery.dataUpdatedAt, clock)}</span>
+              <span className="hidden sm:inline"> · auto-refresh every 30 s</span>
+            </>
+          ) : (
+            "Summary pending…"
+          )}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-11 shrink-0 gap-1.5 px-3 text-xs lg:h-8"
+          aria-label="Refresh dashboard data"
+          onClick={() => {
+            void summaryQuery.refetch();
+            void certsQuery.refetch();
+            void fwRulesQuery.refetch();
+          }}
+          disabled={feedsFetching}
+        >
+          <Icons.RefreshCw className={cn("h-3.5 w-3.5", feedsFetching && "animate-spin")} />
+          <span className="hidden sm:inline">Refresh</span>
+        </Button>
+      </div>
       {/* ── status banner ─────────────────────────────────────────────── */}
       <Card className={cn("overflow-hidden", verdict === "critical" && "border-rose-500/30", verdict === "attention" && "border-amber-500/30", verdict === "ok" && "border-emerald-500/25")}>
         <CardContent className="flex flex-col gap-4 p-4 md:p-5">
@@ -316,7 +396,7 @@ export function DashboardView() {
 
       {/* ── throughput + sessions/WAN ─────────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className="min-w-0 lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between space-y-0 p-4 md:p-6">
             <CardTitle className="text-sm font-medium">Throughput (live)</CardTitle>
             <div className="flex items-center gap-3 text-xs">
@@ -324,7 +404,7 @@ export function DashboardView() {
               <span className="flex items-center gap-1.5 tabular-nums font-semibold text-zinc-500 dark:text-zinc-400">↑ {fmtSpeed(curTx)}</span>
             </div>
           </CardHeader>
-          <CardContent className="p-4 pt-0 md:p-6 md:pt-0">
+          <CardContent className="overflow-hidden p-4 pt-0 md:p-6 md:pt-0">
             <ThroughputAreaChart data={chartData.length ? chartData : backfilled} />
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-400">
               <p>2 s ticks via realtime stream · backfilled {backfilled.length} ticks on load</p>
@@ -387,12 +467,12 @@ export function DashboardView() {
         </div>
       </div>
 
-      {/* ── threats + apps ────────────────────────────────────────────── */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0 p-4 md:p-6">
+      {/* ── threats + apps + top firewall hits ────────────────────────────────────────────── */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 p-4 md:p-6">
             <CardTitle className="text-sm font-medium">Threat feed (24 h)</CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {critAlerts > 0 && (
                 <Badge variant="outline" className={cn("border", SEV_STYLES.critical)}>
                   {critAlerts} critical
@@ -431,16 +511,61 @@ export function DashboardView() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4">
-          <Card>
+        <div className="grid min-w-0 gap-4">
+          <Card className="min-w-0">
             <CardHeader className="p-4 pb-2 md:p-6 md:pb-2">
               <CardTitle className="text-sm font-medium">Top applications (24 h)</CardTitle>
             </CardHeader>
-            <CardContent className="p-4 pt-0 md:p-6 md:pt-0">
+            <CardContent className="overflow-hidden p-4 pt-0 md:p-6 md:pt-0">
               {s.topApps.length ? <AppsDonut data={s.topApps.slice(0, 6)} /> : <p className="text-sm text-zinc-400">No app data yet.</p>}
             </CardContent>
           </Card>
         </div>
+
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader className="flex-row items-center justify-between space-y-0 p-4 pb-2 md:p-6 md:pb-2">
+            <CardTitle className="text-sm font-medium">Top firewall rules (hits)</CardTitle>
+            <Button asChild variant="ghost" size="sm" className="h-11 shrink-0 px-2 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 lg:h-8">
+              <a href="#/firewall/rules" aria-label="Open firewall rules view">All rules</a>
+            </Button>
+          </CardHeader>
+          <CardContent className="max-h-72 space-y-2 overflow-y-auto p-4 pt-0 md:p-6 md:pt-0">
+            {fwRulesQuery.isLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-10 rounded-lg" />
+                <Skeleton className="h-10 rounded-lg" />
+                <Skeleton className="h-10 rounded-lg" />
+              </div>
+            ) : fwRulesQuery.isError ? (
+              // inline error with retry — mirrors the cert-feed pattern; never a dead end
+              <div role="alert" className="flex flex-col gap-2">
+                <p className="text-sm text-zinc-400">Firewall rule counters unavailable.</p>
+                <Button size="sm" variant="outline" className="self-start" onClick={() => void fwRulesQuery.refetch()} disabled={fwRulesQuery.isFetching}>
+                  <Icons.RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", fwRulesQuery.isFetching && "animate-spin")} />
+                  Retry
+                </Button>
+              </div>
+            ) : topFwRules.length === 0 ? (
+              <p className="text-sm text-zinc-400">No rule hits recorded yet.</p>
+            ) : (
+              topFwRules.map((r, i) => (
+                <div key={r.id} className="flex items-center gap-2.5 rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                  <span className="w-4 shrink-0 text-xs tabular-nums text-zinc-400">{i + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm">{r.name || `Rule #${r.id}`}</p>
+                    {r.lastHitAt && !Number.isNaN(new Date(r.lastHitAt).getTime()) ? (
+                      <p className="text-[11px] text-zinc-400">last hit <span className="tabular-nums">{relTime(new Date(r.lastHitAt).getTime(), clock)}</span></p>
+                    ) : null}
+                  </div>
+                  <Badge variant="outline" className={cn("shrink-0 border capitalize", FW_ACTION_STYLES[r.action] ?? FW_ACTION_STYLES.allow)}>
+                    {r.action}
+                  </Badge>
+                  <span className="w-20 shrink-0 text-right font-mono text-sm font-semibold tabular-nums">{r.hitCount.toLocaleString()}</span>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* ── talkers + VPN tunnels ─────────────────────────────────────── */}

@@ -190,6 +190,7 @@ export const ROUTE_MANIFEST: readonly RouteDef[] = [
   ["GET", "/logs/firewall/export", "CSV export of current filter (same params, no page)", "Logs"],
   ["GET", "/logs/ips", "IPS logs (?severity=&category=&page=)", "Logs"],
   ["GET", "/logs/audit", "Audit log (?user=&objectType=&page=)", "Logs"],
+  ["GET", "/logs/audit/export", "Audit log CSV export (same filters, no page; 10000-row cap)", "Logs"],
   ["GET", "/logs/stats", "Chart aggregates (?range=1h|24h|7d)", "Logs"],
   ["GET", "/logs/syslog-targets", "List syslog targets", "Logs"],
   ["POST", "/logs/syslog-targets", "Create syslog target", "Logs"],

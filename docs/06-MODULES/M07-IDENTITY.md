@@ -122,6 +122,14 @@ Three hash views (LOCKED §8). Layout/components per ../05-FRONTEND/PAGE_MAP.md 
   server generates the secret (stored in `User.totpSecret`), response shows the `otpauth://` URI +
   secret **once** (QR-ready string + copy) — `PUT /api/v1/users/{id}` with `{totpEnroll: true}`;
   enrolled state shows `Enrolled` + "Disenroll" (`{totpEnroll: false}`).
+  Validation parity (UI_DESIGN_SYSTEM §5.19): per-field client pre-checks at submit — username
+  `^[a-z0-9._-]{3,32}$`, email format when present, password length/complexity prefetched from
+  `GET /api/v1/auth-settings` (30 s staleTime) — rose ring + `role="alert"` text +
+  `aria-invalid`/`aria-describedby`, focus on the FIRST invalid control, per-field errors clear on
+  edit, Save not silently disabled; server `fieldErrors` merge into the same bag on 400.
+- **Users table:** `Last login` renders relative ("never" for null; `<1m`/`12m`/`5h 07m`/`3d 04:12`
+  ago in `tabular-nums`, absolute timestamp in the `title`, 60 s heartbeat — §5.19). Row kebab
+  and toolbar controls carry 44 px mobile hit areas (`h-11 lg:h-8/9`).
 - **Role descriptions table** (shown as help text next to the role Select; matrix authority:
   ../07-SECURITY/AUTH_AND_RBAC.md):
 
@@ -150,9 +158,13 @@ Three hash views (LOCKED §8). Layout/components per ../05-FRONTEND/PAGE_MAP.md 
 
 ### `#/identity/sessions`
 
-- **Layout:** full-width live `DataTable`: sourceIp (mono), userName, method badge — `local`
-  (emerald), `radius` (teal), `captive_portal` (amber), `vpn` (violet) — deviceMac, startedAt,
-  lastSeen ("x s ago", ticking), state badge. Filter chips by `method`; `?state=active` default.
+- **Layout:** full-width live `DataTable` (min-w 860 px inside the `overflow-x-auto` shell):
+  sourceIp (mono), userName, method badge — `local` (emerald), `radius` (teal), `captive_portal`
+  (amber), `vpn` (violet) — deviceMac, startedAt, lastSeen ("x s ago", ticking), state badge.
+  Filter chips by `method` (44 px mobile); `?state=active` default. An emerald "**N active now**"
+  summary chip (`role="status"`) renders beside the live badge only when no method filter and no
+  search text is active — with a filter applied the loaded row count is filter-scoped and would
+  misrepresent the tenant-wide active count (UI_DESIGN_SYSTEM §5.19).
 - **Data:** `GET /api/v1/identity/sessions` + `sessions:update` socket deltas (§6).
 - **Row action:** "Expire" on active sessions (proposed endpoint, §3) with ConfirmDialog.
 - **Empty/error:** empty map → EmptyState "No active identity sessions"; socket
@@ -169,8 +181,12 @@ Three hash views (LOCKED §8). Layout/components per ../05-FRONTEND/PAGE_MAP.md 
   **one-time reveal dialog**: full codes list, "Copy all" and "Download CSV"
   (columns: `code,expiresAt`); after closing, codes are never shown whole again.
 - **Voucher table:** code (masked `…last4`), state badge (`unused` emerald / `used` zinc /
-  `expired` amber), createdAt, expiresAt, usedAt. Filters by state; CSV export of the
-  *masked* list allowed.
+  `expired` amber), createdAt, expiresAt, usedAt. Filters by state chips plus a code search input
+  (client-side on the masked code; CSV export exports the filtered set). The revoke ConfirmDialog
+  titles the masked code ("Revoke voucher …last4?").
+- **Voucher generator validation parity** (§5.19): count 1–500, TTL 1–720 and optional bandwidth
+  are pre-checked per-field at submit (rose ring + `role="alert"` + focus first invalid) instead
+  of silently disabling the button; server `fieldErrors` merge in on 400.
 - **Guest self-registration note** (simulated): in `credentials` mode the MockEngine
   occasionally "self-registers" a guest and opens an `IdentitySession` with
   `method: "captive_portal"` (SIMULATION_LAYER §6 sessions generator); a `notifications`
@@ -276,7 +292,7 @@ sessions view subscribes to `alerts`-free channels per ../05-FRONTEND/STATE_AND_
 - [ ] Self-delete and last-admin delete are refused with `409 CONFLICT` and a human-readable message.
 - [ ] Group editor multiselect saves via replace-all `memberIds`; membership chips on the users table update after `config:updated`.
 - [ ] `GET /api/v1/radius-profiles` returns `sharedSecret: "••••••••"` everywhere; no list/detail response ever contains the clear secret.
-- [ ] Reveal endpoint is reachable only for super_admin/tenant_admin, is audited, and the UI requires a second click ("Reveal secret") with auto-hide after 15 s.
+- [ ] Reveal endpoint is reachable only for super_admin/tenant_admin, is audited, and the UI requires a second click ("Reveal secret") with a visible "auto-hides in Ns" countdown, a copy button (clipboard + toast) and auto-hide after 15 s (§5.19).
 - [ ] Test-connection returns the simulated `{ ok, latencyMs }` and renders success (emerald) / failure (rose) states.
 - [ ] Portal editor validates redirectUrl and enforces mode-conditional voucher UI; saving broadcasts `config:updated` and snapshots a config version.
 - [ ] Voucher generation of N codes shows each code exactly once, supports Copy all and CSV download; the list afterwards shows masked codes with correct state badges.

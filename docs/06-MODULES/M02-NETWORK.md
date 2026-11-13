@@ -1,6 +1,6 @@
 # M02 — Network
 
-> TL;DR: Manages the appliance's L2/L3 plumbing in the console: interfaces (physical, VLAN, bridge, bond, GRE, IPIP), static routing, policy-based routing, switching extras (LLDP, MAC/FDB table, SPAN mirroring), and multi-WAN policies with probe-driven failover. Views `#/network/interfaces` (tabs: Interfaces | LLDP Neighbors | MAC Table | Mirroring), `#/network/routing` (tabs: Static Routes | Policy-Based Routes), `#/network/wan`.
+> TL;DR: Manages the appliance's L2/L3 plumbing in the console: interfaces (physical, VLAN, bridge, bond, GRE, IPIP), static routing, policy-based routing, switching extras (LLDP, MAC/FDB table, SPAN mirroring), host diagnostics, and multi-WAN policies with probe-driven failover. Views `#/network/interfaces` (tabs: Interfaces | Diagnostics | LLDP Neighbors | MAC Table | Mirroring), `#/network/routing` (tabs: Static Routes | Policy-Based Routes), `#/network/wan`.
 
 Related: [PROJECT_MEMORY](../00-PROJECT-MEMORY/PROJECT_MEMORY.md) (§7.2, §7.3, §8) · [SCHEMA](../03-DATABASE/SCHEMA.md) (§4 JSON shapes) · [ER_DIAGRAM](../03-DATABASE/ER_DIAGRAM.md) (Zone/iface/WanPolicy relations) · [ENDPOINTS](../04-API/ENDPOINTS.md) · [PAGE_MAP](../05-FRONTEND/PAGE_MAP.md) · [UI_DESIGN_SYSTEM](../05-FRONTEND/UI_DESIGN_SYSTEM.md) · [SIMULATION_LAYER](../02-ARCHITECTURE/SIMULATION_LAYER.md) (§3 interfaces, §5 WAN state machine) · M01 (WAN strip) · M03 (zones consume interfaces)
 
@@ -110,54 +110,66 @@ Expected error cases:
 
 ## 4. Views & Interactions
 
-### `#/network/interfaces` — 4 tabs: Interfaces | LLDP Neighbors | MAC Table | Mirroring (SPAN)
+### `#/network/interfaces` — 5 tabs: Interfaces | Diagnostics | LLDP Neighbors | MAC Table | Mirroring (SPAN)
 
 #### Tab 1 — Interfaces
 
 - **Table**: name, type badge, mode chip (`L2`/`L3`), role badge, zone, address summary (from `config`; hidden when `mode = l2`), VLAN/bond details, MTU, MSS, live rx/tx (updates from socket), link/enabled status, actions (edit, stats, enable/disable, delete where allowed).
 - Live rx/tx per row: client keeps the latest `metrics:tick` per iface name; small inline sparkline (2 min) per row, rose/amber accents only per [UI_DESIGN_SYSTEM](../05-FRONTEND/UI_DESIGN_SYSTEM.md).
+- **Kernel-truth columns (R5 QA)**: rows merge live host facts (`operState`, `carrier`, real MTU/IPv4/MAC, default-route flag) — `no carrier` amber badge when the kernel reports no media, out-of-band MTU/address drift renders an amber dot with the OS value on hover, MAC cell has a copy button, a Ref. count cell opens the "Used by" dialog, and a Kernel badge column mirrors the routes/Mirroring convention (`RouteOsBadge` recipes — UI_DESIGN_SYSTEM §5.17). Type/role filters compose with a Clear (n/total) button.
+- **OS-apply repair path (gated)**: `POST /api/v1/interfaces/apply` (single-interface by design — body `{name}`) is the manual converge path; the row menu's "Preview apply plan" opens the staged dialog (running strip → Guards / Plan / Kernel stages mapped from the real `plans[]`/`results[]`; "not touched (preview only)" when `CONSOLE_OS_APPLY` is off). `GET /api/v1/interfaces/os-state` feeds the drift dots + the gate note under the table. Out-of-band kernel changes are amber exceptions, silence is healthy.
 - **Create dialog** (type selector gates fields): VLAN (`parent` select of physical ifaces, `vlanId` 1–4094, name auto-suggest `vlan<id>`), bridge (`members` multiselect, `stp` switch, `stpMode` select, `igmpSnooping` switch), bond (`members` multiselect, `mode` select), GRE (`local`, `remote` IP fields, `ttl`), IPIP (`local`, `remote`), loopback (address only). All: role select, zone select, MTU, MSS clamp (optional), `mode` radio (`l2`/`l3` — hides IP fields on `l2`), description.
 - **Edit dialog**: physical WAN rows expose `wanType` radio (`static` → ip/cidr/gateway/dns list; `dhcp` → hostname override only; `pppoe` → user/password/service), LLDP switch, MTU, MSS clamp, role, zone, mode radio, description. Non-physical rows edit members/parent/settings + same shared fields.
-- **Enable/disable** toggle anywhere on physical or logical ifaces; disabling a parent visually marks children (vlan/bridge members) as degraded in the table.
+- **Enable/disable** toggle anywhere on physical or logical ifaces; disabling a parent visually marks children (vlan/bridge members) as degraded in the table. Disabling with active references (zones/routes/WAN policy) raises a confirm listing them before the forced toggle.
 - **Stats dialog**: totals + windowed rates, simulated error/drop counters, "last 60 ticks" sparkline.
 - Empty state: none expected (seed guarantees 7 ifaces); loading = table skeleton; errors = toast + retry.
 
-#### Tab 2 — LLDP Neighbors
+#### Tab 2 — Diagnostics (host-level tools; R5 QA)
 
-- **Table** (derived, engine ring; auto-refresh 10 s): local iface, chassis id (mono), system name, port id/desc, capabilities chips, last seen ("x s ago"). Filters: iface select, `q`.
+- **Host ports inventory** (`GET /api/v1/network/host-ports`, 10 s auto-refresh): kernel port list with oper state, carrier, MTU, MAC, IPv4, rx/tx err-drop counters; "unadopted" badge marks ports not yet managed by the console DB.
+- **ARP / neighbor cache** (`GET /api/v1/network/arp`): IP/MAC/device/state table with a client-side search (complete = emerald "reachable").
+- **Kernel route table (IPv4)** (`GET /api/v1/network/routes`): destination/gateway/device/metric rows; the default route row is highlighted and badged.
+- **Four tools with independent run-button spinners** (existing endpoints under `/api/v1/network/diagnostics/*`): ping (source-interface scoped, packet count, DF + payload size MTU test), traceroute (hop table + raw output), DNS lookup (optional server), TCP probe (host/port + optional bind). Every result renders through the shared `DiagOutputBlock` (summary chips + line/char count + Copy + scrollable mono output — UI_DESIGN_SYSTEM §5.17) and each tool keeps "recent target" chips (localStorage, completed runs only). Probes target whatever the operator types — the console makes no allowlist of its own beyond the backend's argument validation.
+
+#### Tab 3 — LLDP Neighbors
+
+- **Table** (derived, engine ring; auto-refresh 10 s): local iface, chassis id (mono), system name, port id/desc, capabilities chips, last seen ("x s ago"). Filters: iface select, `q` search; Refresh button + "updated Ns ago" freshness label, DensityToggle, CSV export, and a `DataSourceBadge` stating live-lldpd vs simulated provenance.
 - Info banner: "Churned by the simulated switching generator — not persisted (SIMULATION_LAYER §6)." Per-iface transmit toggles live in the Interfaces tab (`config.lldp`).
 
-#### Tab 3 — MAC Table
+#### Tab 4 — MAC Table
 
-- **Table** (derived FDB): MAC (mono), VLAN, iface, type badge (`dynamic` zinc / `static` emerald), age. Filters: iface, VLAN, `q`; manual refresh + 10 s auto-refresh.
+- **Table** (derived FDB): MAC (mono, per-row copy), VLAN, iface, type badge (`dynamic` zinc / `static` emerald), age. Filters: iface, VLAN, `q` search; manual refresh + 10 s auto-refresh + freshness label + DensityToggle.
 - Static entries are derived from DHCP reservations + bridge membership; a row-level hint links `#/dns-dhcp/dhcp` ("reserve this MAC").
 
-#### Tab 4 — Mirroring (SPAN)
+#### Tab 5 — Mirroring (SPAN)
 
 - **Table**: name, src iface → dst iface, direction chip, enabled toggle, actions. "Add mirror" dialog: name, src iface select, dst iface select (marked "capture"), direction radio, enabled.
 - Note card: mirrored traffic feeds the IPS `passive` (IDS) tap on the appliance (`tc mirred`); in sandbox mirrors are recorded config only.
 - One active mirror per src iface (`409 CONFLICT` otherwise).
+- **Kernel sync (R5 QA)**: per-row + "Sync to kernel" converge via the mirror apply endpoint with a confirm dialog, per-mirror outcome dialog (`MirrorKernelBadge` — in kernel / not installed / off / n/a) and staged toasts; gate-off installs render the plan-preview reason.
 
 ### `#/network/routing` — 2 tabs: Static Routes | Policy-Based Routes
 
 #### Tab 1 — Static Routes
 
-- **Table**: destination CIDR, gateway (or "blackhole" chip), interface, distance, BFD chip (on/off + engine state dot), enabled toggle, actions.
-- **Add/edit route dialog**: name (optional), destination CIDR (zod cidr validation), gateway (disabled + cleared when blackhole switch on), interface select (optional, from iface list), distance number (1–255), BFD switch (disabled while blackhole), enabled.
+- **Table**: destination CIDR (default route badged), gateway (or "blackhole" chip), interface, distance, Kernel badge (`RouteOsBadge` — in kernel / drifted / not installed / off), BFD chip (on/off + REAL ping-based next-hop state), enabled toggle, actions (per-row kernel sync, edit, delete).
+- **Add/edit route dialog**: name (optional), destination CIDR (zod cidr validation), gateway (disabled + cleared when blackhole switch on), interface select (optional, from iface list), distance number (1–255), BFD switch (disabled while blackhole), enabled. Submit-time per-field validation (UI_DESIGN_SYSTEM §5.17 recipe); duplicate/default-route conflicts surface the server's 409 issues in a force-save confirm.
+- **Search + density (R5 QA)**: debounced search across destination/gateway/iface/name/description with a Clear (n/total) button and a per-table DensityToggle (`net-static-routes`).
 - Route ordering is not user-managed; the table sorts by `destinationCidr` then `distance`.
 
 #### Tab 2 — Policy-Based Routes (PBR)
 
-- **Table** (ordered by `position`): pos, name, match summary (src → dst, service), action summary (`→ wan1` or `→ 192.0.2.1`), enabled toggle, actions (edit, delete).
+- **Table** (ordered by `position`): pos, name, match summary (src → dst, service), action summary (`→ wan1` or `→ 192.0.2.1`), kernel badge (`PbrKernelBadge` — in kernel / config-only / not installed), enabled toggle, actions (plan preview, edit, delete). Search + density parity with Tab 1 (`net-pbr-rules`).
 - **Editor dialog**: name, position number, `ObjectPicker` for src/dst addresses + services (mixed object+group ids, same semantics as M03), egress radio: `outgoingIface` select **or** `gateway` IP input (mutually exclusive — enforced `400`), enabled.
 - Appliance note (info card): matching connections are fwmarked into per-WAN policy tables (`ip rule fwmark`); PBR evaluates before the multi-WAN mode selection.
 
 ### `#/network/wan`
 
-- **Policy cards/table** (one per WAN iface): iface name, mode chip, weight/priority values, probe summary (`icmp → 1.1.1.1` every 5 s), thresholds, current `state` badge (up=emerald, degraded=amber, down=rose, unknown=zinc).
+- **Policy cards/table** (one per WAN iface): iface name, mode chip, weight/priority values, probe summary (`icmp → 1.1.1.1` every 5 s), thresholds, current `state` badge (up=emerald, degraded=amber, down=rose, unknown=zinc); last-probe detail (latency) plus the rolling **SLA window line** (samples with colored up/degraded/down counts, avg latency, jitter, loss) when the probe ring has data — honest-empty when it does not.
 - **Failover explanation panel** (static explainer card): how `priority` (lower number preferred), `failover` (standby until active fails probes), and `load_balance` (per-connection hash weighted by `weight` %) choose the egress path; states which iface is currently active given live `state` values.
-- **Policy editor dialog**: iface select (ifaces with `role = wan` and no policy yet, or existing), mode radio, weight slider (only load_balance), priority number, probe type select, probe target input (with sensible defaults per type), interval/timeout/thresholds number inputs, enabled toggle.
-- **"Probe now" button** per row → `POST .../probe` → button shows spinner until state re-evaluates.
+- **Kernel enforcement panel (R5 QA, real state)**: egress decision (primary default-route owner, active egress, table 240 routes), managed kernel objects (band-3200 ip rules, per-WAN tables), drift preview (next converge step count + reasons) and a **failover event log** of real up/down transitions — honest-empty before the first transition.
+- **Policy editor dialog**: iface select (ifaces with `role = wan` and no policy yet, or existing), mode radio, weight slider (only load_balance), priority number, probe type select, probe target input (with sensible defaults per type), interval/timeout/thresholds number inputs, enabled toggle. Submit-time per-field validation (target shape per type, interval 2–300 s, timeout 100–10000 ms).
+- **"Probe now" button** per row → `POST .../probe` → per-policy spinner (only the probing card spins), card updates from the returned fresh `state`.
 
 ## 5. Business Logic & Validation
 

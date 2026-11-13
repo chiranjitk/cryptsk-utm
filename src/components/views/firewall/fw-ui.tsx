@@ -7,7 +7,7 @@
  * reject = orange soft; emerald is reserved for true health/active badges only.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast as showToast } from "@/hooks/use-toast";
 import {
@@ -42,6 +42,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -52,6 +58,89 @@ import * as Icons from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRealtime } from "@/lib/realtime";
 import { referencedByOf, type FwAction, type NatType, type RefRow } from "./fw-api";
+
+// ── table density (localStorage-backed, hydration-safe) ────────────────────
+
+export type TableDensity = "comfortable" | "compact";
+
+/**
+ * Class applied to a TableRow for ~1.5s after an optimistic toggle lands
+ * (keyframes in globals.css; reduced-motion users get no animation).
+ */
+export const ROW_FLASH_CLASS = "fw-row-flash";
+
+const densityListeners = new Set<() => void>();
+const subscribeDensity = (cb: () => void) => {
+  densityListeners.add(cb);
+  return () => {
+    densityListeners.delete(cb);
+  };
+};
+
+function densitySnapshot(key: string): TableDensity {
+  if (typeof window === "undefined") return "comfortable";
+  try {
+    return window.localStorage.getItem(`fw-density:${key}`) === "compact" ? "compact" : "comfortable";
+  } catch {
+    return "comfortable";
+  }
+}
+
+/** Per-table density persisted under `fw-density:<key>` in localStorage. The
+ *  useSyncExternalStore server snapshot ("comfortable") keeps SSR/hydration
+ *  consistent (same pattern as the app-shell platform probe). */
+export function useTableDensity(key: string): [TableDensity, (d: TableDensity) => void] {
+  const density = useSyncExternalStore(
+    subscribeDensity,
+    () => densitySnapshot(key),
+    () => "comfortable" as const,
+  );
+  return [
+    density,
+    (d) => {
+      try {
+        window.localStorage.setItem(`fw-density:${key}`, d);
+      } catch {
+        // storage unavailable (private mode) — density stays session-only
+      }
+      densityListeners.forEach((l) => l());
+    },
+  ];
+}
+
+/** Comfortable/compact picker for the M03 data tables. Compact trims cell
+ *  padding + text size; the rules table additionally hides optional columns. */
+export function DensityToggle(props: { storageKey: string; label?: string }) {
+  const [density, setDensity] = useTableDensity(props.storageKey);
+  const label = props.label ?? "Table density";
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-11 px-2.5 lg:h-8"
+          aria-label={`${label}: ${density}`}
+          title={`${label}: ${density === "compact" ? "compact rows" : "comfortable rows"}`}
+        >
+          <Icons.Rows3 className="mr-1 h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+          <span className="hidden sm:inline">{density === "compact" ? "Compact" : "Comfortable"}</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem onSelect={() => setDensity("comfortable")}>
+          <Icons.Check className={cn("mr-1.5 h-4 w-4", density === "comfortable" ? "opacity-100" : "opacity-0")} />
+          Comfortable
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => setDensity("compact")}>
+          <Icons.Check className={cn("mr-1.5 h-4 w-4", density === "compact" ? "opacity-100" : "opacity-0")} />
+          Compact
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 // ── toasts (use-toast radix toaster — wired in providers.tsx) ───────────────
 

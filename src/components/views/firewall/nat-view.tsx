@@ -7,7 +7,7 @@
  * optionally emits a matching allow firewall rule.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -87,16 +87,19 @@ import {
 import { FirewallOsSync } from "./os-apply";
 import {
   ConfirmDialog,
+  DensityToggle,
   EditorSection,
   EmptyBlock,
   FieldLabel,
   NatTypeChip,
   ObjectPicker,
   QueryError,
+  ROW_FLASH_CLASS,
   TableSkeleton,
   toastErr,
   toastOk,
   useFwConfigInvalidation,
+  useTableDensity,
 } from "./fw-ui";
 
 const NAT_KEY = ["nat", "rules"] as const;
@@ -271,6 +274,12 @@ export function NatView() {
   const [portFwdOpen, setPortFwdOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | NatType>("all");
+  /** id of the row whose optimistic toggle just landed (brief neutral flash) */
+  const [flashId, setFlashId] = useState<number | null>(null);
+  const flashTimer = useRef<number | null>(null);
+
+  const [density] = useTableDensity("nat-rules");
+  const dense = density === "compact";
 
   const allRules = useMemo(() => natQuery.data?.data ?? [], [natQuery.data]);
   const rules = useMemo(() => {
@@ -370,6 +379,14 @@ export function NatView() {
 
   const [hitsMenuFor, setHitsMenuFor] = useState<number | null>(null);
 
+  /** optimistic toggle + brief neutral flash on the affected row */
+  const toggleNatRule = (rule: NatRule) => {
+    if (flashTimer.current != null) window.clearTimeout(flashTimer.current);
+    setFlashId(rule.id);
+    flashTimer.current = window.setTimeout(() => setFlashId(null), 1500);
+    toggleMut.mutate({ id: rule.id, enabled: !rule.enabled });
+  };
+
   const onDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
@@ -436,6 +453,9 @@ export function NatView() {
             {rules.length} of {allRules.length} rules
           </span>
         )}
+        <div className="ml-auto">
+          <DensityToggle storageKey="nat-rules" label="NAT table density" />
+        </div>
       </div>
 
       <Card className="p-0">
@@ -462,7 +482,12 @@ export function NatView() {
           ) : (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
               <div className="max-h-[70vh] overflow-auto [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-300 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700">
-                <Table className="min-w-[980px] text-sm">
+                <Table
+                  className={cn(
+                    "min-w-[980px] text-sm",
+                    dense && "min-w-[760px] text-xs [&_td]:px-1.5 [&_td]:py-1 [&_th]:h-9 [&_th]:px-1.5",
+                  )}
+                >
                   <TableHeader className="sticky top-0 z-10 bg-card">
                     <TableRow>
                       <TableHead className="w-10 pl-2" aria-label="Reorder" />
@@ -485,7 +510,8 @@ export function NatView() {
                           addrMap={addrMap}
                           svcMap={svcMap}
                           toggling={toggleMut.isPending}
-                          onToggle={(rule) => toggleMut.mutate({ id: rule.id, enabled: !rule.enabled })}
+                          flash={flashId === r.id}
+                          onToggle={toggleNatRule}
                           onEdit={(rule) => {
                             setEditing(rule);
                             setEditorOpen(true);
@@ -566,6 +592,8 @@ function SortableNatRow(props: {
   addrMap: Map<number, { name: string; isGroup: boolean; count: number }>;
   svcMap: Map<number, string>;
   toggling: boolean;
+  /** brief neutral flash while an optimistic toggle lands */
+  flash: boolean;
   onToggle: (r: NatRule) => void;
   onEdit: (r: NatRule) => void;
   onDuplicate: (r: NatRule) => void;
@@ -605,7 +633,7 @@ function SortableNatRow(props: {
     <TableRow
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(!r.enabled && "opacity-55", isDragging && "z-50 relative bg-zinc-500/5")}
+      className={cn(!r.enabled && "opacity-55", isDragging && "z-50 relative bg-zinc-500/5", props.flash && ROW_FLASH_CLASS)}
     >
       <TableCell className="w-10 pl-2 pr-0">
         <button

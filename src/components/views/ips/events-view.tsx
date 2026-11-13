@@ -3,14 +3,17 @@
 /**
  * #/ips/events — triage workflow for the ips_events stream (M04 §4).
  * Server-paginated query + 50-row live tail (logs:tail, filtered), severity
- * chips, category/time-range/q/sid filters, suppress menu (24h/7d/forever)
- * and "Create firewall block rule" → prefilled M03 RuleEditor via
- * sessionStorage handoff.
+ * chips with 24 h counts, a compact 24 h severity timeline (client-bucketed
+ * from the existing /api/v1/ips/events endpoint — no new API), category/
+ * time-range/q/sid filters, a hide-suppressed toggle, confirm-first
+ * suppression (24h/7d/forever) and "Create firewall block rule" → prefilled
+ * M03 RuleEditor via sessionStorage handoff.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
+import { Bar, BarChart, ResponsiveContainer, Tooltip as ReTooltip, XAxis, YAxis } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -46,7 +49,7 @@ import {
   type IpsEventDto,
   type IpsSeverity,
 } from "./ips-api";
-import { CategoryChip, IpsActionBadge, SeverityBadge, SuppressMenu, useIpsConfigInvalidation } from "./ips-ui";
+import { CategoryChip, IpsActionBadge, SEVERITY_TONE, SeverityBadge, SuppressMenu, useIpsConfigInvalidation } from "./ips-ui";
 import { EmptyBlock, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
 import type { FwRule } from "../firewall/fw-api";
 
@@ -54,6 +57,61 @@ const EVENTS_KEY = ["ips", "events"] as const;
 const CATEGORIES_KEY = ["ips", "rule-categories"] as const;
 const LIVE_CAP = 50; // M04 §6 in-memory live buffer
 const PREFILL_STORAGE_KEY = "ips:prefill-rule";
+
+// ── 24 h severity timeline (reuses the existing events endpoint) ───────────
+
+const HOUR_MS = 3600_000;
+const TIMELINE_PAGES_CAP = 5; // 5 × 100 events — chart notes the cap honestly
+const TIMELINE_SEVERITIES: IpsSeverity[] = ["info", "low", "medium", "high", "critical"];
+const TIMELINE_COLORS: Record<IpsSeverity, string> = {
+  info: "#d4d4d8",
+  low: "#a1a1aa",
+  medium: "#f59e0b",
+  high: "#fb7185",
+  critical: "#e11d48",
+};
+
+interface TimelinePoint {
+  label: string;
+  info: number;
+  low: number;
+  medium: number;
+  high: number;
+  critical: number;
+}
+
+interface TimelineData {
+  points: TimelinePoint[];
+  bySeverity: Record<IpsSeverity, number>;
+  total: number;
+  capped: boolean;
+}
+
+/** Hour-buckets the last 24 h of events from the existing paginated endpoint. */
+async function fetchTimeline(): Promise<TimelineData> {
+  const since = new Date(Date.now() - 24 * HOUR_MS).toISOString();
+  const first = await ipsApi.listEvents(`since=${encodeURIComponent(since)}&limit=100&page=1`);
+  const pages = Math.min(first.meta.totalPages, TIMELINE_PAGES_CAP);
+  const rows = [...first.data];
+  for (let p = 2; p <= pages; p++) {
+    const next = await ipsApi.listEvents(`since=${encodeURIComponent(since)}&limit=100&page=${p}`);
+    rows.push(...next.data);
+  }
+  const from = Date.now() - 24 * HOUR_MS;
+  const points: TimelinePoint[] = Array.from({ length: 24 }, (_, i) => {
+    const d = new Date(from + i * HOUR_MS);
+    return { label: `${String(d.getHours()).padStart(2, "0")}:00`, info: 0, low: 0, medium: 0, high: 0, critical: 0 };
+  });
+  const bySeverity: Record<IpsSeverity, number> = { info: 0, low: 0, medium: 0, high: 0, critical: 0 };
+  for (const ev of rows) {
+    const ts = Date.parse(ev.timestamp);
+    const idx = Math.min(23, Math.max(0, Math.floor((ts - from) / HOUR_MS)));
+    if (bySeverity[ev.severity] === undefined) continue;
+    bySeverity[ev.severity] += 1;
+    points[idx][ev.severity] += 1;
+  }
+  return { points, bySeverity, total: rows.length, capped: first.meta.totalPages > TIMELINE_PAGES_CAP };
+}
 
 type RangeKey = "1h" | "24h" | "7d" | "all";
 
@@ -63,15 +121,27 @@ const RANGE_MS: Record<Exclude<RangeKey, "all">, number> = {
   "7d": 7 * 24 * 3600_000,
 };
 
+/** One-shot deep-link read at first render (view remounts per navigation):
+ *  `#/ips/events?sid=<sid>` prefills the sid filter — written by the M09 logs IPS
+ *  detail sheet's "Open sid in IPS triage" pivot (R6 pass 3; rules-view ?search= pattern). */
+function readSidDeepLink(): string {
+  if (typeof window === "undefined") return "";
+  const qs = window.location.hash.split("?")[1];
+  if (!qs) return "";
+  return new URLSearchParams(qs).get("sid")?.trim() ?? "";
+}
+
 export function EventsView() {
   useIpsConfigInvalidation();
   const queryClient = useQueryClient();
 
   const [severities, setSeverities] = useState<IpsSeverity[]>([]);
   const [category, setCategory] = useState<string>("all");
-  const [range, setRange] = useState<RangeKey>("24h");
+  // sid deep link also widens the default window: the target event may be older than 24h
+  const [deepSid] = useState(readSidDeepLink);
+  const [range, setRange] = useState<RangeKey>(deepSid ? "all" : "24h");
   const [qInput, setQInput] = useState("");
-  const [sidInput, setSidInput] = useState("");
+  const [sidInput, setSidInput] = useState(deepSid); // deep-linked ?sid= (one-shot)
   const [q, setQ] = useState("");
   const [sid, setSid] = useState("");
   const [page, setPage] = useState(1);
@@ -79,6 +149,7 @@ export function EventsView() {
   const [liveRows, setLiveRows] = useState<IpsEventDto[]>([]);
   const [selected, setSelected] = useState<IpsEventDto | null>(null);
   const [blocking, setBlocking] = useState(false);
+  const [hideSuppressed, setHideSuppressed] = useState(false);
 
   // debounce free-text + sid inputs
   useEffect(() => {
@@ -106,6 +177,13 @@ export function EventsView() {
     queryKey: [...EVENTS_KEY, params],
     queryFn: () => ipsApi.listEvents(params),
   });
+
+  const timelineQuery = useQuery({
+    queryKey: [...EVENTS_KEY, "timeline"],
+    queryFn: fetchTimeline,
+    refetchInterval: 60_000,
+  });
+  const timeline = timelineQuery.data ?? null;
 
   const categoriesQuery = useQuery({
     queryKey: CATEGORIES_KEY,
@@ -159,14 +237,23 @@ export function EventsView() {
 
   const persisted = eventsQuery.data?.data ?? [];
   const persistedKeys = useMemo(() => new Set(persisted.map((e) => `${e.sid}|${e.timestamp}`)), [persisted]);
-  const rows = useMemo(() => {
+  const rowsBase = useMemo(() => {
     if (!liveEnabled || page !== 1) return persisted;
     const fresh = liveRows.filter((r) => !persistedKeys.has(`${r.sid}|${r.timestamp}`));
     return [...fresh, ...persisted];
   }, [liveRows, persisted, persistedKeys, liveEnabled, page]);
+  const suppressedOnPage = useMemo(
+    () => rowsBase.filter((r) => r.action === "suppressed").length,
+    [rowsBase],
+  );
+  const rows = useMemo(
+    () => (hideSuppressed ? rowsBase.filter((r) => r.action !== "suppressed") : rowsBase),
+    [rowsBase, hideSuppressed],
+  );
 
   const meta = eventsQuery.data?.meta;
-  const hasFilters = severities.length > 0 || category !== "all" || range !== "all" || q || sid;
+  const hasFilters =
+    severities.length > 0 || category !== "all" || range !== "all" || q !== "" || sid !== "" || hideSuppressed;
 
   const invalidateEvents = () => void queryClient.invalidateQueries({ queryKey: EVENTS_KEY });
 
@@ -249,6 +336,7 @@ export function EventsView() {
             <span className="mr-1 text-xs font-medium text-zinc-500">Severity</span>
             {SEVERITIES.map((s) => {
               const active = severities.includes(s);
+              const count = timeline?.bySeverity[s];
               return (
                 <button
                   key={s}
@@ -260,12 +348,13 @@ export function EventsView() {
                   }}
                   className={cn(
                     "rounded-full border px-2.5 py-1 text-xs transition-colors",
-                    active
-                      ? "border-zinc-600/40 bg-zinc-600/10 font-medium text-zinc-700 dark:text-zinc-500"
-                      : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
+                    active ? SEVERITY_TONE[s].chip : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
                   )}
                 >
                   {s}
+                  {count !== undefined && (
+                    <span className={cn("ml-1 tabular-nums", active ? "opacity-90" : "text-zinc-400")}>{count}</span>
+                  )}
                 </button>
               );
             })}
@@ -291,6 +380,26 @@ export function EventsView() {
                 {r === "all" ? "all time" : r}
               </button>
             ))}
+
+            <Separator orientation="vertical" className="mx-1.5 hidden h-5 sm:block" />
+
+            <button
+              type="button"
+              aria-pressed={hideSuppressed}
+              onClick={() => {
+                setPage(1);
+                setHideSuppressed((v) => !v);
+              }}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors",
+                hideSuppressed
+                  ? "border-zinc-600/40 bg-zinc-600/10 font-medium text-zinc-700 dark:text-zinc-500"
+                  : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
+              )}
+            >
+              <Icons.BellOff className="h-3 w-3" />
+              hide suppressed
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -358,6 +467,7 @@ export function EventsView() {
                     setRange("24h");
                     setQInput("");
                     setSidInput("");
+                    setHideSuppressed(false);
                     setPage(1);
                   }}
                 >
@@ -366,6 +476,63 @@ export function EventsView() {
               )}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* ── 24 h severity timeline (compact, from the existing events endpoint) ── */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Last 24 h by severity</p>
+            {timeline && (
+              <span className="text-[11px] text-zinc-400">
+                {timeline.total} event{timeline.total === 1 ? "" : "s"} in window
+                {timeline.capped ? " · chart covers the most recent 500" : ""}
+              </span>
+            )}
+            <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+              {TIMELINE_SEVERITIES.map((s) => (
+                <span key={s} className="inline-flex items-center gap-1 text-[11px] text-zinc-500">
+                  <span className={cn("h-1.5 w-1.5 rounded-full", SEVERITY_TONE[s].dot)} />
+                  {s}
+                </span>
+              ))}
+            </span>
+          </div>
+          {timelineQuery.isError ? (
+            <QueryError error={timelineQuery.error} onRetry={() => void timelineQuery.refetch()} />
+          ) : timelineQuery.isLoading ? (
+            <div className="h-24 w-full animate-pulse rounded-md bg-zinc-100 dark:bg-zinc-800" />
+          ) : timeline && timeline.total === 0 ? (
+            <p className="flex h-24 items-center justify-center text-xs text-zinc-400">
+              No IPS events recorded in the last 24 h — the table below covers the selected range.
+            </p>
+          ) : timeline ? (
+            <div className="h-24 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={timeline.points} margin={{ top: 4, right: 0, left: 0, bottom: 0 }} barCategoryGap={2}>
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 9 }}
+                    stroke="transparent"
+                    tickLine={false}
+                    axisLine={false}
+                    interval={3}
+                  />
+                  <YAxis tick={{ fontSize: 9 }} stroke="transparent" tickLine={false} axisLine={false} width={24} allowDecimals={false} />
+                  <ReTooltip
+                    cursor={{ fill: "rgba(113,113,122,0.08)" }}
+                    contentStyle={{ borderRadius: 8, fontSize: 12 }}
+                    formatter={(value: number, name) => [value, String(name)]}
+                    labelFormatter={(l) => `at ${l}`}
+                  />
+                  {TIMELINE_SEVERITIES.map((s) => (
+                    <Bar key={s} dataKey={s} stackId="sev" fill={TIMELINE_COLORS[s]} isAnimationActive={false} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -404,7 +571,11 @@ export function EventsView() {
                   return (
                     <TableRow
                       key={`${ev.id}-${ev.timestamp}`}
-                      className={cn("cursor-pointer", live && "bg-zinc-600/5")}
+                      className={cn(
+                        "cursor-pointer",
+                        live && "bg-zinc-600/5",
+                        ev.action === "suppressed" && "opacity-60",
+                      )}
                       onClick={() => setSelected(ev)}
                     >
                       <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums text-zinc-500">
@@ -456,7 +627,7 @@ export function EventsView() {
                               </Tooltip>
                             </TooltipProvider>
                           )}
-                          <SuppressMenu eventId={ev.id} onSuppressed={invalidateEvents} />
+                          <SuppressMenu eventId={ev.id} event={ev} onSuppressed={invalidateEvents} />
                           <TooltipProvider delayDuration={100}>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -487,6 +658,7 @@ export function EventsView() {
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-200 px-4 py-2.5 text-xs text-zinc-500 dark:border-zinc-800">
               <span>
                 {liveEnabled && page === 1 && liveRows.length > 0 ? `+${liveRows.length} live · ` : ""}
+                {hideSuppressed && suppressedOnPage > 0 ? `${suppressedOnPage} suppressed hidden on this page · ` : ""}
                 page {meta.page} of {meta.totalPages} · {meta.total} event{meta.total === 1 ? "" : "s"}
               </span>
               <div className="flex items-center gap-1.5">
@@ -547,6 +719,7 @@ export function EventsView() {
                   <div className="flex flex-wrap items-center gap-2">
                     <SuppressMenu
                       eventId={selected.id}
+                      event={selected}
                       triggerLabel="Suppress signature"
                       size="default"
                       onSuppressed={(d) => {

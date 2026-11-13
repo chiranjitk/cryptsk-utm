@@ -63,6 +63,7 @@ export function LiveTailView() {
   const [kind, setKind] = useState<"all" | "firewall" | "ips">("all");
   const [autoscroll, setAutoscroll] = useState(true);
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [atNewest, setAtNewest] = useState(true); // scrollTop near 0 = newest visible (newest-top list)
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -106,6 +107,16 @@ export function LiveTailView() {
     if (autoscroll && scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [rendered, autoscroll]);
 
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (el) setAtNewest(el.scrollTop < 80);
+  };
+
+  const jumpToNewest = () => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    setAtNewest(true);
+  };
+
   const togglePause = () => {
     if (paused) {
       // Resume flush-renders everything buffered while paused
@@ -145,7 +156,7 @@ export function LiveTailView() {
               aria-pressed={kind === k}
               onClick={() => setKind(k)}
               className={cn(
-                "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                "inline-flex h-11 items-center rounded-full border px-2.5 text-xs transition-colors lg:h-7 lg:py-1",
                 kind === k
                   ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                   : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
@@ -155,11 +166,11 @@ export function LiveTailView() {
             </button>
           ))}
         </div>
-        <Button size="sm" variant={paused ? "default" : "outline"} className="h-8 gap-1.5" onClick={togglePause}>
+        <Button size="sm" variant={paused ? "default" : "outline"} className="h-11 gap-1.5 lg:h-8" onClick={togglePause}>
           {paused ? <Icons.Play className="h-3.5 w-3.5" /> : <Icons.Pause className="h-3.5 w-3.5" />}
           {paused ? `Resume${missed > 0 ? ` (+${missed} missed)` : ""}` : "Pause"}
         </Button>
-        <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={clear}>
+        <Button size="sm" variant="outline" className="h-11 gap-1.5 lg:h-8" onClick={clear}>
           <Icons.Trash2 className="h-3.5 w-3.5" />
           Clear
         </Button>
@@ -182,43 +193,69 @@ export function LiveTailView() {
         </div>
       )}
 
-      {/* stream */}
-      <div ref={scrollRef} className="h-[calc(100vh-16rem)] min-h-80 overflow-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-        {visible.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <Icons.Radio className="h-8 w-8 text-zinc-300 dark:text-zinc-700" />
-            <p className="text-sm font-medium text-zinc-500">Waiting for events…</p>
-            <p className="text-xs text-zinc-400">The engine pushes ~1–3 rows/s over `logs:tail`.</p>
-          </div>
-        ) : (
-          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-            {visible.map((e) => (
-              <li key={e.key} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-zinc-500/10">
-                <span className="w-36 shrink-0 font-mono tabular-nums text-zinc-400">{fmtTs(e.ts)}</span>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "w-16 justify-center shrink-0 text-[10px] uppercase",
-                    e.kind === "firewall"
-                      ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
-                      : "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800",
+      {/* stream — min-w-0 keeps the min-w row grid from widening the page; rows scroll inside the stream box */}
+      <div className="relative min-w-0">
+        <div ref={scrollRef} onScroll={onScroll} className="h-[calc(100vh-16rem)] min-h-80 overflow-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+          {visible.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+              <Icons.Radio className="h-8 w-8 text-zinc-300 dark:text-zinc-700" />
+              <p className="text-sm font-medium text-zinc-500">Waiting for events…</p>
+              <p className="text-xs text-zinc-400">The engine pushes ~1–3 rows/s over `logs:tail`.</p>
+            </div>
+          ) : (
+            <ul className="min-w-[720px] divide-y divide-zinc-100 dark:divide-zinc-800/60">
+              {visible.map((e) => (
+                <li key={e.key} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-zinc-500/10">
+                  <span className="w-36 shrink-0 font-mono tabular-nums text-zinc-400">{fmtTs(e.ts)}</span>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "w-16 justify-center shrink-0 text-[10px] uppercase",
+                      e.kind === "firewall"
+                        ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
+                        : "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800",
+                    )}
+                  >
+                    {e.kind === "firewall" ? "fw" : "ips"}
+                  </Badge>
+                  {e.kind === "ips" ? (
+                    e.action === "suppressed" ? <IpsActionBadge action="suppressed" className="shrink-0" /> : <SeverityBadge severity={e.severity ?? "info"} className="shrink-0" />
+                  ) : (
+                    <ActionBadge action={e.action} className="shrink-0" />
                   )}
-                >
-                  {e.kind === "firewall" ? "fw" : "ips"}
-                </Badge>
-                {e.kind === "ips" ? (
-                  e.action === "suppressed" ? <IpsActionBadge action="suppressed" className="shrink-0" /> : <SeverityBadge severity={e.severity ?? "info"} className="shrink-0" />
-                ) : (
-                  <ActionBadge action={e.action} className="shrink-0" />
-                )}
-                <span className="w-56 shrink-0 truncate font-mono text-zinc-600 dark:text-zinc-300">
-                  {e.srcIp ?? "—"} → {e.dstIp ?? "—"}
-                </span>
-                <span className="w-28 shrink-0 truncate text-zinc-500">{e.kind === "ips" ? (e.sid ?? "—") : (e.app ?? "—")}</span>
-                <span className="min-w-0 flex-1 truncate text-zinc-600 dark:text-zinc-400">{e.message ?? ""}</span>
-              </li>
-            ))}
-          </ul>
+                  <span className="w-56 shrink-0 truncate font-mono text-zinc-600 dark:text-zinc-300">
+                    {e.srcIp ?? "—"} → {e.dstIp ?? "—"}
+                  </span>
+                  <span className="w-28 shrink-0 truncate text-zinc-500">{e.kind === "ips" ? (e.sid ?? "—") : (e.app ?? "—")}</span>
+                  <span className="min-w-0 flex-1 truncate text-zinc-600 dark:text-zinc-400">{e.message ?? ""}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* paused overlay badge — buffer keeps counting while rendering is frozen */}
+        {paused && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+            <span role="status" className="flex items-center gap-1.5 rounded-full border border-amber-500/50 bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-600 backdrop-blur-sm dark:text-amber-400">
+              <Icons.Pause className="h-3.5 w-3.5" />
+              {missed > 0 ? `Paused — ${missed} new line${missed === 1 ? "" : "s"} buffered` : "Paused — stream frozen"}
+            </span>
+          </div>
+        )}
+
+        {/* jump-to-newest (list is newest-top, so "newest" = the top) */}
+        {!atNewest && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="absolute bottom-3 right-3 h-11 gap-1 bg-background/95 shadow-sm lg:h-8"
+            onClick={jumpToNewest}
+            aria-label="Jump to newest events"
+          >
+            <Icons.ArrowUpToLine className="h-3.5 w-3.5" />
+            Newest
+          </Button>
         )}
       </div>
     </div>

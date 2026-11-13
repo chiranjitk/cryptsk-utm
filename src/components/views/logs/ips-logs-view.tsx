@@ -1,26 +1,19 @@
 "use client";
 
 /**
- * #/logs/ips (M09 §4) — IPS event page: severity multi-chips, category/q/
- * since/until filters, suppressed badge, and a "Suppress" row action that
- * REUSES M04's POST /api/v1/ips/events/{id}/suppress (do not duplicate).
+ * #/logs/ips (M09 §4) — IPS event page: severity multi-chips (SEVERITY_TONE
+ * parity with #/ips/events), category/q/since/until filters, suppressed badge,
+ * and a "Suppress" row action that REUSES M04's confirm-first SuppressMenu
+ * (ips-ui — dropdown → confirm dialog → POST /api/v1/ips/events/{id}/suppress).
  * The mutated row is patched into the current page cache — no full reload.
+ * Detail sheet also pivots: "Open sid in IPS triage" deep-links `#/ips/events?sid=`.
  */
 
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -37,7 +30,8 @@ import {
 } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { EmptyBlock, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import { DensityToggle, EmptyBlock, QueryError, TableSkeleton, useTableDensity } from "../firewall/fw-ui";
+import { SEVERITY_TONE, SuppressMenu, type SuppressContext } from "../ips/ips-ui";
 import { logsApi, qs, type IpsEventDTO, type Paged } from "./logs-api";
 import { IpsActionBadge, Paginator, SeverityBadge, fmtTs, localInputToIso } from "./logs-ui";
 
@@ -76,8 +70,11 @@ export function IpsLogsView() {
   const [page, setPage] = useState(1);
   const [rangeError, setRangeError] = useState<string | null>(null);
   const [selected, setSelected] = useState<IpsEventDTO | null>(null);
-  const [suppressTarget, setSuppressTarget] = useState<IpsEventDTO | null>(null);
   const queryClient = useQueryClient();
+  const [density] = useTableDensity("logs-ips");
+
+  // row-key → patch map survives SuppressMenu's async POST without a page reload
+  const queryKey = useMemo(() => ["logs", "ips", filters, page] as const, [filters, page]);
 
   const apply = (next: Filters) => {
     if (rangeInvalid(next)) {
@@ -105,26 +102,26 @@ export function IpsLogsView() {
   );
 
   const params = qs({ ...isoFilters, page, limit: LIMIT });
-  const queryKey = useMemo(() => ["logs", "ips", filters, page] as const, [filters, page]);
   const query = useQuery({
     queryKey,
     queryFn: () => logsApi.listIps(params),
   });
 
-  const suppress = useMutation({
-    mutationFn: ({ id, duration }: { id: number; duration: "24h" | "7d" | "forever" }) =>
-      logsApi.suppressIpsEvent(id, duration),
-    onSuccess: (updated) => {
-      // patch the row into the current page cache (M09 acceptance: no full reload)
-      queryClient.setQueryData<Paged<IpsEventDTO>>(queryKey, (old) =>
-        old
-          ? { ...old, data: old.data.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)) }
-          : old,
-      );
-      setSuppressTarget(null);
-      toastOk("Event suppressed", updated.suppressedUntil ? `Until ${fmtTs(updated.suppressedUntil)}` : "Suppressed forever");
-    },
-    onError: (err) => toastErr(err, "Suppress failed"),
+  /** SuppressMenu already POSTs + toasts — this patches the page cache (M09 acceptance: no full reload). */
+  const patchSuppressed = (id: number, duration: "24h" | "7d" | "forever") => {
+    const suppressedUntil = duration === "24h" ? new Date(Date.now() + 24 * 3600_000).toISOString() : duration === "7d" ? new Date(Date.now() + 7 * 24 * 3600_000).toISOString() : null;
+    queryClient.setQueryData<Paged<IpsEventDTO>>(queryKey, (old) =>
+      old ? { ...old, data: old.data.map((r) => (r.id === id ? { ...r, action: "suppressed", suppressedUntil } : r)) } : old,
+    );
+  };
+
+  const suppressContextOf = (r: IpsEventDTO): SuppressContext => ({
+    id: r.id,
+    severity: (r.severity as SuppressContext["severity"]) ?? "info",
+    sid: r.sid,
+    category: r.category,
+    message: r.message,
+    action: r.action,
   });
 
   const rows = query.data?.data ?? [];
@@ -135,18 +132,18 @@ export function IpsLogsView() {
       {/* filter bar */}
       <div className="no-print flex flex-wrap items-center gap-2">
         <div className="relative">
-          <Icons.Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-400" />
+          <Icons.Search className="absolute left-2.5 top-3 lg:top-2.5 h-4 w-4 text-zinc-400" />
           <Input
             value={inputs.q}
             onChange={(e) => setInputs({ ...inputs, q: e.target.value })}
             onKeyDown={(e) => e.key === "Enter" && commitText()}
             onBlur={commitText}
             placeholder="Search message/sid/ip…"
-            className="w-60 pl-8"
+            className="h-11 w-60 pl-8 lg:h-9"
           />
         </div>
         <Select value={filters.category || "any"} onValueChange={(v) => apply({ ...inputs, category: v === "any" ? "" : v })}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="h-11 w-40 lg:h-9">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
@@ -162,19 +159,22 @@ export function IpsLogsView() {
           type="datetime-local"
           value={inputs.since}
           onChange={(e) => apply({ ...inputs, since: e.target.value })}
-          className="w-56 text-xs"
+          className="h-11 w-56 text-xs lg:h-9"
           aria-label="Since"
         />
         <Input
           type="datetime-local"
           value={inputs.until}
           onChange={(e) => apply({ ...inputs, until: e.target.value })}
-          className="w-56 text-xs"
+          className="h-11 w-56 text-xs lg:h-9"
           aria-label="Until"
         />
+        <div className="ml-auto">
+          <DensityToggle storageKey="logs-ips" label="IPS event table density" />
+        </div>
       </div>
 
-      {/* severity multi-chips — empty selection = any */}
+      {/* severity multi-chips — empty selection = any; active chips take the M04 SEVERITY_TONE recipe (parity with #/ips/events) */}
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="mr-1 text-xs font-medium text-zinc-500">Severity</span>
         {SEVERITIES.map((s) => {
@@ -191,10 +191,8 @@ export function IpsLogsView() {
                 })
               }
               className={cn(
-                "rounded-full border px-2.5 py-1 text-xs transition-colors",
-                active
-                  ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
-                  : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
+                "inline-flex h-11 items-center rounded-full border px-2.5 text-xs transition-colors lg:h-7 lg:py-1",
+                active ? cn("font-medium", SEVERITY_TONE[s].chip) : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
               )}
             >
               {s}
@@ -203,7 +201,7 @@ export function IpsLogsView() {
         })}
         {filters.severities.length === 0 && <span className="text-xs text-zinc-400">(any)</span>}
         {(filters.severities.length > 0 || filters.category || filters.q || filters.since || filters.until) && (
-          <Button variant="ghost" size="sm" className="ml-2 h-7 gap-1 text-zinc-500" onClick={() => apply(EMPTY_FILTERS)}>
+          <Button variant="ghost" size="sm" className="ml-2 h-11 gap-1 text-zinc-500 lg:h-7" onClick={() => apply(EMPTY_FILTERS)}>
             <Icons.X className="h-3.5 w-3.5" />
             Clear
           </Button>
@@ -216,8 +214,8 @@ export function IpsLogsView() {
         </div>
       )}
 
-      {/* table */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
+      {/* table — card is the grid item: min-w-0 stops the min-w table's min-content from widening the page */}
+      <div className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-800">
         {query.isLoading ? (
           <TableSkeleton rows={8} cols={8} />
         ) : query.isError ? (
@@ -226,47 +224,51 @@ export function IpsLogsView() {
           <EmptyBlock icon={<Icons.Siren className="h-6 w-6" />} title="No IPS events match this filter" description="Loosen the severity/category filters or widen the time range." />
         ) : (
           <>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Timestamp</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>SID</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Message</TableHead>
-                  <TableHead>Src → Dst</TableHead>
-                  <TableHead className="w-24 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((r) => (
-                  <TableRow key={r.id} className="cursor-pointer" onClick={() => setSelected(r)}>
-                    <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtTs(r.timestamp)}</TableCell>
-                    <TableCell>
-                      <SeverityBadge severity={r.severity} />
-                    </TableCell>
-                    <TableCell>
-                      <IpsActionBadge action={r.action} />
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{r.sid ?? "—"}</TableCell>
-                    <TableCell className="text-xs">{r.category ?? "—"}</TableCell>
-                    <TableCell className="max-w-64 truncate text-xs text-zinc-600 dark:text-zinc-300">{r.message ?? "—"}</TableCell>
-                    <TableCell className="whitespace-nowrap font-mono text-xs">
-                      {r.srcIp ?? "—"} → {r.dstIp ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      {r.action !== "suppressed" && (
-                        <Button variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => setSuppressTarget(r)}>
-                          <Icons.BellOff className="h-3 w-3" />
-                          Suppress
-                        </Button>
-                      )}
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table className={cn("min-w-[880px]", density === "compact" && "[&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs")}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Timestamp</TableHead>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead>SID</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Message</TableHead>
+                    <TableHead>Src → Dst</TableHead>
+                    <TableHead className="w-24 text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((r) => (
+                    <TableRow key={r.id} className="cursor-pointer" onClick={() => setSelected(r)}>
+                      <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtTs(r.timestamp)}</TableCell>
+                      <TableCell>
+                        <SeverityBadge severity={r.severity} />
+                      </TableCell>
+                      <TableCell>
+                        <IpsActionBadge action={r.action} />
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{r.sid ?? "—"}</TableCell>
+                      <TableCell className="text-xs">{r.category ?? "—"}</TableCell>
+                      <TableCell className="max-w-64 min-w-0 truncate text-xs text-zinc-600 dark:text-zinc-300" title={r.message ?? undefined}>{r.message ?? "—"}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-xs">
+                        {r.srcIp ?? "—"} → {r.dstIp ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        {r.action !== "suppressed" && (
+                          <SuppressMenu
+                            eventId={r.id}
+                            event={suppressContextOf(r)}
+                            onSuppressed={(d) => patchSuppressed(r.id, d)}
+                            triggerLabel={`Suppress event ${r.sid ?? `#${r.id}`}`}
+                          />
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
             {meta && (
               <Paginator
                 page={meta.page}
@@ -280,38 +282,6 @@ export function IpsLogsView() {
           </>
         )}
       </div>
-
-      {/* suppress duration dialog — M04 endpoint reuse */}
-      <Dialog open={suppressTarget !== null} onOpenChange={(open) => !open && setSuppressTarget(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <Icons.BellOff className="h-4 w-4" />
-              Suppress event {suppressTarget?.sid ?? `#${suppressTarget?.id ?? ""}`}
-            </DialogTitle>
-            <DialogDescription>
-              Matching events are muted for the chosen duration (M04 exceptions). The rule itself is not changed.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-3 gap-2">
-            {(["24h", "7d", "forever"] as const).map((d) => (
-              <Button
-                key={d}
-                variant="outline"
-                disabled={suppress.isPending}
-                onClick={() => suppressTarget && suppress.mutate({ id: suppressTarget.id, duration: d })}
-              >
-                {d === "forever" ? "forever" : d}
-              </Button>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setSuppressTarget(null)}>
-              Cancel
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* detail drawer */}
       <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
@@ -335,19 +305,37 @@ export function IpsLogsView() {
               <DetailRow label="Source" value={`${selected.srcIp ?? "—"}${selected.srcPort ? `:${selected.srcPort}` : ""}`} mono />
               <DetailRow label="Destination" value={`${selected.dstIp ?? "—"}${selected.dstPort ? `:${selected.dstPort}` : ""}`} mono />
               <DetailRow label="Suppressed until" value={selected.suppressedUntil ? fmtTs(selected.suppressedUntil) : "—"} />
+              {/* cross-view pivot — deep-link the sid into M04's triage view (R6 pass 3;
+                  events-view reads ?sid= one-shot at mount) */}
+              {selected.sid && (
+                <div className="mt-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-11 w-full gap-1.5 lg:h-8 lg:w-auto"
+                    aria-label={`Open sid ${selected.sid} in IPS triage`}
+                    onClick={() => {
+                      setSelected(null);
+                      window.location.hash = `#/ips/events?sid=${encodeURIComponent(selected.sid ?? "")}`;
+                    }}
+                  >
+                    <Icons.ExternalLink className="h-3.5 w-3.5" />
+                    Open sid in IPS triage
+                  </Button>
+                </div>
+              )}
               {selected.action !== "suppressed" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-3 gap-1.5"
-                  onClick={() => {
-                    setSuppressTarget(selected);
-                    setSelected(null);
-                  }}
-                >
-                  <Icons.BellOff className="h-3.5 w-3.5" />
-                  Suppress…
-                </Button>
+                <div className="mt-3">
+                  <SuppressMenu
+                    eventId={selected.id}
+                    event={suppressContextOf(selected)}
+                    onSuppressed={(d) => {
+                      patchSuppressed(selected.id, d);
+                      setSelected(null);
+                    }}
+                    triggerLabel="Suppress…"
+                  />
+                </div>
               )}
             </div>
           )}

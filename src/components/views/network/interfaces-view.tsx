@@ -56,6 +56,7 @@ import { cn } from "@/lib/utils";
 import { useRealtime, type MetricsTickPayload } from "@/lib/realtime";
 import {
   ConfirmDialog,
+  DensityToggle,
   EditorSection,
   EmptyBlock,
   FieldLabel,
@@ -64,6 +65,7 @@ import {
   TableSkeleton,
   toastErr,
   toastOk,
+  useTableDensity,
 } from "@/components/views/firewall/fw-ui";
 import {
   BOND_MODES,
@@ -114,15 +116,21 @@ import {
   type IfaceRuleView,
 } from "@/lib/network/iface-rules";
 import {
+  copyText,
+  DiagOutputBlock,
   DirectionChip,
   DataSourceBadge,
   IfaceConfigSummary,
+  LastUpdatedLabel,
   LinkDot,
   MirrorKernelBadge,
   ModeChip,
+  pushRecentTarget,
+  RecentTargetChips,
   RoleBadge,
   Sparkline,
   TypeBadge,
+  useRecentTargets,
 } from "./net-ui";
 
 const IFACES_KEY = ["network", "interfaces"] as const;
@@ -602,6 +610,15 @@ export function InterfacesView() {
                               >
                                 {iface.live ? iface.live.operState : iface.enabled ? iface.linkUp ? "up" : "down" : "off"}
                               </span>
+                              {iface.enabled && iface.live?.carrier === false ? (
+                                <Badge
+                                  variant="outline"
+                                  className="border-amber-500/40 bg-amber-500/10 px-1 py-0 text-[9px] font-medium text-amber-600 dark:text-amber-400"
+                                  title="Kernel reports no carrier on this port — check the cable/media"
+                                >
+                                  no carrier
+                                </Badge>
+                              ) : null}
                               <Switch
                                 checked={iface.enabled}
                                 disabled={toggleMut.isPending}
@@ -613,8 +630,24 @@ export function InterfacesView() {
                           <TableCell>
                             <RefsCell iface={iface} onOpen={(target) => setRefsDialog(target)} />
                           </TableCell>
-                          <TableCell className="font-mono text-xs text-zinc-500">
-                            {iface.live?.mac ?? "—"}
+                          <TableCell>
+                            {iface.live?.mac ? (
+                              <div className="flex items-center gap-1">
+                                <span className="font-mono text-xs text-zinc-500">{iface.live.mac}</span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-11 w-11 lg:h-7 lg:w-7"
+                                  aria-label={`Copy MAC address of ${iface.name}`}
+                                  title="Copy MAC"
+                                  onClick={() => void copyText(iface.live?.mac ?? "", "MAC copied")}
+                                >
+                                  <Icons.Copy className="h-3 w-3 text-zinc-400" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="font-mono text-xs text-zinc-500">—</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
@@ -803,31 +836,32 @@ export function InterfacesView() {
             <DialogDescription>Scoped ICMP probe from the interface (3 packets, 1 s wait).</DialogDescription>
           </DialogHeader>
           {pingResult && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 text-sm">
-                {pingResult.result.lossPct != null ? (
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "text-xs",
-                      pingResult.result.lossPct === 0
-                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                        : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-                    )}
-                  >
-                    loss {pingResult.result.lossPct}%
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-xs text-rose-500">failed</Badge>
-                )}
-                {pingResult.result.avgMs != null && (
-                  <span className="tabular-nums text-zinc-600 dark:text-zinc-300">avg {pingResult.result.avgMs} ms</span>
-                )}
-              </div>
-              <pre className="max-h-56 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] leading-snug dark:border-zinc-800 dark:bg-zinc-900">
-                {pingResult.result.error ?? pingResult.result.output}
-              </pre>
-            </div>
+            <DiagOutputBlock
+              label={`ping ${pingResult.target}`}
+              output={pingResult.result.error ?? pingResult.result.output}
+              summary={
+                <>
+                  {pingResult.result.lossPct != null ? (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-xs",
+                        pingResult.result.lossPct === 0
+                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                          : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                      )}
+                    >
+                      loss {pingResult.result.lossPct}%
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs text-rose-500">failed</Badge>
+                  )}
+                  {pingResult.result.avgMs != null && (
+                    <span className="tabular-nums text-zinc-600 dark:text-zinc-300">avg {pingResult.result.avgMs} ms</span>
+                  )}
+                </>
+              }
+            />
           )}
           <DialogFooter>
             <Button variant="ghost" onClick={() => setPingResult(null)}>
@@ -837,51 +871,69 @@ export function InterfacesView() {
         </DialogContent>
       </Dialog>
 
-      {/* single-interface apply plan (gated preview / exec) */}
-      <Dialog open={plan !== null} onOpenChange={(open) => !open && setPlan(null)}>
+      {/* single-interface apply plan (gated preview / exec) — staged feedback
+          parity with the firewall OS-apply dialog (R5): running strip while the
+          POST is in flight, then a guards → plan → kernel stage strip mapped
+          from the REAL plans[]/results[] of the existing endpoint. */}
+      <Dialog open={plan !== null || planMut.isPending} onOpenChange={(open) => !open && setPlan(null)}>
         <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Icons.Terminal className="h-4 w-4 text-zinc-500" />
-              OS apply plan {plan?.applied ? "(executed)" : "(preview)"}
+              OS apply plan {plan?.applied ? "(executed)" : plan ? "(preview)" : ""}
             </DialogTitle>
-            <DialogDescription>{plan?.reason}</DialogDescription>
+            <DialogDescription>
+              {planMut.isPending ? "Running guards and generating the convergence plan…" : plan?.reason}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            {(plan?.plans ?? [])
-              .filter((p) => p.steps.length > 0)
-              .map((p) => (
-                <div key={p.name} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-                  <p className="mb-1.5 font-mono text-xs font-semibold">{p.name}</p>
-                  <ul className="space-y-1">
-                    {p.steps.map((s, i) => (
-                      <li key={i} className="flex items-start gap-2 text-xs">
-                        <span className="font-mono text-zinc-700 dark:text-zinc-300">$ {s.cmd}</span>
-                        <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{s.summary}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            {(plan?.plans ?? []).every((p) => p.steps.length === 0) && (
-              <p className="text-sm text-zinc-500">No convergence steps needed — the host already matches the console.</p>
-            )}
-            {plan?.results && plan.results.length > 0 && (
-              <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-                <p className="mb-1.5 text-xs font-semibold">Execution results</p>
-                {plan.results.map((r, i) => (
-                  <p key={i} className="flex items-center gap-2 font-mono text-xs">
-                    {r.ok ? (
-                      <Icons.CircleCheck className="h-3 w-3 text-emerald-500" />
-                    ) : (
-                      <Icons.CircleX className="h-3 w-3 text-rose-500" />
-                    )}
-                    <span className="truncate">{r.cmd}</span>
-                    {!r.ok && r.stderr ? <span className="ml-auto text-[10px] text-rose-500">{r.stderr}</span> : null}
-                  </p>
-                ))}
-              </div>
-            )}
+            {planMut.isPending ? (
+              <ApplyPlanRunning />
+            ) : plan ? (
+              <>
+                <ApplyPlanStages plan={plan} />
+                {(plan.plans ?? [])
+                  .filter((p) => p.steps.length > 0)
+                  .map((p) => (
+                    <div key={p.name} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+                      <p className="mb-1.5 font-mono text-xs font-semibold">{p.name}</p>
+                      <ul className="space-y-1">
+                        {p.steps.map((s, i) => (
+                          <li key={i} className="flex items-start gap-2 text-xs">
+                            <span className="min-w-0 break-words font-mono text-zinc-700 dark:text-zinc-300">$ {s.cmd}</span>
+                            <span className="ml-auto shrink-0 pl-2 text-[10px] text-zinc-400">{s.summary}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                {(plan.plans ?? []).every((p) => p.steps.length === 0) && (
+                  <p className="text-sm text-zinc-500">No convergence steps needed — the host already matches the console.</p>
+                )}
+                {plan.results && plan.results.length > 0 && (
+                  <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+                    <p className="mb-1.5 text-xs font-semibold">Execution results</p>
+                    <ul className="space-y-1">
+                      {plan.results.map((r, i) => (
+                        <li key={i} className="min-w-0 text-xs">
+                          <p className="flex items-center gap-2 font-mono">
+                            {r.ok ? (
+                              <Icons.CircleCheck className="h-3 w-3 shrink-0 text-emerald-500" />
+                            ) : (
+                              <Icons.CircleX className="h-3 w-3 shrink-0 text-rose-500" />
+                            )}
+                            <span className="min-w-0 break-words">{r.cmd}</span>
+                          </p>
+                          {!r.ok && r.stderr ? (
+                            <p className="ml-5 mt-0.5 break-words font-mono text-[11px] text-rose-500">{r.stderr}</p>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setPlan(null)}>
@@ -891,6 +943,97 @@ export function InterfacesView() {
         </DialogContent>
       </Dialog>
     </Tabs>
+  );
+}
+
+// ── OS-apply staged feedback (firewall parity — real data only) ─────────────
+
+/** Indeterminate strip while POST /interfaces/apply is in flight. */
+function ApplyPlanRunning() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-800"
+    >
+      <Icons.LoaderCircle className="h-3.5 w-3.5 animate-spin text-zinc-500" />
+      <span className="font-medium">Applying</span>
+      <span className="text-zinc-400">guards → plan → kernel status…</span>
+    </div>
+  );
+}
+
+/** Stage strip for the interfaces OS-apply outcome: guards (the endpoint ran),
+ *  plan (convergence steps derived from plans[]) and kernel (results[] — only
+ *  present when CONSOLE_OS_APPLY lets the endpoint exec). */
+function ApplyPlanStages({ plan }: { plan: OsApplyResp }) {
+  const totalSteps = (plan.plans ?? []).reduce((n, p) => n + p.steps.length, 0);
+  const failed = (plan.results ?? []).filter((r) => !r.ok);
+
+  // a response with zero plans and nothing applied means the guards rejected
+  // the target itself (e.g. "Interface 'x' not found") — a real failure state
+  const guardsOk = plan.applied || (plan.plans ?? []).length > 0;
+  const planState: "ok" | "empty" = totalSteps > 0 ? "ok" : "empty";
+  const kernelState: "ok" | "fail" | "skipped" | null =
+    plan.results == null ? null : failed.length === 0 ? "ok" : "fail";
+
+  const rows: Array<{ icon: React.ReactNode; label: string; detail?: string; tone: string }> = [
+    {
+      icon: guardsOk ? (
+        <Icons.CircleCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
+      ) : (
+        <Icons.CircleX className="h-3.5 w-3.5 shrink-0 text-rose-500" aria-hidden="true" />
+      ),
+      label: "Guards — gate, tool, protection checks",
+      detail: plan.applied ? undefined : plan.reason,
+      tone: guardsOk ? "" : "text-rose-600 dark:text-rose-400",
+    },
+    {
+      icon:
+        planState === "ok" ? (
+          <Icons.CircleCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
+        ) : (
+          <Icons.CircleDashed className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+        ),
+      label: `Plan — ${totalSteps} convergence step${totalSteps === 1 ? "" : "s"}`,
+      detail: planState === "empty" ? "zero steps — host already matches the console" : undefined,
+      tone: "",
+    },
+    kernelState === null
+      ? {
+          icon: <Icons.CircleDashed className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden="true" />,
+          label: "Kernel — not touched (preview only)",
+          detail: "OS apply is disabled on this installation",
+          tone: "text-zinc-400",
+        }
+      : {
+          icon:
+            kernelState === "ok" ? (
+              <Icons.CircleCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
+            ) : (
+              <Icons.CircleX className="h-3.5 w-3.5 shrink-0 text-rose-500" aria-hidden="true" />
+            ),
+          label: `Kernel — ${plan.results?.length ?? 0} step${(plan.results?.length ?? 0) === 1 ? "" : "s"} executed`,
+          detail: failed.length > 0 ? failed.map((f) => `${f.cmd}${f.stderr ? ` — ${f.stderr}` : ""}`).join(" · ") : undefined,
+          tone: failed.length > 0 ? "text-rose-600 dark:text-rose-400" : "",
+        },
+  ];
+
+  return (
+    <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Apply stages</p>
+      <ul className="mt-1.5 space-y-1.5">
+        {rows.map((r) => (
+          <li key={r.label} className="flex items-start gap-2 text-xs">
+            {r.icon}
+            <span className="min-w-0">
+              <span className={cn("font-medium", r.tone)}>{r.label}</span>
+              {r.detail ? <span className="block min-w-0 break-words font-mono text-[11px] text-zinc-500 dark:text-zinc-400">{r.detail}</span> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -2046,6 +2189,7 @@ function IfaceStatsDialog(props: { iface: Iface | null; onOpenChange: (open: boo
 function LldpTab() {
   const query = useQuery({ queryKey: LLDP_KEY, queryFn: () => netApi.listLldp(), refetchInterval: 10_000 });
   const rows = useMemo(() => query.data?.data ?? [], [query.data]);
+  const [lldpDensity] = useTableDensity("net-lldp");
 
   const [ifaceFilter, setIfaceFilter] = useState("all");
   const [qRaw, setQRaw] = useState("");
@@ -2100,6 +2244,18 @@ function LldpTab() {
         <Button
           size="sm"
           variant="outline"
+          className="h-11 lg:h-8"
+          onClick={() => void query.refetch()}
+          disabled={query.isFetching}
+          aria-label="Refresh LLDP neighbors"
+        >
+          <Icons.RefreshCw className={cn("mr-1 h-3.5 w-3.5", query.isFetching && "animate-spin")} /> Refresh
+        </Button>
+        <LastUpdatedLabel dataUpdatedAt={query.dataUpdatedAt} />
+        <DensityToggle storageKey="net-lldp" label="LLDP density" />
+        <Button
+          size="sm"
+          variant="outline"
           className="ml-auto"
           disabled={filtered.length === 0}
           onClick={() =>
@@ -2139,7 +2295,14 @@ function LldpTab() {
             />
           ) : (
             <ScrollWrap>
-              <Table className="min-w-[760px] text-sm">
+              <Table
+                className={cn(
+                  "text-sm",
+                  lldpDensity === "compact"
+                    ? "min-w-[600px] text-xs [&_td]:px-1.5 [&_td]:py-1 [&_th]:px-1.5 [&_th]:py-1"
+                    : "min-w-[760px]",
+                )}
+              >
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
                     <TableHead>Local iface</TableHead>
@@ -2194,6 +2357,7 @@ function MacTab({ ifaces }: { ifaces: Iface[] }) {
   const [vlanRaw, setVlanRaw] = useState("");
   const [qRaw, setQRaw] = useState("");
   const q = useDebounced(qRaw, 300);
+  const [macDensity] = useTableDensity("net-mac");
 
   const params = useMemo(() => {
     const p = new URLSearchParams();
@@ -2246,9 +2410,11 @@ function MacTab({ ifaces }: { ifaces: Iface[] }) {
             aria-label="Search MAC table"
           />
         </div>
-        <Button size="sm" variant="outline" onClick={() => void query.refetch()} disabled={query.isFetching}>
+        <Button size="sm" variant="outline" className="h-11 lg:h-8" onClick={() => void query.refetch()} disabled={query.isFetching}>
           <Icons.RefreshCw className={cn("mr-1 h-3.5 w-3.5", query.isFetching && "animate-spin")} /> Refresh
         </Button>
+        <LastUpdatedLabel dataUpdatedAt={query.dataUpdatedAt} />
+        <DensityToggle storageKey="net-mac" label="MAC table density" />
         <Button
           size="sm"
           variant="outline"
@@ -2292,7 +2458,14 @@ function MacTab({ ifaces }: { ifaces: Iface[] }) {
             />
           ) : (
             <ScrollWrap>
-              <Table className="min-w-[620px] text-sm">
+              <Table
+                className={cn(
+                  "text-sm",
+                  macDensity === "compact"
+                    ? "min-w-[520px] text-xs [&_td]:px-1.5 [&_td]:py-1 [&_th]:px-1.5 [&_th]:py-1"
+                    : "min-w-[620px]",
+                )}
+              >
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
                     <TableHead>MAC</TableHead>
@@ -2716,6 +2889,18 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
 
   const dbNames = useMemo(() => new Set(ifaces.map((i) => i.name)), [ifaces]);
 
+  // ARP client-side filter (small table — no server pushdown needed)
+  const [arpQRaw, setArpQRaw] = useState("");
+  const arpQ = useDebounced(arpQRaw, 300);
+
+  // recent-target chips per tool (localStorage `net-diag-recent:<key>`); the
+  // store write happens in each mutation's onSuccess via pushRecentTarget, so
+  // chips = completed runs only
+  const [pingRecent] = useRecentTargets("ping");
+  const [trRecent] = useRecentTargets("traceroute");
+  const [dnsRecent] = useRecentTargets("dns");
+  const [tcpRecent] = useRecentTargets("tcp");
+
   // ping tool state
   const [pingHost, setPingHost] = useState("");
   const [pingIface, setPingIface] = useState("");
@@ -2731,7 +2916,10 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
         Number(pingSize) > 0 ? Number(pingSize) : undefined,
         Number(pingSize) > 0,
       ),
-    onSuccess: (r) => setPingResult2(r),
+    onSuccess: (r) => {
+      setPingResult2(r);
+      pushRecentTarget("ping", pingHost.trim());
+    },
     onError: (err) => toastErr(err, "Ping failed"),
   });
 
@@ -2741,7 +2929,10 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
   const [trResult, setTrResult] = useState<TracerouteResult | null>(null);
   const trMut = useMutation({
     mutationFn: () => netApi.tracerouteDiag(trHost.trim(), trIface || undefined, 10),
-    onSuccess: (r) => setTrResult(r),
+    onSuccess: (r) => {
+      setTrResult(r);
+      pushRecentTarget("traceroute", trHost.trim());
+    },
     onError: (err) => toastErr(err, "Traceroute failed"),
   });
 
@@ -2751,7 +2942,10 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
   const [dnsResult, setDnsResult] = useState<DnsLookupResult | null>(null);
   const dnsMut = useMutation({
     mutationFn: () => netApi.dnsLookupDiag(dnsName.trim(), dnsServer.trim() || undefined),
-    onSuccess: (r) => setDnsResult(r),
+    onSuccess: (r) => {
+      setDnsResult(r);
+      pushRecentTarget("dns", dnsName.trim());
+    },
     onError: (err) => toastErr(err, "DNS lookup failed"),
   });
 
@@ -2762,13 +2956,22 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
   const [tcpResult, setTcpResult] = useState<TcpCheckResult | null>(null);
   const tcpMut = useMutation({
     mutationFn: () => netApi.tcpCheckDiag(tcpHost.trim(), Number(tcpPort) || 443, tcpIface || undefined),
-    onSuccess: (r) => setTcpResult(r),
+    onSuccess: (r) => {
+      setTcpResult(r);
+      pushRecentTarget("tcp", `${tcpHost.trim()}:${tcpPort.trim()}`);
+    },
     onError: (err) => toastErr(err, "TCP probe failed"),
   });
 
   const ports = useMemo(() => portsQuery.data?.data ?? [], [portsQuery.data]);
   const arp = useMemo(() => arpQuery.data?.data ?? [], [arpQuery.data]);
   const routes = useMemo(() => routesQuery.data?.data ?? [], [routesQuery.data]);
+
+  const arpFiltered = useMemo(() => {
+    const needle = arpQ.trim().toLowerCase();
+    if (!needle) return arp;
+    return arp.filter((a) => `${a.ip} ${a.mac ?? ""} ${a.device}`.toLowerCase().includes(needle));
+  }, [arp, arpQ]);
 
   return (
     <div className="space-y-4">
@@ -2780,11 +2983,21 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
       {/* host ports inventory */}
       <Card className="p-0">
         <CardContent className="p-0">
-          <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+          <div className="flex items-center justify-between gap-2 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Host ports (kernel inventory)</p>
-            <Button size="sm" variant="outline" className="h-7" onClick={() => void portsQuery.refetch()} disabled={portsQuery.isFetching}>
-              <Icons.RefreshCw className={cn("mr-1 h-3 w-3", portsQuery.isFetching && "animate-spin")} /> Refresh
-            </Button>
+            <div className="flex items-center gap-2">
+              <LastUpdatedLabel dataUpdatedAt={portsQuery.dataUpdatedAt} />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-11 lg:h-8"
+                onClick={() => void portsQuery.refetch()}
+                disabled={portsQuery.isFetching}
+                aria-label="Refresh host ports"
+              >
+                <Icons.RefreshCw className={cn("mr-1 h-3 w-3", portsQuery.isFetching && "animate-spin")} /> Refresh
+              </Button>
+            </div>
           </div>
           {portsQuery.isLoading ? (
             <div className="p-4">
@@ -2854,8 +3067,33 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
         {/* ARP table */}
         <Card className="p-0">
           <CardContent className="p-0">
-            <div className="border-b border-zinc-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
-              ARP / neighbor cache
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">ARP / neighbor cache</p>
+              <div className="flex items-center gap-2">
+                <LastUpdatedLabel dataUpdatedAt={arpQuery.dataUpdatedAt} />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-11 lg:h-8"
+                  onClick={() => void arpQuery.refetch()}
+                  disabled={arpQuery.isFetching}
+                  aria-label="Refresh ARP cache"
+                >
+                  <Icons.RefreshCw className={cn("mr-1 h-3 w-3", arpQuery.isFetching && "animate-spin")} /> Refresh
+                </Button>
+              </div>
+            </div>
+            <div className="border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+              <div className="relative">
+                <Icons.Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+                <Input
+                  value={arpQRaw}
+                  onChange={(e) => setArpQRaw(e.target.value)}
+                  placeholder="Search IP / MAC / device…"
+                  className="h-8 pl-8"
+                  aria-label="Search ARP cache"
+                />
+              </div>
             </div>
             <ScrollWrap>
               <Table className="min-w-[420px] text-sm">
@@ -2868,14 +3106,14 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {arp.length === 0 ? (
+                  {arpFiltered.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={4} className="py-6 text-center text-sm text-zinc-500">
-                        Neighbor cache is empty.
+                        {arp.length === 0 ? "Neighbor cache is empty." : "No neighbors match the search."}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    arp.map((a, i) => (
+                    arpFiltered.map((a, i) => (
                       <TableRow key={`${a.ip}-${a.device}-${i}`}>
                         <TableCell className="font-mono text-xs">{a.ip}</TableCell>
                         <TableCell className="font-mono text-xs text-zinc-500">{a.mac ?? "—"}</TableCell>
@@ -3017,25 +3255,41 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
             >
               <Icons.Radar className="mr-1 h-3.5 w-3.5" /> {pingMut2.isPending ? "Probing…" : "Run"}
             </Button>
-            {pingResult2?.lossPct != null && (
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-xs",
-                  pingResult2.lossPct === 0
-                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                    : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-                )}
-              >
-                loss {pingResult2.lossPct}%
-                {pingResult2.avgMs != null ? ` · avg ${pingResult2.avgMs} ms` : ""}
-              </Badge>
-            )}
           </div>
+          {pingRecent.length > 0 && (
+            <RecentTargetChips
+              targets={pingRecent}
+              label="ping"
+              onPick={(v) => setPingHost(v)}
+            />
+          )}
           {pingResult2 && (
-            <pre className="max-h-48 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] leading-snug dark:border-zinc-800 dark:bg-zinc-900">
-              {pingResult2.error ?? pingResult2.output}
-            </pre>
+            <DiagOutputBlock
+              label="ping"
+              output={pingResult2.error ?? pingResult2.output}
+              summary={
+                pingResult2.lossPct != null ? (
+                  <>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-xs",
+                        pingResult2.lossPct === 0
+                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                          : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                      )}
+                    >
+                      loss {pingResult2.lossPct}%
+                    </Badge>
+                    {pingResult2.avgMs != null && (
+                      <span className="tabular-nums text-zinc-600 dark:text-zinc-300">avg {pingResult2.avgMs} ms</span>
+                    )}
+                  </>
+                ) : (
+                  <Badge variant="outline" className="text-xs text-rose-500">failed</Badge>
+                )
+              }
+            />
           )}
         </CardContent>
       </Card>
@@ -3082,6 +3336,9 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
                 <Icons.Route className="mr-1 h-3.5 w-3.5" /> {trMut.isPending ? "Tracing…" : "Run"}
               </Button>
             </div>
+            {trRecent.length > 0 && (
+              <RecentTargetChips targets={trRecent} label="traceroute" onPick={(v) => setTrHost(v)} />
+            )}
             {trResult && (
               <div className="space-y-2">
                 {trResult.tool === "tracepath" && (
@@ -3108,11 +3365,28 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
                       ))}
                     </TableBody>
                   </Table>
-                ) : (
-                  <pre className="max-h-40 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] dark:border-zinc-800 dark:bg-zinc-900">
-                    {trResult.output || "no output"}
-                  </pre>
-                )}
+                ) : null}
+                <DiagOutputBlock
+                  label="traceroute"
+                  output={trResult.error ?? trResult.output}
+                  summary={
+                    <>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs",
+                          trResult.ok
+                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                            : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                        )}
+                      >
+                        {trResult.ok ? "complete" : "incomplete"}
+                      </Badge>
+                      <span className="tabular-nums text-zinc-600 dark:text-zinc-300">{trResult.hops.length} hops</span>
+                      {trResult.tool ? <span className="text-zinc-400">via {trResult.tool}</span> : null}
+                    </>
+                  }
+                />
               </div>
             )}
           </CardContent>
@@ -3154,6 +3428,9 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
                   <Icons.Globe className="mr-1 h-3.5 w-3.5" /> {dnsMut.isPending ? "Resolving…" : "Run"}
                 </Button>
               </div>
+              {dnsRecent.length > 0 && (
+                <RecentTargetChips targets={dnsRecent} label="DNS" onPick={(v) => setDnsName(v)} />
+              )}
               {dnsResult && (
                 <div className="space-y-2">
                   {dnsResult.error ? (
@@ -3170,10 +3447,28 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
                   ) : (
                     <p className="text-xs text-zinc-500">No answer records{dnsResult.output ? " — see raw output" : ""}.</p>
                   )}
-                  {dnsResult.output && dnsResult.addresses.length === 0 && (
-                    <pre className="max-h-32 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] dark:border-zinc-800 dark:bg-zinc-900">
-                      {dnsResult.output}
-                    </pre>
+                  {dnsResult.output && (
+                    <DiagOutputBlock
+                      label="DNS lookup"
+                      output={dnsResult.output}
+                      summary={
+                        <>
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-xs",
+                              dnsResult.ok
+                                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                            )}
+                          >
+                            {dnsResult.ok ? "resolved" : "no answer"}
+                          </Badge>
+                          <span className="tabular-nums text-zinc-600 dark:text-zinc-300">{dnsResult.addresses.length} address{dnsResult.addresses.length === 1 ? "" : "es"}</span>
+                          {dnsResult.server ? <span className="text-zinc-400">server {dnsResult.server}</span> : null}
+                        </>
+                      }
+                    />
                   )}
                 </div>
               )}
@@ -3233,19 +3528,28 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
                   <Icons.PlugZap className="mr-1 h-3.5 w-3.5" /> {tcpMut.isPending ? "Probing…" : "Run"}
                 </Button>
               </div>
+              {tcpRecent.length > 0 && (
+                <RecentTargetChips targets={tcpRecent} label="TCP probe" onPick={(v) => setTcpHost(v.split(":")[0] ?? v)} />
+              )}
               {tcpResult && (
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  {tcpResult.connected ? (
-                    <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                      connected{tcpResult.latencyMs != null ? ` · ${tcpResult.latencyMs} ms` : ""}
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                      failed
-                    </Badge>
-                  )}
-                  <span className="text-zinc-500">{tcpResult.error ?? tcpResult.output}</span>
-                </div>
+                <DiagOutputBlock
+                  label="TCP probe"
+                  output={tcpResult.error ?? tcpResult.output}
+                  summary={
+                    <>
+                      {tcpResult.connected ? (
+                        <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                          connected{tcpResult.latencyMs != null ? ` · ${tcpResult.latencyMs} ms` : ""}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                          failed
+                        </Badge>
+                      )}
+                      {tcpResult.boundTo ? <span className="text-zinc-400">bound to {tcpResult.boundTo}</span> : null}
+                    </>
+                  }
+                />
               )}
             </CardContent>
           </Card>

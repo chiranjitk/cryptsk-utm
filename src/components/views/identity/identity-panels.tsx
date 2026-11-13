@@ -50,6 +50,7 @@ import {
   type RadiusProfileDTO,
 } from "./identity-api";
 import { DirectoryTypeChip, InfoNote, TestResultPill } from "./identity-ui";
+import { copyText } from "../network/net-ui";
 import { cn } from "@/lib/utils";
 
 // ── RADIUS profiles ─────────────────────────────────────────────────────────
@@ -138,7 +139,8 @@ export function RadiusTab() {
 
 function RadiusRow(props: { profile: RadiusProfileDTO; onEdit: () => void; onDelete: () => void }) {
   const [test, setTest] = useState<{ ok: boolean; latencyMs: number; error?: string } | null>(null);
-  const [revealed, setRevealed] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<{ secret: string; at: number } | null>(null);
+  const [, setTick] = useState(0); // 1 s heartbeat so the visible countdown stays fresh
 
   const testMut = useMutation({
     mutationFn: () => radiusApi.test(props.profile.id),
@@ -146,15 +148,23 @@ function RadiusRow(props: { profile: RadiusProfileDTO; onEdit: () => void; onDel
     onError: (e) => toastErr(e, "Test failed"),
   });
 
-  // second click reveals; auto-hides after 15 s (M07 §7)
+  // second click reveals; visible countdown + auto-hide after 15 s (M07 §7)
   const revealMut = useMutation({
     mutationFn: () => radiusApi.reveal(props.profile.id),
-    onSuccess: (r) => {
-      setRevealed(r.sharedSecret);
-      window.setTimeout(() => setRevealed(null), 15_000);
-    },
+    onSuccess: (r) => setRevealed({ secret: r.sharedSecret, at: Date.now() }),
     onError: (e) => toastErr(e, "Reveal denied"),
   });
+
+  useEffect(() => {
+    if (!revealed) return;
+    const t = window.setInterval(() => {
+      setTick((v) => v + 1);
+      if (Date.now() - revealed.at >= 15_000) setRevealed(null);
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [revealed]);
+
+  const hideIn = revealed ? Math.max(0, 15 - Math.floor((Date.now() - revealed.at) / 1000)) : 0;
 
   return (
     <TableRow>
@@ -167,14 +177,30 @@ function RadiusRow(props: { profile: RadiusProfileDTO; onEdit: () => void; onDel
       </TableCell>
       <TableCell>
         {revealed ? (
-          <code className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[11px] text-emerald-600 dark:text-emerald-400">{revealed}</code>
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1">
+              <code className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[11px] break-all text-emerald-600 dark:text-emerald-400">{revealed.secret}</code>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 shrink-0 lg:h-6 lg:w-6"
+                aria-label={`Copy shared secret for ${props.profile.name}`}
+                onClick={() => void copyText(revealed.secret, "Shared secret copied")}
+              >
+                <Icons.Copy className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <span className="text-[10px] text-amber-600 dark:text-amber-400" role="status">
+              auto-hides in {hideIn}s
+            </span>
+          </div>
         ) : (
           <code className="font-mono text-[11px] text-zinc-500">{props.profile.sharedSecret}</code>
         )}
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-1.5">
-          <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={() => void testMut.mutateAsync()} disabled={testMut.isPending}>
+          <Button variant="outline" size="sm" className="h-11 text-[11px] lg:h-7" onClick={() => void testMut.mutateAsync()} disabled={testMut.isPending}>
             {testMut.isPending ? "Testing…" : "Test"}
           </Button>
           {test && <TestResultPill ok={test.ok} label={test.ok ? `${test.latencyMs} ms` : "unreachable"} />}
@@ -183,7 +209,7 @@ function RadiusRow(props: { profile: RadiusProfileDTO; onEdit: () => void; onDel
       <TableCell>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${props.profile.name}`}>
+            <Button variant="ghost" size="icon" className="h-11 w-11 lg:h-8 lg:w-8" aria-label={`Actions for ${props.profile.name}`}>
               <Icons.MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -434,7 +460,7 @@ function DirectoryRow(props: { source: DirectorySourceDTO; onToggle: () => void;
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-1.5">
-          <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={() => void testMut.mutateAsync()} disabled={testMut.isPending}>
+          <Button variant="outline" size="sm" className="h-11 text-[11px] lg:h-7" onClick={() => void testMut.mutateAsync()} disabled={testMut.isPending}>
             {testMut.isPending ? "Testing…" : "Test"}
           </Button>
           {test && <TestResultPill ok={test.ok} label={test.ok ? `${test.latencyMs} ms${test.userCount ? ` · ${test.userCount} users` : ""}` : "refused"} />}
@@ -443,7 +469,7 @@ function DirectoryRow(props: { source: DirectorySourceDTO; onToggle: () => void;
       <TableCell>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${props.source.name}`}>
+            <Button variant="ghost" size="icon" className="h-11 w-11 lg:h-8 lg:w-8" aria-label={`Actions for ${props.source.name}`}>
               <Icons.MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>

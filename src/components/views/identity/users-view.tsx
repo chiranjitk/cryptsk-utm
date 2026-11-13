@@ -10,7 +10,7 @@
  * masked server-side; reveal is a second-click, auto-hiding action.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -51,8 +51,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, TableSkeleton, MultiChips, toastErr, toastOk } from "@/components/views/firewall/fw-ui";
 import {
+  authSettingsApi,
   fieldErrorsOf,
-  fmtDateTime,
   groupsApi,
   usersApi,
   type TotpEnrollResult,
@@ -63,6 +63,43 @@ import { InfoNote, RoleBadge, useIdentityConfigInvalidation } from "./identity-u
 import { RadiusTab, DirectoryTab, AuthSettingsTab } from "./identity-panels";
 import { ROLES } from "@/lib/auth/rbac";
 import { cn } from "@/lib/utils";
+
+// ── editor validation atoms (R4 §5.16 parity — same recipe as sdwan-view) ───
+
+/** Rose ring applied to an invalid input (same recipe as the R2 rule-editor). */
+const INVALID_CLS = "border-rose-500 ring-1 ring-rose-500/40 focus-visible:ring-rose-500";
+
+/** Per-field error text under an invalid control (rule-editor recipe). */
+function FieldErrorText(props: { id: string; msg?: string }) {
+  if (!props.msg) return null;
+  return (
+    <p id={props.id} role="alert" className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
+      {props.msg}
+    </p>
+  );
+}
+
+/** M07 §5.1 username pattern — enforced client-side as a pre-check; the server stays authoritative. */
+const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** First message of a field error bag, or undefined (client + server errors share the shape). */
+function firstMsg(errs: Record<string, string[]>, key: string): string | undefined {
+  return errs[key]?.[0];
+}
+
+// ── relative last-login (fmtElapsed pattern, R4 §5.16) ──────────────────────
+
+/** "<1m" / "12m" / "5h 07m" / "3d 04:12" — days use H:MM. */
+function fmtElapsed(ts: string): string {
+  const sec = Math.max(0, Math.floor((Date.now() - new Date(ts).getTime()) / 1000));
+  if (sec < 60) return "<1m";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h ${String(min % 60).padStart(2, "0")}m`;
+  return `${Math.floor(h / 24)}d ${String(h % 24).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+}
 
 // ── role descriptions (AUTH_AND_RBAC §4 via M07 §4 — help text) ─────────────
 
@@ -113,10 +150,16 @@ export function UsersView() {
 function UsersCard() {
   const queryClient = useQueryClient();
   const [q, setQ] = useState("");
+  const [, setClock] = useState(0); // re-render for ticking last-login labels
   const [editor, setEditor] = useState<{ open: boolean; user: UserDTO | null }>({ open: false, user: null });
   const [resetPw, setResetPw] = useState<UserDTO | null>(null);
   const [enrollment, setEnrollment] = useState<TotpEnrollResult | null>(null);
   const [deleteUser, setDeleteUser] = useState<UserDTO | null>(null);
+
+  useEffect(() => {
+    const t = window.setInterval(() => setClock((c) => c + 1), 60_000);
+    return () => window.clearInterval(t);
+  }, []);
 
   const usersQ = useQuery({
     queryKey: ["users", "list", q],
@@ -171,9 +214,9 @@ function UsersCard() {
             onChange={(e) => setQ(e.currentTarget.value)}
             placeholder="Search users…"
             aria-label="Search users"
-            className="h-9 w-36 text-xs sm:w-48"
+            className="h-11 w-36 text-xs sm:w-48 lg:h-9"
           />
-          <Button size="sm" className="h-9" onClick={() => setEditor({ open: true, user: null })}>
+          <Button size="sm" className="h-11 lg:h-9" onClick={() => setEditor({ open: true, user: null })}>
             <Icons.UserPlus className="mr-1 h-3.5 w-3.5" /> Add User
           </Button>
         </div>
@@ -247,11 +290,19 @@ function UsersCard() {
                         {u.isActive ? "enabled" : "disabled"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-xs text-zinc-500">{fmtDateTime(u.lastLoginAt)}</TableCell>
+                    <TableCell className="text-xs text-zinc-500">
+                      {u.lastLoginAt ? (
+                        <span className="tabular-nums" title={new Date(u.lastLoginAt).toLocaleString()}>
+                          {fmtElapsed(u.lastLoginAt)} ago
+                        </span>
+                      ) : (
+                        <span title="This user has never signed in">never</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${u.username}`}>
+                          <Button variant="ghost" size="icon" className="h-11 w-11 lg:h-8 lg:w-8" aria-label={`Actions for ${u.username}`}>
                             <Icons.MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -380,8 +431,50 @@ function UserEditorForm(props: { user: UserDTO | null; onClose: () => void; onEn
   const [password, setPassword] = useState("");
   const [groupIds, setGroupIds] = useState<number[]>(() => props.user?.groups.map((g) => g.id) ?? []);
   const [errs, setErrs] = useState<Record<string, string[]>>({});
+  const usernameRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   const groupsQ = useQuery({ queryKey: ["groups", "list"], queryFn: groupsApi.list });
+  // live auth policy for an accurate client-side password pre-check (server stays authoritative)
+  const policyQ = useQuery({ queryKey: ["auth-settings", "editor-policy"], queryFn: authSettingsApi.get, staleTime: 30_000 });
+  const pwMinLength = policyQ.data?.password.minLength ?? 8;
+  const pwComplexity = policyQ.data?.password.requireComplexity ?? true;
+
+  const clearErr = (key: string) => setErrs((prev) => {
+    if (!(key in prev)) return prev;
+    const next = { ...prev };
+    delete next[key];
+    return next;
+  });
+
+  /** Client pre-check (§5.16 parity) — the server's fieldErrors merge in on failure. */
+  const validate = (): boolean => {
+    const next: Record<string, string[]> = {};
+    if (!isEdit) {
+      if (!username.trim()) next.username = ["Username is required"];
+      else if (!USERNAME_RE.test(username)) next.username = ["Must be 3–32 chars of a-z, 0-9, dot, underscore or dash"];
+    }
+    if (email.trim() && !EMAIL_RE.test(email.trim())) next.email = ["Must be a valid email address"];
+    if ((!isEdit || password) && password) {
+      if (password.length < pwMinLength) next.password = [`Must be at least ${pwMinLength} characters (auth policy)`];
+      else if (pwComplexity && !(/[a-zA-Z]/.test(password) && /\d/.test(password))) next.password = ["Must contain letters and digits (auth policy)"];
+    } else if (!isEdit && !password) {
+      next.password = ["An initial password is required"];
+    }
+    setErrs(next);
+    const first = ([
+      { key: "username", ref: usernameRef },
+      { key: "email", ref: emailRef },
+      { key: "password", ref: passwordRef },
+    ] as const).find((f) => next[f.key]);
+    if (first) {
+      first.ref.current?.scrollIntoView({ block: "center" });
+      first.ref.current?.focus({ preventScroll: true });
+      return false;
+    }
+    return true;
+  };
 
   const save = useMutation({
     mutationFn: async () => {
@@ -419,27 +512,35 @@ function UserEditorForm(props: { user: UserDTO | null; onClose: () => void; onEn
           <div>
             <FieldLabel>Username</FieldLabel>
             <Input
+              ref={usernameRef}
               value={username}
-              onChange={(e) => setUsername(e.currentTarget.value)}
+              onChange={(e) => {
+                setUsername(e.currentTarget.value);
+                clearErr("username");
+              }}
               disabled={isEdit}
               placeholder="j.doe"
-              className={cn("font-mono text-xs", errs.username && "border-rose-500")}
+              aria-invalid={!!errs.username}
+              aria-describedby={errs.username ? "user-editor-username-error" : undefined}
+              className={cn("font-mono text-xs", errs.username && INVALID_CLS)}
             />
-            {errs.username?.map((m) => (
-              <p key={m} className="mt-1 text-[11px] text-rose-500">{m}</p>
-            ))}
+            <FieldErrorText id="user-editor-username-error" msg={firstMsg(errs, "username")} />
           </div>
           <div>
             <FieldLabel>Email</FieldLabel>
             <Input
+              ref={emailRef}
               value={email}
-              onChange={(e) => setEmail(e.currentTarget.value)}
+              onChange={(e) => {
+                setEmail(e.currentTarget.value);
+                clearErr("email");
+              }}
               placeholder="name@company.com"
-              className={cn(errs.email && "border-rose-500")}
+              aria-invalid={!!errs.email}
+              aria-describedby={errs.email ? "user-editor-email-error" : undefined}
+              className={cn(errs.email && INVALID_CLS)}
             />
-            {errs.email?.map((m) => (
-              <p key={m} className="mt-1 text-[11px] text-rose-500">{m}</p>
-            ))}
+            <FieldErrorText id="user-editor-email-error" msg={firstMsg(errs, "email")} />
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
@@ -489,17 +590,23 @@ function UserEditorForm(props: { user: UserDTO | null; onClose: () => void; onEn
             <FieldLabel hint={isEdit ? "blank = keep current" : "letters + digits, per auth policy"}>Password</FieldLabel>
             <div className="flex items-center gap-2">
               <Input
+                ref={passwordRef}
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.currentTarget.value)}
+                onChange={(e) => {
+                  setPassword(e.currentTarget.value);
+                  clearErr("password");
+                }}
                 placeholder={isEdit ? "Leave blank to keep" : "Set an initial password"}
-                className={cn("font-mono text-xs", errs.password && "border-rose-500")}
+                aria-invalid={!!errs.password}
+                aria-describedby={errs.password ? "user-editor-password-error" : undefined}
+                className={cn("font-mono text-xs", errs.password && INVALID_CLS)}
               />
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 shrink-0"
+                className="h-11 lg:h-9 shrink-0"
                 onClick={() => {
                   const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
                   let out = "";
@@ -509,19 +616,18 @@ function UserEditorForm(props: { user: UserDTO | null; onClose: () => void; onEn
                   // guarantee a digit
                   if (!/\d/.test(out)) out = out.slice(0, -1) + "7";
                   setPassword(out);
+                  clearErr("password");
                 }}
               >
                 <Icons.Wand2 className="mr-1 h-3.5 w-3.5" /> Generate
               </Button>
             </div>
-            {errs.password?.map((m) => (
-              <p key={m} className="mt-1 text-[11px] text-rose-500">{m}</p>
-            ))}
+            <FieldErrorText id="user-editor-password-error" msg={firstMsg(errs, "password")} />
           </div>
         </div>
       <DialogFooter>
         <Button variant="outline" onClick={props.onClose}>Cancel</Button>
-        <Button onClick={() => void save.mutateAsync()} disabled={save.isPending || (!isEdit && (!username || !password))}>
+        <Button onClick={() => validate() && void save.mutateAsync()} disabled={save.isPending}>
           {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create user"}
         </Button>
       </DialogFooter>
@@ -543,6 +649,12 @@ function ResetPasswordDialog(props: { user: UserDTO | null; onClose: () => void 
 function ResetPasswordForm(props: { user: UserDTO; onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [errs, setErrs] = useState<Record<string, string[]>>({});
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  // live auth policy for an accurate client-side pre-check (server stays authoritative)
+  const policyQ = useQuery({ queryKey: ["auth-settings", "editor-policy"], queryFn: authSettingsApi.get, staleTime: 30_000 });
+  const pwMinLength = policyQ.data?.password.minLength ?? 8;
+  const pwComplexity = policyQ.data?.password.requireComplexity ?? true;
 
   const reset = useMutation({
     mutationFn: () => usersApi.update(props.user.id, { password }),
@@ -556,6 +668,19 @@ function ResetPasswordForm(props: { user: UserDTO; onClose: () => void }) {
     },
   });
 
+  const submit = () => {
+    const next: Record<string, string[]> = {};
+    if (!password) next.password = ["A new password is required"];
+    else if (password.length < pwMinLength) next.password = [`Must be at least ${pwMinLength} characters (auth policy)`];
+    else if (pwComplexity && !(/[a-zA-Z]/.test(password) && /\d/.test(password))) next.password = ["Must contain letters and digits (auth policy)"];
+    setErrs(next);
+    if (next.password) {
+      passwordRef.current?.focus();
+      return;
+    }
+    void reset.mutateAsync();
+  };
+
   return (
     <>
       <DialogHeader>
@@ -565,18 +690,27 @@ function ResetPasswordForm(props: { user: UserDTO; onClose: () => void }) {
       <div>
         <FieldLabel hint="letters + digits, per auth policy">New password</FieldLabel>
         <Input
+          ref={passwordRef}
           type="password"
           value={password}
-          onChange={(e) => setPassword(e.currentTarget.value)}
-          className={cn("font-mono text-xs", errs.password && "border-rose-500")}
+          onChange={(e) => {
+            setPassword(e.currentTarget.value);
+            setErrs((prev) => {
+              if (!("password" in prev)) return prev;
+              const n = { ...prev };
+              delete n.password;
+              return n;
+            });
+          }}
+          aria-invalid={!!errs.password}
+          aria-describedby={errs.password ? "reset-password-error" : undefined}
+          className={cn("font-mono text-xs", errs.password && INVALID_CLS)}
         />
-        {errs.password?.map((m) => (
-          <p key={m} className="mt-1 text-[11px] text-rose-500">{m}</p>
-        ))}
+        <FieldErrorText id="reset-password-error" msg={firstMsg(errs, "password")} />
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={props.onClose}>Cancel</Button>
-        <Button onClick={() => void reset.mutateAsync()} disabled={reset.isPending || !password}>
+        <Button onClick={submit} disabled={reset.isPending}>
           {reset.isPending ? "Setting…" : "Set password"}
         </Button>
       </DialogFooter>
@@ -611,7 +745,7 @@ function GroupsCard() {
           <Icons.UsersRound className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           User Groups
         </CardTitle>
-        <Button size="sm" variant="outline" className="h-9" onClick={() => setEditor({ open: true, group: null })}>
+        <Button size="sm" variant="outline" className="h-11 lg:h-9" onClick={() => setEditor({ open: true, group: null })}>
           <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add Group
         </Button>
       </CardHeader>
@@ -642,10 +776,10 @@ function GroupsCard() {
                   <Badge variant="outline" className="border-zinc-300 bg-zinc-50 px-1.5 py-0 text-[10px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
                     {g.memberCount} {g.memberCount === 1 ? "member" : "members"}
                   </Badge>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Edit group ${g.name}`} onClick={() => setEditor({ open: true, group: g })}>
+                  <Button variant="ghost" size="icon" className="h-11 w-11 lg:h-7 lg:w-7" aria-label={`Edit group ${g.name}`} onClick={() => setEditor({ open: true, group: g })}>
                     <Icons.Pencil className="h-3.5 w-3.5" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-400 hover:text-rose-500" aria-label={`Delete group ${g.name}`} onClick={() => setDel(g)}>
+                  <Button variant="ghost" size="icon" className="h-11 w-11 lg:h-7 lg:w-7 text-zinc-400 hover:text-rose-500" aria-label={`Delete group ${g.name}`} onClick={() => setDel(g)}>
                     <Icons.Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -686,6 +820,7 @@ function GroupEditorForm(props: { group: UserGroupDTO | null; onClose: () => voi
   const [description, setDescription] = useState(() => props.group?.description ?? "");
   const [memberIds, setMemberIds] = useState<number[]>(() => props.group?.memberIds ?? []);
   const [errs, setErrs] = useState<Record<string, string[]>>({});
+  const nameRef = useRef<HTMLInputElement>(null);
 
   const usersQ = useQuery({ queryKey: ["users", "list", ""], queryFn: () => usersApi.list("") });
 
@@ -706,6 +841,17 @@ function GroupEditorForm(props: { group: UserGroupDTO | null; onClose: () => voi
     },
   });
 
+  const submit = () => {
+    const next: Record<string, string[]> = {};
+    if (!name.trim()) next.name = ["Group name is required"];
+    setErrs(next);
+    if (next.name) {
+      nameRef.current?.focus();
+      return;
+    }
+    void save.mutateAsync();
+  };
+
   return (
     <>
       <DialogHeader>
@@ -715,10 +861,24 @@ function GroupEditorForm(props: { group: UserGroupDTO | null; onClose: () => voi
         <div className="space-y-3">
           <div>
             <FieldLabel>Name</FieldLabel>
-            <Input value={name} onChange={(e) => setName(e.currentTarget.value)} placeholder="it-staff" className={cn(errs.name && "border-rose-500")} />
-            {errs.name?.map((m) => (
-              <p key={m} className="mt-1 text-[11px] text-rose-500">{m}</p>
-            ))}
+            <Input
+              ref={nameRef}
+              value={name}
+              onChange={(e) => {
+                setName(e.currentTarget.value);
+                setErrs((prev) => {
+                  if (!("name" in prev)) return prev;
+                  const n = { ...prev };
+                  delete n.name;
+                  return n;
+                });
+              }}
+              placeholder="it-staff"
+              aria-invalid={!!errs.name}
+              aria-describedby={errs.name ? "group-editor-name-error" : undefined}
+              className={cn(errs.name && INVALID_CLS)}
+            />
+            <FieldErrorText id="group-editor-name-error" msg={firstMsg(errs, "name")} />
           </div>
           <div>
             <FieldLabel hint="optional">Description</FieldLabel>
@@ -751,7 +911,7 @@ function GroupEditorForm(props: { group: UserGroupDTO | null; onClose: () => voi
         </div>
       <DialogFooter>
         <Button variant="outline" onClick={props.onClose}>Cancel</Button>
-        <Button onClick={() => void save.mutateAsync()} disabled={save.isPending || !name}>
+        <Button onClick={submit} disabled={save.isPending}>
           {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create group"}
         </Button>
       </DialogFooter>

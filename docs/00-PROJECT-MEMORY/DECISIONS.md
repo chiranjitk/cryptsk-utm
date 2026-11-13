@@ -297,6 +297,14 @@
   health-only rule carries over. `PALETTE`, `globals.css` tokens, `BrandLogo` mark
   (red-600 → red-900 gradient), favicon `src/app/icon.svg` and `public/logo.svg` all
   rebranded in the same pass; UI_DESIGN_SYSTEM §2 is the updated color law.
+- **REVISION 2 (2026-11-13, QA marathon R10 — doc/code reconciliation):** solid primary
+  buttons are ratified as **neutral zinc** (`bg-zinc-700 text-white hover:bg-zinc-800`,
+  161 call sites; active sidebar item = `bg-zinc-600/10` tint) — rev 2's "red primary
+  buttons" never shipped and the R1–R9 module passes standardized on zinc primaries while
+  the doc text stayed behind. Red/rose are now DANGER-ONLY plus the retained brand surfaces
+  (logo glyph, focus ring `--primary`, brand links, `--chart-1` first chart series).
+  `globals.css --primary` tokens are unchanged (they still feed ring/accent/chart vars).
+  UI_DESIGN_SYSTEM §2 hard rule 2 (rev 3) is the canonical statement.
 
 ## ADR-021 — Real host data plane (ADAPTER_MODE=host); simulation demoted to opt-in demo
 

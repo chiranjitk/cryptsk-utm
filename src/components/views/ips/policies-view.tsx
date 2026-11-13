@@ -1010,6 +1010,52 @@ function PresetDialog(props: {
               </Select>
             </div>
           )}
+
+          {/* replace-mode diff: what the preset will actually change on the target */}
+          {(() => {
+            const target = mode === "replace" && replaceId !== "" ? (props.policies.find((p) => p.id === Number(replaceId)) ?? null) : null;
+            if (!target) return null;
+            const currentlyOn = Object.entries(target.ruleCategories)
+              .filter(([, v]) => v)
+              .map(([k]) => k);
+            const turningOn = previewOn.filter((c) => !currentlyOn.includes(c));
+            const turningOff = currentlyOn.filter((c) => !previewOn.includes(c));
+            const modeChange = target.mode !== previewMode;
+            const noChange = turningOn.length === 0 && turningOff.length === 0 && !modeChange;
+            return (
+              <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800" aria-live="polite">
+                <p className="mb-1.5 text-xs font-medium">Changes to “{target.name}”</p>
+                {noChange ? (
+                  <p className="text-xs text-zinc-400">Already matches this bundle — applying makes no changes.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {modeChange && (
+                      <p className="flex items-center gap-1.5">
+                        <ModeBadge mode={target.mode} />
+                        <Icons.ArrowRight className="h-3.5 w-3.5 text-zinc-400" />
+                        <ModeBadge mode={previewMode} />
+                      </p>
+                    )}
+                    {turningOn.length > 0 && (
+                      <p className="text-[11px] leading-snug text-zinc-500">
+                        <span className="font-medium text-zinc-600 dark:text-zinc-300">Turning on ({turningOn.length}): </span>
+                        <span className="break-words font-mono">{turningOn.join(", ")}</span>
+                      </p>
+                    )}
+                    {turningOff.length > 0 && (
+                      <p className="text-[11px] leading-snug text-zinc-500">
+                        <span className="font-medium text-amber-600 dark:text-amber-400">Turning off ({turningOff.length}): </span>
+                        <span className="break-words font-mono">{turningOff.join(", ")}</span>
+                      </p>
+                    )}
+                    <p className="text-[11px] text-zinc-400">
+                      Only the category map + mode are overwritten — custom rules, exceptions and thresholds are kept.
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         <DialogFooter>

@@ -5,11 +5,13 @@
  * strip (overlays / sites / paths-by-state pills / average latency), a grid of
  * selectable overlay cards, a per-overlay detail (sites table + per-site WAN
  * path matrix with mini-meters and state badges + simulated "Probe now") and
- * a policies table next to an SLA profile mini-table. Theme: red-700 for
- * healthy/up/hub, amber for degraded/full-mesh, rose for down/destructive.
+ * a policies table next to an SLA profile mini-table. Tone map (UI_DESIGN_SYSTEM
+ * §2 health rule): up/hub = zinc, degraded/full-mesh = amber, down/destructive
+ * = rose. Policies + SLA tables carry the §5.14 density toggle; the policy and
+ * SLA editors validate per-field (rose ring + aria-invalid, R2 editor parity).
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +43,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useRealtime } from "@/lib/realtime";
+import { cn } from "@/lib/utils";
 import {
   DSCP_RE,
   ENCRYPTIONS,
@@ -72,13 +75,23 @@ import {
   type Topology,
   type WanInterface,
 } from "./sdwan-api";
-import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import {
+  ConfirmDialog,
+  DensityToggle,
+  EmptyBlock,
+  FieldLabel,
+  QueryError,
+  TableSkeleton,
+  toastErr,
+  toastOk,
+  useTableDensity,
+} from "../firewall/fw-ui";
 
 function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ["sdwan"] });
 }
 
-// ── badge recipes (UI_DESIGN_SYSTEM: up=blue, degraded=amber, down=rose) ────
+// ── badge recipes (UI_DESIGN_SYSTEM §2: up=zinc, degraded=amber, down=rose) ─
 
 function TopologyBadge({ topology }: { topology: Topology }) {
   return (
@@ -195,7 +208,22 @@ function MatchChip({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ── mini meter (blue fill relative to the SLA threshold) ────────────────────
+// ── editor validation atoms (R2 rule-editor parity, UI_DESIGN_SYSTEM §5.16) ─
+
+/** Rose ring applied to an invalid input/select (same recipe as rule-editor). */
+const INVALID_CLS = "border-rose-500 ring-1 ring-rose-500/40 focus-visible:ring-rose-500";
+
+/** Per-field error text under an invalid control (rule-editor recipe). */
+function FieldErrorText(props: { id: string; msg?: string }) {
+  if (!props.msg) return null;
+  return (
+    <p id={props.id} role="alert" className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
+      {props.msg}
+    </p>
+  );
+}
+
+// ── mini meter (fill relative to the SLA threshold) ──────────────────────────
 
 function MiniMeter(props: { label: string; value: number; max: number; unit: string }) {
   const pct = props.max > 0 ? Math.min(100, (props.value / props.max) * 100) : 0;
@@ -681,7 +709,14 @@ function PolicyEditor(props: {
     props.policy?.slaProfileId ? String(props.policy.slaProfileId) : "none",
   );
   const [enabled, setEnabled] = useState(props.policy?.enabled ?? true);
-  const [err, setErr] = useState<string | null>(null);
+  type PolicyFieldKey = "name" | "overlay" | "dscp" | "cidr" | "fixedWan";
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<PolicyFieldKey, string>>>({});
+  const clearErr = (k: PolicyFieldKey) => setFieldErrors((f) => (f[k] ? { ...f, [k]: undefined } : f));
+  const nameRef = useRef<HTMLInputElement>(null);
+  const overlayRef = useRef<HTMLButtonElement>(null);
+  const dscpRef = useRef<HTMLInputElement>(null);
+  const cidrRef = useRef<HTMLInputElement>(null);
+  const fixedWanRef = useRef<HTMLButtonElement>(null);
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => {
@@ -694,33 +729,33 @@ function PolicyEditor(props: {
       invalidateAll(queryClient);
       props.onClose();
     },
-    onError: (e) => setErr(e instanceof Error ? e.message : "Save failed"),
+    onError: (e) => setFieldErrors({ name: e instanceof Error ? e.message : "Save failed" }),
   });
 
   const submit = () => {
-    if (!name.trim()) {
-      setErr("Name is required");
-      return;
-    }
-    if (!overlayId) {
-      setErr("An overlay is required");
-      return;
-    }
+    const errs: Partial<Record<PolicyFieldKey, string>> = {};
+    if (!name.trim()) errs.name = "Name is required";
+    if (!overlayId) errs.overlay = "An overlay is required";
     const dscp = matchDscp.trim();
-    if (dscp && !DSCP_RE.test(dscp)) {
-      setErr("DSCP must be CS0–CS6, EF or AFxy (e.g. EF, AF31)");
-      return;
-    }
+    if (dscp && !DSCP_RE.test(dscp)) errs.dscp = "DSCP must be CS0–CS6, EF or AFxy (e.g. EF, AF31)";
     const cidr = matchDestCidr.trim();
-    if (cidr && !IPV4_CIDR_RE.test(cidr)) {
-      setErr("Destination must be an IPv4 CIDR like 10.0.0.0/8");
+    if (cidr && !IPV4_CIDR_RE.test(cidr)) errs.cidr = "Destination must be an IPv4 CIDR like 10.0.0.0/8";
+    if (preferredPath === "fixed" && !fixedWanInterface)
+      errs.fixedWan = "A fixed WAN interface is required when preferred path is fixed";
+    setFieldErrors(errs);
+    // focus the first invalid control (R2 rule-editor parity)
+    const first = ([
+      { key: "name", ref: nameRef },
+      { key: "dscp", ref: dscpRef },
+      { key: "cidr", ref: cidrRef },
+      { key: "overlay", ref: overlayRef },
+      { key: "fixedWan", ref: fixedWanRef },
+    ] as const).find((f) => errs[f.key]);
+    if (first) {
+      first.ref.current?.scrollIntoView({ block: "center" });
+      first.ref.current?.focus({ preventScroll: true });
       return;
     }
-    if (preferredPath === "fixed" && !fixedWanInterface) {
-      setErr("A fixed WAN interface is required when preferred path is fixed");
-      return;
-    }
-    setErr(null);
     save.mutate({
       name: name.trim(),
       overlayId: Number(overlayId),
@@ -746,12 +781,30 @@ function PolicyEditor(props: {
         <div className="grid gap-4 py-2">
           <div>
             <FieldLabel>Name</FieldLabel>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="voice-prefer-latency" />
+            <Input
+              ref={nameRef}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                clearErr("name");
+              }}
+              placeholder="voice-prefer-latency"
+              aria-invalid={!!fieldErrors.name}
+              aria-describedby={fieldErrors.name ? "sdwan-policy-name-error" : undefined}
+              className={cn(fieldErrors.name && INVALID_CLS)}
+            />
+            <FieldErrorText id="sdwan-policy-name-error" msg={fieldErrors.name} />
           </div>
           <div>
             <FieldLabel>Overlay</FieldLabel>
-            <Select value={overlayId} onValueChange={setOverlayId}>
-              <SelectTrigger>
+            <Select
+              value={overlayId}
+              onValueChange={(v) => {
+                setOverlayId(v);
+                clearErr("overlay");
+              }}
+            >
+              <SelectTrigger ref={overlayRef} aria-invalid={!!fieldErrors.overlay} className={cn(fieldErrors.overlay && INVALID_CLS)}>
                 <SelectValue placeholder="Select an overlay" />
               </SelectTrigger>
               <SelectContent>
@@ -762,6 +815,7 @@ function PolicyEditor(props: {
                 ))}
               </SelectContent>
             </Select>
+            <FieldErrorText id="sdwan-policy-overlay-error" msg={fieldErrors.overlay} />
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div>
@@ -770,16 +824,35 @@ function PolicyEditor(props: {
             </div>
             <div>
               <FieldLabel hint="optional">DSCP</FieldLabel>
-              <Input value={matchDscp} onChange={(e) => setMatchDscp(e.target.value)} placeholder="EF" className="font-mono text-xs" />
+              <Input
+                ref={dscpRef}
+                value={matchDscp}
+                onChange={(e) => {
+                  setMatchDscp(e.target.value);
+                  clearErr("dscp");
+                }}
+                placeholder="EF"
+                className={cn("font-mono text-xs", fieldErrors.dscp && INVALID_CLS)}
+                aria-invalid={!!fieldErrors.dscp}
+                aria-describedby={fieldErrors.dscp ? "sdwan-policy-dscp-error" : undefined}
+              />
+              <FieldErrorText id="sdwan-policy-dscp-error" msg={fieldErrors.dscp} />
             </div>
             <div>
               <FieldLabel hint="optional">Dest CIDR</FieldLabel>
               <Input
+                ref={cidrRef}
                 value={matchDestCidr}
-                onChange={(e) => setMatchDestCidr(e.target.value)}
+                onChange={(e) => {
+                  setMatchDestCidr(e.target.value);
+                  clearErr("cidr");
+                }}
                 placeholder="10.0.0.0/8"
-                className="font-mono text-xs"
+                className={cn("font-mono text-xs", fieldErrors.cidr && INVALID_CLS)}
+                aria-invalid={!!fieldErrors.cidr}
+                aria-describedby={fieldErrors.cidr ? "sdwan-policy-cidr-error" : undefined}
               />
+              <FieldErrorText id="sdwan-policy-cidr-error" msg={fieldErrors.cidr} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -802,10 +875,18 @@ function PolicyEditor(props: {
               <FieldLabel hint={preferredPath === "fixed" ? "required" : "fixed only"}>Fixed WAN interface</FieldLabel>
               <Select
                 value={fixedWanInterface ?? ""}
-                onValueChange={(v) => setFixedWanInterface(v as WanInterface)}
+                onValueChange={(v) => {
+                  setFixedWanInterface(v as WanInterface);
+                  clearErr("fixedWan");
+                }}
                 disabled={preferredPath !== "fixed"}
               >
-                <SelectTrigger aria-disabled={preferredPath !== "fixed"}>
+                <SelectTrigger
+                  ref={fixedWanRef}
+                  aria-disabled={preferredPath !== "fixed"}
+                  aria-invalid={!!fieldErrors.fixedWan}
+                  className={cn(fieldErrors.fixedWan && INVALID_CLS)}
+                >
                   <SelectValue placeholder="Select interface" />
                 </SelectTrigger>
                 <SelectContent>
@@ -816,6 +897,7 @@ function PolicyEditor(props: {
                   ))}
                 </SelectContent>
               </Select>
+              <FieldErrorText id="sdwan-policy-fixedwan-error" msg={fieldErrors.fixedWan} />
             </div>
           </div>
           <div>
@@ -838,7 +920,6 @@ function PolicyEditor(props: {
             <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">Policy enabled</span>
             <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Policy enabled" />
           </div>
-          {err && <p className="text-xs text-rose-600">{err}</p>}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={props.onClose}>
@@ -846,7 +927,7 @@ function PolicyEditor(props: {
           </Button>
           <Button
             className="bg-zinc-700 text-white hover:bg-zinc-800"
-            disabled={save.isPending || !name.trim()}
+            disabled={save.isPending}
             onClick={submit}
           >
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create policy"}
@@ -867,7 +948,13 @@ function SlaProfileEditor(props: { profile: SlaProfileDTO | null; onClose: () =>
   const [jitterMsMax, setJitter] = useState(props.profile ? String(props.profile.jitterMsMax) : "30");
   const [lossPctMax, setLoss] = useState(props.profile ? String(props.profile.lossPctMax) : "1");
   const [actionOnBreach, setAction] = useState<SlaAction>(props.profile?.actionOnBreach ?? "switch");
-  const [err, setErr] = useState<string | null>(null);
+  type SlaFieldKey = "name" | "latency" | "jitter" | "loss";
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<SlaFieldKey, string>>>({});
+  const clearErr = (k: SlaFieldKey) => setFieldErrors((f) => (f[k] ? { ...f, [k]: undefined } : f));
+  const nameRef = useRef<HTMLInputElement>(null);
+  const latRef = useRef<HTMLInputElement>(null);
+  const jitRef = useRef<HTMLInputElement>(null);
+  const losRef = useRef<HTMLInputElement>(null);
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => {
@@ -880,30 +967,32 @@ function SlaProfileEditor(props: { profile: SlaProfileDTO | null; onClose: () =>
       invalidateAll(queryClient);
       props.onClose();
     },
-    onError: (e) => setErr(e instanceof Error ? e.message : "Save failed"),
+    onError: (e) => setFieldErrors({ name: e instanceof Error ? e.message : "Save failed" }),
   });
 
   const submit = () => {
-    if (!name.trim()) {
-      setErr("Name is required");
-      return;
-    }
+    const errs: Partial<Record<SlaFieldKey, string>> = {};
+    if (!name.trim()) errs.name = "Name is required";
     const lat = Number(latencyMsMax);
     const jit = Number(jitterMsMax);
     const los = Number(lossPctMax);
-    if (!Number.isInteger(lat) || lat < 5 || lat > 1000) {
-      setErr("Latency max must be an integer between 5 and 1000 ms");
+    if (!Number.isInteger(lat) || lat < 5 || lat > 1000)
+      errs.latency = "Latency max must be an integer between 5 and 1000 ms";
+    if (!Number.isInteger(jit) || jit < 1 || jit > 500) errs.jitter = "Jitter max must be an integer between 1 and 500 ms";
+    if (Number.isNaN(los) || los < 0 || los > 50) errs.loss = "Loss max must be between 0 and 50 %";
+    setFieldErrors(errs);
+    // focus the first invalid control (R2 rule-editor parity)
+    const first = ([
+      { key: "name", ref: nameRef },
+      { key: "latency", ref: latRef },
+      { key: "jitter", ref: jitRef },
+      { key: "loss", ref: losRef },
+    ] as const).find((f) => errs[f.key]);
+    if (first) {
+      first.ref.current?.scrollIntoView({ block: "center" });
+      first.ref.current?.focus({ preventScroll: true });
       return;
     }
-    if (!Number.isInteger(jit) || jit < 1 || jit > 500) {
-      setErr("Jitter max must be an integer between 1 and 500 ms");
-      return;
-    }
-    if (Number.isNaN(los) || los < 0 || los > 50) {
-      setErr("Loss max must be between 0 and 50 %");
-      return;
-    }
-    setErr(null);
     save.mutate({ name: name.trim(), latencyMsMax: lat, jitterMsMax: jit, lossPctMax: los, actionOnBreach });
   };
 
@@ -919,20 +1008,75 @@ function SlaProfileEditor(props: { profile: SlaProfileDTO | null; onClose: () =>
         <div className="grid gap-4 py-2">
           <div>
             <FieldLabel>Name</FieldLabel>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="voice" />
+            <Input
+              ref={nameRef}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                clearErr("name");
+              }}
+              placeholder="voice"
+              aria-invalid={!!fieldErrors.name}
+              aria-describedby={fieldErrors.name ? "sdwan-sla-name-error" : undefined}
+              className={cn(fieldErrors.name && INVALID_CLS)}
+            />
+            <FieldErrorText id="sdwan-sla-name-error" msg={fieldErrors.name} />
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div>
               <FieldLabel hint="5–1000 ms">Latency max</FieldLabel>
-              <Input type="number" min={5} max={1000} value={latencyMsMax} onChange={(e) => setLatency(e.target.value)} className="tabular-nums" />
+              <Input
+                ref={latRef}
+                type="number"
+                min={5}
+                max={1000}
+                value={latencyMsMax}
+                onChange={(e) => {
+                  setLatency(e.target.value);
+                  clearErr("latency");
+                }}
+                className={cn("tabular-nums", fieldErrors.latency && INVALID_CLS)}
+                aria-invalid={!!fieldErrors.latency}
+                aria-describedby={fieldErrors.latency ? "sdwan-sla-latency-error" : undefined}
+              />
+              <FieldErrorText id="sdwan-sla-latency-error" msg={fieldErrors.latency} />
             </div>
             <div>
               <FieldLabel hint="1–500 ms">Jitter max</FieldLabel>
-              <Input type="number" min={1} max={500} value={jitterMsMax} onChange={(e) => setJitter(e.target.value)} className="tabular-nums" />
+              <Input
+                ref={jitRef}
+                type="number"
+                min={1}
+                max={500}
+                value={jitterMsMax}
+                onChange={(e) => {
+                  setJitter(e.target.value);
+                  clearErr("jitter");
+                }}
+                className={cn("tabular-nums", fieldErrors.jitter && INVALID_CLS)}
+                aria-invalid={!!fieldErrors.jitter}
+                aria-describedby={fieldErrors.jitter ? "sdwan-sla-jitter-error" : undefined}
+              />
+              <FieldErrorText id="sdwan-sla-jitter-error" msg={fieldErrors.jitter} />
             </div>
             <div>
               <FieldLabel hint="0–50 %">Loss max</FieldLabel>
-              <Input type="number" min={0} max={50} step="0.1" value={lossPctMax} onChange={(e) => setLoss(e.target.value)} className="tabular-nums" />
+              <Input
+                ref={losRef}
+                type="number"
+                min={0}
+                max={50}
+                step="0.1"
+                value={lossPctMax}
+                onChange={(e) => {
+                  setLoss(e.target.value);
+                  clearErr("loss");
+                }}
+                className={cn("tabular-nums", fieldErrors.loss && INVALID_CLS)}
+                aria-invalid={!!fieldErrors.loss}
+                aria-describedby={fieldErrors.loss ? "sdwan-sla-loss-error" : undefined}
+              />
+              <FieldErrorText id="sdwan-sla-loss-error" msg={fieldErrors.loss} />
             </div>
           </div>
           <div>
@@ -950,7 +1094,6 @@ function SlaProfileEditor(props: { profile: SlaProfileDTO | null; onClose: () =>
               </SelectContent>
             </Select>
           </div>
-          {err && <p className="text-xs text-rose-600">{err}</p>}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={props.onClose}>
@@ -958,7 +1101,7 @@ function SlaProfileEditor(props: { profile: SlaProfileDTO | null; onClose: () =>
           </Button>
           <Button
             className="bg-zinc-700 text-white hover:bg-zinc-800"
-            disabled={save.isPending || !name.trim()}
+            disabled={save.isPending}
             onClick={submit}
           >
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create profile"}
@@ -1101,8 +1244,8 @@ function SitesCard(props: {
             }
           />
         ) : (
-          <div className="max-h-96 overflow-y-auto">
-            <Table>
+          <div className="max-h-96 overflow-auto">
+            <Table className="min-w-[680px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -1310,6 +1453,8 @@ function PoliciesCard(props: {
   onDelete: (policy: PolicyDTO) => void;
 }) {
   const queryClient = useQueryClient();
+  const [density] = useTableDensity("sdwan-policies");
+  const dense = density === "compact";
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => sdwanApi.updatePolicy(id, { enabled }),
     onSuccess: () => invalidateAll(queryClient),
@@ -1323,9 +1468,12 @@ function PoliciesCard(props: {
           <Icons.GitBranch className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Path-selection policies
         </CardTitle>
-        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={props.onAdd}>
-          <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add policy
-        </Button>
+        <div className="flex items-center gap-2">
+          <DensityToggle storageKey="sdwan-policies" label="Policies table density" />
+          <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={props.onAdd}>
+            <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add policy
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         {props.isError ? (
@@ -1346,8 +1494,13 @@ function PoliciesCard(props: {
             }
           />
         ) : (
-          <div className="max-h-96 overflow-y-auto">
-            <Table>
+          <div className="max-h-96 overflow-auto">
+            <Table
+              className={cn(
+                "min-w-[720px] text-sm",
+                dense && "min-w-[600px] text-xs [&_td]:px-1.5 [&_td]:py-1 [&_th]:h-9 [&_th]:px-1.5",
+              )}
+            >
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -1431,6 +1584,8 @@ function SlaProfilesCard(props: {
   onEdit: (profile: SlaProfileDTO) => void;
   onDelete: (profile: SlaProfileDTO) => void;
 }) {
+  const [density] = useTableDensity("sdwan-sla");
+  const dense = density === "compact";
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
@@ -1438,9 +1593,12 @@ function SlaProfilesCard(props: {
           <Icons.Target className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           SLA profiles
         </CardTitle>
-        <Button size="sm" variant="outline" className="h-8" onClick={props.onAdd}>
-          <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
-        </Button>
+        <div className="flex items-center gap-2">
+          <DensityToggle storageKey="sdwan-sla" label="SLA table density" />
+          <Button size="sm" variant="outline" className="h-8" onClick={props.onAdd}>
+            <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         {props.isError ? (
@@ -1461,8 +1619,13 @@ function SlaProfilesCard(props: {
             }
           />
         ) : (
-          <div className="max-h-96 overflow-y-auto">
-            <Table>
+          <div className="max-h-96 overflow-auto">
+            <Table
+              className={cn(
+                "min-w-[420px] text-sm",
+                dense && "min-w-[360px] text-xs [&_td]:px-1.5 [&_td]:py-1 [&_th]:h-9 [&_th]:px-1.5",
+              )}
+            >
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>

@@ -15,6 +15,16 @@ import * as Icons from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -39,8 +49,9 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import { copyText, INVALID_CLS } from "../network/net-ui";
 import { usePermissions, MASK, DiffViewer, JsonViewer, fmtDateTime, humanUptime } from "./system-ui";
-import { systemApi, fieldErrorsOf, type SettingsEntry, type SettingsMap } from "./system-api";
+import { systemApi, fieldErrorsOf, type SettingsEntry, type SettingsMap, type SshKeyDTO, type PolicyTemplateDTO } from "./system-api";
 
 // ── constants ───────────────────────────────────────────────────────────────
 
@@ -155,6 +166,8 @@ function HealthStripCard() {
     },
     onError: (err) => toastErr(err, "Restart failed"),
   });
+  // confirm-first (M10 §5.6 dangerous-action rule): the chip button only OPENS the dialog
+  const [restartName, setRestartName] = useState<string | null>(null);
 
   if (status.isError) return <QueryError error={status.error} onRetry={() => void status.refetch()} />;
   if (status.isLoading) return <CardSkeleton rows={2} />;
@@ -221,10 +234,14 @@ function HealthStripCard() {
                     <button
                       type="button"
                       aria-label={`Restart ${svc.name}`}
-                      className="ml-0.5 rounded-sm p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                      onClick={() => restart.mutate(svc.name)}
+                      className="ml-0.5 rounded-sm p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                      onClick={() => setRestartName(svc.name)}
                     >
-                      <Icons.RotateCcw className="h-3 w-3" />
+                      {restart.isPending && restart.variables === svc.name ? (
+                        <Icons.Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Icons.RotateCcw className="h-3 w-3" />
+                      )}
                     </button>
                   ) : null}
                 </span>
@@ -233,6 +250,20 @@ function HealthStripCard() {
           </div>
         </div>
       </CardContent>
+
+      <ConfirmDialog
+        open={restartName !== null}
+        onOpenChange={(o) => !o && setRestartName(null)}
+        loading={restart.isPending}
+        title={`Restart service “${restartName ?? ""}”?`}
+        description={
+          (status.data?.dataPlane ?? "").startsWith("host")
+            ? "A systemctl restart is issued on the appliance and is audited. Brief packet-processing blips are possible while the unit reloads."
+            : "The restart is simulated (~2 s apply) and audited. On a real appliance the unit would reload and briefly drop processed traffic."
+        }
+        confirmLabel="Restart"
+        onConfirm={() => restartName !== null && restart.mutate(restartName)}
+      />
     </Card>
   );
 }
@@ -732,6 +763,75 @@ function HardeningCard({ settings }: { settings: SettingsMap | undefined }) {
 
 // ── 6. firmware ─────────────────────────────────────────────────────────────
 
+/** Destructive upgrade dialog — typed target version gates the confirm (M10 §5.6 typed rule). */
+function UpgradeDialog(props: {
+  version: string;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onConfirm: () => void;
+  loading: boolean;
+}) {
+  const [typed, setTyped] = useState("");
+  const enabled = typed === props.version && !props.loading;
+  return (
+    <AlertDialog
+      open={props.open}
+      onOpenChange={(o) => {
+        if (!o) setTyped("");
+        props.onOpenChange(o);
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <Icons.Upload className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            Upgrade firmware to v{props.version}?
+          </AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2 text-sm">
+              <p>
+                A safety <span className="font-medium">config</span> backup is created first (see #/system/backups), then the appliance applies the
+                staged upgrade and reloads — expect a short control-plane blip; the action is audited.
+              </p>
+              <p className="font-medium text-amber-600 dark:text-amber-400">
+                Type <span className="font-mono">{props.version}</span> to enable the confirm button.
+              </p>
+              <Input
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                placeholder={props.version}
+                aria-label={`Type ${props.version} to confirm`}
+                className="font-mono"
+              />
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel
+            disabled={props.loading}
+            onClick={() => {
+              setTyped("");
+              props.onOpenChange(false);
+            }}
+          >
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-amber-600 text-white hover:bg-amber-700 focus-visible:ring-amber-600"
+            disabled={!enabled}
+            onClick={(e) => {
+              e.preventDefault();
+              props.onConfirm();
+            }}
+          >
+            {props.loading ? "Upgrading…" : "Upgrade now"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function FirmwareCard() {
   const { canWrite } = usePermissions();
   const admin = canWrite("firmware");
@@ -775,9 +875,11 @@ function FirmwareCard() {
   if (firmware.isLoading) return <CardSkeleton rows={2} />;
   const fw = firmware.data!;
   const canRollback = (fw.history?.length ?? 0) >= 2;
+  // the rollback endpoint restores the previous history entry
+  const prevVersion = canRollback ? fw.history[fw.history.length - 2]?.version ?? null : null;
 
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Icons.Cpu className="h-4.5 w-4.5 text-zinc-500 dark:text-zinc-400" /> Firmware
@@ -797,15 +899,15 @@ function FirmwareCard() {
               <Icons.ArrowUpCircle className="mr-1 h-3 w-3" /> {fw.available} available
             </Badge>
           ) : null}
-          <div className="ml-auto flex gap-2">
-            <Button size="sm" variant="outline" disabled={!admin || check.isPending} onClick={() => check.mutate()}>
+          <div className="ml-auto flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" className="h-11 lg:h-8" disabled={!admin || check.isPending} onClick={() => check.mutate()}>
               {check.isPending ? <Icons.Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Icons.Search className="mr-2 h-4 w-4" />}
               Check for updates
             </Button>
-            <Button size="sm" disabled={!admin || !fw.available || upgrade.isPending} onClick={() => setDialog("upgrade")}>
+            <Button size="sm" className="h-11 lg:h-8" disabled={!admin || !fw.available || upgrade.isPending} onClick={() => setDialog("upgrade")}>
               <Icons.Upload className="mr-2 h-4 w-4" /> Upgrade now
             </Button>
-            <Button size="sm" variant="outline" disabled={!admin || !canRollback || rollback.isPending} onClick={() => setDialog("rollback")}>
+            <Button size="sm" variant="outline" className="h-11 lg:h-8" disabled={!admin || !canRollback || rollback.isPending} onClick={() => setDialog("rollback")}>
               <Icons.Undo2 className="mr-2 h-4 w-4" /> Roll back
             </Button>
           </div>
@@ -816,43 +918,47 @@ function FirmwareCard() {
           {fw.history.length === 0 ? (
             <p className="text-xs text-zinc-400">No upgrades recorded yet.</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Version</TableHead>
-                  <TableHead>Applied</TableHead>
-                  <TableHead>Note</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[...fw.history].reverse().map((h, i) => (
-                  <TableRow key={`${h.version}-${i}`}>
-                    <TableCell className="font-mono text-xs">v{h.version}</TableCell>
-                    <TableCell className="text-xs">{fmtDateTime(h.appliedAt)}</TableCell>
-                    <TableCell className="text-xs text-zinc-500">{h.note ?? "—"}</TableCell>
+            <div className="overflow-x-auto">
+              <Table className="min-w-[520px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Version</TableHead>
+                    <TableHead>Applied</TableHead>
+                    <TableHead>Note</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {[...fw.history].reverse().map((h, i) => (
+                    <TableRow key={`${h.version}-${i}`}>
+                      <TableCell className="font-mono text-xs">v{h.version}</TableCell>
+                      <TableCell className="text-xs">{fmtDateTime(h.appliedAt)}</TableCell>
+                      <TableCell className="text-xs text-zinc-500">{h.note ?? "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </div>
 
-        <ConfirmDialog
-          open={dialog === "upgrade"}
+        <UpgradeDialog
+          version={fw.available ?? ""}
+          open={dialog === "upgrade" && !!fw.available}
           onOpenChange={(o) => !o && setDialog(null)}
           loading={upgrade.isPending}
-          title={`Upgrade to v${fw.available ?? ""}?`}
-          description="A safety backup is created first (see #/system/backups), then the appliance applies the staged upgrade. The console contract is one audited POST."
-          confirmLabel="Upgrade now"
           onConfirm={() => upgrade.mutate()}
         />
         <ConfirmDialog
           open={dialog === "rollback"}
           onOpenChange={(o) => !o && setDialog(null)}
           loading={rollback.isPending}
-          title="Roll back firmware?"
-          description={`Restores the previous version from history (simulated staged apply). Current: v${fw.current}.`}
-          confirmLabel="Roll back"
+          title={prevVersion ? `Roll back to v${prevVersion}?` : "Roll back firmware?"}
+          description={
+            prevVersion
+              ? `Restores v${prevVersion} from history (simulated staged apply). Current: v${fw.current}. The apply is audited.`
+              : `Restores the previous version from history (simulated staged apply). Current: v${fw.current}.`
+          }
+          confirmLabel={prevVersion ? `Roll back to v${prevVersion}` : "Roll back"}
           onConfirm={() => rollback.mutate()}
         />
       </CardContent>
@@ -868,15 +974,46 @@ function SshKeysCard() {
   const queryClient = useQueryClient();
   const keys = useQuery({ queryKey: ["system", "sshKeys"], queryFn: () => systemApi.listSshKeys() });
   const [addOpen, setAddOpen] = useState(false);
-  const [removeId, setRemoveId] = useState<number | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<SshKeyDTO | null>(null);
   const [name, setName] = useState("");
   const [publicKey, setPublicKey] = useState("");
   const [errors, setErrors] = useState<Record<string, string[]>>({});
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["system", "sshKeys"] });
 
+  // client pre-checks mirror the server zod grammar (M10 §5.7) — server stays authoritative
+  const SSH_PUBKEY_RE =
+    /^(ssh-(rsa|dss|ed25519)|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/=]+( [\x20-\x7e]{0,254})?$/;
+  const validate = (): Record<string, string[]> => {
+    const errs: Record<string, string[]> = {};
+    const n = name.trim();
+    if (!n) errs.name = ["Name is required"];
+    else if (n.length > 64) errs.name = ["Name must be at most 64 characters"];
+    const pk = publicKey.trim();
+    if (!pk) errs.publicKey = ["Public key is required"];
+    else if (pk.length > 4096) errs.publicKey = ["Public key must be at most 4096 characters"];
+    else if (/PRIVATE KEY/i.test(pk)) errs.publicKey = ["Private keys are never accepted — upload the public key only"];
+    else if (!SSH_PUBKEY_RE.test(pk)) errs.publicKey = ["Must be an OpenSSH public-key line: <type> <base64> [comment]"];
+    return errs;
+  };
+  const clearErr = (k: string) => setErrors((e) => {
+    if (!(k in e)) return e;
+    const { [k]: _drop, ...rest } = e;
+    return rest;
+  });
+  const submitAdd = () => {
+    const errs = validate();
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      const first = ["name", "publicKey"].find((k) => errs[k]);
+      if (first) document.getElementById(`ssh-${first}`)?.focus();
+      return;
+    }
+    create.mutate();
+  };
+
   const create = useMutation({
-    mutationFn: () => systemApi.createSshKey({ name, publicKey }),
+    mutationFn: () => systemApi.createSshKey({ name: name.trim(), publicKey: publicKey.trim() }),
     onSuccess: (key) => {
       toastOk("SSH key added", `Fingerprint ${key.fingerprint} derived server-side.`);
       setAddOpen(false);
@@ -894,14 +1031,14 @@ function SshKeysCard() {
     mutationFn: (id: number) => systemApi.deleteSshKey(id),
     onSuccess: () => {
       toastOk("SSH key removed", "authorized_keys entry deleted (audited).");
-      setRemoveId(null);
+      setRemoveTarget(null);
       invalidate();
     },
     onError: (err) => toastErr(err, "Remove failed"),
   });
 
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -921,38 +1058,56 @@ function SshKeysCard() {
         ) : (keys.data?.length ?? 0) === 0 ? (
           <EmptyBlock icon={<Icons.KeyRound className="h-6 w-6" />} title="No SSH keys" description="Add a management key to enable key-only SSH (hardening)." />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Fingerprint</TableHead>
-                <TableHead>Added by</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="w-16" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {keys.data!.map((k) => (
-                <TableRow key={k.id}>
-                  <TableCell className="text-sm font-medium">{k.name}</TableCell>
-                  <TableCell className="font-mono text-xs">{k.fingerprint}</TableCell>
-                  <TableCell className="text-xs">{k.addedBy ?? "—"}</TableCell>
-                  <TableCell className="text-xs">{fmtDateTime(k.createdAt)}</TableCell>
-                  <TableCell>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      aria-label={`Remove ${k.name}`}
-                      disabled={!admin}
-                      onClick={() => setRemoveId(k.id)}
-                    >
-                      <Icons.Trash2 className="h-4 w-4 text-rose-600" />
-                    </Button>
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table className="min-w-[640px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Fingerprint</TableHead>
+                  <TableHead>Added by</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="w-16" />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {keys.data!.map((k) => (
+                  <TableRow key={k.id}>
+                    <TableCell className="text-sm font-medium">{k.name}</TableCell>
+                    <TableCell>
+                      <span className="flex min-w-0 items-center gap-1">
+                        <code className="min-w-0 truncate font-mono text-xs" title={k.fingerprint}>
+                          {k.fingerprint}
+                        </code>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-11 w-11 shrink-0 lg:h-7 lg:w-7"
+                          aria-label={`Copy fingerprint of ${k.name}`}
+                          onClick={() => void copyText(k.fingerprint, "Fingerprint copied")}
+                        >
+                          <Icons.Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs">{k.addedBy ?? "—"}</TableCell>
+                    <TableCell className="text-xs">{fmtDateTime(k.createdAt)}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-11 w-11 lg:h-8 lg:w-8"
+                        aria-label={`Remove ${k.name}`}
+                        disabled={!admin}
+                        onClick={() => setRemoveTarget(k)}
+                      >
+                        <Icons.Trash2 className="h-4 w-4 text-rose-600" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
 
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
@@ -967,26 +1122,51 @@ function SshKeysCard() {
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <FieldLabel>Name</FieldLabel>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ops-laptop" />
-                {errors.name ? <p className="text-[11px] text-rose-600">{errors.name[0]}</p> : null}
+                <Input
+                  id="ssh-name"
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    clearErr("name");
+                  }}
+                  placeholder="ops-laptop"
+                  aria-invalid={!!errors.name}
+                  aria-describedby={errors.name ? "ssh-name-err" : undefined}
+                  className={cn(errors.name && INVALID_CLS)}
+                />
+                {errors.name ? (
+                  <p id="ssh-name-err" role="alert" className="text-[11px] text-rose-600 dark:text-rose-400">
+                    {errors.name[0]}
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-1.5">
                 <FieldLabel hint="ssh-ed25519 AAAA… comment">Public key</FieldLabel>
                 <Textarea
+                  id="ssh-publicKey"
                   rows={4}
-                  className="font-mono text-xs"
+                  className={cn("font-mono text-xs", errors.publicKey && INVALID_CLS)}
                   value={publicKey}
-                  onChange={(e) => setPublicKey(e.target.value)}
+                  onChange={(e) => {
+                    setPublicKey(e.target.value);
+                    clearErr("publicKey");
+                  }}
                   placeholder="ssh-ed25519 AAAAC3Nza… user@host"
+                  aria-invalid={!!errors.publicKey}
+                  aria-describedby={errors.publicKey ? "ssh-publicKey-err" : undefined}
                 />
-                {errors.publicKey ? <p className="text-[11px] text-rose-600">{errors.publicKey[0]}</p> : null}
+                {errors.publicKey ? (
+                  <p id="ssh-publicKey-err" role="alert" className="text-[11px] text-rose-600 dark:text-rose-400">
+                    {errors.publicKey[0]}
+                  </p>
+                ) : null}
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddOpen(false)}>
                 Cancel
               </Button>
-              <Button disabled={!name.trim() || !publicKey.trim() || create.isPending} onClick={() => create.mutate()}>
+              <Button disabled={create.isPending} onClick={submitAdd}>
                 {create.isPending ? "Adding…" : "Add key"}
               </Button>
             </DialogFooter>
@@ -994,13 +1174,17 @@ function SshKeysCard() {
         </Dialog>
 
         <ConfirmDialog
-          open={removeId !== null}
-          onOpenChange={(o) => !o && setRemoveId(null)}
+          open={removeTarget !== null}
+          onOpenChange={(o) => !o && setRemoveTarget(null)}
           loading={remove.isPending}
-          title="Remove SSH key?"
-          description="The authorized_keys entry is deleted appliance-side. The action is audited."
+          title={`Remove SSH key “${removeTarget?.name ?? ""}”?`}
+          description={
+            removeTarget?.fingerprint
+              ? `The authorized_keys entry for ${removeTarget.fingerprint} is deleted appliance-side — sessions authenticated with it stop working. The action is audited.`
+              : "The authorized_keys entry is deleted appliance-side. The action is audited."
+          }
           confirmLabel="Remove"
-          onConfirm={() => removeId !== null && remove.mutate(removeId)}
+          onConfirm={() => removeTarget !== null && remove.mutate(removeTarget.id)}
         />
       </CardContent>
     </Card>
@@ -1295,13 +1479,13 @@ function TemplatesCard() {
   const admin = isAdmin("system");
   const queryClient = useQueryClient();
   const templates = useQuery({ queryKey: ["system", "templates"], queryFn: () => systemApi.listTemplates() });
-  const [applyId, setApplyId] = useState<string | null>(null);
+  const [applyTarget, setApplyTarget] = useState<PolicyTemplateDTO | null>(null);
 
   const apply = useMutation({
     mutationFn: (id: string) => systemApi.applyTemplate(id),
     onSuccess: (r) => {
       toastOk(`Template applied: ${r.template.name}`, `Replaced rows in: ${r.summary.sections.join(", ")} (audited, section all).`);
-      setApplyId(null);
+      setApplyTarget(null);
       void queryClient.invalidateQueries();
     },
     onError: (err) => toastErr(err, "Apply failed"),
@@ -1332,20 +1516,26 @@ function TemplatesCard() {
                   </div>
                 ))}
               </dl>
-              <Button className="mt-3" size="sm" variant="outline" disabled={!admin} onClick={() => setApplyId(t.id)}>
+              <Button className="mt-3" size="sm" variant="outline" disabled={!admin} onClick={() => setApplyTarget(t)}>
                 <Icons.CheckCheck className="mr-2 h-4 w-4" /> Apply template
               </Button>
             </div>
           ))}
         </div>
         <ConfirmDialog
-          open={applyId !== null}
-          onOpenChange={(o) => !o && setApplyId(null)}
+          open={applyTarget !== null}
+          onOpenChange={(o) => !o && setApplyTarget(null)}
           loading={apply.isPending}
-          title="Apply template?"
-          description="Matching sections (firewall, NAT, IPS, DNS, QoS) are overwritten with the template's starter rows. The apply is audited and every view refetches via the config fan-out."
+          title={`Apply template “${applyTarget?.name ?? ""}”?`}
+          description={
+            applyTarget
+              ? `Overwrites matching sections with the template's starter rows — ${Object.entries(applyTarget.sections)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join(" · ")}. Existing rows in those sections are replaced; the apply is audited and every view refetches via the config fan-out.`
+              : "Matching sections are overwritten with the template's starter rows. The apply is audited."
+          }
           confirmLabel="Apply"
-          onConfirm={() => applyId !== null && apply.mutate(applyId)}
+          onConfirm={() => applyTarget !== null && apply.mutate(applyTarget.id)}
         />
       </CardContent>
     </Card>
@@ -1380,7 +1570,7 @@ function ConfigHistoryCard() {
   const meta = versions.data?.meta;
 
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Icons.History className="h-4.5 w-4.5 text-zinc-500 dark:text-zinc-400" /> Config history
@@ -1439,7 +1629,8 @@ function ConfigHistoryCard() {
         ) : (versions.data?.data.length ?? 0) === 0 ? (
           <EmptyBlock icon={<Icons.History className="h-6 w-6" />} title="No versions for this section yet" description="Save a config mutation in this section to create the first snapshot." />
         ) : (
-          <Table>
+          <div className="overflow-x-auto">
+            <Table className="min-w-[560px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12" />
@@ -1474,6 +1665,7 @@ function ConfigHistoryCard() {
               ))}
             </TableBody>
           </Table>
+          </div>
         )}
 
         {selected.length === 2 ? (

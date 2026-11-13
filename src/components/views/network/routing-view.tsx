@@ -7,7 +7,7 @@
  * config:updated (section=routing) invalidates the routes + pbr queries.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -47,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { useRealtime } from "@/lib/realtime";
 import {
   ConfirmDialog,
+  DensityToggle,
   EditorSection,
   EmptyBlock,
   FieldLabel,
@@ -55,6 +56,7 @@ import {
   TableSkeleton,
   toastErr,
   toastOk,
+  useTableDensity,
 } from "@/components/views/firewall/fw-ui";
 import {
   isValidCidr,
@@ -70,7 +72,7 @@ import {
   type RouteIssueDTO,
   type StaticRouteRow,
 } from "./net-api";
-import { BfdChip, PbrKernelBadge, RouteOsBadge } from "./net-ui";
+import { BfdChip, FieldErrorText, INVALID_CLS, PbrKernelBadge, RouteOsBadge } from "./net-ui";
 
 const ROUTES_KEY = ["network", "routes"] as const;
 const PBR_KEY = ["network", "pbr"] as const;
@@ -95,6 +97,16 @@ function ScrollWrap({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
+}
+
+/** Debounced value for table search inputs (same recipe as interfaces-view). */
+function useDebounced<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
 }
 
 /** Toast summary of a gated OS-apply outcome (plan + results). */
@@ -188,6 +200,21 @@ function StaticRoutesTab() {
   const [conflict, setConflict] = useState<{ body: Parameters<typeof netApi.createRoute>[0]; editingId: number | null; issues: RouteIssueDTO[] } | null>(null);
   const [applying, setApplying] = useState<StaticRouteRow | "all" | null>(null);
 
+  // search + density (R5 parity with the M03 rules table)
+  const [qRaw, setQRaw] = useState("");
+  const q = useDebounced(qRaw, 300);
+  const [density] = useTableDensity("net-static-routes");
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return routes;
+    return routes.filter((r) =>
+      `${r.name ?? ""} ${r.destinationCidr} ${r.gateway ?? ""} ${r.interfaceName ?? ""} ${r.description ?? ""}`
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [routes, q]);
+
   const toggleMut = useMutation({
     mutationFn: (route: StaticRouteRow) =>
       netApi.updateRoute(route.id, { ...routeBodyOf(route, { enabled: !route.enabled }), force: true }),
@@ -219,7 +246,7 @@ function StaticRoutesTab() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-zinc-500">
+        <p className="min-w-0 text-xs text-zinc-500">
           Floating static routes via distance (lower wins); the default route is a static route with 0.0.0.0/0. Rows sync to the kernel FIB with <code className="font-mono">ip route</code> — metric = distance, so the interface-managed primary default (metric 0) always stays authoritative.
         </p>
         <div className="flex items-center gap-2">
@@ -245,6 +272,31 @@ function StaticRoutesTab() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Icons.Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+          <Input
+            value={qRaw}
+            onChange={(e) => setQRaw(e.target.value)}
+            placeholder="Search destination / gateway / iface…"
+            className="h-8 w-60 pl-8"
+            aria-label="Search static routes"
+          />
+        </div>
+        {q.trim() !== "" && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 px-2 text-xs text-zinc-500"
+            onClick={() => setQRaw("")}
+            aria-label="Clear route search"
+          >
+            <Icons.X className="mr-1 h-3 w-3" /> Clear ({filtered.length}/{routes.length})
+          </Button>
+        )}
+        <DensityToggle storageKey="net-static-routes" label="Static routes density" />
+      </div>
+
       <Card className="p-0">
         <CardContent className="p-0">
           {routesQuery.error ? (
@@ -255,11 +307,15 @@ function StaticRoutesTab() {
             <div className="p-4">
               <TableSkeleton rows={5} cols={7} />
             </div>
-          ) : routes.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <EmptyBlock
               icon={<Icons.Signpost className="h-6 w-6" />}
-              title="No static routes"
-              description="Add a static or blackhole route — e.g. 0.0.0.0/0 via your WAN gateway as the default route."
+              title={routes.length === 0 ? "No static routes" : "No routes match the search"}
+              description={
+                routes.length === 0
+                  ? "Add a static or blackhole route — e.g. 0.0.0.0/0 via your WAN gateway as the default route."
+                  : "Try a different destination, gateway or interface name."
+              }
               action={
                 <Button
                   onClick={() => {
@@ -274,7 +330,14 @@ function StaticRoutesTab() {
             />
           ) : (
             <ScrollWrap>
-              <Table className="min-w-[820px] text-sm">
+              <Table
+                className={cn(
+                  "text-sm",
+                  density === "compact"
+                    ? "min-w-[680px] text-xs [&_td]:px-1.5 [&_td]:py-1 [&_th]:px-1.5 [&_th]:py-1"
+                    : "min-w-[820px]",
+                )}
+              >
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
                     <TableHead>Destination</TableHead>
@@ -288,9 +351,20 @@ function StaticRoutesTab() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {routes.map((r) => (
+                  {filtered.map((r) => (
                     <TableRow key={r.id} className={cn(!r.enabled && "opacity-55")}>
-                      <TableCell className="font-mono text-xs font-medium">{r.destinationCidr}</TableCell>
+                      <TableCell className="font-mono text-xs font-medium">
+                        {r.destinationCidr === "0.0.0.0/0" ? (
+                          <Badge
+                            variant="outline"
+                            className="mr-1.5 border-zinc-400 px-1 py-0 align-[1px] text-[9px] font-normal text-zinc-500"
+                            title="Default route (0.0.0.0/0)"
+                          >
+                            default
+                          </Badge>
+                        ) : null}
+                        {r.destinationCidr}
+                      </TableCell>
                       <TableCell>
                         {r.blackhole ? (
                           <Badge variant="outline" className="border-rose-600/60 bg-transparent text-rose-500">
@@ -460,7 +534,10 @@ function RouteEditor(props: {
   const [blackhole, setBlackhole] = useState(editing?.blackhole ?? false);
   const [enabled, setEnabled] = useState(editing?.enabled ?? true);
   const [description, setDescription] = useState(editing?.description ?? "");
-  const [error, setError] = useState<string | null>(null);
+  // per-field submit validation (R2 rule-editor parity, UI_DESIGN_SYSTEM §5.16)
+  const [errors, setErrors] = useState<{ destinationCidr?: string; distance?: string; gateway?: string }>({});
+
+  const FIELD_IDS = { destinationCidr: "route-destination", distance: "route-distance", gateway: "route-gateway" } as const;
 
   const mut = useMutation({
     mutationFn: (body: Parameters<typeof netApi.createRoute>[0]) =>
@@ -484,17 +561,30 @@ function RouteEditor(props: {
   });
 
   const submit = () => {
+    const next: { destinationCidr?: string; distance?: string; gateway?: string } = {};
     const cidr = destinationCidr.trim();
-    if (!isValidCidr(cidr)) return setError("Destination must be a valid IPv4 CIDR (e.g. 10.0.0.0/8)");
+    if (!isValidCidr(cidr)) next.destinationCidr = "Destination must be a valid IPv4 CIDR (e.g. 10.0.0.0/8)";
     const dist = Number(distance);
-    if (!Number.isInteger(dist) || dist < 1 || dist > 255) return setError("Distance must be an integer between 1 and 255");
-    if (!blackhole && gateway.trim() !== "" && !isValidIpv4(gateway)) return setError("Gateway must be a valid IPv4 address");
-    setError(null);
+    if (!Number.isInteger(dist) || dist < 1 || dist > 255) next.distance = "Distance must be an integer between 1 and 255";
+    if (!blackhole && gateway.trim() !== "" && !isValidIpv4(gateway)) next.gateway = "Gateway must be a valid IPv4 address";
+
+    const first = (["destinationCidr", "distance", "gateway"] as const).find((k) => next[k]);
+    if (first) {
+      setErrors(next);
+      // scroll-to + focus the FIRST invalid control (R2/R4 editor recipe)
+      const el = document.getElementById(FIELD_IDS[first]);
+      el?.scrollIntoView({ block: "center" });
+      el?.focus();
+      return;
+    }
+    setErrors({});
     const body = {
-      name: name.trim() || null,
+      // name/interfaceName are strict-optional server-side (string | undefined):
+      // null fails validation with "expected string, received null" — send undefined
+      name: name.trim() || undefined,
       destinationCidr: cidr,
       gateway: blackhole || gateway.trim() === "" ? null : gateway.trim(),
-      interfaceName: interfaceName === "none" ? null : interfaceName,
+      interfaceName: interfaceName === "none" ? undefined : interfaceName,
       distance: dist,
       bfd: blackhole ? false : bfd,
       blackhole,
@@ -521,29 +611,58 @@ function RouteEditor(props: {
             </div>
             <div>
               <FieldLabel hint="1–255">Distance</FieldLabel>
-              <Input type="number" min={1} max={255} value={distance} onChange={(e) => setDistance(e.target.value)} aria-label="Administrative distance" />
+              <Input
+                id={FIELD_IDS.distance}
+                type="number"
+                min={1}
+                max={255}
+                value={distance}
+                onChange={(e) => {
+                  setDistance(e.target.value);
+                  if (errors.distance) setErrors((prev) => ({ ...prev, distance: undefined }));
+                }}
+                aria-label="Administrative distance"
+                aria-invalid={errors.distance ? true : undefined}
+                aria-describedby={errors.distance ? "route-distance-error" : undefined}
+                className={cn(errors.distance && INVALID_CLS)}
+              />
+              <FieldErrorText id="route-distance-error" msg={errors.distance} />
             </div>
           </div>
           <div>
             <FieldLabel hint="IPv4 CIDR">Destination</FieldLabel>
             <Input
+              id={FIELD_IDS.destinationCidr}
               value={destinationCidr}
-              onChange={(e) => setDestinationCidr(e.target.value)}
+              onChange={(e) => {
+                setDestinationCidr(e.target.value);
+                if (errors.destinationCidr) setErrors((prev) => ({ ...prev, destinationCidr: undefined }));
+              }}
               placeholder="0.0.0.0/0"
-              className="font-mono"
+              className={cn("font-mono", errors.destinationCidr && INVALID_CLS)}
               aria-label="Destination CIDR"
+              aria-invalid={errors.destinationCidr ? true : undefined}
+              aria-describedby={errors.destinationCidr ? "route-destination-error" : undefined}
             />
+            <FieldErrorText id="route-destination-error" msg={errors.destinationCidr} />
           </div>
           <div>
             <FieldLabel hint={blackhole ? "cleared while blackhole is on" : "optional"}>Gateway</FieldLabel>
             <Input
+              id={FIELD_IDS.gateway}
               value={gateway}
-              onChange={(e) => setGateway(e.target.value)}
+              onChange={(e) => {
+                setGateway(e.target.value);
+                if (errors.gateway) setErrors((prev) => ({ ...prev, gateway: undefined }));
+              }}
               placeholder="203.0.113.1"
               disabled={blackhole}
-              className="font-mono"
+              className={cn("font-mono", errors.gateway && INVALID_CLS)}
               aria-label="Gateway"
+              aria-invalid={errors.gateway ? true : undefined}
+              aria-describedby={errors.gateway ? "route-gateway-error" : undefined}
             />
+            <FieldErrorText id="route-gateway-error" msg={errors.gateway} />
           </div>
           <div>
             <FieldLabel hint="optional">Interface</FieldLabel>
@@ -576,7 +695,6 @@ function RouteEditor(props: {
             <FieldLabel hint="optional">Description</FieldLabel>
             <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} aria-label="Route description" />
           </div>
-          {error && <p className="text-xs font-medium text-rose-600 dark:text-rose-400">{error}</p>}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
@@ -607,6 +725,7 @@ function PbrTab() {
   const [deleting, setDeleting] = useState<PbrRow | null>(null);
   const [applyingRule, setApplyingRule] = useState<PbrRow | "all" | null>(null);
   const [planDialogRule, setPlanDialogRule] = useState<PbrRow | "all" | null>(null);
+  const [pbrDensity] = useTableDensity("net-pbr-rules");
 
   // plan preview (GET /pbr-rules/apply) — shown in the per-rule plan dialog
   const planPreviewQuery = useQuery({ queryKey: PBR_PLANS_KEY, queryFn: () => netApi.previewPbrPlans(), enabled: false, staleTime: 15_000 });
@@ -721,19 +840,21 @@ function PbrTab() {
         </AlertDescription>
       </Alert>
 
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={planPreviewQuery.isFetching}
-          onClick={() => {
-            setPlanDialogRule("all");
-            void planPreviewQuery.refetch();
-          }}
-          aria-label="Preview apply plans"
-        >
-          <Icons.Terminal className={cn("mr-1 h-4 w-4", planPreviewQuery.isFetching && "animate-spin")} /> Preview plans
-        </Button>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <DensityToggle storageKey="net-pbr-rules" label="Policy routes density" />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={planPreviewQuery.isFetching}
+            onClick={() => {
+              setPlanDialogRule("all");
+              void planPreviewQuery.refetch();
+            }}
+            aria-label="Preview apply plans"
+          >
+            <Icons.Terminal className={cn("mr-1 h-4 w-4", planPreviewQuery.isFetching && "animate-spin")} /> Preview plans
+          </Button>
         <Button
           size="sm"
           variant="outline"
@@ -746,6 +867,7 @@ function PbrTab() {
         <Button size="sm" onClick={openCreate} className="bg-zinc-700 text-white hover:bg-zinc-800">
           <Icons.Plus className="mr-1 h-4 w-4" /> Add policy route
         </Button>
+        </div>
       </div>
 
       <Card className="p-0">
@@ -771,7 +893,14 @@ function PbrTab() {
             />
           ) : (
             <ScrollWrap>
-              <Table className="min-w-[860px] text-sm">
+              <Table
+                className={cn(
+                  "text-sm",
+                  pbrDensity === "compact"
+                    ? "min-w-[700px] text-xs [&_td]:px-1.5 [&_td]:py-1 [&_th]:px-1.5 [&_th]:py-1"
+                    : "min-w-[860px]",
+                )}
+              >
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
                     <TableHead className="w-12">Pos</TableHead>

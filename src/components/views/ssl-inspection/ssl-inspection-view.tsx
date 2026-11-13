@@ -10,7 +10,7 @@
  * inspection logs close the view. Theme: white + enterprise red-700.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Ban,
@@ -23,6 +23,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Search,
   ShieldCheck,
   Trash2,
 } from "lucide-react";
@@ -51,7 +52,17 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, toastErr, toastOk } from "../firewall/fw-ui";
+import {
+  ConfirmDialog,
+  DensityToggle,
+  EmptyBlock,
+  FieldLabel,
+  QueryError,
+  ROW_FLASH_CLASS,
+  toastErr,
+  toastOk,
+  useTableDensity,
+} from "../firewall/fw-ui";
 import { pkiApi, type CaDto } from "../pki/pki-api";
 import {
   HSTS_OPTIONS,
@@ -665,11 +676,24 @@ export function SslInspectionView() {
   const [bypassOpen, setBypassOpen] = useState(false);
   const [deletingRule, setDeletingRule] = useState<SslBypassRuleDTO | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [bypassSearch, setBypassSearch] = useState("");
+  const [flashRuleId, setFlashRuleId] = useState<number | null>(null);
+  const flashTimer = useRef<number | null>(null);
+  const [bypassDensity] = useTableDensity("ssl-bypass");
+  const [logDensity] = useTableDensity("ssl-logs");
 
   const policies = policiesQuery.data ?? [];
   const rules = rulesQuery.data ?? [];
   const selected = policies.find((p) => p.id === selectedId) ?? policies[0] ?? null;
   const policyRules = selected ? rules.filter((r) => r.policyId === selected.id) : [];
+
+  // bypass-rules search filters matchValue/reason of the selected policy's rules
+  const bypassQ = bypassSearch.trim().toLowerCase();
+  const visibleRules = bypassQ
+    ? policyRules.filter(
+        (r) => r.matchValue.toLowerCase().includes(bypassQ) || (r.reason ?? "").toLowerCase().includes(bypassQ),
+      )
+    : policyRules;
   const logs = logsQuery.data ?? [];
 
   const refreshAll = () => void queryClient.invalidateQueries({ queryKey: SSL_KEY });
@@ -693,7 +717,12 @@ export function SslInspectionView() {
 
   const toggleRule = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => sslInspectionApi.updateBypassRule(id, { enabled }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: [...SSL_KEY, "bypass-rules"] }),
+    onSuccess: (_r, variables) => {
+      void queryClient.invalidateQueries({ queryKey: [...SSL_KEY, "bypass-rules"] });
+      setFlashRuleId(variables.id); // ROW_FLASH feedback on the toggled row (§5.14)
+      if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
+      flashTimer.current = window.setTimeout(() => setFlashRuleId(null), 1600);
+    },
     onError: (e) => toastErr(e, "Toggle failed"),
   });
 
@@ -889,9 +918,19 @@ export function SslInspectionView() {
                           Bypass rules — {selected.name}
                         </h4>
                         <Badge variant="outline" className="border-zinc-300 px-1.5 text-[10px] text-zinc-500 dark:border-zinc-700">
-                          {policyRules.length}
+                          {bypassQ ? `${visibleRules.length} of ${policyRules.length}` : policyRules.length}
                         </Badge>
-                        <Button size="sm" variant="outline" className="ml-auto h-7 gap-1 px-2 text-xs" onClick={() => setBypassOpen(true)}>
+                        <div className="relative ml-auto">
+                          <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-zinc-400" />
+                          <Input
+                            value={bypassSearch}
+                            onChange={(e) => setBypassSearch(e.target.value)}
+                            placeholder="Search value / reason…"
+                            className="h-11 w-full pl-7 text-xs sm:w-40 lg:h-8"
+                            aria-label="Search bypass rules"
+                          />
+                        </div>
+                        <Button size="sm" variant="outline" className="h-11 gap-1 px-2 text-xs lg:h-7" onClick={() => setBypassOpen(true)}>
                           <Plus className="h-3.5 w-3.5" /> Add bypass
                         </Button>
                       </div>
@@ -899,9 +938,22 @@ export function SslInspectionView() {
                         <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-4 text-center text-xs text-zinc-400 dark:border-zinc-800">
                           No bypass rules — all connections follow the policy decision path.
                         </p>
+                      ) : visibleRules.length === 0 ? (
+                        <p className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-zinc-200 px-3 py-4 text-center text-xs text-zinc-400 dark:border-zinc-800">
+                          <span>No bypass rules match “{bypassSearch.trim()}”.</span>
+                          <Button variant="outline" size="sm" className="h-11 text-xs lg:h-8" onClick={() => setBypassSearch("")}>
+                            Clear search
+                          </Button>
+                        </p>
                       ) : (
-                        <div className="max-h-60 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-300 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700">
-                          <Table>
+                        <div className="max-h-60 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-300 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700">
+                          <Table
+                            className={
+                              bypassDensity === "compact"
+                                ? "min-w-[420px] [&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs"
+                                : "min-w-[420px]"
+                            }
+                          >
                             <TableHeader>
                               <TableRow>
                                 <TableHead className="h-9 text-xs">Type</TableHead>
@@ -912,8 +964,8 @@ export function SslInspectionView() {
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {policyRules.map((r) => (
-                                <TableRow key={r.id}>
+                              {visibleRules.map((r) => (
+                                <TableRow key={r.id} className={flashRuleId === r.id ? ROW_FLASH_CLASS : undefined}>
                                   <TableCell className="py-2">
                                     <MatchTypeBadge type={r.matchType} />
                                   </TableCell>
@@ -930,7 +982,7 @@ export function SslInspectionView() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-7 w-7 text-rose-500 hover:text-rose-600"
+                                      className="h-11 w-11 text-rose-500 hover:text-rose-600 lg:h-7 lg:w-7"
                                       aria-label={`Delete bypass rule ${r.matchValue}`}
                                       onClick={() => setDeletingRule(r)}
                                     >
@@ -998,8 +1050,14 @@ export function SslInspectionView() {
               description="Run a connection test above — every decision is persisted here."
             />
           ) : (
-            <div className="max-h-96 overflow-y-auto [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-300 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700">
-              <Table>
+            <div className="max-h-96 overflow-auto [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-300 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700">
+              <Table
+                className={
+                  logDensity === "compact"
+                    ? "min-w-[680px] [&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs"
+                    : "min-w-[680px]"
+                }
+              >
                 <TableHeader>
                   <TableRow>
                     <TableHead className="h-9 text-xs">Decision</TableHead>

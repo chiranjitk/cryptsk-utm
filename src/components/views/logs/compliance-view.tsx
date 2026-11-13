@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/table";
 import {
   ConfirmDialog,
+  DensityToggle,
   EmptyBlock,
   FieldLabel,
   MultiChips,
@@ -51,6 +52,7 @@ import {
   TableSkeleton,
   toastErr,
   toastOk,
+  useTableDensity,
 } from "../firewall/fw-ui";
 import { cn } from "@/lib/utils";
 import {
@@ -180,6 +182,8 @@ function StringChips({
 export function ComplianceView() {
   const queryClient = useQueryClient();
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["m12"] });
+  // One density key for both module tables (templates + runs) — the toggle lives in the templates header
+  const [density] = useTableDensity("logs-compliance");
 
   const templatesQuery = useQuery({ queryKey: ["m12", "templates"], queryFn: searchApi.listTemplates });
   const runsQuery = useQuery({
@@ -372,7 +376,8 @@ export function ComplianceView() {
       </p>
 
       {/* ── framework cards ── */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      {/* ── framework cards — single column below 440px: the Run now button cannot shrink (§5.18) */}
+      <div className="grid grid-cols-1 gap-3 min-[440px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
         {FRAMEWORKS.map((fw) => {
           const stat = fwStats.get(fw) ?? { passRate: -1, runs: 0 };
           return (
@@ -402,17 +407,20 @@ export function ComplianceView() {
         })}
       </div>
 
-      {/* ── templates table ── */}
-      <Card>
+      {/* ── templates table ── card is the grid item: min-w-0 + inner overflow wrapper (§5.18) */}
+      <Card className="min-w-0">
         <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="flex items-center gap-1.5 text-sm">
             <Icons.FileCheck className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             Compliance templates
           </CardTitle>
-          <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => openTplEditor(null)}>
-            <Icons.Plus className="h-3.5 w-3.5" />
-            New template
-          </Button>
+          <div className="flex items-center gap-2">
+            <DensityToggle storageKey="logs-compliance" label="Compliance table density" />
+            <Button size="sm" variant="outline" className="h-11 gap-1.5 lg:h-8" onClick={() => openTplEditor(null)}>
+              <Icons.Plus className="h-3.5 w-3.5" />
+              New template
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {templatesQuery.isLoading ? (
@@ -422,7 +430,8 @@ export function ComplianceView() {
           ) : templates.length === 0 ? (
             <EmptyBlock icon={<Icons.FileCheck className="h-6 w-6" />} title="No templates" description="Create a template to run framework checklists on a schedule-like cadence." />
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+            <Table className={cn("min-w-[760px]", density === "compact" && "[&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs")}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -491,12 +500,13 @@ export function ComplianceView() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
 
       {/* ── runs table ── */}
-      <Card>
+      <Card className="min-w-0">
         <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="flex items-center gap-1.5 text-sm">
             <Icons.FileBarChart className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
@@ -534,8 +544,8 @@ export function ComplianceView() {
               }
             />
           ) : (
-            <div className="max-h-96 overflow-y-auto">
-              <Table>
+            <div className="max-h-96 overflow-auto">
+              <Table className={cn("min-w-[640px]", density === "compact" && "[&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs")}>
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
                     <TableHead>Name</TableHead>

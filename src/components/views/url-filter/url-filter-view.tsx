@@ -59,9 +59,22 @@ import {
   type UrlLogAction,
   type UrlPolicyDTO,
 } from "./url-filter-api";
-import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import {
+  ConfirmDialog,
+  DensityToggle,
+  EmptyBlock,
+  FieldLabel,
+  QueryError,
+  TableSkeleton,
+  toastErr,
+  toastOk,
+  useTableDensity,
+} from "../firewall/fw-ui";
 
 const POLICIES_KEY = ["url-filter", "policies"] as const;
+
+// logs action chips — "all" plus every UrlLogAction (R6 firewall-logs chip recipe)
+const LOG_CHIP_ORDER: Array<"all" | UrlLogAction> = ["all", ...LOG_ACTIONS];
 
 function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ["url-filter"] });
@@ -300,6 +313,9 @@ function CategoriesTab({ policyId }: { policyId: number }) {
     if (next.length > 0) save.mutate(next);
   };
 
+  const enabledCount = rules.filter((r) => r.enabled).length;
+  const blockCount = rules.filter((r) => r.enabled && r.action === "block").length;
+
   return (
     <div className="max-h-96 overflow-y-auto">
       {rulesQuery.isError ? (
@@ -309,6 +325,23 @@ function CategoriesTab({ policyId }: { policyId: number }) {
       ) : rulesQuery.isLoading ? (
         <TableSkeleton rows={6} cols={4} />
       ) : (
+        <>
+        {/* enable/disable count summary — only once the server rows are loaded (no fake 0s) */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+          <Badge
+            variant="outline"
+            className="border-zinc-500/30 bg-zinc-500/10 text-[10px] tabular-nums text-zinc-600 dark:text-zinc-300"
+          >
+            {enabledCount} of {rules.length} categories enabled
+          </Badge>
+          <Badge
+            variant="outline"
+            className="border-rose-600/40 bg-rose-600/5 text-[10px] tabular-nums text-rose-500"
+          >
+            {blockCount} blocking
+          </Badge>
+          {save.isPending && <span className="text-[11px] text-zinc-400">Saving rule set…</span>}
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -360,11 +393,7 @@ function CategoriesTab({ policyId }: { policyId: number }) {
             ))}
           </TableBody>
         </Table>
-      )}
-      {save.isPending && (
-        <p className="border-t border-zinc-200 px-4 py-2 text-[11px] text-zinc-400 dark:border-zinc-800">
-          Saving rule set…
-        </p>
+        </>
       )}
     </div>
   );
@@ -632,7 +661,7 @@ function CustomListsTab({ policyId }: { policyId: number }) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-rose-500 hover:text-rose-600"
+                        className="h-11 w-11 text-rose-500 hover:text-rose-600 lg:h-7 lg:w-7"
                         aria-label={`Delete ${entry.value}`}
                         onClick={() => setDeleting(entry)}
                       >
@@ -806,8 +835,16 @@ function StatsStrip() {
 function LogsCard() {
   const queryClient = useQueryClient();
   const [action, setAction] = useState<"all" | UrlLogAction>("all");
+  const [q, setQ] = useState("");
+  const [density] = useTableDensity("url-filter-logs");
+  const statsQuery = useQuery({ queryKey: ["url-filter", "stats"], queryFn: urlFilterApi.getStats });
+  const stats = statsQuery.data;
 
-  const params = useMemo(() => qs({ limit: 25, action: action === "all" ? undefined : action }), [action]);
+  // server-side free-text search — the logs endpoint already accepts ?q=
+  const params = useMemo(
+    () => qs({ limit: 25, action: action === "all" ? undefined : action, q: q.trim() || undefined }),
+    [action, q],
+  );
   const logsQuery = useQuery({
     queryKey: ["url-filter", "logs", params],
     queryFn: () => urlFilterApi.listLogs(params),
@@ -815,35 +852,64 @@ function LogsCard() {
   });
   const rows = logsQuery.data?.data ?? [];
   const meta = logsQuery.data?.meta;
+  const hasFilter = action !== "all" || q.trim().length > 0;
+
+  // window-level 24h sums from the shared stats key — NOT filter-scoped (R6 rule)
+  const chipCount = (key: "all" | UrlLogAction): number | undefined => {
+    if (!stats) return undefined;
+    if (key === "all") return stats.allowed24h + stats.blocked24h + stats.warned24h;
+    if (key === "allowed") return stats.allowed24h;
+    if (key === "blocked") return stats.blocked24h;
+    return stats.warned24h;
+  };
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+      <CardHeader className="flex flex-col gap-2 space-y-0 pb-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Icons.ScrollText className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Recent URL filter activity
         </CardTitle>
-        <div className="flex items-center gap-2">
-          <Select
-            value={action}
-            onValueChange={(v) => {
-              setAction(v as "all" | UrlLogAction);
-              void queryClient.invalidateQueries({ queryKey: ["url-filter", "logs"] });
-            }}
-          >
-            <SelectTrigger className="h-8 w-32" aria-label="Action filter">
-              <SelectValue placeholder="All actions" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All actions</SelectItem>
-              {LOG_ACTIONS.map((a) => (
-                <SelectItem key={a} value={a}>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Action filter">
+            {(LOG_CHIP_ORDER as Array<"all" | UrlLogAction>).map((a) => {
+              const active = action === a;
+              const count = chipCount(a);
+              return (
+                <button
+                  key={a}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => {
+                    setAction(a);
+                    void queryClient.invalidateQueries({ queryKey: ["url-filter", "logs"] });
+                  }}
+                  className={`h-11 rounded-full border px-3 text-xs font-medium transition-colors lg:h-7 ${
+                    active
+                      ? a === "all"
+                        ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
+                        : DECISION_CLS[a]
+                      : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
+                  }`}
+                >
                   {a}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Refresh logs" onClick={() => void logsQuery.refetch()}>
+                  {count !== undefined && <span className="ml-1.5 tabular-nums opacity-70">{count}</span>}
+                </button>
+              );
+            })}
+          </div>
+          <div className="relative">
+            <Icons.Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search url / reason / client…"
+              className="h-11 w-full pl-8 text-xs sm:w-44 lg:h-8"
+              aria-label="Search URL filter log"
+            />
+          </div>
+          <DensityToggle storageKey="url-filter-logs" label="URL filter log density" />
+          <Button variant="ghost" size="icon" className="h-11 w-11 lg:h-8 lg:w-8" aria-label="Refresh logs" onClick={() => void logsQuery.refetch()}>
             <Icons.RefreshCw className={`h-3.5 w-3.5 ${logsQuery.isFetching ? "animate-spin" : ""}`} />
           </Button>
         </div>
@@ -858,12 +924,37 @@ function LogsCard() {
         ) : rows.length === 0 ? (
           <EmptyBlock
             icon={<Icons.ScrollText className="h-6 w-6" />}
-            title="No log entries"
-            description="Run a URL test or wait for appliance traffic to populate the log."
+            title={hasFilter ? "No log entries match the filters" : "No log entries"}
+            description={
+              hasFilter
+                ? "Clear the search or action filter to see recent activity."
+                : "Run a URL test or wait for appliance traffic to populate the log."
+            }
+            action={
+              hasFilter ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-11 lg:h-8"
+                  onClick={() => {
+                    setAction("all");
+                    setQ("");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
           />
         ) : (
-          <div className="max-h-96 overflow-y-auto">
-            <Table>
+          <div className="max-h-96 overflow-auto">
+            <Table
+              className={
+                density === "compact"
+                  ? "min-w-[760px] [&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs"
+                  : "min-w-[760px]"
+              }
+            >
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-24">Action</TableHead>
@@ -953,7 +1044,7 @@ function PolicyCard(props: {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-zinc-400 hover:text-zinc-600"
+            className="h-11 w-11 text-zinc-400 hover:text-zinc-600 lg:h-7 lg:w-7"
             aria-label={`Edit ${policy.name}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -965,7 +1056,7 @@ function PolicyCard(props: {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-zinc-400 hover:text-rose-600"
+            className="h-11 w-11 text-zinc-400 hover:text-rose-600 lg:h-7 lg:w-7"
             aria-label={`Delete ${policy.name}`}
             onClick={(e) => {
               e.stopPropagation();

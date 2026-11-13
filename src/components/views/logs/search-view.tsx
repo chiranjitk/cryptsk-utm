@@ -5,12 +5,14 @@
  * Toolbar: dataset segmented buttons (Firewall/IPS/Audit), debounced
  * free-text query, per-dataset severity/action selects, since/until date
  * inputs, page size, CEF/LEEF export (firewall only) and "Save search".
- * Left rail (lg+) lists saved searches (click applies, trash deletes).
+ * Left rail (lg+) lists saved searches (click applies, trash deletes); below lg the
+ * saved searches surface as apply/delete chips. `#/logs/search?q=<text>` deep-links
+ * the free-text query (firewall/IPS detail-sheet pivots).
  * Results table with server pagination + "N total".
  * Theme per ADR-019: white & enterprise blue.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +60,7 @@ import {
   type SearchDataset,
   type SearchRow,
 } from "./search-api";
+import { SeverityBadge } from "./logs-ui";
 
 // ── constants ───────────────────────────────────────────────────────────────
 
@@ -71,18 +74,20 @@ const FW_ACTIONS = ["allow", "deny", "drop", "reject"] as const;
 const IPS_ACTIONS = ["alert", "drop", "reject", "bypass", "suppressed"] as const;
 const SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
 
+/** Time-range presets — since pinned at click time (stable query key, no ticking refetch). */
+const PRESETS: Array<{ id: string; label: string; ms: number }> = [
+  { id: "15m", label: "15m", ms: 15 * 60_000 },
+  { id: "1h", label: "1h", ms: 60 * 60_000 },
+  { id: "24h", label: "24h", ms: 24 * 60 * 60_000 },
+  { id: "7d", label: "7d", ms: 7 * 24 * 60 * 60_000 },
+];
+
+type PresetId = string | null;
+
 const DATASET_BADGE: Record<SearchDataset, string> = {
   firewall: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
   ips: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
   audit: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-};
-
-const SEVERITY_BADGE: Record<string, string> = {
-  critical: "border-transparent bg-rose-600 text-white",
-  high: "border-orange-500/40 bg-orange-500/10 text-orange-600 dark:text-orange-400",
-  medium: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  low: "border-zinc-300 text-zinc-500 dark:border-zinc-700",
-  info: "border-zinc-300 text-zinc-500 dark:border-zinc-700",
 };
 
 function fmtTs(ts: string): string {
@@ -95,16 +100,23 @@ function fmtTs(ts: string): string {
   });
 }
 
+/** One-shot deep-link read (view remounts per navigation — the shell keys by routePath):
+ *  `#/logs/search?q=<text>` prefills the free-text query. Written by the firewall/IPS log
+ *  detail sheets' "Open in Log Search" pivot (R6 pass 3; same pattern as rules-view ?search=). */
+function readQDeepLink(): string {
+  if (typeof window === "undefined") return "";
+  const qs = window.location.hash.split("?")[1];
+  if (!qs) return "";
+  return new URLSearchParams(qs).get("q")?.trim() ?? "";
+}
+
 function toDayInput(iso: string | undefined): string {
   return iso ? iso.slice(0, 10) : "";
 }
 
-function SeverityBadge({ severity }: { severity: string }) {
-  return (
-    <Badge variant="outline" className={cn("font-medium capitalize", SEVERITY_BADGE[severity] ?? SEVERITY_BADGE.info)}>
-      {severity}
-    </Badge>
-  );
+/** Compact range label for the save dialog preview ("Nov 13, 18:05"). */
+function fmtRange(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 // ── view ────────────────────────────────────────────────────────────────────
@@ -115,14 +127,17 @@ export function SearchView() {
 
   // ── filter state ──
   const [dataset, setDataset] = useState<SearchDataset>("firewall");
-  const [qInput, setQInput] = useState("");
-  const [q, setQ] = useState("");
+  const [qInput, setQInput] = useState(readQDeepLink); // lazy init: deep-linked ?q=
+  const [q, setQ] = useState(readQDeepLink);
   const [severity, setSeverity] = useState("");
   const [action, setAction] = useState("");
   const [since, setSince] = useState("");
   const [until, setUntil] = useState("");
+  const [preset, setPreset] = useState<PresetId>(null); // "15m"|"1h"|"24h"|"7d"|null(=custom dates)
+  const [presetSince, setPresetSince] = useState(""); // ISO pinned at chip click — stable query key
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState<10 | 25 | 50 | 100>(25);
+  const durRef = useRef<number | null>(null); // last completed fetch round-trip, ms
 
   // debounced free-text (300 ms)
   useEffect(() => {
@@ -140,8 +155,28 @@ export function SearchView() {
     setPage(1);
   };
 
-  const sinceIso = since ? `${since}T00:00:00.000Z` : "";
-  const untilIso = until ? `${until}T23:59:59.999Z` : "";
+  const applyPreset = (id: string) => {
+    const p = PRESETS.find((x) => x.id === id);
+    if (!p) return;
+    setPreset(id);
+    setPresetSince(new Date(Date.now() - p.ms).toISOString());
+    setSince("");
+    setUntil("");
+    setPage(1);
+  };
+
+  /** Preset chip toggles off; Custom chip is active whenever explicit dates drive the range. */
+  const clearTimeRange = () => {
+    setPreset(null);
+    setPresetSince("");
+    setSince("");
+    setUntil("");
+    setPage(1);
+  };
+  const customActive = preset === null && (since !== "" || until !== "");
+
+  const sinceIso = preset && presetSince ? presetSince : since ? `${since}T00:00:00.000Z` : "";
+  const untilIso = preset && presetSince ? "" : until ? `${until}T23:59:59.999Z` : "";
   const params = qs({
     dataset,
     q,
@@ -155,12 +190,19 @@ export function SearchView() {
 
   const searchQuery = useQuery({
     queryKey: ["m12", "search", params],
-    queryFn: () => searchApi.search(params),
+    queryFn: async () => {
+      const t0 = performance.now();
+      try {
+        return await searchApi.search(params);
+      } finally {
+        durRef.current = Math.round(performance.now() - t0);
+      }
+    },
     placeholderData: keepPreviousData,
   });
   const savedQuery = useQuery({ queryKey: ["m12", "saved"], queryFn: searchApi.listSaved });
 
-  const activeFilterCount = [q, severity, action, since, until].filter(Boolean).length;
+  const activeFilterCount = [q, severity, action, sinceIso, untilIso].filter(Boolean).length;
   const clearFilters = () => {
     setQInput("");
     setQ("");
@@ -168,6 +210,8 @@ export function SearchView() {
     setAction("");
     setSince("");
     setUntil("");
+    setPreset(null);
+    setPresetSince("");
     setPage(1);
   };
 
@@ -219,6 +263,8 @@ export function SearchView() {
     setQ(s.queryText.trim());
     setSeverity(s.filters.severity ?? "");
     setAction(s.filters.action ?? "");
+    setPreset(null); // saved ranges restore as explicit date inputs (custom)
+    setPresetSince("");
     const sinceDays = Number(s.filters.sinceDays);
     setSince(sinceDays > 0 ? new Date(Date.now() - sinceDays * 86_400_000).toISOString().slice(0, 10) : toDayInput(s.filters.since));
     setUntil(toDayInput(s.filters.until));
@@ -248,7 +294,7 @@ export function SearchView() {
 
       {/* ── toolbar ── */}
       <div className="flex flex-wrap items-end gap-2">
-        <div className="inline-flex h-9 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800" role="group" aria-label="Dataset">
+        <div className="inline-flex h-11 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800 lg:h-9" role="group" aria-label="Dataset">
           {DATASETS.map((d, i) => {
             const Icon = d.icon;
             const active = dataset === d.id;
@@ -259,7 +305,7 @@ export function SearchView() {
                 aria-pressed={active}
                 onClick={() => switchDataset(d.id)}
                 className={cn(
-                  "flex min-h-9 items-center gap-1.5 px-3 text-xs font-medium transition-colors",
+                  "flex items-center gap-1.5 px-3 text-xs font-medium transition-colors",
                   i > 0 && "border-l border-zinc-200 dark:border-zinc-800",
                   active
                     ? "bg-zinc-700 text-white hover:bg-zinc-800"
@@ -278,9 +324,48 @@ export function SearchView() {
             value={qInput}
             onChange={(e) => setQInput(e.target.value)}
             placeholder={dataset === "firewall" ? "Search src, dst, action, rule…" : dataset === "ips" ? "Search message, sid, src…" : "Search user, action, object…"}
-            className="h-9 text-xs"
+            className="h-11 text-xs lg:h-9"
             aria-label="Free-text query"
           />
+        </div>
+
+        {/* time-range presets — 15m/1h/24h/7d pin `since` at click time; custom = the date inputs */}
+        <div className="flex items-center gap-1.5" role="group" aria-label="Time range">
+          {PRESETS.map((p) => {
+            const active = preset === p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => (active ? clearTimeRange() : applyPreset(p.id))}
+                className={cn(
+                  "inline-flex h-11 items-center rounded-full border px-2.5 text-xs transition-colors lg:h-7 lg:px-2.5 lg:py-1",
+                  active
+                    ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
+                    : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
+                )}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            aria-pressed={customActive}
+            onClick={() => {
+              setPreset(null);
+              setPresetSince("");
+            }}
+            className={cn(
+              "inline-flex h-11 items-center rounded-full border px-2.5 text-xs transition-colors lg:h-7 lg:px-2.5 lg:py-1",
+              customActive
+                ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
+                : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
+            )}
+          >
+            Custom
+          </button>
         </div>
 
         {dataset === "ips" && (
@@ -291,7 +376,7 @@ export function SearchView() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="h-9 w-32 text-xs" aria-label="Severity">
+            <SelectTrigger className="h-11 w-32 text-xs lg:h-9" aria-label="Severity">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -313,7 +398,7 @@ export function SearchView() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="h-9 w-32 text-xs" aria-label="Action">
+            <SelectTrigger className="h-11 w-32 text-xs lg:h-9" aria-label="Action">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -332,9 +417,11 @@ export function SearchView() {
           value={since}
           onChange={(e) => {
             setSince(e.target.value);
+            setPreset(null);
+            setPresetSince("");
             setPage(1);
           }}
-          className="h-9 w-36 text-xs"
+          className="h-11 w-36 text-xs lg:h-9"
           aria-label="Since"
         />
         <Input
@@ -342,9 +429,11 @@ export function SearchView() {
           value={until}
           onChange={(e) => {
             setUntil(e.target.value);
+            setPreset(null);
+            setPresetSince("");
             setPage(1);
           }}
-          className="h-9 w-36 text-xs"
+          className="h-11 w-36 text-xs lg:h-9"
           aria-label="Until"
         />
 
@@ -355,7 +444,7 @@ export function SearchView() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="h-9 w-24 text-xs" aria-label="Page size">
+          <SelectTrigger className="h-11 w-24 text-xs lg:h-9" aria-label="Page size">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -368,7 +457,7 @@ export function SearchView() {
         </Select>
 
         {activeFilterCount > 0 && (
-          <Button variant="ghost" size="sm" className="h-9 gap-1 text-zinc-500" onClick={clearFilters}>
+          <Button variant="ghost" size="sm" className="h-11 gap-1 text-zinc-500 lg:h-9" onClick={clearFilters}>
             <Icons.X className="h-3.5 w-3.5" />
             Clear
           </Button>
@@ -376,11 +465,11 @@ export function SearchView() {
 
         {dataset === "firewall" && (
           <div className="ml-auto flex items-center gap-1.5">
-            <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => void doExport("cef")}>
+            <Button variant="outline" size="sm" className="h-11 gap-1.5 lg:h-9" onClick={() => void doExport("cef")}>
               <Icons.Download className="h-3.5 w-3.5" />
               CEF
             </Button>
-            <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => void doExport("leef")}>
+            <Button variant="outline" size="sm" className="h-11 gap-1.5 lg:h-9" onClick={() => void doExport("leef")}>
               <Icons.Download className="h-3.5 w-3.5" />
               LEEF
             </Button>
@@ -389,7 +478,7 @@ export function SearchView() {
 
         <Button
           size="sm"
-          className={cn("h-9 gap-1.5 bg-zinc-700 text-white hover:bg-zinc-800", dataset === "firewall" && "ml-0")}
+          className={cn("h-11 gap-1.5 bg-zinc-700 text-white hover:bg-zinc-800 lg:h-9", dataset === "firewall" && "ml-0")}
           onClick={() => {
             setSaveName("");
             setSaveErr({});
@@ -400,6 +489,37 @@ export function SearchView() {
           Save search
         </Button>
       </div>
+
+      {/* mobile saved-search chips — the left rail is hidden below lg, so <lg still needs
+          an apply/delete path for saved searches (44 px chips; delete reuses ConfirmDialog) */}
+      {savedRows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 lg:hidden" role="group" aria-label="Saved searches">
+          {savedRows.map((s) => (
+            <span
+              key={s.id}
+              className="inline-flex h-11 max-w-full items-center overflow-hidden rounded-full border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
+            >
+              <button
+                type="button"
+                onClick={() => applySaved(s)}
+                aria-label={`Apply saved search ${s.name}`}
+                className="flex min-w-0 items-center gap-1.5 self-stretch px-3 text-xs text-zinc-600 transition-colors hover:bg-zinc-500/10 dark:text-zinc-300"
+              >
+                <Icons.Bookmark className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                <span className="truncate">{s.name}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeletingSaved(s)}
+                aria-label={`Delete saved search ${s.name}`}
+                className="flex w-11 shrink-0 items-center justify-center self-stretch border-l border-zinc-200 text-zinc-400 transition-colors hover:text-rose-600 dark:border-zinc-800"
+              >
+                <Icons.Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* ── body: saved rail + results ── */}
       <div className="grid items-start gap-4 lg:grid-cols-[260px_1fr]">
@@ -505,7 +625,7 @@ export function SearchView() {
             )}
           </div>
 
-          {/* pagination */}
+          {/* pagination + query timing */}
           <div className="flex flex-wrap items-center justify-between gap-2 px-1">
             <p className="text-xs text-zinc-500">
               {meta ? (
@@ -513,6 +633,9 @@ export function SearchView() {
                   Page <span className="font-medium text-zinc-700 dark:text-zinc-300">{meta.page}</span> of{" "}
                   <span className="font-medium text-zinc-700 dark:text-zinc-300">{meta.totalPages}</span> ·{" "}
                   <span className="font-medium text-zinc-700 dark:text-zinc-300">{meta.total}</span> events total
+                  {durRef.current !== null && (
+                    <span className="font-mono tabular-nums text-zinc-400"> · {durRef.current} ms query</span>
+                  )}
                 </>
               ) : (
                 "…"
@@ -572,7 +695,7 @@ export function SearchView() {
             </p>
             <p>
               <span className="font-medium text-zinc-700 dark:text-zinc-300">Filters:</span>{" "}
-              {[severity, action, sinceIso && `since ${since}`, untilIso && `until ${until}`].filter(Boolean).join(", ") || "none"}
+              {[severity, action, sinceIso && `since ${fmtRange(sinceIso)}`, untilIso && `until ${fmtRange(untilIso)}`].filter(Boolean).join(", ") || "none"}
             </p>
           </div>
           <DialogFooter>

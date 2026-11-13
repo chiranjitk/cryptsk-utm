@@ -101,6 +101,7 @@ export function ConfigsView() {
   const [createType, setCreateType] = useState<VpnType>("wireguard_s2s");
   const [statusOf, setStatusOf] = useState<VpnConfigDto | null>(null);
   const [deleting, setDeleting] = useState<VpnConfigDto | null>(null);
+  const [bundlePendingId, setBundlePendingId] = useState<number | null>(null);
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: CONFIGS_KEY });
 
@@ -125,6 +126,28 @@ export function ConfigsView() {
   const openEdit = (c: VpnConfigDto) => {
     setEditing(c);
     setEditorOpen(true);
+  };
+
+  /** POST client-bundle → browser download, with a per-config pending state so
+   *  the row menu can show a spinner while the request is in flight. */
+  const downloadFor = async (config: VpnConfigDto) => {
+    setBundlePendingId(config.id);
+    try {
+      const pick = (): string | undefined => {
+        if (config.type !== "wireguard_s2s") return undefined;
+        const peers = (config.config as WgS2sConfig).peers;
+        if (peers.length <= 1) return peers[0]?.name;
+        // deterministic default: first peer — the row menu keeps it single-click
+        return peers[0]?.name;
+      };
+      const bundle = await vpnApi.clientBundle(config.id, pick());
+      downloadBundle(bundle);
+      toastOk("Client bundle downloaded", bundle.notice ?? `${bundle.filename} ready to import.`);
+    } catch (err) {
+      toastErr(err, "Bundle generation failed");
+    } finally {
+      setBundlePendingId((cur) => (cur === config.id ? null : cur));
+    }
   };
 
   const byFamily = (family: Exclude<TabKey, "groups">) => configs.filter((c) => FAMILY_TYPES[family].includes(c.type));
@@ -243,7 +266,8 @@ export function ConfigsView() {
                                 config={c}
                                 onEdit={() => openEdit(c)}
                                 onStatus={() => setStatusOf(c)}
-                                onBundle={() => void downloadFor(c)}
+                                onBundle={() => downloadFor(c)}
+                                bundlePending={bundlePendingId === c.id}
                                 onDelete={() => setDeleting(c)}
                               />
                             </TableCell>
@@ -311,11 +335,19 @@ function EnabledSwitch({ config, onDone }: { config: VpnConfigDto; onDone: () =>
   );
 }
 
-function RowMenu(props: { config: VpnConfigDto; onEdit: () => void; onStatus: () => void; onBundle: () => void; onDelete: () => void }) {
+function RowMenu(props: {
+  config: VpnConfigDto;
+  onEdit: () => void;
+  onStatus: () => void;
+  onBundle: () => Promise<void>;
+  bundlePending: boolean;
+  onDelete: () => void;
+}) {
   const { config } = props;
   const bundleable = config.type !== "ipsec_s2s" && config.type !== "ipsec_remote";
+  const [open, setOpen] = useState(false);
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${config.name}`}>
           <Icons.MoreHorizontal className="h-4 w-4" />
@@ -329,8 +361,24 @@ function RowMenu(props: { config: VpnConfigDto; onEdit: () => void; onStatus: ()
           <Icons.Activity className="mr-2 h-4 w-4" /> Status
         </DropdownMenuItem>
         {bundleable ? (
-          <DropdownMenuItem onClick={props.onBundle}>
-            <Icons.Download className="mr-2 h-4 w-4" /> Download client bundle
+          <DropdownMenuItem
+            disabled={props.bundlePending}
+            onSelect={async (e) => {
+              // preventDefault keeps the menu open while the bundle is prepared
+              e.preventDefault();
+              try {
+                await props.onBundle();
+              } finally {
+                setOpen(false);
+              }
+            }}
+          >
+            {props.bundlePending ? (
+              <Icons.Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Icons.Download className="mr-2 h-4 w-4" />
+            )}
+            {props.bundlePending ? "Preparing bundle…" : "Download client bundle"}
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuSeparator />
@@ -340,24 +388,6 @@ function RowMenu(props: { config: VpnConfigDto; onEdit: () => void; onStatus: ()
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-/** POST client-bundle → browser download. WireGuard s2s with >1 peer asks which peer. */
-async function downloadFor(config: VpnConfigDto) {
-  const pick = (): string | undefined => {
-    if (config.type !== "wireguard_s2s") return undefined;
-    const peers = (config.config as WgS2sConfig).peers;
-    if (peers.length <= 1) return peers[0]?.name;
-    // deterministic default: first peer — the row menu keeps it single-click
-    return peers[0]?.name;
-  };
-  try {
-    const bundle = await vpnApi.clientBundle(config.id, pick());
-    downloadBundle(bundle);
-    toastOk("Client bundle downloaded", bundle.notice ?? `${bundle.filename} ready to import.`);
-  } catch (err) {
-    toastErr(err, "Bundle generation failed");
-  }
 }
 
 // ── config editor (per-type) ────────────────────────────────────────────────

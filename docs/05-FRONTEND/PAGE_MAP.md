@@ -59,7 +59,12 @@ flowchart TB
 - **Sidebar** (built on `ui/sidebar.tsx`): collapsible — full labels on lg+, icon rail on
   md, hidden into a `Sheet` on mobile. Active item: emerald primary treatment; group
   headers are muted `text-xs` labels. Collapse state persists in `ui-store`.
-- **Topbar:** mobile menu button (opens the sidebar `Sheet`), breadcrumbs (tabbed views),
+- **Topbar:** mobile menu button (opens the sidebar `Sheet`), section label + view title as
+  the `h1` (section derived from `NAV_GROUPS` by `routePath` — e.g. "FIREWALL / Firewall
+  Rules" — keeps orientation on mobile where the sidebar is hidden), realtime transport
+  dot (`role="status"`: emerald connected / amber connecting-reconnecting / rose offline —
+  derived from the existing socket.io singleton via `useRealtimeStatus`, no extra
+  connection; UI_DESIGN_SYSTEM §5.12),
   command-palette trigger (opens the `Cmd/Ctrl+K` palette — UI_DESIGN_SYSTEM §5.11;
   hash-navigation destinations from `nav-config` + theme toggle command),
   notifications bell (`Popover` listing notifications; unread count badge;
@@ -142,9 +147,12 @@ detailed behavior; blueprints here stay layout-level.
 - **Layout:**
 ```
 ┌ health strip: StatusBadge healthy|degraded|critical · uptime · quick actions ┐
+┌ updated/refresh meta row (relative "Updated x ago" + manual refresh button) ─┤
 ┌ MetricCard throughput ┬ MetricCard sessions ┬ alerts 24h ┬ notifications ───┤
 ┌ throughput area chart (rx/tx, Live|1h|24h) ────┬ top apps donut ─────────────┤
 ┌ top talkers table ─────────────────────────────┬ threat feed (max-h-96) ─────┤
+┌ top firewall rules (hits — ranked mini-table, client-side from the firewall-┐
+┌ rules list's hitCount/lastHitAt; §2.3 action chips) ─────────────────────────┤
 ┌ WAN strip badges ┬ VPN tunnel list ┬ CPU/RAM/disk Gauges · temp · services ───┘
 ```
 - **Components:** PageScaffold, MetricCard, Sparkline, Gauge, StatusBadge, DataTable (talkers), EmptyState, ChartContainer (Area/Pie).
@@ -152,9 +160,9 @@ detailed behavior; blueprints here stay layout-level.
 - **Realtime:** `metrics:tick` (ring buffer → cards + live chart), `wan:status` (strip), `alerts:new` (feed + badge), `sessions:update` (debounced summary refetch).
 - **Actions:** range switch; "Create backup" → `POST /api/v1/system/backups`; "Restart service" → `POST /api/v1/system/services/{name}/restart` (menu of running services from `/system/status`; audited, simulated — M01 §4); deep links to WAN/VPN/IPS views. Details: [M01](../06-MODULES/M01-DASHBOARD.md).
 
-### `#/network/interfaces` — 4 tabs: Interfaces | LLDP Neighbors | MAC Table | Mirroring (SPAN)
-- **Purpose:** manage physical/VLAN/bridge/bond/loopback/GRE/IPIP interfaces with live stats, plus the switching extras (LLDP discovery, FDB view, SPAN sessions).
-- **Layout (tab 1):** full-width table (name, type/role chips, L2/L3 mode chip, addresses, StatusBadge link state, rx/tx Sparkline) + detail `Sheet` (config, counters, errors/drops). Tab 2 LLDP Neighbors: derived neighbor table (auto-refresh 10 s, not persisted). Tab 3 MAC Table: derived FDB view with iface/VLAN filters. Tab 4 Mirroring: `PortMirror` CRUD table (one active mirror per source iface).
+### `#/network/interfaces` — 5 tabs: Interfaces | Diagnostics | LLDP Neighbors | MAC Table | Mirroring (SPAN)
+- **Purpose:** manage physical/VLAN/bridge/bond/loopback/GRE/IPIP interfaces with live stats + kernel-truth columns, plus host diagnostics and the switching extras (LLDP discovery, FDB view, SPAN sessions).
+- **Layout (tab 1):** full-width table (name, type/role chips, L2/L3 mode chip, addresses + drift dots, link state + carrier, rx/tx Sparkline, MAC w/ copy, Ref. count) + stats dialog. Tab 2 Diagnostics: host ports inventory, ARP cache, kernel route table + ping/traceroute/DNS/TCP tools (R5). Tab 3 LLDP Neighbors: derived neighbor table (auto-refresh 10 s, not persisted; search/density/CSV). Tab 4 MAC Table: derived FDB view with iface/VLAN/search filters. Tab 5 Mirroring: `PortMirror` CRUD table (one active mirror per source iface) + kernel-sync badges.
 - **Components:** PageScaffold, Tabs, DataTable, StatusBadge, Sparkline, Sheet, ConfirmDialog, FormSection dialogs.
 - **Data:** `useInterfaces()` → `GET/POST /api/v1/interfaces`; `GET/PUT/DELETE /api/v1/interfaces/{id}`; `useInterfaceStats(id)` → `GET /api/v1/interfaces/{id}/stats`; `useLldpNeighbors()` → `GET /api/v1/network/lldp-neighbors`; `useMacTable()` → `GET /api/v1/network/mac-table?iface=&vlan=&q=`; `usePortMirrors()` → `GET/POST /api/v1/network/port-mirrors` + `PUT/DELETE /{id}`.
 - **Realtime:** `metrics:tick` (per-iface `rxKbps`/`txKbps` sparklines); LLDP/MAC tabs are engine-derived (10 s auto-refresh, no socket event — flagged in REVIEW-4A).
@@ -162,7 +170,7 @@ detailed behavior; blueprints here stay layout-level.
 
 ### `#/network/routing` — 2 tabs: Static Routes | Policy-Based Routes
 - **Purpose:** static routes incl. default route, blackholes, floating routes + BFD monitoring; policy-based routing (match → forced egress).
-- **Layout (tab 1):** DataTable (destination, gateway/blackhole chip, interface, distance, BFD chip, StatusBadge reachability) + create/edit Dialog. Tab 2: ordered `PbrRule` table (pos, match summary, `→ iface|gateway` action, enabled toggle) + editor dialog with `ObjectPicker` and the mutually-exclusive egress choice.
+- **Layout (tab 1):** DataTable (destination + default badge, gateway/blackhole chip, interface, distance, kernel badge, BFD chip, enabled) + create/edit Dialog with per-field validation; debounced search + density toggle (R5). Tab 2: ordered `PbrRule` table (pos, match summary, `→ iface|gateway` action, kernel badge, enabled toggle) + editor dialog with `ObjectPicker` and the mutually-exclusive egress choice.
 - **Components:** PageScaffold, Tabs, DataTable, ConfirmDialog, FormSection, ObjectPicker.
 - **Data:** `useRoutes()` → `GET/POST /api/v1/routes`; `PUT/DELETE /api/v1/routes/{id}`; `usePbrRules()` → `GET/POST /api/v1/pbr-rules`; `PUT/DELETE /api/v1/pbr-rules/{id}`; `PATCH /api/v1/pbr-rules/{id}/toggle`.
 - **Realtime:** none beyond global `config:updated` (section `routing` invalidates `routes`, `pbr-rules`, `wan-policies`).
@@ -170,8 +178,8 @@ detailed behavior; blueprints here stay layout-level.
 
 ### `#/network/wan`
 - **Purpose:** multi-WAN policies (priority / failover / load_balance) and probe health.
-- **Layout:** policy cards or table (mode chip, assigned interfaces, probe type/target, interval) + per-WAN StatusBadge; probe history line chart.
-- **Components:** PageScaffold, DataTable or Card grid, StatusBadge, FormSection, ChartContainer (Line).
+- **Layout:** policy cards (mode chip, probe type/target, interval, thresholds, per-policy probe spinner) + per-WAN StatusBadge + SLA window line (up/degraded/down counts, latency, jitter, loss); kernel enforcement panel (egress decision, managed objects, drift preview, real failover event log — no line chart, the event log replaced it).
+- **Components:** PageScaffold, Card grid, StatusBadge, FormSection, ConfirmDialog.
 - **Data:** `useWanPolicies()` → `GET/POST /api/v1/wan-policies`; `PUT/DELETE /api/v1/wan-policies/{id}`; `useForceProbe()` → `POST /api/v1/wan-policies/{id}/probe`.
 - **Realtime:** `wan:status` (`{iface, state: up|down|degraded}` → badge flips, toast on down).
 - **Actions:** create/edit/delete policy; force probe now; edit probe settings.

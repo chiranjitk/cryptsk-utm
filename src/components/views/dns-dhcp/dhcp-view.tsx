@@ -8,7 +8,7 @@
  * simulation; v6 subnets are config-only and labeled as such (M06 §5.4).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +36,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ConfirmDialog, EditorSection, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import { ConfirmDialog, EditorSection, EmptyBlock, FieldLabel, QueryError, ROW_FLASH_CLASS, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
 import {
   dhcpApi,
   fieldErrorsOf,
@@ -74,6 +74,15 @@ function tabFromHash(): TabKey {
   return TABS.some((t) => t.key === v) ? (v as TabKey) : "subnets";
 }
 
+/** IPv4 dotted-quad → uint32 (null when not valid IPv4). */
+function ipv4ToInt(ip: string): number | null {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip.trim());
+  if (!m) return null;
+  const parts = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+  if (parts.some((p) => p > 255)) return null;
+  return ((parts[0]! << 24) | (parts[1]! << 16) | (parts[2]! << 8) | parts[3]!) >>> 0;
+}
+
 export function DhcpView() {
   useDhcpConfigInvalidation();
   const [tab, setTab] = useState<TabKey>(() => tabFromHash());
@@ -81,14 +90,33 @@ export function DhcpView() {
     history.replaceState(null, "", `#/dns-dhcp/dhcp?tab=${tab}`);
   }, [tab]);
 
+  // tab counts reuse the SAME query keys as the tabs below — TanStack dedupes, no extra requests
+  const subnetsQ = useQuery({ queryKey: ["dhcp", "subnets"], queryFn: dhcpApi.listSubnets });
+  const resvQ = useQuery({ queryKey: ["dhcp", "reservations"], queryFn: () => dhcpApi.listReservations() });
+  const activeLeases = (subnetsQ.data ?? []).reduce((acc, s) => acc + s.activeLeaseCount, 0);
+
+  const countFor = (key: TabKey): string | null => {
+    if (key === "reservations" && resvQ.data) return String(resvQ.data.length);
+    if (key === "leases" && subnetsQ.data) return `${activeLeases} active`;
+    return null;
+  };
+
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
       <TabsList className="flex w-full flex-wrap justify-start gap-1 sm:w-auto">
-        {TABS.map((t) => (
-          <TabsTrigger key={t.key} value={t.key} className="text-xs sm:text-sm">
-            {t.label}
-          </TabsTrigger>
-        ))}
+        {TABS.map((t) => {
+          const count = countFor(t.key);
+          return (
+            <TabsTrigger key={t.key} value={t.key} className="text-xs sm:text-sm">
+              {t.label}
+              {count !== null && (
+                <span className="ml-1.5 rounded-full bg-zinc-500/10 px-1.5 py-0 text-[10px] tabular-nums text-zinc-600 dark:text-zinc-300">
+                  {count}
+                </span>
+              )}
+            </TabsTrigger>
+          );
+        })}
       </TabsList>
       <TabsContent value="subnets" className="mt-3 space-y-3">
         <SubnetsTab goToReservations={() => setTab("reservations")} />
@@ -114,12 +142,19 @@ function SubnetsTab({ goToReservations }: { goToReservations: () => void }) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<DhcpSubnetDTO | null>(null);
   const [deleting, setDeleting] = useState<DhcpSubnetDTO | null>(null);
+  const [flashId, setFlashId] = useState<number | null>(null);
+  const flashTimer = useRef<number | null>(null);
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["dhcp"] });
 
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => dhcpApi.updateSubnet(id, { enabled }),
-    onSuccess: () => invalidate(),
+    onSuccess: (_res, vars) => {
+      setFlashId(vars.id);
+      if (flashTimer.current) window.clearTimeout(flashTimer.current);
+      flashTimer.current = window.setTimeout(() => setFlashId(null), 1500);
+      invalidate();
+    },
     onError: (err) => toastErr(err, "Toggle failed"),
   });
 
@@ -181,8 +216,20 @@ function SubnetsTab({ goToReservations }: { goToReservations: () => void }) {
         </Card>
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
-          {(q.data ?? []).map((s) => (
-            <Card key={s.id} className={cn(!s.enabled && "opacity-60")}>
+          {(q.data ?? []).map((s) => {
+            // pool utilization — IPv4 only (v6 is config-only in simulation); pool size derived from the range
+            const startInt = ipv4ToInt(s.rangeStart);
+            const endInt = ipv4ToInt(s.rangeEnd);
+            const pool = startInt !== null && endInt !== null && endInt >= startInt ? endInt - startInt + 1 : null;
+            const pct = pool && pool > 0 ? Math.min(100, Math.round((s.activeLeaseCount / pool) * 100)) : null;
+            const utilTone =
+              pct !== null && pct >= 85
+                ? "bg-rose-500"
+                : pct !== null && pct >= 60
+                  ? "bg-amber-500"
+                  : "bg-emerald-500";
+            return (
+            <Card key={s.id} className={cn(!s.enabled && "opacity-60", flashId === s.id && ROW_FLASH_CLASS)}>
               <CardContent className="space-y-2.5 pt-5">
                 <div className="flex items-center justify-between gap-2">
                   <p className="flex items-center gap-2 text-sm font-medium">
@@ -206,6 +253,26 @@ function SubnetsTab({ goToReservations }: { goToReservations: () => void }) {
                     dns {s.dnsServers.length ? <span className="font-mono text-zinc-700 dark:text-zinc-200">{s.dnsServers.join(", ")}</span> : "—"}
                   </span>
                 </div>
+                {pool !== null && pct !== null && (
+                  <div>
+                    <div className="flex items-center justify-between text-[10px] text-zinc-500">
+                      <span>pool utilization</span>
+                      <span className="font-mono tabular-nums">
+                        {s.activeLeaseCount}/{pool} ({pct}%)
+                      </span>
+                    </div>
+                    <div
+                      className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={pool}
+                      aria-valuenow={s.activeLeaseCount}
+                      aria-label={`Pool utilization ${pct}%`}
+                    >
+                      <div className={cn("h-full rounded-full", utilTone)} style={{ width: `${Math.max(pct, s.activeLeaseCount > 0 ? 2 : 0)}%` }} />
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0 text-[10px] text-emerald-600 dark:text-emerald-400">
                     {s.activeLeaseCount} active
@@ -229,7 +296,8 @@ function SubnetsTab({ goToReservations }: { goToReservations: () => void }) {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -488,7 +556,7 @@ function ReservationsTab() {
             />
           ) : (
             <div className="max-h-[480px] overflow-auto [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-300 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[560px] text-sm">
                 <thead className="sticky top-0 border-b border-zinc-200 bg-zinc-50 text-left text-[11px] uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
                   <tr>
                     <th className="px-4 py-2.5 font-medium">MAC</th>
@@ -740,7 +808,7 @@ function LeasesTab() {
                 setPage(1);
               }}
               className={cn(
-                "rounded-full border px-3 py-1 text-[11px] font-medium transition-colors",
+                "inline-flex h-11 items-center rounded-full border px-3 text-[11px] font-medium transition-colors lg:h-7 lg:px-3",
                 state === c.key
                   ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
                   : "border-zinc-200 text-zinc-500 hover:text-zinc-700 dark:border-zinc-800 dark:text-zinc-400",
@@ -761,7 +829,7 @@ function LeasesTab() {
         </Select>
         <div className="relative">
           <Icons.Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
-          <Input className="h-9 w-48 pl-8 text-sm" placeholder="MAC / IP / hostname…" value={qInput} onChange={(e) => setQInput(e.currentTarget.value)} aria-label="Search leases" />
+          <Input className="h-11 w-48 pl-8 text-sm lg:h-9" placeholder="MAC / IP / hostname…" value={qInput} onChange={(e) => setQInput(e.currentTarget.value)} aria-label="Search leases" />
         </div>
         <span className="ml-auto flex items-center gap-1.5 text-[11px] text-zinc-400">
           <Icons.Radio className="h-3.5 w-3.5 text-emerald-500" /> live churn · refresh 15 s
@@ -782,7 +850,7 @@ function LeasesTab() {
             <EmptyBlock icon={<Icons.Clock className="h-6 w-6" />} title="No leases match" description="The engine leases addresses from enabled IPv4 subnets every 2 s tick." />
           ) : (
             <div className="max-h-[480px] overflow-auto [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-300 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[820px] text-sm">
                 <thead className="sticky top-0 border-b border-zinc-200 bg-zinc-50 text-left text-[11px] uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
                   <tr>
                     <th className="px-4 py-2.5 font-medium">MAC</th>
@@ -838,7 +906,11 @@ function LeasesTab() {
         open={expiring != null}
         onOpenChange={(open) => !open && setExpiring(null)}
         title={`Expire lease ${expiring?.ip ?? ""}?`}
-        description="Calls the locked release endpoint — the client must re-request an address (state flips to released)."
+        description={
+          expiring
+            ? `${expiring.mac}${expiring.hostname ? ` (${expiring.hostname})` : ""} must re-request an address — the lease flips to released and the IP returns to the pool on next churn.`
+            : ""
+        }
         confirmLabel="Expire lease"
         loading={release.isPending}
         onConfirm={() => expiring && release.mutate(expiring.id)}

@@ -48,7 +48,7 @@ import {
   type ThreatCategory,
   type ThreatStats,
 } from "./threat-intel-api";
-import { CategoryChip } from "./ti-ui";
+import { CategoryChip, FreshnessBadge } from "./ti-ui";
 
 const TI_KEY = ["threat-intel"] as const;
 const FEEDS_KEY = ["threat-intel", "feeds"] as const;
@@ -409,6 +409,7 @@ export function FeedsView() {
                 </div>
 
                 <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                  <FreshnessBadge lastSyncAt={feed.lastSyncAt} lastStatus={feed.lastStatus} />
                   <SyncStatusPill status={feed.lastStatus} at={feed.lastSyncAt} />
                   <span className="text-[11px] text-zinc-500">
                     {feed.lastStatus === "never" ? "—" : `${fmtRelative(feed.lastSyncAt)} · ${feed.lastCount} IOCs`}

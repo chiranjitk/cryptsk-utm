@@ -9,12 +9,9 @@
  * 24h WAF log feed + stats strip. Theme: white + enterprise red-700.
  */
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -31,8 +28,22 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import {
+  ConfirmDialog,
+  DensityToggle,
+  EmptyBlock,
+  FieldLabel,
+  QueryError,
+  TableSkeleton,
+  toastErr,
+  toastOk,
+  useTableDensity,
+} from "../firewall/fw-ui";
+import { copyText, FieldErrorText, INVALID_CLS } from "../network/net-ui";
 import {
   CRS_VERSIONS,
   EXCLUSION_SCOPES,
@@ -610,6 +621,7 @@ function ExclusionEditor(props: { policyId: number; onClose: () => void }) {
   const [ruleId, setRuleId] = useState("");
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ matchValue?: string; ruleId?: string }>({});
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => wafApi.createExclusion(props.policyId, body),
@@ -621,8 +633,31 @@ function ExclusionEditor(props: { policyId: number; onClose: () => void }) {
     onError: (e) => setErr(errText(e, "Save failed")),
   });
 
-  const ruleIdNum = ruleId === "" ? null : Number(ruleId);
-  const valid = matchValue.trim().length > 0 && (ruleId === "" || (Number.isInteger(ruleIdNum) && (ruleIdNum ?? 0) > 0));
+  // submit-time per-field pre-checks mirroring the server zod grammar (§5.16 recipe)
+  const submit = () => {
+    const errs: { matchValue?: string; ruleId?: string } = {};
+    const mv = matchValue.trim();
+    if (!mv) errs.matchValue = "Match value is required";
+    else if (mv.length > 256) errs.matchValue = "Match value must be 256 characters or fewer";
+    if (scope === "rule_id" && ruleId.trim() !== "") {
+      const n = Number(ruleId);
+      if (!Number.isInteger(n) || n < 1) errs.ruleId = "Rule id must be a positive integer";
+    }
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      const first = document.getElementById<HTMLElement>(errs.matchValue ? "waf-excl-match" : "waf-excl-ruleid");
+      first?.focus();
+      return;
+    }
+    setErr(null);
+    save.mutate({
+      scope,
+      matchValue: mv,
+      ruleId: scope === "rule_id" && ruleId.trim() !== "" ? Number(ruleId) : null,
+      note: note.trim() || null,
+      enabled: true,
+    });
+  };
 
   return (
     <Dialog open onOpenChange={(o) => !o && props.onClose()}>
@@ -657,17 +692,38 @@ function ExclusionEditor(props: { policyId: number; onClose: () => void }) {
                 Match value
               </FieldLabel>
               <Input
+                id="waf-excl-match"
                 value={matchValue}
-                onChange={(e) => setMatchValue(e.target.value)}
-                className="font-mono text-xs"
+                onChange={(e) => {
+                  setMatchValue(e.target.value);
+                  setFieldErrors((f) => ({ ...f, matchValue: undefined }));
+                }}
+                aria-invalid={fieldErrors.matchValue ? true : undefined}
+                aria-describedby={fieldErrors.matchValue ? "waf-excl-match-err" : undefined}
+                className={cn("font-mono text-xs", fieldErrors.matchValue && INVALID_CLS)}
                 placeholder={scope === "rule_id" ? "942100" : scope === "param" ? "arg:password" : "/api/login"}
               />
+              <FieldErrorText id="waf-excl-match-err" msg={fieldErrors.matchValue} />
             </div>
           </div>
           {scope === "rule_id" && (
             <div>
               <FieldLabel hint="optional numeric id">Rule id</FieldLabel>
-              <Input type="number" min={1} value={ruleId} onChange={(e) => setRuleId(e.target.value)} placeholder="942100" />
+              <Input
+                id="waf-excl-ruleid"
+                type="number"
+                min={1}
+                value={ruleId}
+                onChange={(e) => {
+                  setRuleId(e.target.value);
+                  setFieldErrors((f) => ({ ...f, ruleId: undefined }));
+                }}
+                aria-invalid={fieldErrors.ruleId ? true : undefined}
+                aria-describedby={fieldErrors.ruleId ? "waf-excl-ruleid-err" : undefined}
+                className={cn(fieldErrors.ruleId && INVALID_CLS)}
+                placeholder="942100"
+              />
+              <FieldErrorText id="waf-excl-ruleid-err" msg={fieldErrors.ruleId} />
             </div>
           )}
           <div>
@@ -682,16 +738,8 @@ function ExclusionEditor(props: { policyId: number; onClose: () => void }) {
           </Button>
           <Button
             className="bg-zinc-700 text-white hover:bg-zinc-800"
-            disabled={!valid || save.isPending}
-            onClick={() =>
-              save.mutate({
-                scope,
-                matchValue: matchValue.trim(),
-                ruleId: scope === "rule_id" ? ruleIdNum : null,
-                note: note.trim() || null,
-                enabled: true,
-              })
-            }
+            disabled={save.isPending}
+            onClick={submit}
           >
             {save.isPending ? "Saving…" : "Add exclusion"}
           </Button>
@@ -1102,6 +1150,43 @@ function TestRequestCard({ policy }: { policy: PolicyDTO }) {
   );
 }
 
+// ── expanded payload row (log table) ────────────────────────────────────────
+
+/** DiagOutputBlock-style mono preview (§5.17) for a WAF log's payloadSnippet. */
+function PayloadDetailRow(props: { logId: number; snippet: string }) {
+  return (
+    <TableRow className="hover:bg-transparent">
+      <TableCell colSpan={8} className="p-0">
+        <div
+          className="border-b border-zinc-100 bg-zinc-50/60 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/40"
+          role="region"
+          aria-label={`Request payload for log ${props.logId}`}
+        >
+          <div className="flex items-center justify-between gap-2 pb-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+              payload snippet · {props.snippet.length} chars
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-11 gap-1 px-2 text-xs lg:h-7"
+              onClick={() => void copyText(props.snippet, "Payload copied")}
+            >
+              <Icons.Copy className="h-3 w-3" /> Copy
+            </Button>
+          </div>
+          <pre
+            tabIndex={0}
+            className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border border-zinc-200 bg-white p-2 font-mono text-[11px] text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200"
+          >
+            {props.snippet}
+          </pre>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 // ── stats strip + log feed ──────────────────────────────────────────────────
 
 function StatsStrip({ stats }: { stats: WafStats | undefined }) {
@@ -1187,6 +1272,8 @@ export function WafView() {
   const [exclusionOpen, setExclusionOpen] = useState(false);
   const [deleting, setDeleting] = useState<{ kind: "vhost" | "policy" | "exclusion"; vhost?: VhostDTO; policy?: PolicyDTO; exclusion?: ExclusionDTO } | null>(null);
   const [selectedVhostId, setSelectedVhostId] = useState<number | null>(null);
+  const [payloadId, setPayloadId] = useState<number | null>(null);
+  const [logDensity] = useTableDensity("waf-logs");
 
   const vhosts = vhostsQuery.data ?? [];
   const policies = policiesQuery.data ?? [];
@@ -1280,6 +1367,7 @@ export function WafView() {
               className={cn(
                 "flex cursor-pointer flex-col p-4 transition-colors",
                 vhost?.id === v.id ? "border-zinc-700 ring-1 ring-zinc-700" : "hover:border-zinc-500/40",
+                !v.enabled && "opacity-70",
               )}
             >
               <CardHeader className="flex-row items-start justify-between space-y-0 p-0 pb-3">
@@ -1300,6 +1388,14 @@ export function WafView() {
                   {v.backendHost}:{v.backendPort}
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
+                  {!v.enabled && (
+                    <Badge
+                      variant="outline"
+                      className="border-rose-600/40 bg-rose-600/5 text-[10px] font-semibold text-rose-500"
+                    >
+                      disabled
+                    </Badge>
+                  )}
                   <ModeBadge mode={v.mode} />
                   {v.tls ? (
                     <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-300">
@@ -1394,7 +1490,7 @@ export function WafView() {
               </SelectContent>
             </Select>
             <Select value={logAction} onValueChange={setLogAction}>
-              <SelectTrigger className="h-8 w-28 text-xs">
+              <SelectTrigger className="h-11 w-28 text-xs lg:h-8">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1404,6 +1500,7 @@ export function WafView() {
                 <SelectItem value="block">block</SelectItem>
               </SelectContent>
             </Select>
+            <DensityToggle storageKey="waf-logs" label="WAF log density" />
           </div>
         </CardHeader>
         <CardContent className="p-4 pt-0">
@@ -1419,7 +1516,13 @@ export function WafView() {
             />
           ) : (
             <div className={SCROLLY}>
-              <Table>
+              <Table
+                className={
+                  logDensity === "compact"
+                    ? "min-w-[920px] [&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs"
+                    : "min-w-[920px]"
+                }
+              >
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-20">Action</TableHead>
@@ -1434,7 +1537,8 @@ export function WafView() {
                 </TableHeader>
                 <TableBody>
                   {logs.map((l) => (
-                    <TableRow key={l.id}>
+                    <Fragment key={l.id}>
+                      <TableRow>
                       <TableCell>
                         <ActionBadge action={l.action} />
                       </TableCell>
@@ -1444,13 +1548,38 @@ export function WafView() {
                         {l.url}
                       </TableCell>
                       <TableCell className="font-mono text-xs">{l.ruleId ?? "—"}</TableCell>
-                      <TableCell className="max-w-64 truncate text-xs text-zinc-500" title={l.ruleMsg ?? undefined}>
-                        {l.ruleMsg ?? "—"}
+                      <TableCell className="max-w-64">
+                        <div className="flex items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate text-xs text-zinc-500" title={l.ruleMsg ?? undefined}>
+                            {l.ruleMsg ?? "—"}
+                          </span>
+                          {l.payloadSnippet && (
+                            <button
+                              type="button"
+                              aria-expanded={payloadId === l.id}
+                              aria-label={`${payloadId === l.id ? "Hide" : "Show"} payload for log ${l.id}`}
+                              onClick={() => setPayloadId(payloadId === l.id ? null : l.id)}
+                              className={cn(
+                                "inline-flex h-11 shrink-0 items-center gap-1 rounded-full border px-2 text-[10px] font-medium transition-colors lg:h-6",
+                                payloadId === l.id
+                                  ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
+                                  : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800",
+                              )}
+                            >
+                              <Icons.Terminal className="h-3 w-3" />
+                              payload
+                            </button>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs tabular-nums">{l.anomalyScore}</TableCell>
                       <TableCell className="font-mono text-xs">{l.clientIp}</TableCell>
                       <TableCell className="text-right text-[11px] text-zinc-400">{fmtRelative(l.createdAt)}</TableCell>
-                    </TableRow>
+                      </TableRow>
+                      {payloadId === l.id && l.payloadSnippet !== null && (
+                        <PayloadDetailRow logId={l.id} snippet={l.payloadSnippet} />
+                      )}
+                    </Fragment>
                   ))}
                 </TableBody>
               </Table>

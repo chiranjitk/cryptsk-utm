@@ -490,6 +490,15 @@ export function WanView() {
                     {p.sla && p.sla.samples > 0 ? (
                       <p className="flex flex-wrap gap-x-3 text-[11px] text-zinc-400 dark:text-zinc-500">
                         <span>sla window {p.sla.samples} probes</span>
+                        <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                          <span className="tabular-nums">{p.sla.upCount}</span> up
+                        </span>
+                        <span className="font-medium text-amber-600 dark:text-amber-400">
+                          <span className="tabular-nums">{p.sla.degradedCount}</span> degraded
+                        </span>
+                        <span className="font-medium text-rose-600 dark:text-rose-400">
+                          <span className="tabular-nums">{p.sla.downCount}</span> down
+                        </span>
                         {p.sla.avgLatencyMs != null ? (
                           <span>
                             avg <span className="tabular-nums text-zinc-600 dark:text-zinc-300">{p.sla.avgLatencyMs} ms</span>

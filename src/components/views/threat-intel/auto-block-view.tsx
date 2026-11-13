@@ -2,12 +2,13 @@
 
 /**
  * #/threat-intel/auto-block — automatic blocking (M13 §2.11 tab 3).
- * Top: rules table (manual + auto-feed, action chip, direction, hitCount,
- * enabled switch, delete) with a manual "Add rule" dialog. Bottom: live-ish
+ * Top: block-list summary strip (rules/enabled/auto-feed/manual/hits) + rules
+ * table (manual + auto-feed, action chip, direction, hitCount, enabled switch
+ * with row flash, delete) with a manual "Add rule" dialog. Bottom: live-ish
  * "Recent matches" list (refetch every 10s) from /hits with severity dots.
  */
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,8 @@ import {
   type IocType,
 } from "./threat-intel-api";
 import { ActionChip, DirectionChip, HitActionChip, SeverityDot, SourceBadge, TypeBadge } from "./ti-ui";
-import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, ROW_FLASH_CLASS, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import { cn } from "@/lib/utils";
 
 const RULES_KEY = ["threat-intel", "auto-block-rules"] as const;
 const HITS_KEY = ["threat-intel", "hits"] as const;
@@ -237,12 +239,34 @@ export function AutoBlockView() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [deleting, setDeleting] = useState<AutoBlockRuleDTO | null>(null);
+  /** id of the row whose optimistic toggle just landed (brief neutral flash) */
+  const [flashId, setFlashId] = useState<number | null>(null);
+  const flashTimer = useRef<number | null>(null);
+
+  const summary = useMemo(
+    () => [
+      { label: "Rules", value: rules.length, icon: <Icons.ShieldBan className="h-4 w-4 text-zinc-700 dark:text-zinc-500" /> },
+      { label: "Enabled", value: rules.filter((r) => r.enabled).length, icon: <Icons.CircleCheck className="h-4 w-4 text-emerald-600" /> },
+      { label: "Auto-feed", value: rules.filter((r) => r.source === "auto-feed").length, icon: <Icons.Radar className="h-4 w-4 text-zinc-500 dark:text-zinc-400" /> },
+      { label: "Manual", value: rules.filter((r) => r.source === "manual").length, icon: <Icons.User className="h-4 w-4 text-zinc-700 dark:text-zinc-500" /> },
+      { label: "Hits (total)", value: rules.reduce((s, r) => s + r.hitCount, 0), icon: <Icons.Activity className="h-4 w-4 text-zinc-700 dark:text-zinc-500" /> },
+    ],
+    [rules],
+  );
 
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => threatIntelApi.updateAutoBlockRule(id, { enabled }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: RULES_KEY }),
     onError: (e) => toastErr(e, "Toggle failed"),
   });
+
+  /** flash + optimistic toggle (same pattern as M03 rules-view R2) */
+  const toggleRule = (rule: AutoBlockRuleDTO) => {
+    if (flashTimer.current != null) window.clearTimeout(flashTimer.current);
+    setFlashId(rule.id);
+    flashTimer.current = window.setTimeout(() => setFlashId(null), 1500);
+    toggle.mutate({ id: rule.id, enabled: !rule.enabled });
+  };
 
   const del = useMutation({
     mutationFn: (id: number) => threatIntelApi.deleteAutoBlockRule(id),
@@ -266,6 +290,23 @@ export function AutoBlockView() {
           <Icons.Plus className="mr-1 h-4 w-4" /> Add rule
         </Button>
       </div>
+
+      {/* ── block-list summary strip (client-computed over the loaded rules) ── */}
+      {!rulesQuery.isLoading && !rulesQuery.isError && rules.length > 0 && (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          {summary.map((it) => (
+            <Card key={it.label} className="p-4">
+              <CardContent className="flex items-center gap-3 p-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-500/10">{it.icon}</div>
+                <div className="min-w-0">
+                  <p className="text-xl font-semibold tabular-nums">{it.value.toLocaleString()}</p>
+                  <p className="truncate text-[11px] text-zinc-500">{it.label}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -297,7 +338,10 @@ export function AutoBlockView() {
               </TableHeader>
               <TableBody>
                 {rules.map((rule) => (
-                  <TableRow key={rule.id} className={rule.enabled ? undefined : "opacity-60"}>
+                  <TableRow
+                    key={rule.id}
+                    className={cn(rule.enabled ? undefined : "opacity-60", flashId === rule.id && ROW_FLASH_CLASS)}
+                  >
                     <TableCell className="max-w-44">
                       <span className="block truncate text-xs font-medium" title={rule.name}>
                         {rule.name}
@@ -325,7 +369,7 @@ export function AutoBlockView() {
                       <div className="flex items-center justify-end gap-1">
                         <Switch
                           checked={rule.enabled}
-                          onCheckedChange={(enabled) => toggle.mutate({ id: rule.id, enabled })}
+                          onCheckedChange={() => toggleRule(rule)}
                           aria-label={`Toggle rule ${rule.name}`}
                         />
                         <Button
@@ -346,7 +390,8 @@ export function AutoBlockView() {
           )}
           {rules.length > 0 && (
             <div className="border-t border-zinc-200 px-4 py-2.5 text-xs text-zinc-500 dark:border-zinc-800">
-              {rules.length} rule{rules.length === 1 ? "" : "s"} · {rules.filter((r) => r.enabled).length} enabled
+              {rules.filter((r) => r.source === "auto-feed").length} from feeds · {rules.filter((r) => r.source === "manual").length} manual ·{" "}
+              {rules.reduce((s, r) => s + r.hitCount, 0).toLocaleString()} hits to date
             </div>
           )}
         </CardContent>

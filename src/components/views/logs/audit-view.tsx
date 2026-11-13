@@ -4,8 +4,9 @@
  * #/logs/audit (M09 §4) — append-only audit trail (ADR-011): filters by user
  * (from /api/v1/users), objectType (distinct via groupBy facets), result
  * chips + q/since/until. Detail Sheet renders beforeState/afterState
- * side-by-side through a defensive local JsonFieldViewer. Rows for deleted
- * users keep the stored username string (null userId never crashes).
+ * side-by-side through a defensive local JsonFieldViewer (collapsible, per-pane
+ * copy via net-ui copyText). Rows for deleted users keep the stored username
+ * string (null userId never crashes).
  */
 
 import { useMemo, useState } from "react";
@@ -29,8 +30,10 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { EmptyBlock, QueryError, TableSkeleton } from "../firewall/fw-ui";
+import { DensityToggle, EmptyBlock, QueryError, TableSkeleton, toastErr, toastOk, useTableDensity } from "../firewall/fw-ui";
+import { copyText } from "../network/net-ui"; // R5 atom — clipboard write + toast feedback
 import { logsApi, qs, type AuditLogDTO } from "./logs-api";
 import { Paginator, ResultBadge, fmtTs, localInputToIso } from "./logs-ui";
 
@@ -73,24 +76,38 @@ function JsonFieldViewer({ raw, label, tone }: { raw: string | null; label: stri
   }, [raw]);
   return (
     <div className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-800">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 border-b border-zinc-200 px-2.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800"
-      >
-        <Icons.ChevronDown className={cn("h-3.5 w-3.5 transition-transform", !open && "-rotate-90")} />
-        {label}
-        {tone === "after" && text !== null && (
-          <Badge variant="outline" className="ml-auto border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[10px] text-emerald-600 dark:text-emerald-400">
-            new
-          </Badge>
+      <div className="flex items-center border-b border-zinc-200 dark:border-zinc-800">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+        >
+          <Icons.ChevronDown className={cn("h-3.5 w-3.5 transition-transform", !open && "-rotate-90")} />
+          {label}
+          {tone === "after" && text !== null && (
+            <Badge variant="outline" className="ml-auto border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[10px] text-emerald-600 dark:text-emerald-400">
+              new
+            </Badge>
+          )}
+          {tone === "before" && text !== null && (
+            <Badge variant="outline" className="ml-auto border-zinc-300 px-1.5 text-[10px] text-zinc-500 dark:border-zinc-700">
+              previous
+            </Badge>
+          )}
+        </button>
+        {text !== null && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Copy ${label.toLowerCase()} JSON`}
+            title="Copy JSON"
+            className="h-11 w-11 shrink-0 text-zinc-400 hover:text-zinc-600 lg:h-6 lg:w-6 dark:hover:text-zinc-300"
+            onClick={() => void copyText(text, "JSON copied")}
+          >
+            <Icons.Copy className="h-3.5 w-3.5" />
+          </Button>
         )}
-        {tone === "before" && text !== null && (
-          <Badge variant="outline" className="ml-auto border-zinc-300 px-1.5 text-[10px] text-zinc-500 dark:border-zinc-700">
-            previous
-          </Badge>
-        )}
-      </button>
+      </div>
       {open && (
         <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 font-mono text-[11px] leading-relaxed text-zinc-700 dark:text-zinc-300">
           {text ?? "—"}
@@ -115,6 +132,7 @@ export function AuditView() {
   const [page, setPage] = useState(1);
   const [rangeError, setRangeError] = useState<string | null>(null);
   const [selected, setSelected] = useState<AuditLogDTO | null>(null);
+  const [density] = useTableDensity("logs-audit");
 
   const apply = (next: Filters) => {
     if (rangeInvalid(next)) {
@@ -163,13 +181,32 @@ export function AuditView() {
   const rows = query.data?.data ?? [];
   const meta = query.data?.meta;
 
+  // CSV export through the locked-shape /logs/audit/export endpoint (same filter set, 10 000-row cap)
+  const [exporting, setExporting] = useState(false);
+  const onExport = async () => {
+    setExporting(true);
+    try {
+      const { rows } = await logsApi.exportAuditCsv(qs(isoFilters));
+      toastOk(
+        "Audit CSV exported",
+        rows >= 10000
+          ? `${rows.toLocaleString()} rows written — export cap (10 000) hit; narrow the filter for older rows.`
+          : `${rows.toLocaleString()} rows written`,
+      );
+    } catch (err) {
+      toastErr(err, "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="grid gap-3">
       {/* filter bar */}
       <div className="no-print flex flex-wrap items-center gap-2">
         {users.data ? (
           <Select value={filters.user || "any"} onValueChange={(v) => apply({ ...inputs, user: v === "any" ? "" : v })}>
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="h-11 w-44 lg:h-9">
               <SelectValue placeholder="User" />
             </SelectTrigger>
             <SelectContent>
@@ -188,11 +225,11 @@ export function AuditView() {
             onKeyDown={(e) => e.key === "Enter" && commitText()}
             onBlur={commitText}
             placeholder="username"
-            className="w-40 text-xs"
+            className="h-11 w-40 text-xs lg:h-9"
           />
         )}
         <Select value={filters.objectType || "any"} onValueChange={(v) => apply({ ...inputs, objectType: v === "any" ? "" : v })}>
-          <SelectTrigger className="w-44">
+          <SelectTrigger className="h-11 w-44 lg:h-9">
             <SelectValue placeholder="Object type" />
           </SelectTrigger>
           <SelectContent>
@@ -205,31 +242,31 @@ export function AuditView() {
           </SelectContent>
         </Select>
         <div className="relative">
-          <Icons.Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-400" />
+          <Icons.Search className="absolute left-2.5 top-3 lg:top-2.5 h-4 w-4 text-zinc-400" />
           <Input
             value={inputs.q}
             onChange={(e) => setInputs({ ...inputs, q: e.target.value })}
             onKeyDown={(e) => e.key === "Enter" && commitText()}
             onBlur={commitText}
             placeholder="Search action/object/user…"
-            className="w-56 pl-8"
+            className="h-11 w-56 pl-8 lg:h-9"
           />
         </div>
         <Input
           type="datetime-local"
           value={inputs.since}
           onChange={(e) => apply({ ...inputs, since: e.target.value })}
-          className="w-56 text-xs"
+          className="h-11 w-56 text-xs lg:h-9"
           aria-label="Since"
         />
         <Input
           type="datetime-local"
           value={inputs.until}
           onChange={(e) => apply({ ...inputs, until: e.target.value })}
-          className="w-56 text-xs"
+          className="h-11 w-56 text-xs lg:h-9"
           aria-label="Until"
         />
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {RESULTS.map((r) => {
             const active = filters.result === r;
             return (
@@ -239,7 +276,7 @@ export function AuditView() {
                 aria-pressed={active}
                 onClick={() => apply({ ...inputs, result: active ? "" : r })}
                 className={cn(
-                  "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                  "inline-flex h-11 items-center rounded-full border px-2.5 text-xs transition-colors lg:h-7 lg:py-1",
                   active
                     ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                     : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
@@ -250,11 +287,29 @@ export function AuditView() {
             );
           })}
           {(Object.values(filters).some(Boolean)) && (
-            <Button variant="ghost" size="sm" className="h-7 gap-1 text-zinc-500" onClick={() => apply(EMPTY_FILTERS)}>
+            <Button variant="ghost" size="sm" className="h-11 gap-1 text-zinc-500 lg:h-7" onClick={() => apply(EMPTY_FILTERS)}>
               <Icons.X className="h-3.5 w-3.5" />
               Clear
             </Button>
           )}
+          <div className="ml-auto flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="sm" className="h-11 gap-1.5 lg:h-8" onClick={onExport} disabled={exporting} aria-label="Export audit CSV">
+                  {exporting ? <Icons.Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icons.Download className="h-3.5 w-3.5" />}
+                  Export CSV
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left" className="max-w-72">
+                <p className="font-medium">CSV columns</p>
+                <p className="font-mono text-[11px] leading-relaxed">
+                  timestamp, username, user_id, source_ip, action, object_type, object_id, object_name, result, id
+                </p>
+                <p className="mt-1 text-[11px]">Applies the current filter · 10 000-row cap · before/after JSON states stay in the row drawer.</p>
+              </TooltipContent>
+            </Tooltip>
+            <DensityToggle storageKey="logs-audit" label="Audit table density" />
+          </div>
         </div>
       </div>
 
@@ -264,8 +319,8 @@ export function AuditView() {
         </div>
       )}
 
-      {/* table */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
+      {/* table — card is the grid item: min-w-0 stops the min-w table's min-content from widening the page */}
+      <div className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-800">
         {query.isLoading ? (
           <TableSkeleton rows={8} cols={7} />
         ) : query.isError ? (
@@ -274,45 +329,47 @@ export function AuditView() {
           <EmptyBlock icon={<Icons.ScrollText className="h-6 w-6" />} title="No audit entries match this filter" description="Audit rows are append-only (ADR-011) — try a wider time range." />
         ) : (
           <>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Timestamp</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Object type</TableHead>
-                  <TableHead>Object name</TableHead>
-                  <TableHead>Result</TableHead>
-                  <TableHead>Source IP</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((r) => (
-                  <TableRow key={r.id} className="cursor-pointer" onClick={() => setSelected(r)}>
-                    <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtTs(r.createdAt)}</TableCell>
-                    <TableCell>
-                      <span className="flex items-center gap-2">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-500/10 text-[10px] font-semibold text-zinc-600 dark:text-zinc-400">
-                          {initialsOf(r.username)}
-                        </span>
-                        <span className="text-xs">{r.username ?? "(deleted user)"}</span>
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="border-zinc-300 bg-zinc-50 font-mono text-[11px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
-                        {r.action}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs">{r.objectType}</TableCell>
-                    <TableCell className="max-w-40 truncate text-xs">{r.objectName ?? "—"}</TableCell>
-                    <TableCell>
-                      <ResultBadge result={r.result} />
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{r.sourceIp ?? "—"}</TableCell>
+            <div className="overflow-x-auto">
+              <Table className={cn("min-w-[780px]", density === "compact" && "[&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs")}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Timestamp</TableHead>
+                    <TableHead>User</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead>Object type</TableHead>
+                    <TableHead>Object name</TableHead>
+                    <TableHead>Result</TableHead>
+                    <TableHead>Source IP</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((r) => (
+                    <TableRow key={r.id} className="cursor-pointer" onClick={() => setSelected(r)}>
+                      <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtTs(r.createdAt)}</TableCell>
+                      <TableCell>
+                        <span className="flex items-center gap-2">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-500/10 text-[10px] font-semibold text-zinc-600 dark:text-zinc-400">
+                            {initialsOf(r.username)}
+                          </span>
+                          <span className="text-xs">{r.username ?? "(deleted user)"}</span>
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="border-zinc-300 bg-zinc-50 font-mono text-[11px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
+                          {r.action}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs">{r.objectType}</TableCell>
+                      <TableCell className="max-w-40 truncate text-xs">{r.objectName ?? "—"}</TableCell>
+                      <TableCell>
+                        <ResultBadge result={r.result} />
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{r.sourceIp ?? "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
             {meta && (
               <Paginator
                 page={meta.page}

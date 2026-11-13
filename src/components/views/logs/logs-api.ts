@@ -140,6 +140,8 @@ export const logsApi = {
   listIps: (params: string) => fetchJsonList<IpsEventDTO>("/api/v1/logs/ips", params),
 
   listAudit: (params: string) => fetchJsonList<AuditLogDTO>("/api/v1/logs/audit", params),
+  exportAuditCsv: (params: string) =>
+    downloadGet(`/api/v1/logs/audit/export${params ? `?${params}` : ""}`, "audit-log.csv"),
   auditObjectTypes: () =>
     fetchJson<{ objectTypes: string[] }>("/api/v1/logs/audit?facets=objectTypes").then((r) => r.objectTypes),
   listUsers: (limit = 100) =>

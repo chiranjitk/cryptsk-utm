@@ -3,8 +3,10 @@
 /**
  * #/pki/certificates — end-entity certificate management (M14 §2.12).
  * Toolbar with CA/type/status/search filters and an "Expiring ≤30d" chip that
- * switches the table into expiry-monitoring mode. "Issue certificate" walks
- * an ACTIVE CA and generates real X.509 material (node-forge) server-side.
+ * switches the table into expiry-monitoring mode; an expiring highlight strip
+ * (fed by the expiring endpoint) renders days-left chips with tone colors
+ * (rose ≤7d, amber 8-30d), click = filter. "Issue certificate" walks an
+ * ACTIVE CA and generates real X.509 material (node-forge) server-side.
  * Private-key download is admin-only (403 → "Forbidden — admin only" toast).
  */
 
@@ -146,7 +148,7 @@ export function CertificatesView() {
             onClick={() => setExpiringOnly((v) => !v)}
             aria-pressed={expiringOnly}
             className={cn(
-              "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+              "inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors lg:min-h-9",
               expiringOnly
                 ? "border-rose-600/40 bg-rose-600/10 text-rose-600 dark:text-rose-400"
                 : "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 hover:bg-zinc-500/20 dark:text-zinc-300",
@@ -158,7 +160,7 @@ export function CertificatesView() {
               {expiringCount}
             </Badge>
           </button>
-          <Button size="sm" className="gap-1.5" onClick={() => setIssueOpen(true)} disabled={activeCas.length === 0}>
+          <Button size="sm" className="h-11 gap-1.5 lg:h-9" onClick={() => setIssueOpen(true)} disabled={activeCas.length === 0}>
             <Icons.Plus className="h-4 w-4" /> Issue certificate
           </Button>
         </div>
@@ -168,7 +170,13 @@ export function CertificatesView() {
         <CardContent className="flex flex-wrap items-center gap-2 p-3">
           <div className="relative min-w-52 flex-1">
             <Icons.Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, CN or serial…" className="pl-8" aria-label="Search certificates" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search name, CN or serial…"
+              className="h-11 pl-8 lg:h-9"
+              aria-label="Search certificates"
+            />
           </div>
           <Select value={caId} onValueChange={(v) => setCaId(v === "all" ? "" : v)}>
             <SelectTrigger className="w-44" aria-label="Filter by CA">
@@ -218,108 +226,163 @@ export function CertificatesView() {
             <TableSkeleton rows={5} cols={8} />
           </CardContent>
         </Card>
-      ) : certs.length === 0 ? (
-        <Card>
-          <CardContent className="p-0">
-            <EmptyBlock
-              icon={<Icons.FileKey2 className="h-6 w-6" />}
-              title={expiringOnly ? "Nothing expiring in the next 30 days" : "No certificates match"}
-              description={
-                expiringOnly
-                  ? "Certificates appear here when their validity window closes in."
-                  : activeCas.length === 0
-                    ? "Create an active CA first — certificates are issued under it."
-                    : "Issue a certificate under an active CA to get started."
-              }
-              action={
-                !expiringOnly && activeCas.length > 0 ? (
-                  <Button size="sm" className="gap-1.5" onClick={() => setIssueOpen(true)}>
-                    <Icons.Plus className="h-4 w-4" /> Issue certificate
-                  </Button>
-                ) : undefined
-              }
-            />
-          </CardContent>
-        </Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="max-h-96 overflow-y-auto">
-              <Table>
-                <TableHeader className="sticky top-0 bg-background">
-                  <TableRow>
-                    <TableHead>Certificate</TableHead>
-                    <TableHead>SANs</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Issued for</TableHead>
-                    <TableHead>Key</TableHead>
-                    <TableHead>Expires</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-10" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {certs.map((cert) => (
-                    <TableRow key={cert.id} className={cn(cert.status !== "active" && "opacity-70")}>
-                      <TableCell>
-                        <p className="font-medium">{cert.name}</p>
-                        <p className="font-mono text-[11px] text-zinc-400">{cert.commonName}</p>
-                      </TableCell>
-                      <TableCell>
-                        <SansChips sans={cert.sans} />
-                      </TableCell>
-                      <TableCell>
-                        <CertTypeBadge type={cert.type} />
-                      </TableCell>
-                      <TableCell>
-                        <IssuedForChip issuedFor={cert.issuedFor} />
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-mono text-xs">{KEY_TYPE_LABELS[cert.keyType] ?? cert.keyType}</span>
-                      </TableCell>
-                      <TableCell>
-                        <ExpiryPill notAfter={cert.notAfter} daysUntilExpiry={cert.daysUntilExpiry} status={cert.status} />
-                      </TableCell>
-                      <TableCell>
-                        <PkiStatusBadge status={cert.status} />
-                        {cert.revocationReason ? (
-                          <p className="mt-0.5 text-[10px] text-zinc-400">{cert.revocationReason}</p>
-                        ) : null}
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${cert.name}`}>
-                              <Icons.MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => void doExport(cert, "cert")}>
-                              <Icons.FileDown className="mr-2 h-4 w-4" /> Download cert
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => void doExport(cert, "key")}>
-                              <Icons.KeyRound className="mr-2 h-4 w-4" /> Download key
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => void doExport(cert, "chain")}>
-                              <Icons.Link2 className="mr-2 h-4 w-4" /> Download chain
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => setRevoking(cert)} disabled={cert.status === "revoked"}>
-                              <Icons.Ban className="mr-2 h-4 w-4 text-rose-500" /> Revoke
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setDeleting(cert)} disabled={cert.status === "active"}>
-                              <Icons.Trash2 className="mr-2 h-4 w-4 text-rose-500" /> Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+        <>
+          {/* expiring-certificate highlight strip — days-left tones (rose ≤7d, amber 8-30d); hidden when none */}
+          {!expiringQuery.isLoading && (expiringQuery.data?.length ?? 0) > 0 ? (
+            <div
+              role="region"
+              aria-label="Certificates expiring within 30 days"
+              className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/60"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                  <Icons.CalendarClock className="h-3.5 w-3.5" />
+                  Expiring ≤30d
+                  <Badge variant="outline" className="border-transparent bg-zinc-200 px-1.5 text-[10px] tabular-nums dark:bg-zinc-800">
+                    {expiringQuery.data!.length}
+                  </Badge>
+                </span>
+                <div className="flex min-w-0 flex-wrap gap-1.5">
+                  {[...expiringQuery.data!]
+                    .sort((a, b) => (a.daysUntilExpiry ?? 9999) - (b.daysUntilExpiry ?? 9999))
+                    .map((c) => {
+                      const d = c.daysUntilExpiry ?? 9999;
+                      const tone =
+                        d <= 7
+                          ? "border-rose-600/40 bg-rose-600/10 text-rose-600 dark:text-rose-400"
+                          : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400";
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setExpiringOnly(true)}
+                          aria-label={`Filter to expiring certificates — ${c.name}, ${d} days left`}
+                          title={`${c.name} — ${d} day(s) left (click to filter)`}
+                          className={cn(
+                            "inline-flex h-11 max-w-56 items-center gap-1.5 rounded-full border px-3 text-xs font-medium lg:h-7 lg:px-2.5",
+                            tone,
+                          )}
+                        >
+                          <span className="min-w-0 truncate font-medium">{c.name}</span>
+                          <span className="shrink-0 tabular-nums">{d}d</span>
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          ) : null}
+
+          {certs.length === 0 ? (
+            <Card>
+              <CardContent className="p-0">
+                <EmptyBlock
+                  icon={<Icons.FileKey2 className="h-6 w-6" />}
+                  title={expiringOnly ? "Nothing expiring in the next 30 days" : "No certificates match"}
+                  description={
+                    expiringOnly
+                      ? "Certificates appear here when their validity window closes in."
+                      : activeCas.length === 0
+                        ? "Create an active CA first — certificates are issued under it."
+                        : "Issue a certificate under an active CA to get started."
+                  }
+                  action={
+                    !expiringOnly && activeCas.length > 0 ? (
+                      <Button size="sm" className="gap-1.5" onClick={() => setIssueOpen(true)}>
+                        <Icons.Plus className="h-4 w-4" /> Issue certificate
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <div className="max-h-96 overflow-auto">
+                  <Table className="min-w-[880px]">
+                    <TableHeader className="sticky top-0 bg-background">
+                      <TableRow>
+                        <TableHead>Certificate</TableHead>
+                        <TableHead>SANs</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Issued for</TableHead>
+                        <TableHead>Key</TableHead>
+                        <TableHead>Expires</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="w-10" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {certs.map((cert) => (
+                        <TableRow key={cert.id} className={cn(cert.status !== "active" && "opacity-70")}>
+                          <TableCell>
+                            <p className="font-medium">{cert.name}</p>
+                            <p className="font-mono text-[11px] text-zinc-400">{cert.commonName}</p>
+                          </TableCell>
+                          <TableCell>
+                            <SansChips sans={cert.sans} />
+                          </TableCell>
+                          <TableCell>
+                            <CertTypeBadge type={cert.type} />
+                          </TableCell>
+                          <TableCell>
+                            <IssuedForChip issuedFor={cert.issuedFor} />
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-mono text-xs">{KEY_TYPE_LABELS[cert.keyType] ?? cert.keyType}</span>
+                          </TableCell>
+                          <TableCell>
+                            <ExpiryPill notAfter={cert.notAfter} daysUntilExpiry={cert.daysUntilExpiry} status={cert.status} />
+                          </TableCell>
+                          <TableCell>
+                            <PkiStatusBadge status={cert.status} />
+                            {cert.revocationReason ? (
+                              <p className="mt-0.5 text-[10px] text-zinc-400">{cert.revocationReason}</p>
+                            ) : null}
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-11 w-11 lg:h-8 lg:w-8"
+                                  aria-label={`Actions for ${cert.name}`}
+                                >
+                                  <Icons.MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => void doExport(cert, "cert")}>
+                                  <Icons.FileDown className="mr-2 h-4 w-4" /> Download cert
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => void doExport(cert, "key")}>
+                                  <Icons.KeyRound className="mr-2 h-4 w-4" /> Download key
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => void doExport(cert, "chain")}>
+                                  <Icons.Link2 className="mr-2 h-4 w-4" /> Download chain
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => setRevoking(cert)} disabled={cert.status === "revoked"}>
+                                  <Icons.Ban className="mr-2 h-4 w-4 text-rose-500" /> Revoke
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setDeleting(cert)} disabled={cert.status === "active"}>
+                                  <Icons.Trash2 className="mr-2 h-4 w-4 text-rose-500" /> Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
       <IssueCertDialog open={issueOpen} onOpenChange={setIssueOpen} activeCas={activeCas} onDone={invalidate} />

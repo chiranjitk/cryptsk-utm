@@ -110,16 +110,16 @@ Paths verbatim from PROJECT_MEMORY §7.2. Envelope/errors per ../04-API/API_STAN
 | DELETE | `/api/v1/api-keys/{id}` | Revoke key (sets `revoked = true`) | Row action "Revoke" (ConfirmDialog) |
 | GET | `/api/v1/system/backups/{id}/download` | Download the backup JSON (file download; `config` and `full` payloads) | "Download" row action |
 | POST | `/api/v1/notifications/read-all` | Convenience "mark all read" in the bell popover (audited) | "Mark all read" button |
-| POST | `/api/v1/system/services/{name}/restart` | Restart a running service (simulated ~2 s apply, audited) | Dashboard "Restart service" quick action (M01) |
+| POST | `/api/v1/system/services/{name}/restart` | Restart a running service (simulated ~2 s apply, audited) | Dashboard "Restart service" quick action (M01); health-strip chip (confirm-first dialog naming the service — §4) |
 | GET | `/api/v1/system/firmware` | Firmware state: current, channel `stable`, lastCheckAt, available?, history | Firmware card on `#/system/settings` |
 | POST | `/api/v1/system/firmware/check` | Simulated update check (sets `available`) | "Check for updates" button |
-| POST | `/api/v1/system/firmware/upgrade` | Staged upgrade — safety backup first, then version bump + history entry (simulated) | "Upgrade now" (ConfirmDialog states the safety backup) |
-| POST | `/api/v1/system/firmware/rollback` | Roll back to the previous version in history (simulated) | "Roll back" (ConfirmDialog) |
+| POST | `/api/v1/system/firmware/upgrade` | Staged upgrade — safety backup first, then version bump + history entry (simulated) | "Upgrade now" (typed-version AlertDialog — type the target version to enable confirm) |
+| POST | `/api/v1/system/firmware/rollback` | Roll back to the previous version in history (simulated) | "Roll back" (ConfirmDialog names the previous version when known) |
 | GET | `/api/v1/system/policy-templates` | Per-vertical default policy templates (catalog) | Templates card on `#/setup` and `#/system/settings` |
 | POST | `/api/v1/system/policy-templates/{id}/apply` | Apply a template's starter config (audited; snapshot `section: "all"`) | "Apply template" (ConfirmDialog: overwrites matching sections) |
 | GET | `/api/v1/system/ssh-keys` | List SSH management keys (public material + fingerprint only) | SSH keys card on `#/system/settings` |
 | POST | `/api/v1/system/ssh-keys` | Add SSH public key (fingerprint derived server-side) | "Add key" dialog submit |
-| DELETE | `/api/v1/system/ssh-keys/{id}` | Remove SSH key | Row action "Remove" (ConfirmDialog) |
+| DELETE | `/api/v1/system/ssh-keys/{id}` | Remove SSH key | Row action "Remove" (ConfirmDialog names the key + fingerprint) |
 | POST | `/api/v1/system/setup/complete` | Mark the first-time-setup wizard done (sets `SystemSetting` `setup.completed = true`) | Wizard "Finish" button |
 
 **Expected error cases:** `VALIDATION_ERROR` 400 (VIP not valid CIDR, peerIp invalid, priority
@@ -190,11 +190,14 @@ hides this; destructive dialogs name it.
   (IP/CIDR list for mgmt-plane access), `stopUnusedServices` switch; hint text names the
   appliance effects (sshd_config, nftables mgmt allowlist, systemd disable) and "recorded
   only in sandbox". (6) **Firmware:** current version + channel chip (`stable`);
-  "Check for updates" (sets `available`); "Upgrade now" ConfirmDialog ("a safety backup is
-  created first — see `#/system/backups`"); "Roll back" when `history` has ≥ 2 entries;
-  history table (version, appliedAt). (7) **SSH keys:** table (name, fingerprint mono,
-  addedBy, createdAt) + add dialog (name + `authorized_keys`-line textarea, parse-validated)
-  + remove ConfirmDialog. (8) **Notifications prefs:** email toggle + recipient (display-only
+  "Check for updates" (sets `available`); "Upgrade now" typed-version AlertDialog (type the
+  target version to enable confirm — "a safety backup is created first — see
+  `#/system/backups`" + control-plane blip copy); "Roll back" when `history` has ≥ 2 entries
+  (names the previous version when known); history table (version, appliedAt). (7) **SSH
+  keys:** table (name, fingerprint mono + copy button, addedBy, createdAt) + add dialog
+  (name + `authorized_keys`-line textarea; per-field client pre-checks mirror the server
+  grammar — OpenSSH line regex + private-key rejection — with focus-first-invalid parity)
+  + remove ConfirmDialog naming the key and fingerprint. (8) **Notifications prefs:** email toggle + recipient (display-only
   in Phase 1 — no mailer exists; label it), in-console severity threshold Select, and
   **resource-alert thresholds** (cpuPct/memPct/diskPct/tempC number inputs — engine compares
   per tick and emits warning/critical notifications, §5.5). (9) **Logging retention
@@ -203,7 +206,7 @@ hides this; destructive dialogs name it.
   toggles:** diagnostics verbosity, mock-profile label (read-only — set via `MOCK_PROFILE`
   env, DATA_LIFECYCLE §3), "allow API-key access" master switch. (11) **Policy templates**
   card: vertical template cards (office / hospitality / MSP-branch) with per-section summary;
-  "Apply" ConfirmDialog warns that matching sections are overwritten; apply →
+  "Apply" ConfirmDialog names the template and lists its sections; apply →
   `POST /system/policy-templates/{id}/apply` → audit + `config:updated` fan-out (snapshot
   `section: "all"`). (12) **Config history + diff viewer** (see below).
 - **Save model:** each card saves its own group via `PUT /api/v1/system/settings` with a
@@ -220,9 +223,13 @@ hides this; destructive dialogs name it.
 
 ### `#/system/backups`
 
-- **Layout:** table of snapshots: id, createdAt, type badge (`config` teal / `full` violet),
-  size (humanized), note, actions (Download, Restore, Delete-local-file where the sandbox
-  exposes it). Header actions: "Create backup" (type Select + note) and "Refresh".
+- **Layout:** table of snapshots: id, createdAt + age chip (<24 h emerald / 1–6 d zinc /
+  ≥7 d amber, absolute in `title`), type badge (`config` teal / `full` violet), size
+  (humanized), note, actions (Download, Restore, Delete-local-file where the sandbox
+  exposes it). Header actions: "Create backup" (type Select + note ≤200 with an inline
+  pre-check error) and "Refresh"; id/note/type search filters the table (own empty state
+  + Clear). Table wraps in `overflow-x-auto` + `min-w-[760px]` (§5.16 pattern); row
+  buttons are `h-11 lg:h-8`.
 - **Restore flow (strict):** row "Restore" → ConfirmDialog in destructive style (rose) that
   requires **typing `RESTORE`** to enable the confirm button; dialog text states: what will
   be overwritten (config snapshot reload; `full` also resets volatile tables), that the
@@ -238,7 +245,9 @@ hides this; destructive dialogs name it.
 
 - **Tab 1 — API keys:** table: name, prefix (mono, `ck_` + 8 chars), scopes badges (`read` zinc /
   `write` amber / `admin` rose), `lastUsedAt` ("never" when null), `expiresAt` (or "never"),
-  `revoked` badge, createdAt. Header: "New API key".
+  `revoked` badge, createdAt (relative with absolute in `title`). Header: "New API key".
+  Table wraps in `overflow-x-auto` + `min-w-[820px]` (webhooks `min-w-[900px]`, 44 px row
+  controls).
 - **Create dialog:** name; scopes choice among the three LOCKED arrays (radio: `read` /
   `read+write` / `read+write+admin`, with one-line capability text per M11 §3); optional
   expiry datetime. Submit → **show-secret-once dialog**: the full `ck_…` key in a mono box

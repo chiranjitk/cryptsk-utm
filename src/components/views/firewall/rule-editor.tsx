@@ -8,7 +8,7 @@
  * "Save anyway" is clicked (warning text is prepended to the rule comment).
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -81,6 +81,9 @@ interface RuleForm {
   synProtection: boolean;
   synThreshold: string;
 }
+
+/** Fields the editor client-validates on submit (scroll-to-first-error). */
+type FieldKey = "name" | "srcMacs" | "connLimit" | "rateLimit" | "synThreshold";
 
 function formFromRule(r: FwRule | null): RuleForm {
   if (!r) {
@@ -167,6 +170,108 @@ const REASON_LABEL: Record<ConflictRow["reason"], string> = {
   redundant: "Redundant with",
 };
 
+function ReviewChips({ ids, resolve }: { ids: number[]; resolve: (id: number) => string | undefined }) {
+  if (ids.length === 0) return <span className="text-[11px] text-zinc-400">any</span>;
+  return (
+    <span className="flex flex-wrap gap-1">
+      {ids.map((id) => (
+        <Badge
+          key={id}
+          variant="outline"
+          className="max-w-44 gap-0 border-zinc-300 px-1.5 py-0 font-normal text-zinc-600 dark:border-zinc-700 dark:text-zinc-300"
+        >
+          <span className="truncate text-[10px] leading-4">{resolve(id) ?? `#${id}`}</span>
+        </Badge>
+      ))}
+    </span>
+  );
+}
+
+function ReviewLabel({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <span className="flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+      {icon}
+      {children}
+    </span>
+  );
+}
+
+/** Compact source → dest → service → action flow rendered at the top of the
+ *  edit dialog so the operator can sanity-check the rule before saving. */
+function ReviewStrip(props: {
+  form: RuleForm;
+  zones: Zone[];
+  addresses: AddressObject[];
+  addressGroups: NamedWithMembers[];
+  services: ServiceObject[];
+  serviceGroups: NamedWithMembers[];
+  schedules: ScheduleObject[];
+}) {
+  const { form } = props;
+  const maps = useMemo(() => {
+    const z = new Map<number, string>();
+    props.zones.forEach((x) => z.set(x.id, x.name));
+    const a = new Map<number, string>();
+    props.addresses.forEach((x) => a.set(x.id, x.name));
+    props.addressGroups.forEach((g) => a.set(g.id, `${g.name} +${g.memberIds.length}`));
+    const s = new Map<number, string>();
+    props.services.forEach((x) => s.set(x.id, `${x.protocol}${x.dstPort ? `/${x.dstPort}` : ""}`));
+    props.serviceGroups.forEach((g) => s.set(g.id, `${g.name} +${g.memberIds.length}`));
+    return { z, a, s };
+  }, [props.zones, props.addresses, props.addressGroups, props.services, props.serviceGroups]);
+
+  const schedule = form.scheduleId != null ? props.schedules.find((s) => s.id === form.scheduleId) : undefined;
+  const divider = <span className="h-3.5 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" />;
+
+  return (
+    <div
+      aria-label="Rule review summary"
+      className="rounded-lg border border-zinc-200 bg-zinc-500/[0.04] px-3 py-2 dark:border-zinc-800"
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Review — this rule will match</p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs">
+        <span className="flex flex-wrap items-center gap-1">
+          <ReviewLabel icon={<Icons.Landmark className="h-3 w-3" />}>Zones</ReviewLabel>
+          <ReviewChips ids={form.srcZoneIds} resolve={(id) => maps.z.get(id)} />
+          <Icons.ArrowRight className="h-3 w-3 shrink-0 text-zinc-400" />
+          <ReviewChips ids={form.dstZoneIds} resolve={(id) => maps.z.get(id)} />
+        </span>
+        {divider}
+        <span className="flex flex-wrap items-center gap-1">
+          <ReviewLabel icon={<Icons.MapPin className="h-3 w-3" />}>Addrs</ReviewLabel>
+          <ReviewChips ids={form.srcAddrIds} resolve={(id) => maps.a.get(id)} />
+          <Icons.ArrowRight className="h-3 w-3 shrink-0 text-zinc-400" />
+          <ReviewChips ids={form.dstAddrIds} resolve={(id) => maps.a.get(id)} />
+        </span>
+        {divider}
+        <span className="flex flex-wrap items-center gap-1">
+          <ReviewLabel icon={<Icons.Network className="h-3 w-3" />}>Services</ReviewLabel>
+          <ReviewChips ids={form.serviceIds} resolve={(id) => maps.s.get(id)} />
+        </span>
+        {divider}
+        <span className="flex flex-wrap items-center gap-1.5">
+          <ReviewLabel icon={<Icons.Shield className="h-3 w-3" />}>Then</ReviewLabel>
+          <ActionBadge action={form.action} />
+          <Badge variant="outline" className="border-zinc-300 px-1.5 py-0 text-[10px] font-normal text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+            log: {form.logging}
+          </Badge>
+          {schedule ? <Icons.Clock className="h-3.5 w-3.5 text-amber-500" aria-label={`Schedule: ${schedule.name}`} /> : null}
+          {form.connLimit != null ? <Icons.Link2 className="h-3.5 w-3.5 text-zinc-500" aria-label={`Connection limit ${form.connLimit}`} /> : null}
+          {form.rateLimit != null ? <Icons.Gauge className="h-3.5 w-3.5 text-zinc-500" aria-label={`Rate limit ${form.rateLimit}`} /> : null}
+          {form.synProtection ? <Icons.ShieldAlert className="h-3.5 w-3.5 text-rose-500" aria-label="SYN protection" /> : null}
+          {form.applicationIds.length > 0 ? (
+            <span className="text-[10px] text-zinc-400">apps ×{form.applicationIds.length}</span>
+          ) : null}
+          {form.userIds.length > 0 ? <span className="text-[10px] text-zinc-400">users ×{form.userIds.length}</span> : null}
+          {parseMacList(form.srcMacsRaw).valid.length > 0 ? (
+            <span className="text-[10px] text-zinc-400">macs ×{parseMacList(form.srcMacsRaw).valid.length}</span>
+          ) : null}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function RuleEditor(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -193,7 +298,22 @@ export function RuleEditor(props: {
   const [tagDraft, setTagDraft] = useState("");
   const [conflicts, setConflicts] = useState<ConflictRow[] | null>(null);
   const [override, setOverride] = useState(false);
-  const [macError, setMacError] = useState<string | null>(null);
+
+  /** per-field client validation errors (submit scroll-to-first-error) */
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
+  const nameRef = useRef<HTMLInputElement>(null);
+  const macsRef = useRef<HTMLInputElement>(null);
+  const connRef = useRef<HTMLInputElement>(null);
+  const rateRef = useRef<HTMLInputElement>(null);
+  const synRef = useRef<HTMLInputElement>(null);
+
+  const clearFieldError = (key: FieldKey) =>
+    setFieldErrors((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
 
   const set = <K extends keyof RuleForm>(key: K, value: RuleForm[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -247,6 +367,24 @@ export function RuleEditor(props: {
 
   const macs = parseMacList(form.srcMacsRaw);
 
+  const validateForm = (): Partial<Record<FieldKey, string>> => {
+    const errs: Partial<Record<FieldKey, string>> = {};
+    if (!form.name.trim()) errs.name = "Name is required";
+    if (macs.invalid.length > 0) errs.srcMacs = `Invalid MAC addresses: ${macs.invalid.join(", ")}`;
+    const posNum = (v: string) => {
+      const t = v.trim();
+      if (!t) return true;
+      const n = Number(t);
+      return Number.isFinite(n) && n > 0;
+    };
+    if (!posNum(form.connLimit)) errs.connLimit = "Connection limit must be a positive number";
+    if (!posNum(form.rateLimit)) errs.rateLimit = "Rate limit must be a positive number";
+    if (form.synProtection && !posNum(form.synThreshold)) errs.synThreshold = "SYN threshold must be a positive number";
+    return errs;
+  };
+
+  const macErrorText = fieldErrors.srcMacs ?? (macs.invalid.length > 0 ? `Invalid MACs: ${macs.invalid.join(", ")}` : null);
+
   const validateMut = useMutation({
     mutationFn: () => api.validateRule(buildBody(form), editing?.id),
     onSuccess: (res) => {
@@ -286,8 +424,18 @@ export function RuleEditor(props: {
 
   const submit = () => {
     if (blocking && !override) return;
-    if (macs.invalid.length > 0) {
-      setMacError(`Invalid MAC addresses: ${macs.invalid.join(", ")}`);
+    const errs = validateForm();
+    setFieldErrors(errs);
+    const first = ([
+      { key: "name" as const, ref: nameRef },
+      { key: "srcMacs" as const, ref: macsRef },
+      { key: "connLimit" as const, ref: connRef },
+      { key: "rateLimit" as const, ref: rateRef },
+      { key: "synThreshold" as const, ref: synRef },
+    ]).find((f) => errs[f.key]);
+    if (first) {
+      first.ref.current?.scrollIntoView({ block: "center" });
+      first.ref.current?.focus({ preventScroll: true });
       return;
     }
     saveMut.mutate();
@@ -311,6 +459,16 @@ export function RuleEditor(props: {
         </DialogHeader>
 
         <div className="space-y-4">
+          <ReviewStrip
+            form={form}
+            zones={props.zones}
+            addresses={props.addresses}
+            addressGroups={props.addressGroups}
+            services={props.services}
+            serviceGroups={props.serviceGroups}
+            schedules={props.schedules}
+          />
+
           <EditorSection title="General">
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
@@ -319,11 +477,22 @@ export function RuleEditor(props: {
                 </Label>
                 <Input
                   id="rule-name"
+                  ref={nameRef}
                   value={form.name}
-                  onChange={(e) => set("name", e.target.value)}
+                  onChange={(e) => {
+                    set("name", e.target.value);
+                    clearFieldError("name");
+                  }}
                   placeholder="allow-lan-to-wan"
-                  className="mt-1.5"
+                  aria-invalid={!!fieldErrors.name}
+                  aria-describedby={fieldErrors.name ? "rule-name-error" : undefined}
+                  className={cn("mt-1.5", fieldErrors.name && "border-rose-500 ring-1 ring-rose-500/40 focus-visible:ring-rose-500")}
                 />
+                {fieldErrors.name ? (
+                  <p id="rule-name-error" className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
+                    {fieldErrors.name}
+                  </p>
+                ) : null}
               </div>
               <div>
                 <Label htmlFor="rule-desc" className="text-xs font-medium">
@@ -463,16 +632,18 @@ export function RuleEditor(props: {
               <div>
                 <FieldLabel hint="aa:bb:cc:dd:ee:01, comma separated">Source MACs</FieldLabel>
                 <Input
+                  ref={macsRef}
                   value={form.srcMacsRaw}
                   onChange={(e) => {
                     set("srcMacsRaw", e.target.value);
-                    setMacError(null);
+                    clearFieldError("srcMacs");
                   }}
                   placeholder="aa:bb:cc:dd:ee:01, aa:bb:cc:dd:ee:02"
-                  className={cn("font-mono text-xs", macs.invalid.length > 0 && "border-rose-500 focus-visible:ring-rose-500")}
+                  aria-invalid={!!macErrorText}
+                  className={cn("font-mono text-xs", macErrorText && "border-rose-500 ring-1 ring-rose-500/40 focus-visible:ring-rose-500")}
                 />
-                {macs.invalid.length > 0 && (
-                  <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">Invalid MACs: {macs.invalid.join(", ")}</p>
+                {macErrorText && (
+                  <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{macErrorText}</p>
                 )}
               </div>
               <div>
@@ -538,20 +709,38 @@ export function RuleEditor(props: {
                 <Input
                   type="number"
                   min={1}
+                  ref={connRef}
                   value={form.connLimit}
-                  onChange={(e) => set("connLimit", e.target.value)}
+                  onChange={(e) => {
+                    set("connLimit", e.target.value);
+                    clearFieldError("connLimit");
+                  }}
                   placeholder="e.g. 500"
+                  aria-invalid={!!fieldErrors.connLimit}
+                  className={cn(fieldErrors.connLimit && "border-rose-500 ring-1 ring-rose-500/40 focus-visible:ring-rose-500")}
                 />
+                {fieldErrors.connLimit ? (
+                  <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{fieldErrors.connLimit}</p>
+                ) : null}
               </div>
               <div>
                 <FieldLabel hint="new conns/s per source">Rate limit</FieldLabel>
                 <Input
                   type="number"
                   min={1}
+                  ref={rateRef}
                   value={form.rateLimit}
-                  onChange={(e) => set("rateLimit", e.target.value)}
+                  onChange={(e) => {
+                    set("rateLimit", e.target.value);
+                    clearFieldError("rateLimit");
+                  }}
                   placeholder="e.g. 100"
+                  aria-invalid={!!fieldErrors.rateLimit}
+                  className={cn(fieldErrors.rateLimit && "border-rose-500 ring-1 ring-rose-500/40 focus-visible:ring-rose-500")}
                 />
+                {fieldErrors.rateLimit ? (
+                  <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{fieldErrors.rateLimit}</p>
+                ) : null}
               </div>
             </div>
             <div className="flex items-center justify-between rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
@@ -567,10 +756,19 @@ export function RuleEditor(props: {
                 <Input
                   type="number"
                   min={1}
+                  ref={synRef}
                   value={form.synThreshold}
-                  onChange={(e) => set("synThreshold", e.target.value)}
+                  onChange={(e) => {
+                    set("synThreshold", e.target.value);
+                    clearFieldError("synThreshold");
+                  }}
                   placeholder="e.g. 1000"
+                  aria-invalid={!!fieldErrors.synThreshold}
+                  className={cn(fieldErrors.synThreshold && "border-rose-500 ring-1 ring-rose-500/40 focus-visible:ring-rose-500")}
                 />
+                {fieldErrors.synThreshold ? (
+                  <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{fieldErrors.synThreshold}</p>
+                ) : null}
               </div>
             )}
           </EditorSection>
@@ -662,7 +860,7 @@ export function RuleEditor(props: {
           <Button
             type="button"
             onClick={submit}
-            disabled={saveMut.isPending || validateMut.isPending || !form.name.trim() || (blocking && !override) || macs.invalid.length > 0}
+            disabled={saveMut.isPending || validateMut.isPending || (blocking && !override)}
             className="bg-zinc-700 text-white hover:bg-zinc-800"
           >
             {saveMut.isPending ? "Saving…" : editing ? "Save changes" : "Create rule"}

@@ -13,7 +13,7 @@
  * (delivered=blue clean, quarantined/spam=amber, phishing/malware=rose).
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -68,7 +68,18 @@ import {
   type RoutingAction,
   type TlsMode,
 } from "./email-security-api";
-import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import {
+  ConfirmDialog,
+  DensityToggle,
+  EmptyBlock,
+  FieldLabel,
+  QueryError,
+  ROW_FLASH_CLASS,
+  TableSkeleton,
+  toastErr,
+  toastOk,
+  useTableDensity,
+} from "../firewall/fw-ui";
 import { cn } from "@/lib/utils";
 import { useRealtime } from "@/lib/realtime";
 
@@ -454,10 +465,21 @@ function GatewaysCard() {
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<EmailGatewayDTO | null>(null);
   const [deleting, setDeleting] = useState<EmailGatewayDTO | null>(null);
+  const [flashId, setFlashId] = useState<number | null>(null);
+  const flashTimer = useRef<number | null>(null);
+  const flash = (id: number) => {
+    setFlashId(id);
+    if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlashId(null), 1600);
+  };
+  const [density] = useTableDensity("email-gateways");
 
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => emailSecurityApi.updateGateway(id, { enabled }),
-    onSuccess: () => invalidateAll(queryClient),
+    onSuccess: (_r, variables) => {
+      invalidateAll(queryClient);
+      flash(variables.id); // ROW_FLASH feedback on the toggled row (§5.14)
+    },
     onError: (e) => toastErr(e, "Toggle failed"),
   });
 
@@ -473,7 +495,7 @@ function GatewaysCard() {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Icons.Server className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Gateways
@@ -481,9 +503,12 @@ function GatewaysCard() {
             {gateways.length} listener{gateways.length === 1 ? "" : "s"}
           </span>
         </CardTitle>
-        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
-          <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
-        </Button>
+        <div className="flex items-center gap-2">
+          <DensityToggle storageKey="email-gateways" label="Gateway table density" />
+          <Button size="sm" className="h-11 bg-zinc-700 text-white hover:bg-zinc-800 lg:h-8" onClick={() => setAddOpen(true)}>
+            <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         {gatewaysQuery.isError ? (
@@ -504,8 +529,14 @@ function GatewaysCard() {
             }
           />
         ) : (
-          <div className="max-h-96 overflow-y-auto">
-            <Table>
+          <div className="max-h-96 overflow-auto">
+            <Table
+              className={
+                density === "compact"
+                  ? "min-w-[860px] [&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs"
+                  : "min-w-[860px]"
+              }
+            >
               <TableHeader>
                 <TableRow>
                   <TableHead>Listener</TableHead>
@@ -519,7 +550,10 @@ function GatewaysCard() {
               </TableHeader>
               <TableBody>
                 {gateways.map((g) => (
-                  <TableRow key={g.id} className={g.enabled ? undefined : "opacity-70"}>
+                  <TableRow
+                    key={g.id}
+                    className={`${g.enabled ? "" : "opacity-70"} ${flashId === g.id ? ROW_FLASH_CLASS : ""}`.trim() || undefined}
+                  >
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">{g.name}</span>
@@ -557,7 +591,7 @@ function GatewaysCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600"
+                          className="h-11 w-11 text-zinc-400 hover:text-zinc-600 lg:h-7 lg:w-7"
                           aria-label={`Edit ${g.name}`}
                           onClick={() => setEditing(g)}
                         >
@@ -566,7 +600,7 @@ function GatewaysCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-rose-600"
+                          className="h-11 w-11 text-zinc-400 hover:text-rose-600 lg:h-7 lg:w-7"
                           aria-label={`Delete ${g.name}`}
                           onClick={() => setDeleting(g)}
                         >
@@ -1013,6 +1047,7 @@ function RoutingRulesCard() {
   const queryClient = useQueryClient();
   const rulesQuery = useQuery({ queryKey: ["email-security", "routing-rules"], queryFn: emailSecurityApi.listRoutingRules });
   const rules = rulesQuery.data ?? [];
+  const [density] = useTableDensity("email-routing");
 
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<EmailRoutingRuleDTO | null>(null);
@@ -1020,7 +1055,10 @@ function RoutingRulesCard() {
 
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => emailSecurityApi.updateRoutingRule(id, { enabled }),
-    onSuccess: () => invalidateAll(queryClient),
+    onSuccess: (_r, variables) => {
+      invalidateAll(queryClient);
+      flash(variables.id); // ROW_FLASH feedback on the toggled row (§5.14)
+    },
     onError: (e) => toastErr(e, "Toggle failed"),
   });
 
@@ -1034,9 +1072,17 @@ function RoutingRulesCard() {
     onError: (e) => toastErr(e, "Delete failed"),
   });
 
+  const [flashId, setFlashId] = useState<number | null>(null);
+  const flashTimer = useRef<number | null>(null);
+  const flash = (id: number) => {
+    setFlashId(id);
+    if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlashId(null), 1600);
+  };
+
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Icons.Route className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Routing rules
@@ -1044,9 +1090,12 @@ function RoutingRulesCard() {
             {rules.length} rule{rules.length === 1 ? "" : "s"}
           </span>
         </CardTitle>
-        <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
-          <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
-        </Button>
+        <div className="flex items-center gap-2">
+          <DensityToggle storageKey="email-routing" label="Routing rules density" />
+          <Button size="sm" className="h-11 bg-zinc-700 text-white hover:bg-zinc-800 lg:h-8" onClick={() => setAddOpen(true)}>
+            <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         {rulesQuery.isError ? (
@@ -1062,8 +1111,14 @@ function RoutingRulesCard() {
             description="Route matching domains to a relay host, quarantine or reject before the content scan."
           />
         ) : (
-          <div className="max-h-96 overflow-y-auto">
-            <Table>
+          <div className="max-h-96 overflow-auto">
+            <Table
+              className={
+                density === "compact"
+                  ? "min-w-[760px] [&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs"
+                  : "min-w-[760px]"
+              }
+            >
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-16">Prio</TableHead>
@@ -1077,7 +1132,10 @@ function RoutingRulesCard() {
               </TableHeader>
               <TableBody>
                 {rules.map((rule) => (
-                  <TableRow key={rule.id} className={rule.enabled ? undefined : "opacity-70"}>
+                  <TableRow
+                    key={rule.id}
+                    className={`${rule.enabled ? "" : "opacity-70"} ${flashId === rule.id ? ROW_FLASH_CLASS : ""}`.trim() || undefined}
+                  >
                     <TableCell className="font-mono text-xs tabular-nums text-zinc-500">{rule.priority}</TableCell>
                     <TableCell className="text-sm font-medium">{rule.name}</TableCell>
                     <TableCell>
@@ -1106,7 +1164,7 @@ function RoutingRulesCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-zinc-600"
+                          className="h-11 w-11 text-zinc-400 hover:text-zinc-600 lg:h-7 lg:w-7"
                           aria-label={`Edit ${rule.name}`}
                           onClick={() => setEditing(rule)}
                         >
@@ -1115,7 +1173,7 @@ function RoutingRulesCard() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-zinc-400 hover:text-rose-600"
+                          className="h-11 w-11 text-zinc-400 hover:text-rose-600 lg:h-7 lg:w-7"
                           aria-label={`Delete ${rule.name}`}
                           onClick={() => setDeleting(rule)}
                         >
@@ -1344,10 +1402,23 @@ function MailLogCard() {
     mutationFn: (id: number) => emailSecurityApi.releaseLog(id),
     onSuccess: (row) => {
       toastOk("Message released", `#${row.id} delivered to ${row.toAddr}`);
+      setReleasing(null);
+      flash(row.id); // ROW_FLASH feedback on the released row (§5.14)
       invalidateAll(queryClient);
     },
     onError: (e) => toastErr(e, "Release failed"),
   });
+
+  // confirm-first release (re-delivers mail into the recipient's inbox)
+  const [releasing, setReleasing] = useState<EmailLogDTO | null>(null);
+  const [flashId, setFlashId] = useState<number | null>(null);
+  const flashTimer = useRef<number | null>(null);
+  const flash = (id: number) => {
+    setFlashId(id);
+    if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlashId(null), 1600);
+  };
+  const [density] = useTableDensity("email-maillog");
 
   const rangeStart = rows.length === 0 ? 0 : (safePage - 1) * LOG_PAGE_SIZE + 1;
   const rangeEnd = (safePage - 1) * LOG_PAGE_SIZE + paged.length;
@@ -1366,7 +1437,7 @@ function MailLogCard() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search from/to/subject…"
-              className="h-8 w-44 pl-8 text-xs"
+              className="h-11 w-full pl-8 text-xs sm:w-44 lg:h-8"
               aria-label="Search mail log"
             />
           </div>
@@ -1377,7 +1448,7 @@ function MailLogCard() {
               void queryClient.invalidateQueries({ queryKey: ["email-security", "logs"] });
             }}
           >
-            <SelectTrigger className="h-8 w-36" aria-label="Verdict filter">
+            <SelectTrigger className="h-11 w-36 lg:h-8" aria-label="Verdict filter">
               <SelectValue placeholder="All verdicts" />
             </SelectTrigger>
             <SelectContent>
@@ -1389,7 +1460,8 @@ function MailLogCard() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Refresh mail log" onClick={() => void logsQuery.refetch()}>
+          <DensityToggle storageKey="email-maillog" label="Mail log density" />
+          <Button variant="ghost" size="icon" className="h-11 w-11 lg:h-8 lg:w-8" aria-label="Refresh mail log" onClick={() => void logsQuery.refetch()}>
             <Icons.RefreshCw className={cn("h-3.5 w-3.5", logsQuery.isFetching ? "animate-spin" : "")} />
           </Button>
         </div>
@@ -1408,8 +1480,14 @@ function MailLogCard() {
             description="Run a test message or let the appliance process traffic to populate the log."
           />
         ) : (
-          <div className="max-h-96 overflow-y-auto">
-            <Table>
+          <div className="max-h-96 overflow-auto">
+            <Table
+              className={
+                density === "compact"
+                  ? "min-w-[820px] [&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs"
+                  : "min-w-[820px]"
+              }
+            >
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-28">Verdict</TableHead>
@@ -1424,7 +1502,10 @@ function MailLogCard() {
               </TableHeader>
               <TableBody>
                 {paged.map((log) => (
-                  <TableRow key={log.id}>
+                  <TableRow
+                    key={log.id}
+                    className={flashId === log.id ? ROW_FLASH_CLASS : undefined}
+                  >
                     <TableCell>
                       <VerdictBadge verdict={log.verdict} />
                     </TableCell>
@@ -1463,9 +1544,9 @@ function MailLogCard() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-7 gap-1 px-2 text-xs"
+                          className="h-11 gap-1 px-2 text-xs lg:h-7"
                           disabled={release.isPending && release.variables === log.id}
-                          onClick={() => release.mutate(log.id)}
+                          onClick={() => setReleasing(log)}
                           aria-label={`Release message ${log.id}`}
                         >
                           {release.isPending && release.variables === log.id ? (
@@ -1520,6 +1601,15 @@ function MailLogCard() {
           </div>
         )}
       </CardContent>
+
+      <ConfirmDialog
+        open={releasing !== null}
+        onOpenChange={(open) => !open && setReleasing(null)}
+        title={`Release “${releasing?.subject ?? "untitled message"}”?`}
+        description={`From ${releasing?.fromAddr ?? "—"} to ${releasing?.toAddr ?? "—"}. The message leaves quarantine and is delivered to the recipient's mailbox immediately.`}
+        loading={release.isPending}
+        onConfirm={() => releasing && release.mutate(releasing.id)}
+      />
     </Card>
   );
 }

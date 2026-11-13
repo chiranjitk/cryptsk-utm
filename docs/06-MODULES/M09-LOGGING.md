@@ -68,6 +68,7 @@ Paths verbatim from PROJECT_MEMORY §7.2. Pagination `?page=&limit=&sort=-timest
 | GET | `/api/v1/logs/firewall` | Firewall log page; filters `?q=&action=&src=&dst=&since=&until=&page=` | Open `#/logs/firewall`, change any filter, paginate |
 | GET | `/api/v1/logs/ips` | IPS event page; filters `?severity=&category=&page=` (+ `?q=`, `?since=`, `?until=` standard filters) | Open `#/logs/ips`, filter chips |
 | GET | `/api/v1/logs/audit` | Audit page; filters `?user=&objectType=&page=` (+ `?q=`, `?since=`, `?until=`, `?result=`) | Open `#/logs/audit`, filter |
+| GET | `/api/v1/logs/audit/export` | CSV of the current audit filter (same params minus `facets`/`page`/`limit`; 10 000-row cap, `X-Row-Cap`; before/after JSON states NOT in the CSV — they stay in the row drawer) | "Export CSV" button on `#/logs/audit` |
 | GET | `/api/v1/logs/stats` | Aggregates for reports; `?range=1h\|24h\|7d` | Open `#/logs/reports`, change range |
 | GET | `/api/v1/logs/firewall/export` | CSV of the current filter (same params as `/logs/firewall`, no `page`) | "Export CSV" button on `#/logs/firewall` |
 | GET | `/api/v1/logs/reports/export` | `?range=&format=csv\|json` report export | "Download CSV/JSON" on the Reports tab |
@@ -95,43 +96,66 @@ states per ../05-FRONTEND/UI_DESIGN_SYSTEM.md (skeletons, EmptyState, error + Re
 
 ### `#/logs/firewall`
 
-- **Filter bar:** free-text `q` (matches src/dst/user/rule/app), action Select
-  (`allow|deny|drop|reject`), src and dst IP inputs, since/until datetime pickers, "Export
-  CSV" button (exports the *current* filter via `GET /api/v1/logs/firewall/export`, §3),
-  active-filter count chip.
+- **Filter bar:** free-text `q` (matches src/dst/user/rule/app), action **chips with 24 h
+  counts** (`allow|deny|drop|reject` — counts are window-level sums from the LOCKED
+  `/logs/stats` payload, the same cache as the reports tab; they are not filter-scoped and
+  render without counts while stats load), src and dst IP inputs, since/until datetime
+  pickers, "Export CSV" button (exports the *current* filter via
+  `GET /api/v1/logs/firewall/export`, §3) with a hover tooltip listing the CSV columns and
+  the 10 000-row cap, active-filter count chip, and the §5.14 `DensityToggle`
+  (`fw-density:logs-firewall`).
 - **Table columns:** timestamp (sortable, default `sort=-timestamp`), src `ip:port`, dst
   `ip:port`, protocol badge, action badge — `allow` emerald, `deny`/`drop` rose-600,
   `reject` orange-500 (UI_DESIGN_SYSTEM §2.3) — appName, ruleName, bytes (humanized), user.
   Row click → **detail drawer** with every field incl. ports, packets, userName, and the raw id.
+- **Detail-drawer pivots (R6 pass 3):** "src in Log Search" / "dst in Log Search" buttons
+  deep-link `#/logs/search?q=<ip>` (closing the drawer first); the search view reads the
+  `q` param one-shot at mount (shell remounts views per routePath).
 - **States:** EmptyState ("No flows match this filter"); loading skeleton rows; error card.
   A subtle banner shows retention: "Rolling 50 000-row window (DATA_LIFECYCLE §4)".
 
 ### `#/logs/ips`
 
-- **Filter bar:** severity multi-chips (5 enum values), category Select (distinct categories
-  observed — from the category list the generator emits), `q`, since/until.
+- **Filter bar:** severity multi-chips (5 enum values — an **active chip takes its
+  `SEVERITY_TONE` recipe from M04's ips-ui**, parity with the #/ips/events triage chips),
+  category Select (distinct categories observed — from the category list the generator
+  emits), `q`, since/until, plus the §5.14 `DensityToggle` (`fw-density:logs-ips`).
 - **Table:** timestamp, severity badge (color map §5.4), action badge (`suppressed` renders
   zinc "suppressed" badge; `drop` rose; `alert` amber), sid (mono), category, message, src →
-  dst. Row detail drawer shows all fields incl. `suppressedUntil` when present.
-- **Row action:** "Suppress" → M04's suppress dialog (duration 24h/7d/forever) — the endpoint
-  belongs to M04; this view only reuses it. Suppressed rows show the badge and, until
+  dst. Row detail drawer shows all fields incl. `suppressedUntil` when present, plus a
+  **"Open sid in IPS triage" pivot** that deep-links `#/ips/events?sid=<sid>` (M04's
+  events-view reads the param one-shot at mount and widens the default 24 h window to
+  "all time" so an older event is still found).
+- **Row action:** "Suppress" opens **M04's confirm-first `SuppressMenu`** (ips-ui — duration
+  dropdown 24h/7d/forever → confirm dialog restating sid/severity/window before the POST) —
+  the endpoint belongs to M04; this view only reuses it. The mutated row is patched into the
+  page cache (no full reload, M09 acceptance). Suppressed rows show the badge and, until
   `suppressedUntil`, still appear in listings.
 
 ### `#/logs/audit`
 
 - **Filter bar:** user Select (users list), objectType Select (distinct types), result chips
-  (`success|failure|denied`), `q`, since/until.
+  (`success|failure|denied`), `q`, since/until, "Export CSV" (exports the *current* filter via
+  `GET /api/v1/logs/audit/export`, §3 — spinner while in flight, cap toast at 10 000 rows, hover
+  tooltip listing the CSV columns and noting the before/after JSON states stay in the drawer),
+  plus the §5.14 `DensityToggle` (`fw-density:logs-audit`).
 - **Table:** timestamp, username (avatar-initials + fallback for deleted users), action
   rendered as `object.verb` chip (e.g. `firewall_rule.create`), objectType, objectName,
   result badge — `success` emerald, `failure` rose solid, `denied` rose outline — sourceIp.
 - **Detail drawer:** full row; `beforeState`/`afterState` rendered side-by-side through
   `JsonFieldViewer` (monospace, collapsible, JSON-string columns parsed; masked fields stay
-  masked because the API never wrote them in clear — see M07 §5.3 masking rule).
+  masked because the API never wrote them in clear — see M07 §5.3 masking rule). Each pane
+  with state data carries a **Copy button** (R6 pass 3 — net-ui `copyText`, clipboard +
+  "JSON copied" toast, 44 px hit area on mobile); the copy affordance is a sibling of the
+  collapse button, never nested inside it.
 
 ### `#/logs/live`
 
-- **Controls:** kind filter chips (`firewall` / `ips` / both), Pause/Resume button,
-  autoscroll toggle (default on), buffer counter ("N / 500"), Clear buffer.
+- **Controls:** kind filter chips (`firewall` / `ips` / both), Pause/Resume button (Resume
+  shows "(+N missed)"), autoscroll toggle (default on), buffer counter ("N / 500"), Clear
+  buffer, plus a **paused overlay badge** on the stream ("Paused — N new lines buffered",
+  amber, `role="status"`) and a **jump-to-newest button** that appears when the viewport has
+  scrolled away from the newest (top) position.
 - **Mechanics:** subscribes to the `logs:tail` socket event; each entry is prepended (newest
   top) into an **in-memory ring buffer capped at 500 rows** (client-side; independent of the
   engine's server-side buffers). Pause stops *rendering* (buffer keeps counting so the user
@@ -174,7 +198,12 @@ states per ../05-FRONTEND/UI_DESIGN_SYSTEM.md (skeletons, EmptyState, error + Re
 #### Tab 2 — Scheduled reports
 
 - **Table:** name, range chip (`daily`/`weekly`/`monthly`), format chip, sections chips, recipients
-  (or "—"), `lastRunAt` ("never" when null), enabled toggle, actions (edit, **Run now**, delete).
+  (or "—"), `lastRunAt` rendered **relative** ("just now / 12m ago / 5h 07m ago / 3d 04:12 ago" —
+  fmtElapsed pattern, absolute time in the `title`, 60 s clock heartbeat refresh; "never" when
+  null), enabled toggle (§5.14 `ROW_FLASH_CLASS` on the toggled row), actions (edit, **Run now**
+  with a **per-row spinner** while its POST is in flight, delete). §5.14 `DensityToggle`
+  (`fw-density:logs-reports-scheduled`); the table scrolls inside an `overflow-x-auto` wrapper
+  (`min-w-[880px]`) so the paginator stays put (UI_DESIGN_SYSTEM §5.18 containment).
 - **Editor dialog:** name, range radio, format Select (pdf/html/csv/json — pdf/html note "rendered
   via the report view/print in sandbox"), sections checkboxes (traffic/threats/audit), recipients
   (comma-separated emails; display-only in sandbox — no mailer), enabled.
@@ -191,6 +220,9 @@ states per ../05-FRONTEND/UI_DESIGN_SYSTEM.md (skeletons, EmptyState, error + Re
 - **NetFlow targets card:** table (name, host:port, version chip `v5|v9|ipfix`, sampling 1-in-N,
   enabled) + editor dialog. Appliance: softflowd/nfdump exporters per spec §1.12.
 - All target mutations are audited (`syslog_target.create` etc.) and snapshot section `system`.
+- **Tables:** both cards carry a shared §5.14 `DensityToggle` (`fw-density:logs-reports-forwarding`,
+  compact trims cells) and scroll inside `overflow-x-auto` wrappers (`min-w-[620px]` /
+  `min-w-[560px]`) — the two-card grid items carry `min-w-0` (UI_DESIGN_SYSTEM §5.18).
 
 ---
 

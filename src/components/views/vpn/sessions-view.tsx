@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useRealtime } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
-import { fmtBytes, fmtDateTime, fmtRelative, vpnApi, type VpnSessionDto, type VpnSessionStatus } from "./vpn-api";
+import { fmtBytes, fmtDateTime, fmtElapsed, fmtRelative, vpnApi, type VpnSessionDto, type VpnSessionStatus } from "./vpn-api";
 import { SessionStatusBadge, useVpnConfigInvalidation } from "./vpn-ui";
 import { ConfirmDialog, EmptyBlock, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
 
@@ -41,6 +41,13 @@ export function SessionsView() {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [kicking, setKicking] = useState<VpnSessionDto | null>(null);
+
+  // 60 s clock heartbeat so the Uptime column stays fresh between refetches
+  const [, setClock] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setClock((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   const configsQuery = useQuery({ queryKey: CONFIGS_KEY, queryFn: vpnApi.listConfigs });
   const configs = useMemo(() => configsQuery.data ?? [], [configsQuery.data]);
@@ -177,7 +184,7 @@ export function SessionsView() {
       ) : sessionsQuery.isLoading ? (
         <Card>
           <CardContent className="pt-6">
-            <TableSkeleton rows={8} cols={8} />
+            <TableSkeleton rows={8} cols={9} />
           </CardContent>
         </Card>
       ) : rows.length === 0 ? (
@@ -197,69 +204,93 @@ export function SessionsView() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Tunnel</TableHead>
-                  <TableHead>Source IP</TableHead>
-                  <TableHead>Assigned IP</TableHead>
-                  <TableHead>Bytes in / out</TableHead>
-                  <TableHead>Connected</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-10" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((s) => (
-                  <TableRow key={s.id} className={cn(s.status === "disconnected" && "opacity-60")}>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <p className="font-medium">{s.userName ?? <span className="text-zinc-400">site-to-site</span>}</p>
-                        {s.groupName ? (
-                          <Badge variant="outline" className="border-zinc-500/40 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-400">
-                            {s.groupName}
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <p className="text-[11px] text-zinc-400">activity {fmtRelative(s.lastActivity)}</p>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-xs font-medium">{configName(s.vpnId)}</span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="font-mono text-xs">{s.sourceIp}</span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="font-mono text-xs">{s.assignedIp ?? "—"}</span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="font-mono text-xs tabular-nums">
-                        ↓ {fmtBytes(s.bytesIn)} · ↑ {fmtBytes(s.bytesOut)}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-xs text-zinc-500">{fmtDateTime(s.connectedAt)}</span>
-                    </TableCell>
-                    <TableCell>
-                      <SessionStatusBadge status={s.status} />
-                    </TableCell>
-                    <TableCell>
-                      {s.status !== "disconnected" ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 gap-1 px-2 text-xs text-rose-600 hover:text-rose-600 dark:text-rose-400"
-                          onClick={() => setKicking(s)}
-                        >
-                          <Icons.Unplug className="h-3.5 w-3.5" /> Disconnect
-                        </Button>
-                      ) : null}
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table className="min-w-[880px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Tunnel</TableHead>
+                    <TableHead>Source IP</TableHead>
+                    <TableHead>Assigned IP</TableHead>
+                    <TableHead>Bytes in / out</TableHead>
+                    <TableHead>Connected</TableHead>
+                    <TableHead>Uptime</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-10" />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((s) => (
+                    <TableRow key={s.id} className={cn(s.status === "disconnected" && "opacity-60")}>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-medium">{s.userName ?? <span className="text-zinc-400">site-to-site</span>}</p>
+                          {s.groupName ? (
+                            <Badge variant="outline" className="border-zinc-500/40 bg-zinc-500/10 text-[10px] text-zinc-600 dark:text-zinc-400">
+                              {s.groupName}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="text-[11px] text-zinc-400">activity {fmtRelative(s.lastActivity)}</p>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs font-medium">{configName(s.vpnId)}</span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="block min-w-0 max-w-44 truncate font-mono text-xs" title={s.sourceIp}>
+                          {s.sourceIp}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className="block min-w-0 max-w-44 truncate font-mono text-xs"
+                          title={s.assignedIp ?? undefined}
+                        >
+                          {s.assignedIp ?? "—"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-mono text-xs tabular-nums">
+                          ↓ {fmtBytes(s.bytesIn)} · ↑ {fmtBytes(s.bytesOut)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-zinc-500">{fmtDateTime(s.connectedAt)}</span>
+                      </TableCell>
+                      <TableCell>
+                        {s.status === "disconnected" ? (
+                          <span className="text-xs text-zinc-400" title="No disconnect timestamp is kept">
+                            —
+                          </span>
+                        ) : (
+                          <span
+                            className="font-mono text-xs tabular-nums"
+                            title={`Connected ${fmtDateTime(s.connectedAt)}`}
+                          >
+                            up for {fmtElapsed(s.connectedAt)}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <SessionStatusBadge status={s.status} />
+                      </TableCell>
+                      <TableCell>
+                        {s.status !== "disconnected" ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-11 gap-1 px-2 text-xs text-rose-600 hover:text-rose-600 dark:text-rose-400 lg:h-7"
+                            onClick={() => setKicking(s)}
+                          >
+                            <Icons.Unplug className="h-3.5 w-3.5" /> Disconnect
+                          </Button>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -271,10 +302,22 @@ export function SessionsView() {
             Page {meta.page} of {meta.totalPages} · {meta.total} sessions
           </span>
           <div className="flex gap-1.5">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-11 lg:h-8"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
               <Icons.ChevronLeft className="h-4 w-4" /> Prev
             </Button>
-            <Button variant="outline" size="sm" disabled={page >= meta.totalPages} onClick={() => setPage((p) => p + 1)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-11 lg:h-8"
+              disabled={page >= meta.totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
               Next <Icons.ChevronRight className="h-4 w-4" />
             </Button>
           </div>

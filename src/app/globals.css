@@ -159,3 +159,19 @@
     }
   }
 }
+
+/* M03 rules/NAT tables: brief neutral flash on a row whose optimistic toggle
+   landed (fw-ui ROW_FLASH_CLASS, QA marathon R2). The global reduced-motion
+   block above neutralizes the animation for users who prefer less motion. */
+@keyframes fw-row-flash {
+  0%,
+  25% {
+    background-color: color-mix(in oklab, var(--muted-foreground) 16%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.fw-row-flash {
+  animation: fw-row-flash 1.5s ease-out;
+}

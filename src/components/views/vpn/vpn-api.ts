@@ -162,6 +162,27 @@ export function fmtRelative(ts: string | null): string {
   return diff >= 0 ? `${label} ago` : `in ${label}`;
 }
 
+/**
+ * Elapsed connect-duration label for live sessions ("up for …" prefix is added
+ * by the caller): <1m → "<1m", <1h → "12m", <24h → "5h 07m", else "3d 04:12".
+ * Disconnected sessions have no disconnectedAt field (M05 §2) — the caller
+ * renders "—" for them instead of guessing.
+ */
+export function fmtElapsed(ts: string | null): string {
+  if (!ts) return "—";
+  const start = Date.parse(ts);
+  if (Number.isNaN(start)) return "—";
+  let sec = Math.floor((Date.now() - start) / 1000);
+  if (sec < 0) sec = 0;
+  if (sec < 60) return "<1m";
+  const mins = Math.floor(sec / 60);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ${String(mins % 60).padStart(2, "0")}m`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ${String(hrs % 24).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+}
+
 export function fmtBytes(bytes: number | null | undefined): string {
   if (bytes == null || Number.isNaN(bytes)) return "—";
   if (bytes < 1024) return `${bytes} B`;

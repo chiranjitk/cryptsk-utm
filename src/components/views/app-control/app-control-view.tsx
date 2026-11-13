@@ -9,7 +9,7 @@
  * limited = amber (red-700 enterprise).
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import {
@@ -80,7 +80,19 @@ import {
   type RuleAction,
   type UnknownAppAction,
 } from "./app-control-api";
-import { ConfirmDialog, EmptyBlock, FieldLabel, MultiChips, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import {
+  ConfirmDialog,
+  DensityToggle,
+  EmptyBlock,
+  FieldLabel,
+  MultiChips,
+  QueryError,
+  ROW_FLASH_CLASS,
+  TableSkeleton,
+  toastErr,
+  toastOk,
+  useTableDensity,
+} from "../firewall/fw-ui";
 
 const CATALOG_KEY = ["app-control", "catalog"] as const;
 const GROUPS_KEY = ["app-control", "user-groups"] as const;
@@ -496,10 +508,14 @@ function RulesTable({ policyId }: { policyId: number }) {
     queryFn: () => appControlApi.listRules(policyId),
   });
   const rows = rulesQuery.data ?? [];
+  const [density] = useTableDensity("app-control-rules");
 
   const update = useMutation({
     mutationFn: ({ id, body }: { id: number; body: Record<string, unknown> }) => appControlApi.updateRule(id, body),
-    onSuccess: () => invalidateAll(queryClient),
+    onSuccess: (_r, variables) => {
+      invalidateAll(queryClient);
+      flash(variables.id);
+    },
     onError: (e) => toastErr(e, "Rule update failed"),
   });
 
@@ -512,6 +528,20 @@ function RulesTable({ policyId }: { policyId: number }) {
     },
     onError: (e) => toastErr(e, "Delete failed"),
   });
+
+  // ROW_FLASH feedback on the row whose optimistic mutation just landed (§5.14)
+  const [flashId, setFlashId] = useState<number | null>(null);
+  const flashTimer = useRef<number | null>(null);
+  const flash = (id: number) => {
+    setFlashId(id);
+    if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlashId(null), 1600);
+  };
+
+  // category chips from the loaded rules' nDPI catalog categories
+  const [catFilter, setCatFilter] = useState<string>("all");
+  const categories = useMemo(() => [...new Set(rows.map((r) => r.category))].sort(), [rows]);
+  const filtered = catFilter === "all" ? rows : rows.filter((r) => r.category === catFilter);
 
   const changeAction = (rule: AppRuleDTO, action: RuleAction) => {
     if (action === rule.action) return;
@@ -531,7 +561,9 @@ function RulesTable({ policyId }: { policyId: number }) {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 p-4 dark:border-zinc-800">
-        <span className="text-xs text-zinc-400">{rows.length} rules</span>
+        <span className="text-xs text-zinc-400">
+          {catFilter === "all" ? `${rows.length} rules` : `${filtered.length} of ${rows.length} rules`}
+        </span>
         <div className="ml-auto">
           <Button size="sm" className="h-8 bg-zinc-700 text-white hover:bg-zinc-800" onClick={() => setAddOpen(true)}>
             <Icons.Plus className="mr-1 h-3.5 w-3.5" /> Add rule
@@ -539,21 +571,64 @@ function RulesTable({ policyId }: { policyId: number }) {
         </div>
       </div>
 
+      {categories.length > 1 && (
+        <div
+          className="flex flex-wrap items-center gap-1.5 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800"
+          role="group"
+          aria-label="Category filter"
+        >
+          {["all", ...categories].map((c) => (
+            <button
+              key={c}
+              type="button"
+              aria-pressed={catFilter === c}
+              onClick={() => setCatFilter(c)}
+              className={`h-11 rounded-full border px-3 text-xs font-medium capitalize transition-colors lg:h-7 ${
+                catFilter === c
+                  ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300"
+                  : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
+              }`}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+
       {rulesQuery.isError ? (
         <div className="p-4">
           <QueryError error={rulesQuery.error} onRetry={() => void rulesQuery.refetch()} />
         </div>
       ) : rulesQuery.isLoading ? (
         <TableSkeleton rows={5} cols={8} />
-      ) : rows.length === 0 ? (
-        <EmptyBlock
-          icon={<Icons.Shapes className="h-6 w-6" />}
-          title="No application rules"
-          description="Add per-app allow / block / limit rules — apps without a rule fall through to the policy default."
-        />
+      ) : filtered.length === 0 ? (
+        catFilter === "all" ? (
+          <EmptyBlock
+            icon={<Icons.Shapes className="h-6 w-6" />}
+            title="No application rules"
+            description="Add per-app allow / block / limit rules — apps without a rule fall through to the policy default."
+          />
+        ) : (
+          <EmptyBlock
+            icon={<Icons.Shapes className="h-6 w-6" />}
+            title={`No rules in category “${catFilter}”`}
+            description="Pick another category chip or clear the filter to see the rest of the rule set."
+            action={
+              <Button variant="outline" size="sm" className="h-11 lg:h-8" onClick={() => setCatFilter("all")}>
+                Clear filter
+              </Button>
+            }
+          />
+        )
       ) : (
-        <div className="max-h-96 overflow-y-auto">
-          <Table>
+        <div className="max-h-96 overflow-auto">
+          <Table
+            className={
+              density === "compact"
+                ? "min-w-[880px] [&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs"
+                : "min-w-[880px]"
+            }
+          >
             <TableHeader>
               <TableRow>
                 <TableHead>App</TableHead>
@@ -568,8 +643,11 @@ function RulesTable({ policyId }: { policyId: number }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((rule) => (
-                <TableRow key={rule.id} className={rule.enabled ? undefined : "opacity-70"}>
+              {filtered.map((rule) => (
+                <TableRow
+                  key={rule.id}
+                  className={`${rule.enabled ? "" : "opacity-70"} ${flashId === rule.id ? ROW_FLASH_CLASS : ""}`.trim() || undefined}
+                >
                   <TableCell>
                     <span className="font-mono text-xs font-medium">{rule.appName}</span>
                   </TableCell>
@@ -643,7 +721,7 @@ function RulesTable({ policyId }: { policyId: number }) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-rose-500 hover:text-rose-600"
+                        className="h-11 w-11 text-rose-500 hover:text-rose-600 lg:h-7 lg:w-7"
                         aria-label={`Delete ${rule.appName} rule`}
                         onClick={() => setDeleting(rule)}
                       >
@@ -882,6 +960,8 @@ function StatsStrip() {
 function LogsCard() {
   const queryClient = useQueryClient();
   const [action, setAction] = useState<"all" | AppLogAction>("all");
+  const [q, setQ] = useState("");
+  const [density] = useTableDensity("app-control-logs");
 
   const params = useMemo(() => qs({ limit: 25, action: action === "all" ? undefined : action }), [action]);
   const logsQuery = useQuery({
@@ -892,14 +972,30 @@ function LogsCard() {
   const rows = logsQuery.data?.data ?? [];
   const meta = logsQuery.data?.meta;
 
+  // the logs endpoint has no free-text param — search filters the loaded window client-side
+  const qLower = q.trim().toLowerCase();
+  const visible = qLower
+    ? rows.filter((r) => r.appName.toLowerCase().includes(qLower) || r.clientIp.includes(qLower))
+    : rows;
+
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+      <CardHeader className="flex flex-col gap-2 space-y-0 pb-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Icons.ScrollText className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Recent app control activity
         </CardTitle>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Icons.Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search app / client…"
+              className="h-11 w-full pl-8 text-xs sm:w-40 lg:h-8"
+              aria-label="Search app control log"
+            />
+          </div>
           <Select
             value={action}
             onValueChange={(v) => {
@@ -907,7 +1003,7 @@ function LogsCard() {
               void queryClient.invalidateQueries({ queryKey: ["app-control", "logs"] });
             }}
           >
-            <SelectTrigger className="h-8 w-32" aria-label="Action filter">
+            <SelectTrigger className="h-11 w-32 lg:h-8" aria-label="Action filter">
               <SelectValue placeholder="All actions" />
             </SelectTrigger>
             <SelectContent>
@@ -919,7 +1015,8 @@ function LogsCard() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Refresh logs" onClick={() => void logsQuery.refetch()}>
+          <DensityToggle storageKey="app-control-logs" label="App control log density" />
+          <Button variant="ghost" size="icon" className="h-11 w-11 lg:h-8 lg:w-8" aria-label="Refresh logs" onClick={() => void logsQuery.refetch()}>
             <Icons.RefreshCw className={`h-3.5 w-3.5 ${logsQuery.isFetching ? "animate-spin" : ""}`} />
           </Button>
         </div>
@@ -931,15 +1028,32 @@ function LogsCard() {
           </div>
         ) : logsQuery.isLoading ? (
           <TableSkeleton rows={5} cols={5} />
-        ) : rows.length === 0 ? (
+        ) : visible.length === 0 ? (
           <EmptyBlock
             icon={<Icons.ScrollText className="h-6 w-6" />}
-            title="No log entries"
-            description="Run an app test or wait for appliance traffic to populate the log."
+            title={qLower ? "No loaded entries match the search" : "No log entries"}
+            description={
+              qLower
+                ? "The search filters the 25 newest entries — clear it to see recent activity."
+                : "Run an app test or wait for appliance traffic to populate the log."
+            }
+            action={
+              qLower ? (
+                <Button variant="outline" size="sm" className="h-11 lg:h-8" onClick={() => setQ("")}>
+                  Clear search
+                </Button>
+              ) : undefined
+            }
           />
         ) : (
-          <div className="max-h-96 overflow-y-auto">
-            <Table>
+          <div className="max-h-96 overflow-auto">
+            <Table
+              className={
+                density === "compact"
+                  ? "min-w-[640px] [&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs"
+                  : "min-w-[640px]"
+              }
+            >
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-24">Action</TableHead>
@@ -950,7 +1064,7 @@ function LogsCard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((log) => (
+                {visible.map((log) => (
                   <TableRow key={log.id}>
                     <TableCell>
                       <DecisionBadge decision={log.action} />
@@ -976,7 +1090,9 @@ function LogsCard() {
         )}
         {meta && meta.total > 0 && (
           <p className="border-t border-zinc-200 px-4 py-2 text-[11px] text-zinc-400 dark:border-zinc-800">
-            {rows.length} of {meta.total} log entries (newest first)
+            {qLower
+              ? `${visible.length} of ${rows.length} loaded entries match “${q.trim()}”`
+              : `${rows.length} of ${meta.total} log entries (newest first)`}
           </p>
         )}
       </CardContent>

@@ -3,7 +3,9 @@
 /**
  * #/threat-intel/iocs — IOC store (M13 §2.11 tab 2). Server-paged table with
  * severity/category/type/feed/q filters, confidence + reputation meters,
- * manual "Add IOC" dialog, soft-disable switch and delete.
+ * manual "Add IOC" dialog, soft-disable switch and delete. R3: per-row
+ * selection with bulk disable (sequential calls to the existing per-IOC
+ * disable endpoint, progress in the button) and copy-to-clipboard values.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -202,6 +205,9 @@ export function IocsView() {
   const [page, setPage] = useState(1);
   const [addOpen, setAddOpen] = useState(false);
   const [deleting, setDeleting] = useState<IocDTO | null>(null);
+  /** id → DTO as selected; kept across pages so bulk disable matches intent */
+  const [selected, setSelected] = useState<Map<number, IocDTO>>(new Map());
+  const [bulkBusy, setBulkBusy] = useState<{ done: number; total: number } | null>(null);
 
   // debounce free-text search
   useEffect(() => {
@@ -242,6 +248,46 @@ export function IocsView() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: IOCS_KEY }),
     onError: (e) => toastErr(e, "Toggle failed"),
   });
+
+  // sequential calls to the existing POST /iocs/{id}/disable — no bulk endpoint,
+  // progress reported in the button (mission rule: do not change the API)
+  const bulkDisable = async () => {
+    if (bulkBusy) return;
+    const targets = [...selected.values()].filter((r) => r.enabled);
+    const alreadyOff = selected.size - targets.length;
+    if (targets.length === 0) {
+      toastOk("Nothing to disable", alreadyOff > 0 ? `${alreadyOff} selected IOC${alreadyOff === 1 ? " is" : "s are"} already disabled` : undefined);
+      setSelected(new Map());
+      return;
+    }
+    setBulkBusy({ done: 0, total: targets.length });
+    let ok = 0;
+    let failed = 0;
+    for (const t of targets) {
+      try {
+        await threatIntelApi.setIocEnabled(t.id, false);
+        ok += 1;
+      } catch {
+        failed += 1;
+      }
+      setBulkBusy((b) => (b ? { ...b, done: b.done + 1 } : b));
+    }
+    setBulkBusy(null);
+    setSelected(new Map());
+    void queryClient.invalidateQueries({ queryKey: IOCS_KEY });
+    if (failed === 0) {
+      toastOk(
+        `Disabled ${ok} IOC${ok === 1 ? "" : "s"}`,
+        alreadyOff > 0 ? `${alreadyOff} selected were already disabled` : "Matching stops for disabled indicators",
+      );
+    } else {
+      toastErr(new Error(`${failed} of ${targets.length} disable calls failed`), `Disabled ${ok}, failed ${failed}`);
+    }
+  };
+
+  const pageAllSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const someSelected = selected.size > 0;
+  const disableableCount = [...selected.values()].filter((r) => r.enabled).length;
 
   const del = useMutation({
     mutationFn: (id: number) => threatIntelApi.deleteIoc(id),
@@ -375,6 +421,41 @@ export function IocsView() {
         </CardContent>
       </Card>
 
+      {/* ── bulk selection bar (appears when rows are selected) ────────── */}
+      {someSelected && (
+        <div
+          role="toolbar"
+          aria-label="Bulk selection actions"
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800/60"
+        >
+          <span className="font-medium text-zinc-600 dark:text-zinc-300">{selected.size} selected</span>
+          <span className="text-zinc-400">{disableableCount} will be disabled</span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="outline" size="sm" className="h-8" disabled={bulkBusy !== null} onClick={() => setSelected(new Map())}>
+              Clear
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 bg-zinc-700 text-white hover:bg-zinc-800"
+              disabled={bulkBusy !== null}
+              onClick={() => void bulkDisable()}
+            >
+              {bulkBusy ? (
+                <>
+                  <Icons.Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden />
+                  Disabling {bulkBusy.done}/{bulkBusy.total}…
+                </>
+              ) : (
+                <>
+                  <Icons.Ban className="mr-1 h-3.5 w-3.5" aria-hidden />
+                  Disable selected
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* ── IOCs table ─────────────────────────────────────────────────── */}
       <Card>
         <CardContent className="p-0">
@@ -383,7 +464,7 @@ export function IocsView() {
               <QueryError error={iocsQuery.error} onRetry={() => void iocsQuery.refetch()} />
             </div>
           ) : iocsQuery.isLoading ? (
-            <TableSkeleton rows={8} cols={9} />
+            <TableSkeleton rows={8} cols={10} />
           ) : rows.length === 0 ? (
             <EmptyBlock
               icon={<Icons.Bug className="h-6 w-6" />}
@@ -398,6 +479,21 @@ export function IocsView() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      aria-label="Select all IOCs on this page"
+                      checked={pageAllSelected ? true : someSelected ? "indeterminate" : false}
+                      disabled={bulkBusy !== null}
+                      onCheckedChange={(v) => {
+                        setSelected((prev) => {
+                          const next = new Map(prev);
+                          if (v === true) rows.forEach((r) => next.set(r.id, r));
+                          else rows.forEach((r) => next.delete(r.id));
+                          return next;
+                        });
+                      }}
+                    />
+                  </TableHead>
                   <TableHead>Value</TableHead>
                   <TableHead className="w-16">Type</TableHead>
                   <TableHead className="w-24">Category</TableHead>
@@ -412,15 +508,48 @@ export function IocsView() {
               <TableBody>
                 {rows.map((ioc) => (
                   <TableRow key={ioc.id} className={ioc.enabled ? undefined : "opacity-60"}>
+                    <TableCell className="w-10 pr-0">
+                      <Checkbox
+                        aria-label={`Select IOC ${ioc.value}`}
+                        checked={selected.has(ioc.id)}
+                        disabled={bulkBusy !== null}
+                        onCheckedChange={(v) => {
+                          setSelected((prev) => {
+                            const next = new Map(prev);
+                            if (v === true) next.set(ioc.id, ioc);
+                            else next.delete(ioc.id);
+                            return next;
+                          });
+                        }}
+                      />
+                    </TableCell>
                     <TableCell className="max-w-64">
-                      <span className="block truncate font-mono text-xs" title={ioc.value}>
-                        {ioc.value}
-                      </span>
-                      {ioc.description && (
-                        <span className="block truncate text-[10px] text-zinc-400" title={ioc.description}>
-                          {ioc.description}
+                      <div className="flex items-center gap-1">
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-mono text-xs" title={ioc.value}>
+                            {ioc.value}
+                          </span>
+                          {ioc.description && (
+                            <span className="block truncate text-[10px] text-zinc-400" title={ioc.description}>
+                              {ioc.description}
+                            </span>
+                          )}
                         </span>
-                      )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                          aria-label={`Copy IOC value ${ioc.value}`}
+                          onClick={() => {
+                            void navigator.clipboard
+                              .writeText(ioc.value)
+                              .then(() => toastOk("Copied to clipboard", ioc.value))
+                              .catch((err) => toastErr(err, "Copy failed"));
+                          }}
+                        >
+                          <Icons.Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <TypeBadge type={ioc.type} />

@@ -16,25 +16,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyBlock, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import { cn } from "@/lib/utils";
+import { DensityToggle, EmptyBlock, QueryError, TableSkeleton, toastErr, toastOk, useTableDensity } from "../firewall/fw-ui";
 import { logsApi, qs, type FirewallLogDTO } from "./logs-api";
 import { ActionBadge, Paginator, ProtocolBadge, fmtTs, humanizeBytes, localInputToIso } from "./logs-ui";
 
 const LIMIT = 25;
+const ACTIONS = ["allow", "deny", "drop", "reject"] as const;
 
 interface Filters {
   q: string;
@@ -67,6 +63,15 @@ export function FirewallLogsView() {
   const [rangeError, setRangeError] = useState<string | null>(null);
   const [selected, setSelected] = useState<FirewallLogDTO | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [density] = useTableDensity("logs-firewall");
+
+  // 24h per-action counts for the filter chips — LOCKED /logs/stats payload (same key/cache as the reports tab)
+  const stats = useQuery({ queryKey: ["logs", "stats", "24h"], queryFn: () => logsApi.getStats("24h") });
+  const actionCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const s of stats.data?.series ?? []) out[s.key] = s.points.reduce((a, p) => a + p.count, 0);
+    return out;
+  }, [stats.data]);
 
   const apply = (next: Filters) => {
     if (rangeInvalid(next)) {
@@ -129,38 +134,23 @@ export function FirewallLogsView() {
       {/* filter bar */}
       <div className="no-print flex flex-wrap items-center gap-2">
         <div className="relative">
-          <Icons.Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-400" />
+          <Icons.Search className="absolute left-2.5 top-3 lg:top-2.5 h-4 w-4 text-zinc-400" />
           <Input
             value={inputs.q}
             onChange={(e) => setInputs({ ...inputs, q: e.target.value })}
             onKeyDown={(e) => e.key === "Enter" && commitText()}
             onBlur={commitText}
             placeholder="Search src/dst/user/rule/app…"
-            className="w-64 pl-8"
+            className="h-11 w-64 pl-8 lg:h-9"
           />
         </div>
-        <Select
-          value={filters.action || "any"}
-          onValueChange={(v) => apply({ ...inputs, action: v === "any" ? "" : v })}
-        >
-          <SelectTrigger className="w-32">
-            <SelectValue placeholder="Action" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="any">any action</SelectItem>
-            <SelectItem value="allow">allow</SelectItem>
-            <SelectItem value="deny">deny</SelectItem>
-            <SelectItem value="drop">drop</SelectItem>
-            <SelectItem value="reject">reject</SelectItem>
-          </SelectContent>
-        </Select>
         <Input
           value={inputs.src}
           onChange={(e) => setInputs({ ...inputs, src: e.target.value })}
           onKeyDown={(e) => e.key === "Enter" && commitText()}
           onBlur={commitText}
           placeholder="src prefix"
-          className="w-36 font-mono text-xs"
+          className="h-11 w-36 font-mono text-xs lg:h-9"
         />
         <Input
           value={inputs.dst}
@@ -168,20 +158,20 @@ export function FirewallLogsView() {
           onKeyDown={(e) => e.key === "Enter" && commitText()}
           onBlur={commitText}
           placeholder="dst prefix"
-          className="w-36 font-mono text-xs"
+          className="h-11 w-36 font-mono text-xs lg:h-9"
         />
         <Input
           type="datetime-local"
           value={inputs.since}
           onChange={(e) => apply({ ...inputs, since: e.target.value })}
-          className="w-56 text-xs"
+          className="h-11 w-56 text-xs lg:h-9"
           aria-label="Since"
         />
         <Input
           type="datetime-local"
           value={inputs.until}
           onChange={(e) => apply({ ...inputs, until: e.target.value })}
-          className="w-56 text-xs"
+          className="h-11 w-56 text-xs lg:h-9"
           aria-label="Until"
         />
         <Badge variant="outline" className="border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300">
@@ -189,15 +179,57 @@ export function FirewallLogsView() {
           {activeCount} active
         </Badge>
         {activeCount > 0 && (
-          <Button variant="ghost" size="sm" className="h-8 gap-1 text-zinc-500" onClick={() => apply(EMPTY_FILTERS)}>
+          <Button variant="ghost" size="sm" className="h-11 gap-1 text-zinc-500 lg:h-8" onClick={() => apply(EMPTY_FILTERS)}>
             <Icons.X className="h-3.5 w-3.5" />
             Clear
           </Button>
         )}
-        <Button size="sm" className="ml-auto h-8 gap-1.5" onClick={onExport} disabled={exporting}>
-          {exporting ? <Icons.Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icons.Download className="h-3.5 w-3.5" />}
-          Export CSV
-        </Button>
+        <div className="ml-auto flex items-center gap-2">
+          <DensityToggle storageKey="logs-firewall" label="Firewall log table density" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="sm" className="h-11 gap-1.5 lg:h-8" onClick={onExport} disabled={exporting} aria-label="Export CSV">
+                {exporting ? <Icons.Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icons.Download className="h-3.5 w-3.5" />}
+                Export CSV
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left" className="max-w-72">
+              <p className="font-medium">CSV columns</p>
+              <p className="font-mono text-[11px] leading-relaxed">
+                timestamp, src_ip, src_port, dst_ip, dst_port, protocol, action, rule_name, app_name, bytes, packets, user_name, id
+              </p>
+              <p className="mt-1 text-[11px]">Applies the current filter · 10 000-row export cap.</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+
+      {/* action filter chips — 24h counts from the LOCKED stats payload (window-level, not filter-scoped) */}
+      <div className="no-print flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-xs font-medium text-zinc-500">Action</span>
+        {ACTIONS.map((a) => {
+          const active = filters.action === a;
+          const count = actionCounts[a];
+          return (
+            <button
+              key={a}
+              type="button"
+              aria-pressed={active}
+              onClick={() => apply({ ...inputs, action: active ? "" : a })}
+              className={cn(
+                "inline-flex h-11 items-center gap-1.5 rounded-full border px-2.5 text-xs transition-colors lg:h-7",
+                active
+                  ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
+                  : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
+              )}
+            >
+              {a}
+              {count !== undefined && <span className="font-mono tabular-nums text-zinc-400">{count.toLocaleString()}</span>}
+            </button>
+          );
+        })}
+        {!filters.action && <span className="text-xs text-zinc-400">(any)</span>}
+        {stats.isFetching && !stats.data && <span className="text-xs text-zinc-400">counts…</span>}
       </div>
 
       {rangeError && (
@@ -215,8 +247,8 @@ export function FirewallLogsView() {
         </AlertDescription>
       </Alert>
 
-      {/* table */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
+      {/* table — card is the grid item: min-w-0 stops the min-w table's min-content from widening the page; the table scrolls inside, paginator stays put */}
+      <div className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-800">
         {query.isLoading ? (
           <TableSkeleton rows={8} cols={9} />
         ) : query.isError ? (
@@ -229,46 +261,48 @@ export function FirewallLogsView() {
           />
         ) : (
           <>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Timestamp</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Destination</TableHead>
-                  <TableHead>Proto</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>App</TableHead>
-                  <TableHead>Rule</TableHead>
-                  <TableHead className="text-right">Bytes</TableHead>
-                  <TableHead>User</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((r) => (
-                  <TableRow key={r.id} className="cursor-pointer" onClick={() => setSelected(r)}>
-                    <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtTs(r.timestamp)}</TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {r.srcIp ?? "—"}
-                      {r.srcPort ? <span className="text-zinc-400">:{r.srcPort}</span> : null}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {r.dstIp ?? "—"}
-                      {r.dstPort ? <span className="text-zinc-400">:{r.dstPort}</span> : null}
-                    </TableCell>
-                    <TableCell>
-                      <ProtocolBadge protocol={r.protocol} />
-                    </TableCell>
-                    <TableCell>
-                      <ActionBadge action={r.action} />
-                    </TableCell>
-                    <TableCell className="max-w-36 truncate text-xs">{r.appName ?? "—"}</TableCell>
-                    <TableCell className="max-w-36 truncate text-xs">{r.ruleName ?? "—"}</TableCell>
-                    <TableCell className="text-right font-mono text-xs tabular-nums">{humanizeBytes(r.bytes)}</TableCell>
-                    <TableCell className="max-w-28 truncate text-xs">{r.userName ?? "—"}</TableCell>
+            <div className="overflow-x-auto">
+              <Table className={cn("min-w-[960px]", density === "compact" && "[&_th]:h-9 [&_th]:px-1.5 [&_td]:px-1.5 [&_td]:py-1 [&_td]:text-xs")}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Timestamp</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Destination</TableHead>
+                    <TableHead>Proto</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead>App</TableHead>
+                    <TableHead>Rule</TableHead>
+                    <TableHead className="text-right">Bytes</TableHead>
+                    <TableHead>User</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((r) => (
+                    <TableRow key={r.id} className="cursor-pointer" onClick={() => setSelected(r)}>
+                      <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtTs(r.timestamp)}</TableCell>
+                      <TableCell className="max-w-36 min-w-0 truncate font-mono text-xs" title={r.srcIp ?? undefined}>
+                        {r.srcIp ?? "—"}
+                        {r.srcPort ? <span className="text-zinc-400">:{r.srcPort}</span> : null}
+                      </TableCell>
+                      <TableCell className="max-w-36 min-w-0 truncate font-mono text-xs" title={r.dstIp ?? undefined}>
+                        {r.dstIp ?? "—"}
+                        {r.dstPort ? <span className="text-zinc-400">:{r.dstPort}</span> : null}
+                      </TableCell>
+                      <TableCell>
+                        <ProtocolBadge protocol={r.protocol} />
+                      </TableCell>
+                      <TableCell>
+                        <ActionBadge action={r.action} />
+                      </TableCell>
+                      <TableCell className="max-w-36 truncate text-xs">{r.appName ?? "—"}</TableCell>
+                      <TableCell className="max-w-36 truncate text-xs">{r.ruleName ?? "—"}</TableCell>
+                      <TableCell className="text-right font-mono text-xs tabular-nums">{humanizeBytes(r.bytes)}</TableCell>
+                      <TableCell className="max-w-28 truncate text-xs">{r.userName ?? "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
             {meta && (
               <Paginator
                 page={meta.page}
@@ -305,6 +339,41 @@ export function FirewallLogsView() {
               <DetailRow label="App (nDPI)" value={selected.appName ?? "—"} />
               <DetailRow label="Rule" value={selected.ruleName ?? "—"} />
               <DetailRow label="User" value={selected.userName ?? "—"} />
+              {/* cross-view pivot — deep-link the flow's IPs into Log Search (R6 pass 3) */}
+              {(selected.srcIp || selected.dstIp) && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {selected.srcIp && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-11 gap-1.5 lg:h-8"
+                      aria-label={`Search source IP ${selected.srcIp} in Log Search`}
+                      onClick={() => {
+                        setSelected(null);
+                        window.location.hash = `#/logs/search?q=${encodeURIComponent(selected.srcIp ?? "")}`;
+                      }}
+                    >
+                      <Icons.Search className="h-3.5 w-3.5" />
+                      src in Log Search
+                    </Button>
+                  )}
+                  {selected.dstIp && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-11 gap-1.5 lg:h-8"
+                      aria-label={`Search destination IP ${selected.dstIp} in Log Search`}
+                      onClick={() => {
+                        setSelected(null);
+                        window.location.hash = `#/logs/search?q=${encodeURIComponent(selected.dstIp ?? "")}`;
+                      }}
+                    >
+                      <Icons.Search className="h-3.5 w-3.5" />
+                      dst in Log Search
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </SheetContent>

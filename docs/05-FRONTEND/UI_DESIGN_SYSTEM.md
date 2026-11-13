@@ -2,16 +2,18 @@
 
 > **TL;DR:** An enterprise, light-first, dense-but-breathable security-operations console
 > built from the existing shadcn/ui set in `src/components/ui`. Colors are LOCKED: neutrals
-> are **zinc**, brand primary is **dark red** (red-800 light / red-500 dark — white surfaces
-> + red chrome — ADR-019 rev, owner-directed 2026-11-09). **Red discipline (ADR-019 rev 2,
-> owner directive after the rev-1 blanket sweep looked like an alarm): red is reserved for
-> (1) brand surfaces — primary buttons, active nav, focus ring, logo, links — and (2) danger
-> semantics — deny/drop/block/critical/destructive. Informational and decorative accents
+> are **zinc** and **solid primary buttons are neutral zinc** (`bg-zinc-700 text-white
+> hover:bg-zinc-800` — the as-built ADR-019 rev-2/rev-3 ruling, 161 call sites; brand hue
+> survives only in the logo glyph, focus ring `--primary`, links and the `--chart-1` series).
+> **Red discipline (ADR-019 rev 2, owner directive after the rev-1 blanket sweep looked like
+> an alarm; rev 3, 2026-11-13, resolves the red-vs-zinc primary question by ratifying the
+> as-built zinc): red/rose appear ONLY as danger semantics — deny/drop/block/critical/
+> destructive — plus the locked brand surfaces above. Informational and decorative accents
 > (header icons, info chips, data meters, count badges, upload/secondary chart series) are
 > neutral zinc.** Emerald remains reserved ONLY for true health semantics (up/online/healthy
-> dots + badges); rose stays destructive/critical. Charts lead with neutral series and use
-> at most ONE brand-red series. No custom color names — only shadcn semantic variables and
-> the small registry of shared components defined in §5.
+> dots + badges). Charts lead with neutral series and use at most ONE brand-red series.
+> No custom color names — only shadcn semantic variables and the small registry of shared
+> components defined in §5.
 
 Related: [PROJECT_MEMORY §8–9 (view map + tokens, LOCKED)](../00-PROJECT-MEMORY/PROJECT_MEMORY.md) ·
 [DECISIONS.md (ADRs)](../00-PROJECT-MEMORY/DECISIONS.md) ·
@@ -46,22 +48,28 @@ Related: [PROJECT_MEMORY §8–9 (view map + tokens, LOCKED)](../00-PROJECT-MEMO
 used for buttons, active nav, badges, charts, or decorative accents is a bug.** Emerald is
 reserved exclusively for health semantics (§2.4 up/healthy rows).
 
-**Hard rule 2 (rev 2 — red discipline): RED IS NOT A PAINT JOB.** Red (`red-*`) appears ONLY
-as (1) brand surfaces: solid primary buttons (`bg-red-700 text-white`), active sidebar item,
-focus ring, logo glyph, brand links; and (2) danger semantics: deny/drop/block/reject-adjacent
-danger labels, destructive confirmations, security warnings. Everything informational or
-decorative — section-header icons, tinted icon chips, info chips/badges, count pills, data
-meters/progress fills, upload/secondary chart series — is **zinc** (`bg-zinc-500/10
+**Hard rule 2 (rev 3 — zinc primary, as-built ruling 2026-11-13; ADR-019 rev-2 compliant):
+PRIMARY ACTIONS ARE NEUTRAL ZINC.** Solid primary buttons render `bg-zinc-700 text-white
+hover:bg-zinc-800` (canonical app-wide — 161 call sites at ratification); the active sidebar
+item is a zinc tint (`bg-zinc-600/10`), not red. RED IS NOT A PAINT JOB: `red-*`/`rose-*`
+appear ONLY as (1) the retained brand surfaces — logo glyph, focus ring (`--primary`), brand
+links, `--chart-1` series — and (2) danger semantics: deny/drop/block/reject-adjacent danger
+labels, destructive confirmations, critical severity, security warnings. Everything
+informational or decorative — section-header icons, tinted icon chips, info chips/badges, count
+pills, data meters/progress fills, upload/secondary chart series — is **zinc** (`bg-zinc-500/10
 text-zinc-600 dark:text-zinc-300` family). Rose stays reserved for destructive/critical;
 `info` uses neutral zinc. Rationale: in a security console red must keep its alarm value —
-the 2026-11-09 rev-1 blanket red sweep destroyed that and was owner-rejected.
+the 2026-11-09 rev-1 blanket red sweep destroyed that and was owner-rejected, and rev-2's
+"red primary buttons" never shipped (the codebase standardized on zinc primaries during R1–R9
+while rev 2's doc text was left behind). Rev 3 closes that doc/code conflict by ratifying the
+zinc reality; §2.5 keeps red-700 as the first chart series so brand red still has one home.
 
 ### 2.1 Base palette roles
 
 | Role | Token / class | Notes |
 |---|---|---|
 | Neutrals (bg, surfaces, borders, text) | `zinc-50…zinc-950` | light base white, sidebar white w/ faint warm tint (`--sidebar` token), dark cards `zinc-900` |
-| Brand primary | red (`red-800` light / `red-500` dark) | primary buttons, active nav, focus ring, logo glyph, links |
+| Brand primary | zinc-700 buttons (`bg-zinc-700 hover:bg-zinc-800 text-white`) | primary buttons + active nav tint are zinc (rev 3); brand hue = logo glyph, focus ring `--primary`, links, `--chart-1` |
 | Accent (charts secondary, TX/upload) | zinc-500 (`#71717a`) | secondary series, TX labels/legend — NOT red (rev 2) |
 | Destructive | rose-600 | delete confirms, destructive buttons (`--destructive`) |
 
@@ -327,6 +335,362 @@ Global `Cmd/Ctrl+K` palette built on `ui/command.tsx` (cmdk inside a Radix Dialo
   `ui/command.tsx` so the "Command Palette" heading does not leak into the page heading
   outline while the dialog is closed.
 
+### 5.12 Realtime status dot (shell-level, app-shell.tsx topbar)
+
+A `role="status"` dot in the topbar (right of the Live/Simulated badge) reflecting the
+transport state of the socket.io singleton — derived via `useRealtimeStatus()`
+(`src/lib/realtime.ts`), which only attaches listeners to the EXISTING `getSocket()`
+singleton and never opens a second connection. States (§2.4 semantics — emerald is true
+health only): **connected** = emerald-500, **connecting** and **reconnecting**
+(disconnect with auto-retry active) = amber-500 (reconnecting pulses), **offline**
+(initial handshake failing) = rose-500. Screen-reader text via `aria-label`
+("Realtime stream …") + native `title` tooltip; no visible text label — the topbar is
+density-critical.
+
+### 5.13 Topbar section label
+
+The topbar `h1` renders `Section / View Title` where Section is the `NAV_GROUPS` label
+containing the current `routePath` (derived in `app-shell.tsx`). Keeps orientation on
+mobile where the sidebar is hidden; mirrors PAGE_MAP §5's "Group / View" promise for
+non-tabbed views.
+
+### 5.14 Table density + row flash (module tables, fw-ui.tsx)
+
+- `DensityToggle` / `useTableDensity(key)` (M03 firewall views, reusable): comfortable |
+  compact persisted per table under `fw-density:<key>` in localStorage; hydration-safe via
+  `useSyncExternalStore` (server snapshot "comfortable"). Compact trims cell padding
+  (`py-1 px-1.5`, `text-xs`) and MAY hide optional columns (the firewall rules table hides
+  Sched/Guard/Hits); the trigger is an outline button with icon + label (`h-11 lg:h-8`,
+  aria-label, `hidden sm:inline` label).
+- Row flash (`ROW_FLASH_CLASS` = `fw-row-flash`, keyframes in `globals.css`): a ~1.5 s
+  neutral zinc tint on a table row whose optimistic mutation just landed (firewall/NAT rule
+  toggle). Pure CSS animation so it does not fight dnd-kit's inline transform transitions;
+  the global `prefers-reduced-motion` block neutralizes it. Optimistic mechanics (rollback +
+  toast) are unchanged — this is feedback, not state.
+
+### 5.15 IPS/TI triage atoms (R3 — ips-ui.tsx, ti-ui.tsx, events/feeds/iocs/auto-block views)
+
+- **IPS severity filter chips + timeline legend** (`SEVERITY_TONE`, ips-ui.tsx): the events
+  severity chips reuse the M04 §4 badge recipes when active (critical = rose solid, high =
+  rose soft, medium = amber, low/info = zinc) so the chips double as the legend of the
+  compact "Last 24 h by severity" stacked bar (client-bucketed from the existing paginated
+  `/api/v1/ips/events` — capped at the most recent 500, noted inline). Chart hexes:
+  critical `#e11d48`, high `#fb7185`, medium `#f59e0b`, low `#a1a1aa`, info `#d4d4d8`
+  (zinc/amber/rose only — no blue).
+- **Suppression is confirm-first** (`SuppressMenu`, ips-ui.tsx): the 24h/7d/forever dropdown
+  opens a dialog restating sid/category/message + a computed window ("until …") before the
+  POST. The dialog states plainly that the audit log records the duration and a reason note
+  is not persisted (the suppress endpoint's request shape is locked, M04 §3). Suppressed
+  rows render at 60% opacity; a "hide suppressed" filter chip + an honest "n suppressed
+  hidden on this page" footer note cover the triage pass. Live-tail rows (synthetic ids)
+  have the Suppress trigger disabled.
+- **Threat-intel feed freshness badge** (`FreshnessBadge`, ti-ui.tsx): data-recency badge
+  per feed card — fresh (<24 h) = emerald dot (the module's ONLY emerald, sanctioned by the
+  §2 health-only rule), aging (<7 d) = amber, stale (≥7 d) = rose, never synced = rose;
+  sync error keeps rose via a "sync error" state. Sync OUTCOME (ok/error pill) stays on the
+  separate `SyncStatusPill` (zinc). Replaces the module's old "no emerald at all" comment.
+- **IOC bulk disable + copy** (iocs-view.tsx): per-row Checkbox column (select-all header
+  with indeterminate state), a `role="toolbar"` selection bar with a sequential
+  disable-to-progress button ("Disabling i/n…") against the EXISTING per-IOC
+  `POST /iocs/{id}/disable` (no bulk endpoint was invented), and a copy-to-clipboard icon
+  button per value cell (clipboard + toast). Selection is a Map of DTOs so it survives
+  paging; disabling skips already-disabled rows and reports them in the toast.
+- **Auto-block summary strip + row flash** (auto-block-view.tsx): a 5-cell stat strip
+  (Rules / Enabled / Auto-feed / Manual / Hits) client-computed over the loaded rules —
+  same `Card p-4` recipe as the feeds `StatsStrip` — and the §5.14 `ROW_FLASH_CLASS` on the
+  toggled rule row (flashId + timer ref, event-context only).
+
+### 5.16 VPN/SD-WAN round-4 atoms (R4 — vpn-ui/vpn-api consumers, sdwan-view.tsx)
+
+- **Session connect-duration** (vpn-api.ts `fmtElapsed` + sessions-view.tsx "Uptime"
+  column): `<1m` / `12m` / `5h 07m` / `3d 04:12` (days use `H:MM`), rendered as
+  "up for …" in mono `tabular-nums` with the absolute connect time in the `title`. A 60 s
+  clock heartbeat keeps labels fresh between the 15 s refetch. Disconnected sessions render
+  "—" (VpnSession has no `disconnectedAt` — no invented duration) with an honest tooltip.
+- **Bundle-download pending state** (configs-view.tsx RowMenu): the "Download client
+  bundle" item keeps its dropdown open (`onSelect` `preventDefault`), swaps icon→spinner +
+  "Preparing bundle…" while the POST is in flight, closes on settle; success/failure toasts
+  unchanged. One pending slot per config id, disabled while pending.
+- **Editor validation parity** (sdwan-view.tsx `INVALID_CLS` + `FieldErrorText`): the SD-WAN
+  policy and SLA-profile editors validate per-field at submit — rose ring
+  (`border-rose-500 ring-1 ring-rose-500/40 focus-visible:ring-rose-500`), `aria-invalid` +
+  `aria-describedby` error id, `text-[11px] text-rose-600 dark:text-rose-400` error text,
+  scroll-to + focus on the FIRST invalid control, per-field errors clear on edit, and Save
+  is no longer silently disabled on an empty name (errors are explained instead). The
+  overlay/site/path editors keep the single-message line (deferred).
+- **Wide-table responsive pattern**: any card table wider than its column gets
+  `overflow-auto` (not just `overflow-y-auto`) on the scroll container + a `min-w-[…]` on
+  the Table so mobile scrolls horizontally instead of squishing (vpn sessions
+  `min-w-[880px]`, sdwan sites 680 / policies 720→600 compact / SLA 420→360 compact);
+  mono IP cells add `block min-w-0 max-w-44 truncate` + native `title`.
+
+### 5.17 Network round-5 atoms (R5 — net-ui.tsx consumers: interfaces/routing/wan views)
+
+- **Diagnostics output block** (`DiagOutputBlock`, net-ui.tsx): vendor-style tool output —
+  optional summary chips row (`role="status"`), a `n lines · m chars` count with a Copy
+  button (`copyText()` clipboard helper toasts on success/failure), then the raw tool output
+  in a `max-h-56 overflow-auto` mono `<pre role="region">` with `whitespace-pre-wrap
+  break-words`. Used by all four diagnostics tools AND the per-row "Ping gateway" dialog —
+  one recipe everywhere raw command output renders.
+- **Recent-target chips** (`useRecentTargets(key)` + `RecentTargetChips`): per-tool
+  localStorage (`net-diag-recent:<ping|traceroute|dns|tcp>`, cap 4) written from the
+  mutation's `onSuccess` via the stable `pushRecentTarget` store fn — completed runs only;
+  hydration-safe via `useSyncExternalStore` (server snapshot = empty). Chips are 44px
+  touch targets (`h-11 lg:h-7`), mono, truncating at `max-w-44`.
+- **Derived-table freshness + provenance** (`LastUpdatedLabel` + `DataSourceBadge` +
+  `useNowTick`): "updated Ns ago" beside every Refresh button on the LLDP/MAC/host-ports/ARP
+  cards (10 s shared ticker, hydration-safe); `DataSourceBadge` renders emerald "live"
+  (host lldpd) vs zinc "simulated" (engine generator) per the meta.source flag — provenance
+  is never implied, it is stated next to the data.
+- **Kernel-sync badges** (`RouteOsBadge` / `PbrKernelBadge` / `MirrorKernelBadge`): emerald
+  "in kernel", amber "drifted"/"config-only", rose "not installed", zinc "off"/"kernel n/a"
+  — a config row's kernel truth is always a badge, never a footnote.
+- **Interfaces OS-apply staged feedback** (`ApplyPlanRunning` + `ApplyPlanStages` in
+  interfaces-view.tsx): the "Preview apply plan" dialog opens WHILE the POST is in flight
+  (spinning strip, `role="status"`, same recipe as firewall `ApplyStagesRunning` §R2), then
+  maps the EXISTING `POST /interfaces/apply` response honestly onto three stages — Guards
+  (gate/tool/protection; rose when the target was rejected), Plan (n convergence steps from
+  `plans[]`, zinc-dashed "zero steps" when in sync), Kernel (exec results from `results[]`;
+  "not touched (preview only)" when the gate is off). Failure stderr renders as break-words
+  mono under the failing step. Endpoint shape unchanged (single-interface by design — no
+  bulk path was invented).
+- **Per-field editor validation parity** (`INVALID_CLS` + `FieldErrorText`): exported from
+  net-ui for the network editors (route CIDR/gateway/distance, WAN probe target/interval/
+  timeout/thresholds) — same rose-ring recipe as §5.16.
+- **Density parity keys**: `net-static-routes`, `net-pbr-rules`, `net-lldp`, `net-mac`
+  (independent per table, `fw-density:<key>` storage, §5.14 mechanics).
+
+### 5.18 Logging round-6 atoms (R6 — logs views: search/firewall/ips/audit/live/reports)
+
+- **Time-range preset chips** (search-view): `15m / 1h / 24h / 7d / Custom` in a
+  `role="group"`; clicking a preset pins `since` as an ISO string in STATE at click time
+  (never computed during render — a ticking value would destabilize the TanStack query key
+  and refetch every render) and clears the day inputs; "Custom" lights up whenever the
+  explicit date inputs drive the range. Query timing ("`N events total · 34 ms query`")
+  is measured around the queryFn fetch with a ref — a client-perceived round-trip, not a
+  server metric.
+- **Action chips with window counts** (firewall-logs-view): `allow/deny/drop/reject` chips
+  replace the action Select; counts are 24 h sums from the LOCKED `/logs/stats` payload
+  (`["logs","stats","24h"]` — shared cache with the reports tab) and are window-level, NOT
+  filter-scoped (same honest pattern as the R3 events-view severity chips); chips render
+  count-less while stats load. 44 px on mobile (`h-11 lg:h-7` chip recipe).
+- **Severity chip tone parity** (ips-logs-view): active severity chips take the M04
+  `SEVERITY_TONE.chip` recipe (imported from ips-ui) instead of the generic zinc chip, so
+  `#/logs/ips` and `#/ips/events` speak the same severity color language; the table badges
+  keep the locked M09 §5.4 map (logs-ui `SeverityBadge`).
+- **Confirm-first suppression in M09** (ips-logs-view): the row + detail-sheet "Suppress"
+  action now mounts M04's `SuppressMenu` (ips-ui) instead of a bare 3-button duration
+  dialog — dropdown → confirm dialog (sid/severity/window preview) → POST; `onSuppressed`
+  patches the page cache locally (computed `suppressedUntil`) exactly as the M09
+  acceptance requires. The search view's local severity badge was DELETED in favor of the
+  locked logs-ui one (tone drift fix: high orange → rose-500 outline per §5.4).
+- **Relative last-run + per-row run spinner** (reports Scheduled tab): `fmtAgo` (fmtElapsed
+  pattern, local) renders "just now / 12m / 5h 07m / 3d 04:12 ago" with the absolute time
+  in the `title`; a 60 s `setInterval` heartbeat (R4 sessions-view pattern) keeps labels
+  fresh — NOT a `Date.now()` `useSyncExternalStore` snapshot, whose uncached getSnapshot
+  can trip React's maximum-update-depth guard when renders straddle a millisecond boundary.
+  "Run now" spins only the clicked row (`runPendingId`); §5.14 `ROW_FLASH_CLASS` fires on
+  schedule + syslog + NetFlow enable/disable toggles.
+- **Paused overlay + jump-to-newest** (live-tail): while paused, an amber floating pill on
+  the stream ("Paused — N new lines buffered", `role="status"`) mirrors the Resume button
+  counter; a "Newest" button appears when `scrollTop` leaves the newest position (list is
+  newest-TOP, so "newest" = top) and smooth-scrolls back.
+- **Wide-table min-content containment**: any grid-item card that wraps a `min-w-[…]` table
+  MUST carry `min-w-0` (and keep the `overflow-x-auto` on an inner wrapper or itself) —
+  otherwise the table's min-content width propagates through the auto-sized grid track and
+  the PAGE scrolls horizontally at 390 px. Density keys: `logs-firewall`, `logs-ips`,
+  `logs-audit`, `logs-compliance`, `logs-reports-scheduled`, `logs-reports-forwarding`
+  (the last two shared per tab — one toggle controls all tables in it).
+- **Recharts inline-px containment** (reports tab, R6 pass 2): a ResponsiveContainer writes
+  its measured width as an INLINE PX width on the inner wrapper once mounted — inside a
+  grid-item card that inline width becomes the card's min-content and inflates the whole
+  grid track (the page then stays wide even after the layout above it shrinks). Every
+  chart card must carry `min-w-0` on the Card AND `overflow-hidden` on the CardContent so
+  a stale measurement clips instead of widening the page; the ResizeObserver then re-measures
+  at the real width. Same rule as above, one level deeper: charts need it even where tables
+  don't (verified: reports tab scrollWidth 505 → 390 at 390 px purely from this fix).
+- **Filter-bar wrapping rule**: a `flex flex-wrap` filter bar's min-content is its WIDEST
+  CHILD — any grouped row inside it (`chips + Clear + export + density`) must itself be
+  `flex flex-wrap`, or the group's combined min-content overflows the page at 390 px even
+  though the parent bar "can wrap" (audit-view: result chips group + Export CSV).
+- **Export button + CSV tooltip recipe** (firewall + audit views): spinner-while-in-flight
+  (`exporting` state, `Loader2 animate-spin`, disabled), shadcn Tooltip listing the exact
+  CSV columns + the 10 000-row cap + what is deliberately NOT exported (audit: the
+  before/after JSON states stay in the row drawer), success toast with the row count and an
+  honest cap message when `rows >= 10000`.
+- **Cross-view deep-link pivots** (R6 pass 3): log detail drawers launch a filtered sibling
+  view by setting `window.location.hash` to `view?param=value` — `#/logs/search?q=<ip>`
+  (firewall drawer src/dst buttons) and `#/ips/events?sid=<sid>` (IPS drawer triage pivot;
+  events-view also widens its default 24 h window to "all time" when a sid is deep-linked).
+  The receiving view reads the param ONE-SHOT via a lazy `useState(readXDeepLink)`
+  initializer (rules-view `?search=` pattern) — never in an effect or during render —
+  because the shell keys each view by routePath so navigation remounts it; closing the
+  source drawer before setting the hash avoids the Radix backdrop flashing over the next view.
+- **Mobile saved-search chips** (search view, R6 pass 3): the saved-searches rail is
+  `hidden lg:block`, so below lg it must have a companion — a `lg:hidden flex flex-wrap`
+  chip row (only when saved searches exist) where each chip is a 44 px pill split into an
+  apply button (`min-w-0 truncate`) and a bordered w-11 delete button reusing the shared
+  ConfirmDialog. Same data, same mutations, no duplicate state — the chips and the rail
+  render from the one saved-searches query.
+
+### 5.19 Identity & DNS/DHCP round-7 atoms (R7 — identity views, dhcp-view)
+
+- **Relative last-login** (users-view): `fmtElapsed` (§5.16 pattern, local) renders
+  "never" for `lastLoginAt: null` and "`<1m` / `12m` / `5h 07m` / `3d 04:12` ago" in mono
+  `tabular-nums` with the absolute timestamp in the `title`; a 60 s `setInterval`
+  heartbeat keeps labels fresh (R4 sessions pattern — never a `Date.now()`
+  `useSyncExternalStore` snapshot).
+- **Identity editor validation parity** (users-view, portal-view): the user editor,
+  reset-password, group editor and voucher generator validate per-field at submit with
+  the §5.16 recipe — local `INVALID_CLS` rose ring, `FieldErrorText` (`role="alert"`),
+  `aria-invalid` + `aria-describedby`, scroll-to + focus FIRST invalid, per-field errors
+  clear on edit, and Save is no longer silently disabled on empty required fields
+  (errors are explained instead). The user editor / reset-password fetch the live auth
+  policy (`auth-settings`, 30 s staleTime) so the client-side password pre-check mirrors
+  the configured minLength/complexity — the server stays authoritative and its
+  `fieldErrors` merge into the same bag on 400.
+- **"N active now" summary chip** (sessions-view): an emerald pulsing-dot chip
+  (`role="status"`, `tabular-nums`) beside the live badge — rendered ONLY when
+  `method === "all"` and the search box is empty, because otherwise the loaded row count
+  is filter-scoped and the chip would lie about the tenant-wide active count.
+- **Voucher search + named revoke** (portal-view): a code search input filters the
+  masked list client-side (state chips + search compose in the same `rows` memo, CSV
+  export exports the filtered set); the revoke ConfirmDialog titles the masked code
+  ("Revoke voucher …5M45?") instead of the anonymous "Revoke this voucher?".
+- **RADIUS reveal copy + visible countdown** (identity-panels): the revealed shared
+  secret row gains a copy icon button (net-ui `copyText`, 44 px mobile hit area) and a
+  `role="status"` "auto-hides in Ns" countdown; the 15 s auto-hide is driven by the
+  reveal timestamp + a 1 s tick heartbeat (setState only inside the interval callback —
+  the `set-state-in-effect` lint rule forbids synchronous setState in the effect body).
+  "Hide secret" still clears immediately.
+- **DHCP tab counts** (dhcp-view): the Reservations/Leases tab triggers render count
+  badges from the SAME query keys the tabs use (`["dhcp","reservations"]`,
+  `["dhcp","subnets"]` — TanStack dedupes, zero extra requests); leases show the sum of
+  `activeLeaseCount` labeled "N active" because that is exactly what the field measures.
+  Counts render only once the data is loaded (no fake 0s).
+- **Subnet pool utilization bar** (dhcp-view): per IPv4 subnet card — pool size derived
+  client-side from `rangeStart`/`rangeEnd` (uint32 math, `ipv4ToInt`), fill =
+  `activeLeaseCount / poolSize` as an `h-1.5` rounded bar with `role="progressbar"`
+  (aria min/max/now + label), emerald < 60 %, amber ≥ 60 %, rose ≥ 85 %; a 2 % minimum
+  width keeps a bar visible when only a couple of leases are out. IPv6 cards render
+  nothing (config-only in simulation — the honest label stays).
+- **44 px touch pass on identity/DHCP row controls**: row kebabs, expire/revoke icon
+  buttons, group edit/delete, RADIUS/Directory Test buttons and the method/state/voucher
+  filter chips are `h-11 lg:h-8 lg:h-7` (mobile hit area, desktop density preserved);
+  sessions/leases/voucher tables got `min-w-[860px]/[820px]/[560px]` inside their
+  existing `overflow-x-auto` wrappers (§5.16 wide-table pattern).
+
+### 5.20 System/PKI/HA round-8 atoms (R8 — system-view, backups/api-keys views, ha-view, certificates-view)
+
+- **Confirm-first service restart** (system-view HealthStripCard): the per-service chip
+  button only OPENS a ConfirmDialog naming the service — consequence copy differs by data
+  plane (host: "systemctl restart issued… brief packet-processing blips"; simulated:
+  "~2 s apply… on a real appliance the unit would reload"). While the POST is in flight
+  the initiating chip's icon swaps to a spinner (`restart.isPending && restart.variables
+  === svc.name` — per-service pending, siblings stay clickable). M10 §5.6 dangerous-action
+  rule: restart joins restore/revoke/upgrade in the confirm-first set.
+- **Typed-version firmware upgrade** (system-view UpgradeDialog): destructive AlertDialog
+  gated on typing the TARGET version string (the same recipe as the backups typed-RESTORE
+  gate); description carries the safety-backup + control-plane-blip copy; Cancel clears the
+  typed buffer. Rollback confirm names the previous history version when known (`history[
+  history.length - 2]` — the endpoint restores the previous entry). Restores the M10 §5.6
+  "typed confirmation for upgrades" rule that the UI had dropped.
+- **SSH fingerprint copy + add-key validation parity + named remove** (system-view
+  SshKeysCard): fingerprint cell is a truncating mono `code` (native `title`) + copy icon
+  button (net-ui `copyText`, "Fingerprint copied" toast, `h-11 w-11 lg:h-7 lg:w-7`); the
+  add dialog validates per-field at submit mirroring the server zod grammar (name 1–64,
+  publicKey OpenSSH line regex + private-key rejection, both mirrored from validators
+  system.ts) — `INVALID_CLS` rose ring, `role="alert"` text, `aria-invalid/describedby`,
+  focus first invalid, errors clear on edit, server fieldErrors merge into the same bag;
+  Save is no longer silently disabled on empty fields. Remove confirm names the key AND
+  its fingerprint ("sessions authenticated with it stop working").
+- **Backup search + age chips** (backups-view): id/note/type search filters the snapshot
+  table client-side with its own honest empty state ("No backups match the search" +
+  Clear); Created cell stacks the absolute time with an AgeBadge — <24 h emerald, 1–6 d
+  zinc, ≥7 d amber (rotate reminder), absolute timestamp in the `title`. Create-dialog
+  note field dropped its silent `maxLength` truncation for a submit pre-check (≤200,
+  same grammar as `backupCreateSchema`) — silent truncation hides the limit, the error
+  explains it.
+- **API-key created-relative** (api-keys-view): Created column renders `fmtRelative` with
+  the absolute timestamp in the `title` (Last used already did); keys + webhooks tables
+  gained `overflow-x-auto` + `min-w-[820px]/[900px]` and a 44 px row-control pass.
+  The show-once reveal dialog stays as shipped (§5.6 locked show-once pattern — an
+  auto-hide countdown would weaken the "saved it" gate, NOT added).
+- **HA editor validation parity** (ha-view): per-field client pre-checks at submit mirror
+  `haConfigSchema` — priority 1–255 integer, virtualIp IPv4-CIDR shape when non-empty,
+  peerIp IPv4 shape, failAfterSec 3–3600, holdDownSec 0–86400 AND ≥ failAfterSec, enabled
+  ⇒ role ≠ disabled + peerIp present; same `INVALID_CLS`/`role="alert"`/focus-first-
+  invalid/clear-on-edit recipe as §5.16, server fieldErrors merge on 400, Save enabled
+  (errors are explained, not silently blocked). Tracked-interface chips are `h-11 lg:h-7`.
+- **PKI expiring highlight strip** (certificates-view): when `GET /pki/certificates/
+  expiring?days=30` returns rows, a zinc `role="region"` strip renders under the filter
+  card — days-left chips sorted soonest-first, tone rose ≤7 d / amber 8–30 d, chip label
+  `name · Nd` (truncate + tabular-nums), click sets the "Expiring ≤30d" filter; strip is
+  hidden when none (honest-empty). Cert table got `overflow-auto` + `min-w-[880px]` and
+  44 px kebab/chip pass. ExpiryPill thresholds stay 30/90 (§ existing recipe — strip tones
+  are the mission-specified urgency scale, not a Pill change).
+
+### 5.21 Content-security round-9 atoms (R9 — url-filter/app-control/ssl/waf/email views)
+
+- **Log action chips** (url-filter LogsCard): the action Select became R6-style filter
+  chips (`all + LOG_ACTIONS`, `role="group"`, `h-11 lg:h-7`, active chip reuses the
+  module's `DECISION_CLS` tone) with window-level 24h counts from the SHARED
+  `["url-filter","stats"]` key — count-less while stats load, never filter-scoped.
+- **Log search** (url-filter + app-control): url-filter search is server-side (the logs
+  endpoint already accepted `?q=` free-text — the UI now exposes it in the query key);
+  app-control has no free-text param so its search filters the loaded 25-row window
+  client-side, and its footer/empty state say so honestly ("n of m loaded entries match")
+  with a Clear action on the filter-aware EmptyBlock.
+- **Rule-toggle ROW_FLASH** (§5.14): app-control rules table (toggle/action/bandwidth
+  mutations flash `variables.id`), ssl bypass-rules table, email routing-rules table and
+  the email RELEASED mail-log row — flashId + one-shot timer ref per component, exact
+  `ROW_FLASH_CLASS` recipe (reduced-motion neutralized globally).
+- **Category chips from loaded rules** (app-control RulesTable): client-derived unique
+  nDPI categories render as chips ONLY when >1 exists; filtered table gets its own honest
+  "No rules in category …" EmptyBlock + Clear; count line switches to "n of m rules".
+- **Bypass-rules search** (ssl-inspection): matchValue/reason filter on the selected
+  policy's rules with a "n of m" badge, per-filter empty line + Clear (honest — the
+  no-rules dashed state is unchanged when the policy truly has none).
+- **WAF payload preview** (waf log table): rows with `payloadSnippet` render a `payload`
+  pill (aria-expanded) that expands a full-width detail row — DiagOutputBlock-style mono
+  `<pre role="region">` (`max-h-56 overflow-auto whitespace-pre-wrap break-words`) with a
+  `n chars` label and net-ui `copyText` Copy button (§5.17 recipe). Fragments keep row
+  keys stable; the message cell became a min-w-0 flex (truncate + pill, anti-overflow).
+- **Exclusion editor validation parity** (waf): per-field submit pre-checks mirroring the
+  server grammar (matchValue 1–256 required, ruleId positive int when scope=rule_id),
+  `INVALID_CLS`/`FieldErrorText`/aria-invalid/describedby/focus-first-invalid/
+  clear-on-edit imported from net-ui; Save no longer silently disabled (errors explained).
+- **Confirm-first quarantine release** (email MailLogCard): Release opens a ConfirmDialog
+  naming the message ("Release \"<subject>\"?") with from → to consequence copy; the
+  released row flashes on settle (§5.6 dangerous-action rule — release re-delivers mail).
+- **Density parity + wide tables**: `DensityToggle`/`useTableDensity` on the url-filter,
+  app-control (rules + logs), ssl (bypass + logs), waf (logs) and email mail-log tables
+  (`fw-density:<key>` mechanics, `[&_th/_td]` compact selectors per §5.14/R6); every
+  content-security table now scrolls horizontally inside `overflow-auto` +
+  `min-w-[420–920px]`; icon-only row controls are `h-11 w-11 lg:h-7 lg:w-7`.
+- **Vhost status pills** (waf): disabled vhosts get a rose "disabled" badge and the card
+  dims (opacity-70) — status is visible without hunting for the switch position.
+
+### 5.22 Cross-cutting round-10 amendments (R10 — regression sweep)
+
+- **Firewall rules filter chips hit the 44 px recipe** (rules-view, closes the R2 deferral):
+  the zone/tag pill buttons and the chip-row "Clear all" button moved to the R6 chip recipe
+  `inline-flex h-11 items-center rounded-full border px-2.5 text-xs lg:h-7 lg:py-1`; the
+  row kebab is `h-11 w-11 lg:h-8 lg:w-8`.
+- **Email gateways/routing reach density parity** (email-security-view, closes the R9
+  note): `DensityToggle` + `useTableDensity("email-gateways"|"email-routing")` with the
+  shared `[&_th/_td]` compact selectors, `overflow-auto` + `min-w` (860/760 px) wrappers,
+  and §5.14 `ROW_FLASH_CLASS` on the gateway enable toggle (routing already had it).
+- **Reports chart palette re-pointed to the locked §2.5/§2.3/§5.15 recipes**
+  (reports-view): the legacy `CHART` constant carried real teal-500/emerald-500 hexes and
+  painted `allow`/`medium` series in brand red — replaced with the §5.15 severity tones
+  (critical rose-600, high rose-400, medium amber, low/info zinc) and the §2.3 action
+  mapping (allow = zinc calm-permit, deny rose-600, drop rose-500, reject orange).
+- **Primary-button law ratified as zinc** (§2 hard rule 2 rev 3): `bg-zinc-700 text-white
+  hover:bg-zinc-800` is the canonical primary recipe; red/rose are danger-only plus the
+  retained brand surfaces (logo glyph, focus ring, links, `--chart-1`). No code sweep —
+  the ~161 zinc call sites were already the de-facto standard.
+
 ## 6. States
 
 | State | Rule |
@@ -345,7 +709,7 @@ Global `Cmd/Ctrl+K` palette built on `ui/command.tsx` (cmdk inside a Radix Dialo
 - Respect `prefers-reduced-motion`: gate transforms behind `useReducedMotion()`; reduced
   users get opacity-only transitions.
 - Every clickable row, card link, and icon button has a visible hover state
-  (`hover:bg-accent` or underline) and `focus-visible` ring (emerald `--ring`).
+  (`hover:bg-accent` or underline) and `focus-visible` ring (brand `--ring`).
 - Touch targets: min 44px on mobile controls (table row actions become icon buttons with
   `size-11` hit area on small screens).
 - Optimistic UI is allowed exactly where STATE_AND_DATA_FLOW §5 says (rule toggle, dnd
@@ -357,8 +721,9 @@ Global `Cmd/Ctrl+K` palette built on `ui/command.tsx` (cmdk inside a Radix Dialo
   `var(--chart-N)`; tooltip = `ChartTooltip` + `ChartTooltipContent` (dark-styled by the
   wrapper); legend = `ChartLegendContent` where more than one series exists.
 - Chart types (fixed vocabulary):
-  - **Throughput:** stacked `AreaChart`, rx = `--chart-1` (emerald), tx = `--chart-2`
-    (teal), 2s `metrics:tick` cadence, x-axis `HH:mm` via date-fns.
+  - **Throughput:** stacked `AreaChart`, rx = `--chart-1` (brand red-700), tx =
+    `--chart-2` (zinc-500 — rev 2: the second series is neutral so the chart never
+    reads as an alarm), 2s `metrics:tick` cadence, x-axis `HH:mm` via date-fns.
   - **Top talkers:** horizontal `BarChart` (single series, `--chart-2`), IP/app labels
     truncated with `Tooltip` full value.
   - **Application share:** donut (`PieChart` with `innerRadius`), palette slots in

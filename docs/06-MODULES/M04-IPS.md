@@ -85,7 +85,7 @@ Expected error cases:
 
 ### `#/ips/events`
 
-- **Filter bar:** severity chips (`critical`, `high`, `medium`, `low`, `info` — multi-select maps to `?severity=` calls or server list), category select (see §8 gap), time range presets (1 h / 24 h / 7 d → `since`/`until`), search input (`q`), sid search.
+- **Filter bar:** severity chips (`critical`, `high`, `medium`, `low`, `info` — multi-select maps to `?severity=` calls or server list), category select (see §8 gap), time range presets (1 h / 24 h / 7 d → `since`/`until`), search input (`q`), sid search. A one-shot `?sid=<sid>` hash deep link (written by the M09 logs IPS detail-sheet "Open sid in IPS triage" pivot) prefills the sid filter and widens the default window to "all time".
 - **Table** (server-paginated): timestamp, severity badge (info=zinc, low=zinc, medium=amber, high=rose, critical=rose bold), category chip, sid (mono), action badge (`alert`=amber, `drop`/`reject`=rose-600, `bypass`=zinc, `suppressed`=muted), src → dst (ip:port), message (truncated).
 - **Row actions:** Suppress menu (`24h` / `7d` / `forever`) → POST suppress → row re-renders with `action = suppressed` chip and `suppressedUntil` tooltip; "Block source" → opens M03 RuleEditor prefilled (see §5).
 - **Detail side panel** (click row): full event fields, raw message, suppressed-until, related actions: Suppress, "Create firewall block rule" (prefills RuleEditor: name `IPS block sid <sid>`, srcAddr = new temp address object for `srcIp/32`, action `drop`, comment referencing the event id).

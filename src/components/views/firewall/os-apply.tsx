@@ -216,6 +216,130 @@ export function FirewallOsSync() {
   );
 }
 
+// ── staged apply feedback (validate → converge → kernel status) ────────────
+
+type StageState = "ok" | "fail" | "empty" | "skipped" | "rolledback";
+
+const STAGE_ICON: Record<StageState, React.ComponentType<{ className?: string }>> = {
+  ok: Icons.CircleCheck,
+  fail: Icons.CircleX,
+  empty: Icons.CircleDashed,
+  skipped: Icons.CircleDashed,
+  rolledback: Icons.RotateCcw,
+};
+
+const STAGE_CLS: Record<StageState, string> = {
+  ok: "text-emerald-500",
+  fail: "text-rose-500",
+  empty: "text-zinc-400",
+  skipped: "text-zinc-400",
+  rolledback: "text-amber-500",
+};
+
+type StepRow = { step: string; ok: boolean; detail?: string };
+
+function stageState(steps: StepRow[]): StageState {
+  if (steps.length === 0) return "empty";
+  return steps.every((s) => s.ok) ? "ok" : "fail";
+}
+
+/** Per-stage strip shown after an apply: icons reflect validate (nft -c),
+ *  converge (backup + apply) and kernel status (rollback timer, persistence).
+ *  Failure details render as truncated-safe mono lines; long lists scroll. */
+function ApplyStages(props: { outcome: OsApplyOutcome }) {
+  const o = props.outcome;
+  const find = (name: string): StepRow | null => o.results.find((r) => r.step === name) ?? null;
+  const pick = (names: string[]): StepRow[] =>
+    names.map(find).filter((r): r is StepRow => r !== null);
+
+  const validateSteps = pick(["gate", "tool", "nft -c check"]);
+  const convergeSteps = pick(["backup", "apply"]);
+  const autoRollback = find("auto-rollback");
+  const kernelSteps: StepRow[] = [
+    ...pick(["rollback timer", "auto-confirm"]),
+    ...o.persistence.map((p) => ({ step: p.step, ok: p.ok, detail: p.detail })),
+  ];
+
+  let validateState = stageState(validateSteps);
+  let convergeState = stageState(convergeSteps);
+  let kernelState = stageState(kernelSteps);
+  if (o.gate === "off") {
+    validateState = "skipped";
+    convergeState = "skipped";
+    kernelState = "skipped";
+  }
+  if (o.rolledBack) {
+    convergeState = "rolledback";
+    if (autoRollback && !autoRollback.ok) kernelState = "fail";
+  }
+
+  const failDetail = (steps: StepRow[]) =>
+    steps.find((s) => !s.ok)?.detail ?? (steps.find((s) => !s.ok)?.step != null ? `step failed: ${steps.find((s) => !s.ok)?.step}` : undefined);
+
+  const rows: Array<{ label: string; state: StageState; detail?: string }> = [
+    { label: "Validate — plan + nft -c check", state: validateState, detail: failDetail(validateSteps) },
+    {
+      label: o.rolledBack ? "Converge — applied, then rolled back" : "Converge — backup + atomic apply",
+      state: convergeState,
+      detail: o.rolledBack
+        ? (o.rollbackReason ?? "health check failed")
+        : failDetail(convergeSteps),
+    },
+    { label: "Kernel status — rollback timer, persistence", state: kernelState, detail: failDetail(kernelSteps) },
+  ];
+
+  return (
+    <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Apply stages</p>
+      <ul className="mt-1.5 space-y-1.5">
+        {rows.map((r) => (
+          <ApplyStageRow key={r.label} label={r.label} state={r.state} detail={r.detail} />
+        ))}
+      </ul>
+      {(kernelSteps.length > 3 || kernelSteps.some((s) => !s.ok)) && (
+        <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto border-t border-zinc-200 pt-1.5 font-mono text-[11px] text-zinc-500 dark:border-zinc-800">
+          {kernelSteps.map((s, i) => (
+            <li key={i} className="min-w-0 break-words">
+              {s.ok ? "✓" : "⚠"} {s.step}
+              {s.detail ? ` — ${s.detail}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Indeterminate strip while the apply POST is in flight. */
+function ApplyStagesRunning() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-800"
+    >
+      <Icons.LoaderCircle className="h-3.5 w-3.5 animate-spin text-zinc-500" />
+      <span className="font-medium">Applying</span>
+      <span className="text-zinc-400">validate → converge → kernel status…</span>
+    </div>
+  );
+}
+
+function ApplyStageRow(props: { label: string; state: StageState; detail?: string }) {
+  const Icon = STAGE_ICON[props.state];
+  return (
+    <li className="flex items-start gap-2 text-xs">
+      <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", STAGE_CLS[props.state])} aria-hidden="true" />
+      <span className="min-w-0">
+        <span className="font-medium">{props.label}</span>
+        {props.detail ? (
+          <span className="block min-w-0 break-words font-mono text-[11px] text-zinc-500">{props.detail}</span>
+        ) : null}
+      </span>
+    </li>
+  );
+}
+
 // ── apply dialog ────────────────────────────────────────────────────────────
 
 function FirewallApplyDialog(props: {
@@ -235,7 +359,7 @@ function FirewallApplyDialog(props: {
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Icons.HardDriveDownload className="h-5 w-5" /> Apply firewall policy to host
@@ -248,7 +372,13 @@ function FirewallApplyDialog(props: {
         </DialogHeader>
 
         {props.outcome ? (
-          <ApplyOutcomeView outcome={props.outcome} error={props.error} />
+          <>
+            {/* sticky result banner — stays visible while the stage details scroll */}
+            <div className="sticky top-0 z-10 -mx-6 bg-background/95 px-6 pb-2 pt-1 backdrop-blur-sm">
+              <ApplyOutcomeView outcome={props.outcome} error={props.error} />
+            </div>
+            <ApplyStages outcome={props.outcome} />
+          </>
         ) : (
           <div className="space-y-3">
             {/* plan facts */}
@@ -297,6 +427,9 @@ function FirewallApplyDialog(props: {
                 </ScrollArea>
               </div>
             )}
+
+            {/* staged feedback while the apply request is in flight */}
+            {props.applying && <ApplyStagesRunning />}
           </div>
         )}
 
@@ -345,12 +478,7 @@ function ApplyOutcomeView(props: { outcome: OsApplyOutcome | null; error: string
         <Icons.RotateCcw className="h-4 w-4" />
         <AlertTitle>Applied, then rolled back automatically</AlertTitle>
         <AlertDescription className="text-xs">
-          {o.rollbackReason}
-          <ul className="mt-2 space-y-0.5">
-            {o.results.filter((r) => !r.ok).map((r, i) => (
-              <li key={i}>· {r.step}: {r.detail}</li>
-            ))}
-          </ul>
+          {o.rollbackReason} — failing steps are listed under the apply stages below.
         </AlertDescription>
       </Alert>
     );
@@ -359,21 +487,9 @@ function ApplyOutcomeView(props: { outcome: OsApplyOutcome | null; error: string
     <Alert className="border-emerald-500/40 bg-emerald-500/5">
       <Icons.ShieldCheck className="h-4 w-4 text-emerald-500" />
       <AlertTitle className="text-emerald-600 dark:text-emerald-400">Firewall policy is live on the host</AlertTitle>
-      <AlertDescription className="space-y-1 text-xs">
-        <p>
-          Commit-confirm window: {o.confirmDeadlineAt ? `${o.confirmSec}s — confirm in the banner to keep the policy` : "self-confirmed"}.
-          WAN health verified after apply.
-        </p>
-        {o.persistence.length > 0 && (
-          <ul className="text-zinc-500 dark:text-zinc-400">
-            {o.persistence.map((p, i) => (
-              <li key={i}>
-                {p.ok ? "✓" : "⚠"} {p.step}
-                {p.detail ? ` — ${p.detail}` : ""}
-              </li>
-            ))}
-          </ul>
-        )}
+      <AlertDescription className="text-xs">
+        Commit-confirm window: {o.confirmDeadlineAt ? `${o.confirmSec}s — confirm in the banner to keep the policy` : "self-confirmed"}.
+        WAN health verified after apply. Persistence steps are listed under the apply stages below.
       </AlertDescription>
     </Alert>
   );

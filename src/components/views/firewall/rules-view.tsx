@@ -7,7 +7,7 @@
  * RuleEditor.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -49,6 +49,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -67,6 +74,7 @@ import {
   fmtDateTime,
   importRowErrors,
   type AddressObject,
+  type FwAction,
   type FwRule,
   type ImportRowError,
   type NamedWithMembers,
@@ -78,12 +86,15 @@ import { FirewallOsSync } from "./os-apply";
 import {
   ActionBadge,
   ConfirmDialog,
+  DensityToggle,
   EmptyBlock,
   QueryError,
+  ROW_FLASH_CLASS,
   TableSkeleton,
   toastErr,
   toastOk,
   useFwConfigInvalidation,
+  useTableDensity,
 } from "./fw-ui";
 import { RuleEditor } from "./rule-editor";
 
@@ -233,6 +244,10 @@ function SortableRow(props: {
   onReset: (rule: FwRule) => void;
   onDelete: (rule: FwRule) => void;
   toggling: boolean;
+  /** brief neutral flash while an optimistic toggle lands */
+  flash: boolean;
+  /** compact density hides the optional Sched/Guard/Hits columns */
+  dense: boolean;
 }) {
   const { rule: r, maps } = props;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: r.id });
@@ -243,7 +258,7 @@ function SortableRow(props: {
     <TableRow
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(!r.enabled && "opacity-55", isDragging && "z-50 relative bg-zinc-500/5")}
+      className={cn(!r.enabled && "opacity-55", isDragging && "z-50 relative bg-zinc-500/5", props.flash && ROW_FLASH_CLASS)}
     >
       <TableCell className="w-10 pl-2 pr-0">
         <button
@@ -307,67 +322,73 @@ function SortableRow(props: {
       <TableCell className="min-w-28">
         <IdChips ids={r.serviceIds} map={maps.svcById} />
       </TableCell>
-      <TableCell>
-        {schedule ? (
-          <TooltipProvider delayDuration={150}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Icons.Clock className="h-4 w-4 text-amber-500" />
-              </TooltipTrigger>
-              <TooltipContent className="text-xs">
-                Schedule: {schedule.name}
-                {schedule.recurrence ? ` (${schedule.recurrence.days.join("/")} ${schedule.recurrence.start}–${schedule.recurrence.end} ${schedule.timezone})` : ""}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ) : (
-          <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
-        )}
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-1.5 text-zinc-500">
-          {r.connLimit != null && (
+      {props.dense ? null : (
+        <TableCell>
+          {schedule ? (
             <TooltipProvider delayDuration={150}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Icons.Link2 className="h-3.5 w-3.5" />
+                  <Icons.Clock className="h-4 w-4 text-amber-500" />
                 </TooltipTrigger>
-                <TooltipContent className="text-xs">conn limit: {r.connLimit}/source</TooltipContent>
+                <TooltipContent className="text-xs">
+                  Schedule: {schedule.name}
+                  {schedule.recurrence ? ` (${schedule.recurrence.days.join("/")} ${schedule.recurrence.start}–${schedule.recurrence.end} ${schedule.timezone})` : ""}
+                </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-          )}
-          {r.rateLimit != null && (
-            <TooltipProvider delayDuration={150}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Icons.Gauge className="h-3.5 w-3.5" />
-                </TooltipTrigger>
-                <TooltipContent className="text-xs">rate limit: {r.rateLimit} conn/s/source</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          {r.synProtection && (
-            <TooltipProvider delayDuration={150}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Icons.ShieldAlert className="h-3.5 w-3.5 text-rose-500" />
-                </TooltipTrigger>
-                <TooltipContent className="text-xs">SYN protection{r.synThreshold ? ` ≥ ${r.synThreshold} pps` : ""}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          {r.connLimit == null && r.rateLimit == null && !r.synProtection && (
+          ) : (
             <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
           )}
-        </div>
-      </TableCell>
-      <TableCell className="text-right">
-        <HitsCell rule={r} />
-      </TableCell>
+        </TableCell>
+      )}
+      {props.dense ? null : (
+        <TableCell>
+          <div className="flex items-center gap-1.5 text-zinc-500">
+            {r.connLimit != null && (
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Icons.Link2 className="h-3.5 w-3.5" />
+                  </TooltipTrigger>
+                  <TooltipContent className="text-xs">conn limit: {r.connLimit}/source</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {r.rateLimit != null && (
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Icons.Gauge className="h-3.5 w-3.5" />
+                  </TooltipTrigger>
+                  <TooltipContent className="text-xs">rate limit: {r.rateLimit} conn/s/source</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {r.synProtection && (
+              <TooltipProvider delayDuration={150}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Icons.ShieldAlert className="h-3.5 w-3.5 text-rose-500" />
+                  </TooltipTrigger>
+                  <TooltipContent className="text-xs">SYN protection{r.synThreshold ? ` ≥ ${r.synThreshold} pps` : ""}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {r.connLimit == null && r.rateLimit == null && !r.synProtection && (
+              <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+            )}
+          </div>
+        </TableCell>
+      )}
+      {props.dense ? null : (
+        <TableCell className="text-right">
+          <HitsCell rule={r} />
+        </TableCell>
+      )}
       <TableCell className="w-10 pr-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${r.name}`}>
+            <Button variant="ghost" size="icon" className="h-11 w-11 lg:h-8 lg:w-8" aria-label={`Actions for ${r.name}`}>
               <Icons.EllipsisVertical className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -553,6 +574,11 @@ export function RulesView() {
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [deepLink] = useState(readRulesDeepLink);
   const [search, setSearch] = useState(deepLink.search);
+  const [actionFilter, setActionFilter] = useState<"all" | FwAction>("all");
+  const [statusFilter, setStatusFilter] = useState<"any" | "enabled" | "disabled">("any");
+  /** id of the row whose optimistic toggle just landed (brief neutral flash) */
+  const [flashId, setFlashId] = useState<number | null>(null);
+  const flashTimer = useRef<number | null>(null);
   const [editorOpen, setEditorOpen] = useState(() => deepLink.prefill != null);
   const [editing, setEditing] = useState<FwRule | null>(null);
   const [duplicateOf, setDuplicateOf] = useState<FwRule | null>(null);
@@ -574,18 +600,28 @@ export function RulesView() {
 
   const allTags = useMemo(() => [...new Set(rules.flatMap((r) => r.tags))].sort(), [rules]);
 
+  const [density] = useTableDensity("firewall-rules");
+  const dense = density === "compact";
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rules.filter((r) => {
+      if (actionFilter !== "all" && r.action !== actionFilter) return false;
+      if (statusFilter !== "any" && (statusFilter === "enabled") !== r.enabled) return false;
       if (zoneFilter != null && !(r.srcZoneIds.includes(zoneFilter) || r.dstZoneIds.includes(zoneFilter))) return false;
       if (tagFilter.length > 0 && !tagFilter.every((t) => r.tags.includes(t))) return false;
       if (q) {
-        const hay = `${r.name} ${r.description ?? ""} ${r.comment ?? ""} ${r.tags.join(" ")}`.toLowerCase();
+        // search covers name/description/comment/tags AND the resolved
+        // source/destination/service object names (not just raw ids)
+        const srcNames = r.srcAddrIds.map((id) => maps.addrById.get(id)?.name ?? "").join(" ");
+        const dstNames = r.dstAddrIds.map((id) => maps.addrById.get(id)?.name ?? "").join(" ");
+        const svcNames = r.serviceIds.map((id) => maps.svcById.get(id)?.name ?? "").join(" ");
+        const hay = `${r.name} ${r.description ?? ""} ${r.comment ?? ""} ${r.tags.join(" ")} ${srcNames} ${dstNames} ${svcNames}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [rules, zoneFilter, tagFilter, search]);
+  }, [rules, maps, zoneFilter, tagFilter, search, actionFilter, statusFilter]);
 
   // ── mutations ─────────────────────────────────────────────────────────────
 
@@ -670,6 +706,23 @@ export function RulesView() {
     setEditorOpen(true);
   };
 
+  /** optimistic toggle + brief neutral flash on the affected row */
+  const toggleRule = (rule: FwRule) => {
+    if (flashTimer.current != null) window.clearTimeout(flashTimer.current);
+    setFlashId(rule.id);
+    flashTimer.current = window.setTimeout(() => setFlashId(null), 1500);
+    toggleMut.mutate({ id: rule.id, enabled: !rule.enabled });
+  };
+
+  const clearFilters = () => {
+    setZoneFilter(null);
+    setTagFilter([]);
+    setSearch("");
+    setActionFilter("all");
+    setStatusFilter("any");
+  };
+  const filtersActive = zoneFilter !== null || tagFilter.length > 0 || !!search || actionFilter !== "all" || statusFilter !== "any";
+
   const error = rulesQuery.error;
 
   return (
@@ -688,7 +741,30 @@ export function RulesView() {
               aria-label="Search rules"
             />
           </div>
+          <Select value={actionFilter} onValueChange={(v) => setActionFilter(v as "all" | FwAction)}>
+            <SelectTrigger className="h-9 w-[124px]" aria-label="Filter by action">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All actions</SelectItem>
+              <SelectItem value="allow">allow</SelectItem>
+              <SelectItem value="deny">deny</SelectItem>
+              <SelectItem value="drop">drop</SelectItem>
+              <SelectItem value="reject">reject</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as "any" | "enabled" | "disabled")}>
+            <SelectTrigger className="h-9 w-[118px]" aria-label="Filter by status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="any">Any status</SelectItem>
+              <SelectItem value="enabled">Enabled</SelectItem>
+              <SelectItem value="disabled">Disabled</SelectItem>
+            </SelectContent>
+          </Select>
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            <DensityToggle storageKey="firewall-rules" label="Rules table density" />
             <Button size="sm" onClick={openCreate} className="bg-zinc-700 text-white hover:bg-zinc-800">
               <Icons.Plus className="mr-1 h-4 w-4" /> Add rule
             </Button>
@@ -720,7 +796,7 @@ export function RulesView() {
             onClick={() => setZoneFilter(null)}
             aria-pressed={zoneFilter === null}
             className={cn(
-              "rounded-full border px-2.5 py-1 text-xs transition-colors",
+              "inline-flex h-11 items-center rounded-full border px-2.5 text-xs transition-colors lg:h-7 lg:py-1",
               zoneFilter === null
                 ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                 : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800",
@@ -735,7 +811,7 @@ export function RulesView() {
               onClick={() => setZoneFilter(zoneFilter === z.id ? null : z.id)}
               aria-pressed={zoneFilter === z.id}
               className={cn(
-                "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                "inline-flex h-11 items-center rounded-full border px-2.5 text-xs transition-colors lg:h-7 lg:py-1",
                 zoneFilter === z.id
                   ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                   : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800",
@@ -757,7 +833,7 @@ export function RulesView() {
                     onClick={() => setTagFilter(active ? tagFilter.filter((x) => x !== t) : [...tagFilter, t])}
                     aria-pressed={active}
                     className={cn(
-                      "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                      "inline-flex h-11 items-center rounded-full border px-2.5 text-xs transition-colors lg:h-7 lg:py-1",
                       active
                         ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                         : "border-dashed border-zinc-300 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800",
@@ -769,18 +845,14 @@ export function RulesView() {
               })}
             </>
           )}
-          {(zoneFilter !== null || tagFilter.length > 0 || search) && (
+          {filtersActive && (
             <Button
               size="sm"
               variant="ghost"
-              className="h-7 px-2 text-xs text-zinc-500"
-              onClick={() => {
-                setZoneFilter(null);
-                setTagFilter([]);
-                setSearch("");
-              }}
+              className="h-11 px-3 text-xs text-zinc-500 lg:h-7 lg:px-2"
+              onClick={clearFilters}
             >
-              <Icons.X className="mr-1 h-3 w-3" /> Clear ({filtered.length}/{rules.length})
+              <Icons.X className="mr-1 h-3 w-3" /> Clear all ({filtered.length}/{rules.length})
             </Button>
           )}
         </div>
@@ -794,7 +866,7 @@ export function RulesView() {
             </div>
           ) : loading ? (
             <div className="p-4">
-              <TableSkeleton rows={8} cols={13} />
+              <TableSkeleton rows={8} cols={dense ? 10 : 13} />
             </div>
           ) : rules.length === 0 ? (
             <EmptyBlock
@@ -810,7 +882,12 @@ export function RulesView() {
           ) : (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
               <div className="max-h-[70vh] overflow-auto [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-300 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700">
-                <Table className="min-w-[1150px] text-sm">
+                <Table
+                  className={cn(
+                    "min-w-[1150px] text-sm",
+                    dense && "min-w-[880px] text-xs [&_td]:px-1.5 [&_td]:py-1 [&_th]:h-9 [&_th]:px-1.5",
+                  )}
+                >
                   <TableHeader className="sticky top-0 z-10 bg-card">
                     <TableRow>
                       <TableHead className="w-10 pl-2" aria-label="Reorder" />
@@ -822,9 +899,9 @@ export function RulesView() {
                       <TableHead>Source</TableHead>
                       <TableHead>Destination</TableHead>
                       <TableHead>Services</TableHead>
-                      <TableHead>Sched</TableHead>
-                      <TableHead>Guard</TableHead>
-                      <TableHead className="text-right">Hits</TableHead>
+                      {dense ? null : <TableHead>Sched</TableHead>}
+                      {dense ? null : <TableHead>Guard</TableHead>}
+                      {dense ? null : <TableHead className="text-right">Hits</TableHead>}
                       <TableHead className="w-10" aria-label="Actions" />
                     </TableRow>
                   </TableHeader>
@@ -836,7 +913,9 @@ export function RulesView() {
                           rule={r}
                           maps={maps}
                           toggling={toggleMut.isPending}
-                          onToggle={(rule) => toggleMut.mutate({ id: rule.id, enabled: !rule.enabled })}
+                          flash={flashId === r.id}
+                          dense={dense}
+                          onToggle={toggleRule}
                           onEdit={openEdit}
                           onDuplicate={openDuplicate}
                           onReset={(rule) => resetMut.mutate(rule.id)}

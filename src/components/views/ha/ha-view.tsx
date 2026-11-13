@@ -4,8 +4,10 @@
  * HA view (M10 §4 `#/ha`) — status card (role badge, VIP+iface, simulated peer
  * heartbeat, tracked-interface chips, sync chips, collapsible Keepalived/VRRP
  * explanation) + admin-gated config editor (priority higher-wins, holdDownSec
- * ≥ failAfterSec). Status polls ~4 s (heartbeat age ticks); refetch after save.
- * Simulated-peer labels per §4 ("simulated heartbeat", "simulated in Phase 1").
+ * ≥ failAfterSec). Client pre-checks mirror the server zod grammar at submit
+ * (§5.16 validation parity: rose ring, role="alert", focus first invalid);
+ * server fieldErrors merge into the same bag on 400. Status polls ~4 s
+ * (heartbeat age ticks); refetch after save. Simulated-peer labels per §4.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -32,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { EditorSection, FieldLabel, QueryError, toastErr, toastOk } from "../firewall/fw-ui";
+import { INVALID_CLS } from "../network/net-ui";
 import { usePermissions } from "../system/system-ui";
 import { listInterfaceNames, type IfaceLite } from "../dns-dhcp/dns-dhcp-api";
 import { haApi, fieldErrorsOf, type HaConfigDTO, type HaStatusDTO } from "./ha-api";
@@ -194,7 +197,7 @@ function ExplanationPanel() {
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="mt-4">
       <CollapsibleTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-1.5 text-zinc-500">
+        <Button variant="ghost" size="sm" className="h-auto gap-1.5 whitespace-normal text-start text-zinc-500">
           <Icons.ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
           How failover / failback works (Keepalived semantics)
         </Button>
@@ -239,8 +242,34 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
     setForm(config);
   }
 
-  const holdDownInvalid = form.holdDownSec < form.failAfterSec;
-  const enableInvalid = form.enabled && (form.role === "disabled" || !form.peerIp?.trim());
+  // client pre-checks mirror the server zod grammar (M10 §5.1) — server stays authoritative
+  const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+  const IPV4_CIDR_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\/(3[0-2]|[12]?\d)$/;
+  const intIn = (v: number, min: number, max: number) => Number.isInteger(v) && v >= min && v <= max;
+
+  const validate = (): Record<string, string[]> => {
+    const errs: Record<string, string[]> = {};
+    if (!intIn(form.priority, 1, 255)) errs.priority = ["Priority must be an integer between 1 and 255"];
+    const vip = form.virtualIp?.trim() ?? "";
+    if (vip && !IPV4_CIDR_RE.test(vip)) errs.virtualIp = ["Must be a valid IPv4 CIDR (e.g. 192.168.10.254/24)"];
+    const peer = form.peerIp?.trim() ?? "";
+    if (peer && !IPV4_RE.test(peer)) errs.peerIp = ["Must be a valid IPv4 address"];
+    if (!intIn(form.failAfterSec, 3, 3600)) errs.failAfterSec = ["failAfterSec must be an integer between 3 and 3600"];
+    if (!intIn(form.holdDownSec, 0, 86_400)) errs.holdDownSec = ["holdDownSec must be an integer between 0 and 86400"];
+    else if (form.holdDownSec < form.failAfterSec) errs.holdDownSec = ["holdDownSec must be ≥ failAfterSec (failback waits at least as long as detection)"];
+    if (form.enabled) {
+      if (form.role === "disabled") errs.role = ["Enabling HA requires a role (active or standby)"];
+      if (!peer) errs.peerIp = ["Enabling HA requires a peer IP"];
+    }
+    return errs;
+  };
+
+  const clearErr = (k: string) =>
+    setErrors((e) => {
+      if (!(k in e)) return e;
+      const { [k]: _drop, ...rest } = e;
+      return rest;
+    });
 
   const save = useMutation({
     mutationFn: () =>
@@ -267,6 +296,17 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
       toastErr(err, "Save failed");
     },
   });
+
+  const submit = () => {
+    const errs = validate();
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      const first = ["priority", "virtualIp", "peerIp", "failAfterSec", "holdDownSec", "role"].find((k) => errs[k]);
+      if (first) document.getElementById(`ha-${first}`)?.focus();
+      return;
+    }
+    save.mutate();
+  };
 
   const toggleTracked = (name: string) =>
     setForm((f) => ({
@@ -305,11 +345,17 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
                 id="ha-enabled"
                 checked={form.enabled}
                 disabled={!isAdmin}
-                onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
+                onCheckedChange={(v) => {
+                  setForm((f) => ({ ...f, enabled: v }));
+                  clearErr("role");
+                  clearErr("peerIp");
+                }}
               />
             </div>
-            {enableInvalid ? (
-              <p className="text-[11px] text-rose-600">Enabling requires a role (active/standby) and a peer IP.</p>
+            {err("role") ? (
+              <p id="ha-role-err" role="alert" className="text-[11px] text-rose-600 dark:text-rose-400">
+                {err("role")}
+              </p>
             ) : null}
           </div>
           <div className="space-y-1.5">
@@ -317,9 +363,12 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
             <Select
               value={form.role}
               disabled={!isAdmin}
-              onValueChange={(v) => setForm((f) => ({ ...f, role: v as HaConfigDTO["role"] }))}
+              onValueChange={(v) => {
+                setForm((f) => ({ ...f, role: v as HaConfigDTO["role"] }));
+                clearErr("role");
+              }}
             >
-              <SelectTrigger>
+              <SelectTrigger id="ha-role" aria-invalid={!!err("role")} aria-describedby={err("role") ? "ha-role-err" : undefined} className={cn(err("role") && INVALID_CLS)}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -333,24 +382,46 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
           <div className="space-y-1.5">
             <FieldLabel hint="1-255 — higher wins">Priority</FieldLabel>
             <Input
+              id="ha-priority"
               type="number"
               min={1}
               max={255}
               value={form.priority}
               disabled={!isAdmin}
-              onChange={(e) => setForm((f) => ({ ...f, priority: Number(e.target.value) }))}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, priority: Number(e.target.value) }));
+                clearErr("priority");
+              }}
+              aria-invalid={!!err("priority")}
+              aria-describedby={err("priority") ? "ha-priority-err" : undefined}
+              className={cn(err("priority") && INVALID_CLS)}
             />
-            {err("priority") ? <p className="text-[11px] text-rose-600">{err("priority")}</p> : null}
+            {err("priority") ? (
+              <p id="ha-priority-err" role="alert" className="text-[11px] text-rose-600 dark:text-rose-400">
+                {err("priority")}
+              </p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <FieldLabel hint="CIDR, e.g. 192.168.10.254/24">Virtual IP</FieldLabel>
             <Input
+              id="ha-virtualIp"
               value={form.virtualIp ?? ""}
               placeholder="192.168.10.254/24"
               disabled={!isAdmin}
-              onChange={(e) => setForm((f) => ({ ...f, virtualIp: e.target.value }))}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, virtualIp: e.target.value }));
+                clearErr("virtualIp");
+              }}
+              aria-invalid={!!err("virtualIp")}
+              aria-describedby={err("virtualIp") ? "ha-virtualIp-err" : undefined}
+              className={cn(err("virtualIp") && INVALID_CLS)}
             />
-            {err("virtualIp") ? <p className="text-[11px] text-rose-600">{err("virtualIp")}</p> : null}
+            {err("virtualIp") ? (
+              <p id="ha-virtualIp-err" role="alert" className="text-[11px] text-rose-600 dark:text-rose-400">
+                {err("virtualIp")}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-1.5">
@@ -376,12 +447,23 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
           <div className="space-y-1.5">
             <FieldLabel hint="must not be a local interface address">Peer IP</FieldLabel>
             <Input
+              id="ha-peerIp"
               value={form.peerIp ?? ""}
               placeholder="192.168.10.253"
               disabled={!isAdmin}
-              onChange={(e) => setForm((f) => ({ ...f, peerIp: e.target.value }))}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, peerIp: e.target.value }));
+                clearErr("peerIp");
+              }}
+              aria-invalid={!!err("peerIp")}
+              aria-describedby={err("peerIp") ? "ha-peerIp-err" : undefined}
+              className={cn(err("peerIp") && INVALID_CLS)}
             />
-            {err("peerIp") ? <p className="text-[11px] text-rose-600">{err("peerIp")}</p> : null}
+            {err("peerIp") ? (
+              <p id="ha-peerIp-err" role="alert" className="text-[11px] text-rose-600 dark:text-rose-400">
+                {err("peerIp")}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -426,7 +508,7 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
                       onClick={() => toggleTracked(i.name)}
                       aria-pressed={active}
                       className={cn(
-                        "rounded-full border px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                        "h-11 rounded-full border px-3 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 lg:h-7 lg:px-2.5",
                         active
                           ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                           : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800",
@@ -443,27 +525,46 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
               <div className="space-y-1.5">
                 <FieldLabel hint="≥ 3 s">Fail over after (seconds of silence)</FieldLabel>
                 <Input
+                  id="ha-failAfterSec"
                   type="number"
                   min={3}
                   value={form.failAfterSec}
                   disabled={!isAdmin}
-                  onChange={(e) => setForm((f) => ({ ...f, failAfterSec: Number(e.target.value) }))}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, failAfterSec: Number(e.target.value) }));
+                    clearErr("failAfterSec");
+                    clearErr("holdDownSec");
+                  }}
+                  aria-invalid={!!err("failAfterSec")}
+                  aria-describedby={err("failAfterSec") ? "ha-failAfterSec-err" : undefined}
+                  className={cn(err("failAfterSec") && INVALID_CLS)}
                 />
-                {err("failAfterSec") ? <p className="text-[11px] text-rose-600">{err("failAfterSec")}</p> : null}
+                {err("failAfterSec") ? (
+                  <p id="ha-failAfterSec-err" role="alert" className="text-[11px] text-rose-600 dark:text-rose-400">
+                    {err("failAfterSec")}
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-1.5">
                 <FieldLabel hint="must be ≥ failAfterSec">Hold-down before failback (seconds)</FieldLabel>
                 <Input
+                  id="ha-holdDownSec"
                   type="number"
                   min={0}
                   value={form.holdDownSec}
                   disabled={!isAdmin}
-                  onChange={(e) => setForm((f) => ({ ...f, holdDownSec: Number(e.target.value) }))}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, holdDownSec: Number(e.target.value) }));
+                    clearErr("holdDownSec");
+                  }}
+                  aria-invalid={!!err("holdDownSec")}
+                  aria-describedby={err("holdDownSec") ? "ha-holdDownSec-err" : undefined}
+                  className={cn(err("holdDownSec") && INVALID_CLS)}
                 />
-                {holdDownInvalid ? (
-                  <p className="text-[11px] text-rose-600">holdDownSec must be ≥ failAfterSec</p>
-                ) : err("holdDownSec") ? (
-                  <p className="text-[11px] text-rose-600">{err("holdDownSec")}</p>
+                {err("holdDownSec") ? (
+                  <p id="ha-holdDownSec-err" role="alert" className="text-[11px] text-rose-600 dark:text-rose-400">
+                    {err("holdDownSec")}
+                  </p>
                 ) : null}
               </div>
             </div>
@@ -471,7 +572,7 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
         </EditorSection>
 
         <div className="flex justify-end">
-          <Button onClick={() => save.mutate()} disabled={!isAdmin || save.isPending || holdDownInvalid || enableInvalid}>
+          <Button onClick={submit} disabled={!isAdmin || save.isPending}>
             {save.isPending ? (
               <>
                 <Icons.Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…

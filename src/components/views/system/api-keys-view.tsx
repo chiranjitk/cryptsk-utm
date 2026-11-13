@@ -206,8 +206,8 @@ function KeysTab() {
           }
         />
       ) : (
-        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
-          <Table>
+        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <Table className="min-w-[820px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
@@ -240,13 +240,15 @@ function KeysTab() {
                   </TableCell>
                   <TableCell className="text-xs text-zinc-500">{fmtRelative(k.lastUsedAt)}</TableCell>
                   <TableCell className="text-xs text-zinc-500">{k.expiresAt ? fmtDateTime(k.expiresAt) : "never"}</TableCell>
-                  <TableCell className="text-xs text-zinc-500">{fmtDateTime(k.createdAt)}</TableCell>
+                  <TableCell className="text-xs text-zinc-500" title={fmtDateTime(k.createdAt)}>
+                    {fmtRelative(k.createdAt)}
+                  </TableCell>
                   <TableCell>
                     {!k.revoked ? (
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 gap-1 px-2 text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400"
+                        className="h-11 gap-1 px-2 text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 lg:h-7 dark:text-rose-400"
                         onClick={() => setRevokeTarget(k)}
                       >
                         <Icons.Ban className="h-3.5 w-3.5" />
@@ -528,8 +530,8 @@ function WebhooksTab() {
           }
         />
       ) : (
-        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
-          <Table>
+        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
@@ -588,13 +590,13 @@ function WebhooksTab() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-0.5">
-                      <Button size="icon" variant="ghost" className="h-7 w-7" aria-label={`Edit ${wh.name}`} onClick={() => openEdit(wh)}>
+                      <Button size="icon" variant="ghost" className="h-11 w-11 lg:h-7 lg:w-7" aria-label={`Edit ${wh.name}`} onClick={() => openEdit(wh)}>
                         <Icons.Pencil className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 gap-1 px-2 text-zinc-500 hover:bg-zinc-500/10 dark:text-zinc-400"
+                        className="h-11 gap-1 px-2 text-zinc-500 hover:bg-zinc-500/10 lg:h-7 dark:text-zinc-400"
                         disabled={testMut.isPending}
                         onClick={() => testMut.mutate(wh.id)}
                       >
@@ -604,7 +606,7 @@ function WebhooksTab() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-7 w-7"
+                        className="h-11 w-11 lg:h-7 lg:w-7"
                         aria-label={`Delivery history for ${wh.name}`}
                         onClick={() => setDeliveriesFor(wh.id)}
                       >
@@ -613,7 +615,7 @@ function WebhooksTab() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-7 w-7 text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400"
+                        className="h-11 w-11 text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 lg:h-7 lg:w-7 dark:text-rose-400"
                         aria-label={`Delete ${wh.name}`}
                         onClick={() => setDeleteTarget(wh)}
                       >

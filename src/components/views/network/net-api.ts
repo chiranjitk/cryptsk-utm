@@ -728,10 +728,12 @@ export function mirrorBodyOf(mirror: Mirror, overrides?: Partial<MirrorBody>): M
 
 export function routeBodyOf(route: StaticRouteRow, overrides?: Partial<StaticRouteBody>): StaticRouteBody {
   return {
-    name: route.name,
+    // name/interfaceName are strict-optional server-side (string | undefined) —
+    // null rows (auto iface / no name) must serialize as undefined, not null
+    name: route.name ?? undefined,
     destinationCidr: route.destinationCidr,
     gateway: route.gateway,
-    interfaceName: route.interfaceName,
+    interfaceName: route.interfaceName ?? undefined,
     distance: route.distance,
     bfd: route.bfd,
     blackhole: route.blackhole,

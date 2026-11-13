@@ -124,6 +124,8 @@ export function IdentitySessionsView() {
   });
 
   const rows = listQ.data?.data ?? [];
+  // honest summary: the count only equals the tenant-wide active count with no method/q filter
+  const showActiveChip = method === "all" && !q.trim() && rows.length > 0;
 
   return (
     <div className="space-y-3">
@@ -146,7 +148,7 @@ export function IdentitySessionsView() {
                   onClick={() => setMethod(f.key)}
                   aria-pressed={method === f.key}
                   className={cn(
-                    "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                    "inline-flex h-11 items-center rounded-full border px-3 text-xs transition-colors lg:h-7 lg:px-2.5",
                     method === f.key
                       ? "border-zinc-500/30 bg-zinc-500/10 font-medium text-zinc-600 dark:text-zinc-300"
                       : "border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800",
@@ -157,6 +159,20 @@ export function IdentitySessionsView() {
               ))}
             </div>
             <div className="ml-auto flex items-center gap-2">
+              {showActiveChip && (
+                <Badge
+                  variant="outline"
+                  role="status"
+                  aria-label={`${rows.length} active identity sessions`}
+                  className="gap-1 border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium tabular-nums text-emerald-600 dark:text-emerald-400"
+                >
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  </span>
+                  {rows.length} active now
+                </Badge>
+              )}
               <Badge variant="outline" className="gap-1 border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0 text-[10px] text-emerald-600 dark:text-emerald-400">
                 <span className="relative flex h-1.5 w-1.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
@@ -169,7 +185,7 @@ export function IdentitySessionsView() {
                 onChange={(e) => setQ(e.currentTarget.value)}
                 placeholder="Search ip / user / mac…"
                 aria-label="Search identity sessions"
-                className="h-9 w-40 text-xs sm:w-56"
+                className="h-11 w-40 text-xs sm:w-56 lg:h-9"
               />
             </div>
           </div>
@@ -186,7 +202,7 @@ export function IdentitySessionsView() {
             />
           ) : (
             <div className="max-h-96 overflow-x-auto overflow-y-auto">
-              <Table>
+              <Table className="min-w-[860px]">
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
                     <TableHead>Source IP</TableHead>
@@ -222,7 +238,7 @@ export function IdentitySessionsView() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-zinc-400 hover:text-rose-500"
+                          className="h-11 w-11 lg:h-8 lg:w-8 text-zinc-400 hover:text-rose-500"
                           aria-label={`Expire session for ${s.userName}`}
                           onClick={() => setExpire(s)}
                         >
