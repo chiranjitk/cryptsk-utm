@@ -59,6 +59,10 @@ export interface WanOsInput {
   /** the interface owning the MAIN default route — never source-managed */
   primaryIface: string | null;
   wans: WanOsWanView[];
+  /** live contents of the managed egress table (240) — enables honest in-sync detection */
+  currentEgressRoutes?: string[];
+  /** live contents of per-WAN source tables (260..271), keyed by table number */
+  currentPerWanRoutes?: Record<number, string[]>;
 }
 
 export interface WanOsStep {
@@ -144,7 +148,29 @@ export async function buildWanOsInput(): Promise<WanOsInput> {
       enabled: row.enabled,
     });
   }
-  return { primaryIface, wans };
+  // per-WAN table dumps — ONLY for the candidate tables non-primary WANs can
+  // own (idx 0..n-1 of the sorted managed set); zero dumps for single-WAN hosts
+  const nonPrimary = wans.filter((w) => w.iface !== primaryIface).length;
+  const currentPerWanRoutes: Record<number, string[]> = {};
+  const egressRoutes = await readEgressTableDump().catch(() => undefined);
+  if (nonPrimary > 0) {
+    const { hasTool, runTool } = await import("@/lib/host/tools");
+    if (await hasTool("ip")) {
+      for (let i = 0; i < Math.min(WAN_TABLE_LIMIT, nonPrimary); i++) {
+        const r = await runTool(`ip route show table ${WAN_TABLE_BASE + i} 2>/dev/null`, 4000);
+        if (r.ok) currentPerWanRoutes[WAN_TABLE_BASE + i] = parseRouteTableDump(r.stdout);
+      }
+    }
+  }
+  return { primaryIface, wans, currentEgressRoutes: egressRoutes, currentPerWanRoutes };
+}
+
+/** live dump of the managed egress table (undefined when `ip` is unavailable) */
+async function readEgressTableDump(): Promise<string[] | undefined> {
+  const { hasTool, runTool } = await import("@/lib/host/tools");
+  if (!(await hasTool("ip"))) return undefined;
+  const r = await runTool(`ip route show table ${WAN_EGRESS_TABLE} 2>/dev/null`, 4000);
+  return r.ok ? parseRouteTableDump(r.stdout) : undefined;
 }
 
 /** best-effort zeroed network address for a CIDR (no external ip dep) */
@@ -180,6 +206,27 @@ function kernelHasRule(kernel: KernelPbrRule[] | null, prio: number): boolean {
   return !!kernel?.some((k) => k.priority === prio);
 }
 
+const normRoute = (s: string): string => s.replace(/\s+/g, " ").trim();
+
+export interface WanNexthop {
+  via: string;
+  dev: string | null;
+  weight: string | null;
+}
+
+/**
+ * `ip route show table` output → multipath nexthop triples (ECMP). Tolerates
+ * the kernel splitting "default" and "nexthop …" across lines.
+ */
+export function parseMultipathNexthops(routes: string[]): WanNexthop[] {
+  const out: WanNexthop[] = [];
+  for (const line of routes) {
+    const m = /nexthop\s+via\s+(\S+)(?:\s+dev\s+(\S+))?(?:\s+weight\s+(\S+))?/.exec(line);
+    if (m) out.push({ via: m[1], dev: m[2] ?? null, weight: m[3] ?? null });
+  }
+  return out;
+}
+
 function kernelRuleMatches(kernel: KernelPbrRule[] | null, prio: number, table: number, from: string | null): boolean {
   const hit = kernel?.find((k) => k.priority === prio);
   if (!hit) return false;
@@ -200,11 +247,16 @@ export function buildWanOsConvergePlan(input: WanOsInput, kernel: KernelPbrRule[
 
   // ── per-WAN source routing (secondary WANs only) ──────────────────────────
   for (const { wan, table, prio } of managed) {
+    // kernel dump of this table (null = unknown — behave conservatively)
+    const curRoutes = input.currentPerWanRoutes?.[table] ?? null;
+    const curNorm = curRoutes === null ? null : curRoutes.map(normRoute);
     if (!wan.enabled) {
       if (kernelHasRule(kernel, prio)) {
         steps.push({ cmd: `ip rule del priority ${prio}`, summary: `withdraw stale rule ${prio} (${wan.iface} disabled)` });
       }
-      steps.push({ cmd: `ip route flush table ${table}`, summary: `withdraw table ${table} (${wan.iface} disabled)` });
+      if (curRoutes === null || curRoutes.length > 0) {
+        steps.push({ cmd: `ip route flush table ${table}`, summary: `withdraw table ${table} (${wan.iface} disabled)` });
+      }
       continue;
     }
     if (!wan.gateway) {
@@ -218,24 +270,37 @@ export function buildWanOsConvergePlan(input: WanOsInput, kernel: KernelPbrRule[
       if (kernelHasRule(kernel, prio)) {
         steps.push({ cmd: `ip rule del priority ${prio}`, summary: `withdraw rule ${prio} (${wan.iface} ${wan.state})` });
       }
-      steps.push({ cmd: `ip route flush table ${table}`, summary: `withdraw table ${table} (${wan.iface} ${wan.state})` });
+      if (curRoutes === null || curRoutes.length > 0) {
+        steps.push({ cmd: `ip route flush table ${table}`, summary: `withdraw table ${table} (${wan.iface} ${wan.state})` });
+      }
       continue;
     }
 
     managedTables.push(table);
     // connected route first — without it the table's default would swallow
     // the WAN's own subnet traffic (local delivery must stay direct)
-    if (wan.ifaceCidr && wan.ifaceIp) {
-      steps.push({
-        cmd: `ip route replace ${wan.ifaceCidr} dev ${wan.iface} src ${wan.ifaceIp} table ${table}`,
-        summary: `table ${table}: connected ${wan.ifaceCidr}`,
-      });
-    }
     const src = wan.ifaceIp ? ` src ${wan.ifaceIp}` : "";
-    steps.push({
-      cmd: `ip route replace default via ${wan.gateway} dev ${wan.iface}${src} metric 1 table ${table}`,
-      summary: `table ${table}: default via ${wan.gateway} (${wan.iface}, ${wan.state})`,
-    });
+    const wantConnected = !!(wan.ifaceCidr && wan.ifaceIp);
+    const hasConnected =
+      wantConnected && curNorm !== null ? curNorm.some((l) => l.startsWith(`${wan.ifaceCidr} dev ${wan.iface}`)) : !wantConnected;
+    const wantDefault = `default via ${wan.gateway} dev ${wan.iface}${src} metric 1`;
+    const hasDefault = curNorm !== null && curNorm.includes(normRoute(wantDefault));
+    if (hasConnected && hasDefault) {
+      reasons.push(`${wan.iface}: table ${table} already matches the kernel (idempotent skip)`);
+    } else {
+      if (!hasConnected && wantConnected) {
+        steps.push({
+          cmd: `ip route replace ${wan.ifaceCidr} dev ${wan.iface} src ${wan.ifaceIp} table ${table}`,
+          summary: `table ${table}: connected ${wan.ifaceCidr}`,
+        });
+      }
+      if (!hasDefault) {
+        steps.push({
+          cmd: `ip route replace default via ${wan.gateway} dev ${wan.iface}${src} metric 1 table ${table}`,
+          summary: `table ${table}: default via ${wan.gateway} (${wan.iface}, ${wan.state})`,
+        });
+      }
+    }
     const from = wan.ifaceIp;
     if (kernelRuleMatches(kernel, prio, table, from)) {
       reasons.push(`${wan.iface}: ip rule ${prio} already in kernel (idempotent skip)`);
@@ -271,6 +336,17 @@ export function buildWanOsConvergePlan(input: WanOsInput, kernel: KernelPbrRule[
     });
 
   if (upWans.length === 0) {
+    // honest offline — flush only when we don't KNOW the table is already empty
+    // (undefined dump = no info → conservative flush; empty dump → skip)
+    if (input.currentEgressRoutes !== undefined && input.currentEgressRoutes.length === 0) {
+      return {
+        steps,
+        egressTable: null,
+        managedTables,
+        activeEgress: null,
+        reasons: ["egress table already empty — nothing to withdraw"],
+      };
+    }
     steps.push({
       cmd: `ip route flush table ${WAN_EGRESS_TABLE}`,
       summary: `no up WAN with a gateway — table ${WAN_EGRESS_TABLE} emptied (honest offline)`,
@@ -280,14 +356,34 @@ export function buildWanOsConvergePlan(input: WanOsInput, kernel: KernelPbrRule[
 
   // flush-then-install: multipath (no metric) and single-path (metric 1)
   // defaults are DIFFERENT kernel keys — `replace` alone would stack a stale
-  // entry; the managed table must hold exactly the current decision
-  steps.push({ cmd: `ip route flush table ${WAN_EGRESS_TABLE}`, summary: `flush egress table ${WAN_EGRESS_TABLE} (decision changed)` });
+  // entry; the managed table must hold exactly the current decision.
+  // The flush lives INSIDE each branch: in-sync states return with zero steps.
 
   const allLb = upWans.length >= 2 && upWans.every((w) => w.mode === "load_balance");
   if (allLb) {
     const nh = upWans
       .map((w) => `nexthop via ${w.gateway} dev ${w.iface} weight ${Math.max(1, Math.min(100, w.weight))}`)
       .join(" ");
+    // in-sync detection: compare nexthop triples (via/dev/weight) with the kernel
+    const desired = parseMultipathNexthops(nh.split("nexthop").filter((s) => s.trim()).map((s) => `nexthop ${s}`));
+    const current = parseMultipathNexthops(input.currentEgressRoutes ?? []);
+    const sameEcmp =
+      desired.length === current.length &&
+      desired.every((d, i) => {
+        const c = current[i];
+        return c && c.via === d.via && (c.dev ?? null) === d.dev && (c.weight ?? null) === (d.weight ?? null);
+      });
+    if (sameEcmp) {
+      reasons.push(`table ${WAN_EGRESS_TABLE}: weighted ECMP already in kernel (idempotent skip)`);
+      return {
+        steps,
+        egressTable: WAN_EGRESS_TABLE,
+        managedTables,
+        activeEgress: { iface: upWans.map((w) => w.iface).join("+"), style: "ecmp" },
+        reasons,
+      };
+    }
+    steps.push({ cmd: `ip route flush table ${WAN_EGRESS_TABLE}`, summary: `flush egress table ${WAN_EGRESS_TABLE} (decision changed)` });
     steps.push({
       cmd: `ip route replace default table ${WAN_EGRESS_TABLE} ${nh}`,
       summary: `table ${WAN_EGRESS_TABLE}: weighted ECMP across ${upWans.map((w) => w.iface).join(" + ")}`,
@@ -304,6 +400,18 @@ export function buildWanOsConvergePlan(input: WanOsInput, kernel: KernelPbrRule[
         ? "failover"
         : "priority";
   const src = best.ifaceIp ? ` src ${best.ifaceIp}` : "";
+  // in-sync detection: the kernel table already holds EXACTLY this decision →
+  // zero steps (no pointless flush/replace churn on every reconverge pass)
+  const desiredRoute = `default via ${best.gateway} dev ${best.iface}${src} metric 1`;
+  const cur = (input.currentEgressRoutes ?? []).map(normRoute);
+  if (cur.length === 1 && cur[0] === normRoute(desiredRoute)) {
+    reasons.push(`table ${WAN_EGRESS_TABLE}: default already via ${best.gateway} dev ${best.iface} (idempotent skip)`);
+    return { steps, egressTable: WAN_EGRESS_TABLE, managedTables, activeEgress: { iface: best.iface, style }, reasons };
+  }
+  // flush-then-install: multipath (no metric) and single-path (metric 1)
+  // defaults are DIFFERENT kernel keys — `replace` alone would stack a stale
+  // entry; the managed table must hold exactly the current decision
+  steps.push({ cmd: `ip route flush table ${WAN_EGRESS_TABLE}`, summary: `flush egress table ${WAN_EGRESS_TABLE} (decision changed)` });
   steps.push({
     cmd: `ip route replace default via ${best.gateway} dev ${best.iface}${src} metric 1 table ${WAN_EGRESS_TABLE}`,
     summary: `table ${WAN_EGRESS_TABLE}: default via ${best.gateway} dev ${best.iface} (${style})`,
@@ -470,24 +578,17 @@ export function parseRouteTableDump(out: string): string[] {
  * pass. Read-only — never executes a step.
  */
 export async function wanOsStatus(): Promise<WanOsStatus> {
-  const { hasTool, runTool } = await import("@/lib/host/tools");
+  const { hasTool } = await import("@/lib/host/tools");
   const ipAvailable = await hasTool("ip");
   const input = await buildWanOsInput().catch(() => ({ primaryIface: null, wans: [] as WanOsWanView[] }));
   const { readKernelPbrRules } = await import("./pbr-os");
   const kernelRules = ipAvailable ? await readKernelPbrRules().catch(() => null) : null;
 
-  const dumpTable = async (table: number): Promise<string[]> => {
-    const r = await runTool(`ip route show table ${table} 2>/dev/null`, 4000);
-    return r.ok ? parseRouteTableDump(r.stdout) : [];
-  };
-  const egressRoutes = ipAvailable ? await dumpTable(WAN_EGRESS_TABLE).catch(() => [] as string[]) : [];
-  const perWan: WanOsRouteDump[] = [];
-  if (ipAvailable) {
-    for (let t = WAN_TABLE_BASE; t < WAN_TABLE_BASE + WAN_TABLE_LIMIT; t++) {
-      const routes = await dumpTable(t).catch(() => [] as string[]);
-      if (routes.length > 0) perWan.push({ table: t, routes });
-    }
-  }
+  const egressRoutes = input.currentEgressRoutes ?? [];
+  const perWan: WanOsRouteDump[] = Object.entries(input.currentPerWanRoutes ?? {})
+    .map(([t, routes]) => ({ table: Number(t), routes }))
+    .filter((d) => d.routes.length > 0)
+    .sort((a, b) => a.table - b.table);
 
   const plan = buildWanOsConvergePlan(input, kernelRules);
   return {

@@ -5,6 +5,7 @@ import {
   wanStepGuarded,
   filterWanBandRules,
   parseRouteTableDump,
+  parseMultipathNexthops,
   WAN_EGRESS_TABLE,
   WAN_TABLE_BASE,
   WAN_PRIO_BASE,
@@ -233,5 +234,130 @@ describe("kernel visibility helpers (GUI↔OS status)", () => {
     ]);
     expect(parseRouteTableDump("")).toEqual([]);
     expect(parseRouteTableDump("\n \n")).toEqual([]);
+  });
+});
+
+describe("in-sync detection — zero-step convergence (no kernel churn)", () => {
+  const primary = wan({ id: 1, iface: "ens32", ifaceIp: "103.244.7.219", ifaceCidr: null, gateway: "103.244.7.217", priority: 1, state: "up" });
+
+  it("table 240 already holding the exact single-path decision → zero steps", () => {
+    const inp: WanOsInput = {
+      ...input([primary], "ens32"),
+      currentEgressRoutes: ["default via 103.244.7.217 dev ens32 src 103.244.7.219 metric 1"],
+    };
+    const plan = buildWanOsConvergePlan(inp, []);
+    expect(plan.steps).toHaveLength(0);
+    expect(plan.activeEgress).toEqual({ iface: "ens32", style: "primary" });
+    expect(plan.reasons.some((r) => /idempotent skip/.test(r))).toBe(true);
+  });
+
+  it("kernel route drifted (missing src) → rebuild with flush+replace", () => {
+    const inp: WanOsInput = {
+      ...input([primary], "ens32"),
+      currentEgressRoutes: ["default via 103.244.7.217 dev ens32 metric 1"],
+    };
+    const plan = buildWanOsConvergePlan(inp, []);
+    expect(plan.steps.map((s) => s.cmd)).toEqual([
+      `ip route flush table ${WAN_EGRESS_TABLE}`,
+      `ip route replace default via 103.244.7.217 dev ens32 src 103.244.7.219 metric 1 table ${WAN_EGRESS_TABLE}`,
+    ]);
+  });
+
+  it("no dump info (undefined) → conservative rebuild (legacy behavior)", () => {
+    const plan = buildWanOsConvergePlan(input([primary], "ens32"), []);
+    expect(plan.steps).toHaveLength(2);
+  });
+
+  it("offline + table already empty → zero steps (no pointless flush)", () => {
+    const down = wan({ state: "down" });
+    const inp: WanOsInput = { ...input([down]), currentEgressRoutes: [], currentPerWanRoutes: { [WAN_TABLE_BASE]: [] } };
+    const plan = buildWanOsConvergePlan(inp, []);
+    expect(plan.steps).toHaveLength(0);
+    expect(plan.activeEgress).toBeNull();
+  });
+
+  it("offline + stale route present → single flush", () => {
+    const down = wan({ state: "down" });
+    const inp: WanOsInput = { ...input([down]), currentEgressRoutes: ["default via 1.2.3.4 dev ens34"], currentPerWanRoutes: { [WAN_TABLE_BASE]: [] } };
+    const plan = buildWanOsConvergePlan(inp, []);
+    expect(plan.steps).toHaveLength(1);
+    expect(plan.steps[0].cmd).toBe(`ip route flush table ${WAN_EGRESS_TABLE}`);
+  });
+
+  it("per-WAN table already installed → only missing ip rule is added", () => {
+    const sec = wan();
+    const inp: WanOsInput = {
+      ...input([sec]),
+      currentEgressRoutes: ["default via 20.20.30.254 dev ens34 src 20.20.30.1 metric 1"],
+      currentPerWanRoutes: {
+        [WAN_TABLE_BASE]: ["20.20.30.0/24 dev ens34 proto kernel scope link src 20.20.30.1", "default via 20.20.30.254 dev ens34 src 20.20.30.1 metric 1"],
+      },
+    };
+    const plan = buildWanOsConvergePlan(inp, []);
+    // routes are in-sync (egress + per-WAN) → the ONLY step is the missing ip rule
+    expect(plan.steps.filter((s) => /ip route/.test(s.cmd))).toHaveLength(0);
+    expect(plan.steps.filter((s) => /ip rule add/.test(s.cmd))).toHaveLength(1);
+    expect(plan.reasons.some((r) => /table .* already matches the kernel/.test(r))).toBe(true);
+  });
+
+  it("per-WAN table in-sync AND rule in kernel → fully zero steps", () => {
+    const sec = wan();
+    const inp: WanOsInput = {
+      ...input([sec]),
+      currentEgressRoutes: ["default via 20.20.30.254 dev ens34 src 20.20.30.1 metric 1"],
+      currentPerWanRoutes: {
+        [WAN_TABLE_BASE]: [
+          "20.20.30.0/24 dev ens34 proto kernel scope link src 20.20.30.1",
+          "default via 20.20.30.254 dev ens34 src 20.20.30.1 metric 1",
+        ],
+      },
+    };
+    const kernel = [rule(WAN_PRIO_BASE, WAN_TABLE_BASE, "20.20.30.1")];
+    const plan = buildWanOsConvergePlan(inp, kernel);
+    expect(plan.steps).toHaveLength(0);
+  });
+
+  it("per-WAN withdraw skips the flush when the table dump is already empty", () => {
+    const down = wan({ state: "down" });
+    const inp: WanOsInput = { ...input([down]), currentEgressRoutes: [], currentPerWanRoutes: { [WAN_TABLE_BASE]: [] } };
+    const plan = buildWanOsConvergePlan(inp, []);
+    expect(plan.steps).toHaveLength(0);
+  });
+});
+
+describe("parseMultipathNexthops + ECMP in-sync detection", () => {
+  const a = wan({ id: 1, iface: "ens32", ifaceIp: "1.1.1.2", ifaceCidr: null, gateway: "1.1.1.1", mode: "load_balance", weight: 70, priority: 1 });
+  const b = wan({ iface: "ens34", ifaceIp: "20.20.30.1", ifaceCidr: null, gateway: "20.20.30.254", mode: "load_balance", weight: 30, priority: 2 });
+
+  it("parses nexthop triples from a kernel dump (split lines)", () => {
+    const nh = parseMultipathNexthops(["default", "  nexthop via 1.1.1.1 dev ens32 weight 70", "  nexthop via 20.20.30.254 dev ens34 weight 30"]);
+    expect(nh).toEqual([
+      { via: "1.1.1.1", dev: "ens32", weight: "70" },
+      { via: "20.20.30.254", dev: "ens34", weight: "30" },
+    ]);
+  });
+
+  it("ECMP in-sync → zero steps", () => {
+    const inp: WanOsInput = {
+      ...input([a, b]),
+      currentEgressRoutes: ["default", "  nexthop via 1.1.1.1 dev ens32 weight 70", "  nexthop via 20.20.30.254 dev ens34 weight 30"],
+      currentPerWanRoutes: { [WAN_TABLE_BASE]: ["default via 20.20.30.254 dev ens34 src 20.20.30.1 metric 1"] },
+    };
+    const kernel = [rule(WAN_PRIO_BASE, WAN_TABLE_BASE, "20.20.30.1")];
+    const plan = buildWanOsConvergePlan(inp, kernel);
+    expect(plan.steps).toHaveLength(0);
+    expect(plan.activeEgress).toEqual({ iface: "ens32+ens34", style: "ecmp" });
+  });
+
+  it("ECMP weight drift → flush + replace", () => {
+    const inp: WanOsInput = {
+      ...input([a, b]),
+      currentEgressRoutes: ["default", "  nexthop via 1.1.1.1 dev ens32 weight 50", "  nexthop via 20.20.30.254 dev ens34 weight 30"],
+    };
+    const plan = buildWanOsConvergePlan(inp, []);
+    const egressSteps = plan.steps.filter((s) => s.cmd.includes(`table ${WAN_EGRESS_TABLE}`));
+    expect(egressSteps).toHaveLength(2);
+    expect(egressSteps[0].cmd).toBe(`ip route flush table ${WAN_EGRESS_TABLE}`);
+    expect(egressSteps[1].cmd).toContain("nexthop via 1.1.1.1 dev ens32 weight 70");
   });
 });
