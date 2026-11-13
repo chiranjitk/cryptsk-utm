@@ -74,3 +74,4 @@ agent/cryptsk-agent
 
 # local screenshots
 /*.png
+db/cryptsk.db
