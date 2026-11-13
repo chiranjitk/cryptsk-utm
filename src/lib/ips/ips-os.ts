@@ -569,9 +569,15 @@ export async function applyIpsOs(tenantId: number): Promise<IpsApplyOutcome> {
   if (plan.yamlNeedsThresholdFile) yaml = yamlEnsureThresholdFile(yaml, THRESHOLD_FILE).content;
   if (yaml !== yamlText) await fs.writeFile(SURICATA_YAML, yaml, "utf8");
 
-  // 4. validate with the engine test run
-  const validate = await runTool(`suricata -T -c ${JSON.stringify(SURICATA_YAML)} -v 2>&1 | tail -5`, 180_000);
-  if (!validate.ok || /failed|FATAL|Error:/i.test(validate.stdout)) {
+  // 4. validate with the engine test run — the exit code is the verdict
+  //    (never text-matching: "0 rules failed" must not read as failure)
+  const validate = await runTool(
+    `out=$(mktemp); suricata -T -c ${JSON.stringify(SURICATA_YAML)} -v >"$out" 2>&1; rc=$?; tail -5 "$out"; rm -f "$out"; echo "SURICATA_T_EXIT:$rc"`,
+    180_000,
+  );
+  const exitMatch = /SURICATA_T_EXIT:(\d+)/.exec(validate.stdout);
+  const validateExit = exitMatch ? Number(exitMatch[1]) : validate.ok ? 0 : 1;
+  if (validateExit !== 0) {
     await restoreAll();
     return {
       applied: false,
@@ -583,7 +589,7 @@ export async function applyIpsOs(tenantId: number): Promise<IpsApplyOutcome> {
       validateOk: false,
       reloaded: false,
       warnings,
-      detail: `suricata -T validation failed — files restored: ${(validate.stdout || validate.stderr || "no output").slice(0, 300)}`,
+      detail: `suricata -T validation failed (exit ${validateExit}) — files restored: ${(validate.stdout || validate.stderr || "no output").slice(0, 300)}`,
     };
   }
 
