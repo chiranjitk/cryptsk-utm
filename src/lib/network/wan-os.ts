@@ -101,25 +101,35 @@ export async function buildWanOsInput(): Promise<WanOsInput> {
     db.networkInterface.findMany({ where: { tenantId: 1 }, select: { name: true, config: true } }).catch(() => []),
   ]);
   const primaryIface = real.find((r) => r.isDefaultRoute)?.name ?? null;
-  const cfgGateway = new Map<string, string | null>();
+  const cfgOf = new Map<string, { ip: string | null; prefix: number | null; gateway: string | null }>();
   for (const row of ifaces) {
     try {
-      const cfg = JSON.parse(row.config) as { gateway?: unknown };
-      cfgGateway.set(row.name, typeof cfg.gateway === "string" && cfg.gateway ? cfg.gateway : null);
+      const cfg = JSON.parse(row.config) as { ip?: unknown; cidrPrefix?: unknown; gateway?: unknown };
+      cfgOf.set(row.name, {
+        ip: typeof cfg.ip === "string" && cfg.ip ? cfg.ip : null,
+        prefix: typeof cfg.cidrPrefix === "number" ? cfg.cidrPrefix : null,
+        gateway: typeof cfg.gateway === "string" && cfg.gateway ? cfg.gateway : null,
+      });
     } catch {
-      cfgGateway.set(row.name, null);
+      cfgOf.set(row.name, { ip: null, prefix: null, gateway: null });
     }
   }
   const wans: WanOsWanView[] = [];
   for (const row of rows) {
     const os = real.find((r) => r.name === row.interfaceName);
-    const primary = os?.ipv4[0] ?? null; // "a.b.c.d/p" or raw address
-    const [ip, prefix] = primary ? primary.split("/") : [null, null];
+    // addressing authority = the config plane (the console converges the OS to
+    // it); OS facts fill in when a row has no config yet. `os.networkInterfaces`
+    // yields BARE addresses (no prefix) — a /32 "connected" route would be
+    // useless, so without a config prefix we skip the connected step honestly.
+    const cfg = cfgOf.get(row.interfaceName) ?? { ip: null, prefix: null, gateway: null };
+    const osPrimary = os?.ipv4[0] ?? null;
+    const osIp = osPrimary ? osPrimary.split("/")[0] : null;
+    const ip = cfg.ip ?? osIp;
     const cidr =
-      ip && prefix != null
-        ? `${networkOf(ip, Number(prefix))}/${prefix}`
-        : ip;
-    const gateway = (await readGatewayFor(row.interfaceName).catch(() => null)) ?? cfgGateway.get(row.interfaceName) ?? null;
+      ip && cfg.prefix != null
+        ? `${networkOf(ip, cfg.prefix)}/${cfg.prefix}`
+        : null;
+    const gateway = (await readGatewayFor(row.interfaceName).catch(() => null)) ?? cfg.gateway;
     wans.push({
       id: row.id,
       iface: row.interfaceName,
