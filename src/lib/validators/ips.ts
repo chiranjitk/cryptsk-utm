@@ -82,10 +82,28 @@ export const ipsPolicyCreateSchema = z.object({
   tiBlocklist: z.boolean().default(false),
 });
 
-export const ipsPolicyUpdateSchema = ipsPolicyCreateSchema.partial().refine(
-  (v) => Object.keys(v).length > 0,
-  { message: "Empty update" },
-);
+/**
+ * PATCH-style update — fields are optional WITHOUT create-time defaults.
+ * zod v4's `.partial()` still fires `.default()` for absent keys, which would
+ * silently reset mode/enabled/categories/etc. on every partial PUT, so each
+ * field is rebuilt from the create schema's shape with removeDefault().
+ */
+export const ipsPolicyUpdateSchema = z
+  .object({
+    name: ipsPolicyCreateSchema.shape.name.optional(),
+    mode: ipsPolicyCreateSchema.shape.mode.removeDefault().optional(),
+    enabled: ipsPolicyCreateSchema.shape.enabled.removeDefault().optional(),
+    ruleCategories: ipsPolicyCreateSchema.shape.ruleCategories.removeDefault().optional(),
+    customRules: ipsPolicyCreateSchema.shape.customRules.removeDefault().optional(),
+    exceptions: ipsPolicyCreateSchema.shape.exceptions.removeDefault().optional(),
+    thresholds: ipsPolicyCreateSchema.shape.thresholds.removeDefault().optional(),
+    preprocessors: ipsPolicyCreateSchema.shape.preprocessors.removeDefault().optional(),
+    tiBlocklist: ipsPolicyCreateSchema.shape.tiBlocklist.removeDefault().optional(),
+  })
+  .refine(
+    (v) => Object.keys(v).length > 0,
+    { message: "Empty update" },
+  );
 
 // ── events query (M04 §3 locked param set) ─────────────────────────────────
 

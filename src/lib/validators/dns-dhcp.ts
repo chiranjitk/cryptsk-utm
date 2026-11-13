@@ -180,8 +180,21 @@ export const dhcpSubnetCreateSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
-export const dhcpSubnetUpdateSchema = dhcpSubnetCreateSchema
-  .partial()
+/** PATCH-style update — no create-time defaults injected on absent keys
+ *  (zod v4 .partial() would reset leaseTime/wipe dnsServers+options). */
+export const dhcpSubnetUpdateSchema = z
+  .object({
+    interfaceName: dhcpSubnetCreateSchema.shape.interfaceName.optional(),
+    family: dhcpSubnetCreateSchema.shape.family.removeDefault().optional(),
+    subnetCidr: dhcpSubnetCreateSchema.shape.subnetCidr.optional(),
+    rangeStart: dhcpSubnetCreateSchema.shape.rangeStart.optional(),
+    rangeEnd: dhcpSubnetCreateSchema.shape.rangeEnd.optional(),
+    gateway: dhcpSubnetCreateSchema.shape.gateway.optional(),
+    dnsServers: dhcpSubnetCreateSchema.shape.dnsServers.removeDefault().optional(),
+    leaseTime: dhcpSubnetCreateSchema.shape.leaseTime.removeDefault().optional(),
+    options: dhcpSubnetCreateSchema.shape.options.removeDefault().optional(),
+    enabled: dhcpSubnetCreateSchema.shape.enabled.removeDefault().optional(),
+  })
   .refine((v) => Object.keys(v).length > 0, { message: "Empty update" });
 
 // ── DHCP reservations ───────────────────────────────────────────────────────

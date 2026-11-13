@@ -150,8 +150,21 @@ export const vpnUserGroupCreateSchema = z.object({
   memberUsernames: z.array(z.string().min(1).max(64)).max(256).default([]),
 });
 
-export const vpnUserGroupUpdateSchema = vpnUserGroupCreateSchema.partial().refine(
-  (v) => Object.keys(v).length > 0,
+/** PATCH-style update — no create-time defaults injected on absent keys
+ *  (zod v4 .partial() would fire `memberUsernames: []` and wipe membership). */
+export const vpnUserGroupUpdateSchema = z
+  .object({
+    name: vpnUserGroupCreateSchema.shape.name.optional(),
+    description: vpnUserGroupCreateSchema.shape.description.optional(),
+    pool: vpnUserGroupCreateSchema.shape.pool.optional(),
+    dns: vpnUserGroupCreateSchema.shape.dns.optional(),
+    idleTimeoutMin: vpnUserGroupCreateSchema.shape.idleTimeoutMin.optional(),
+    maxSessionMin: vpnUserGroupCreateSchema.shape.maxSessionMin.optional(),
+    maxSessionsPerUser: vpnUserGroupCreateSchema.shape.maxSessionsPerUser.optional(),
+    memberUsernames: vpnUserGroupCreateSchema.shape.memberUsernames.removeDefault().optional(),
+  })
+  .refine(
+    (v) => Object.keys(v).length > 0,
   { message: "Empty update" },
 );
 
