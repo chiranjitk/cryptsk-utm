@@ -3,7 +3,7 @@
  * Pins the protection parsing and the default-route ownership semantics that
  * keep the appliance from cutting its own management access.
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 
 import { buildApplyPlan, buildDeletePlan, diffIfaceOs } from "@/lib/network/iface-os";
 import { protectedIfaces } from "@/lib/network/iface-apply";

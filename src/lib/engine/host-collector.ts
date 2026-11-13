@@ -149,6 +149,9 @@ class HostCollector {
   // optional real sources (resolved lazily)
   private evePath: string | null | undefined; // undefined = not yet probed
   private eveOffset = 0;
+  /** active GUI suppressions (sid → deadline ISO or null=forever), 60 s cache */
+  private suppressedSids = new Map<string, string | null>();
+  private suppressedSidsAt = 0;
   private keaPath: string | null | undefined;
   private keaParsedSize = 0;
   private unboundPath: string | null | undefined;
@@ -608,22 +611,29 @@ class HostCollector {
         if (evt) events.push(evt);
       }
       if (events.length === 0) return;
+      // GUI suppression enforcement at ingest: alerts for suppressed SIDs are
+      // recorded as action=suppressed (with the deadline) instead of re-alerting
+      const sup = await this.activeSuppressions();
+      const rows = events.map((e) => {
+        const until = e.sid ? sup.get(e.sid) : undefined;
+        const suppressed = until !== undefined && (until === null || Date.parse(e.ts) <= Date.parse(until));
+        return {
+          tenantId: 1,
+          timestamp: new Date(e.ts),
+          srcIp: e.srcIp,
+          srcPort: e.srcPort,
+          dstIp: e.dstIp,
+          dstPort: e.dstPort,
+          action: suppressed ? "suppressed" : e.action,
+          sid: e.sid,
+          severity: e.severity,
+          category: e.category,
+          message: e.message,
+          suppressedUntil: suppressed && until ? new Date(until) : null,
+        };
+      });
       try {
-        await db.ipsEvent.createMany({
-          data: events.map((e) => ({
-            tenantId: 1,
-            timestamp: new Date(e.ts),
-            srcIp: e.srcIp,
-            srcPort: e.srcPort,
-            dstIp: e.dstIp,
-            dstPort: e.dstPort,
-            action: e.action,
-            sid: e.sid,
-            severity: e.severity,
-            category: e.category,
-            message: e.message,
-          })),
-        });
+        await db.ipsEvent.createMany({ data: rows });
       } catch {
         // DB write failure — events still go to the live tail
       }
@@ -635,6 +645,30 @@ class HostCollector {
     } finally {
       await fh.close().catch(() => {});
     }
+  }
+
+  /** Active GUI suppressions (sid → deadline ISO | null=forever), 60 s cache. */
+  private async activeSuppressions(): Promise<Map<string, string | null>> {
+    if (Date.now() - this.suppressedSidsAt < 60_000) return this.suppressedSids;
+    const rows = await db.ipsEvent
+      .findMany({
+        where: {
+          tenantId: 1,
+          action: "suppressed",
+          OR: [{ suppressedUntil: null }, { suppressedUntil: { gt: new Date() } }],
+        },
+        select: { sid: true, suppressedUntil: true, timestamp: true },
+        orderBy: { timestamp: "desc" },
+      })
+      .catch(() => []);
+    const map = new Map<string, string | null>();
+    for (const r of rows) {
+      if (!r.sid) continue;
+      if (!map.has(r.sid)) map.set(r.sid, r.suppressedUntil ? r.suppressedUntil.toISOString() : null);
+    }
+    this.suppressedSids = map;
+    this.suppressedSidsAt = Date.now();
+    return map;
   }
 
   private parseEveAlert(line: string): IpsEventEntry | null {
@@ -658,7 +692,7 @@ class HostCollector {
         srcPort: j.src_port ?? null,
         dstIp: j.dest_ip ?? null,
         dstPort: j.dest_port ?? null,
-        action: j.alert.action === "blocked" ? "blocked" : "allowed",
+        action: j.alert.action === "blocked" ? "drop" : "alert",
         sid: j.alert.signature_id ? String(j.alert.signature_id) : null,
         severity,
         category: j.alert.category ?? null,

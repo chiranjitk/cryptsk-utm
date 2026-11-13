@@ -19,6 +19,7 @@ import {
 } from "./catalog";
 import type { IpsEventsQuery, IpsPolicyCreateInput, IpsPolicyUpdateInput } from "@/lib/validators/ips";
 import type { PageMeta } from "@/lib/api/envelope";
+import { normalizeIpsAction, runOsRuleUpdate, type OsRuleUpdateResult } from "./ips-os";
 
 type PolicyRow = Awaited<ReturnType<typeof db.ipsPolicy.findFirst>>;
 
@@ -205,7 +206,9 @@ function shapeEvent(row: Awaited<ReturnType<typeof db.ipsEvent.findFirst>>): Ips
     srcPort: row!.srcPort,
     dstIp: row!.dstIp,
     dstPort: row!.dstPort,
-    action: row!.action as IpsEventDto["action"],
+    // normalise legacy rows written by the pre-integration EVE parser
+    // ("allowed"/"blocked"), which violated the locked IpsAction enum
+    action: normalizeIpsAction(row!.action),
     sid: row!.sid,
     severity: row!.severity as IpsEventDto["severity"],
     category: row!.category,
@@ -350,7 +353,9 @@ export async function putUpdateSettings(tenantId: number, body: { enabled: boole
   return next;
 }
 
-export async function runUpdateNow(tenantId: number): Promise<UpdateSettings> {
+export async function runUpdateNow(
+  tenantId: number,
+): Promise<UpdateSettings & { engine?: OsRuleUpdateResult }> {
   const row = await db.systemSetting.findFirst({ where: { tenantId, ...settingKey() } });
   const prev = row ? { ...defaultSettings(), ...parseJson<Partial<UpdateSettings>>(row.value, {}) } : defaultSettings();
   const next: UpdateSettings = { ...prev, lastUpdateAt: new Date().toISOString(), nextUpdateAt: computeNextUpdate(prev) };
@@ -359,7 +364,15 @@ export async function runUpdateNow(tenantId: number): Promise<UpdateSettings> {
   } else {
     await db.systemSetting.create({ data: { tenantId, ...settingKey(), value: JSON.stringify(next) } });
   }
-  return next;
+  // real ET refresh on the appliance when the gate + suricata-update allow it;
+  // everywhere else this is an honest no-op note (schedule still applies)
+  let engine: OsRuleUpdateResult | undefined;
+  try {
+    engine = await runOsRuleUpdate();
+  } catch {
+    engine = undefined;
+  }
+  return { ...next, engine };
 }
 
 // ── generator state loader (engine) ─────────────────────────────────────────

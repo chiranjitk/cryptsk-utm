@@ -5,7 +5,7 @@
  * Each BR-* code is pinned: positive case (rule fires) and negative case
  * (valid config passes clean).
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 
 import {
   gatewayInSubnet,

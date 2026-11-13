@@ -54,6 +54,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { ipsApi, customRuleLineErrors, fmtDateTime, fmtRelative, type CategoryDefDto, type ExceptionRow, type IpsMode, type IpsPolicyDto, type IpsPreset, type ThresholdRow, type UpdateSettingsDto } from "./ips-api";
 import { ModeBadge, SeverityBadge, modeHint, useIpsConfigInvalidation } from "./ips-ui";
+import { IpsOsSync } from "./os-sync";
 import { ConfirmDialog, EditorSection, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
 
 const POLICIES_KEY = ["ips", "policies"] as const;
@@ -253,6 +254,9 @@ export function PoliciesView() {
           </Button>
         </div>
       </div>
+
+      {/* GUI↔OS integration — real Suricata facts, plan, apply/rollback */}
+      <IpsOsSync />
 
       {policiesQuery.isError ? (
         <QueryError error={policiesQuery.error} onRetry={() => void policiesQuery.refetch()} />
@@ -1034,6 +1038,7 @@ function RuleUpdatesCard(props: { settings: UpdateSettingsDto | null; loading: b
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [interval, setInterval] = useState<"daily" | "weekly" | null>(null);
   const [time, setTime] = useState<string | null>(null);
+  const [engineNote, setEngineNote] = useState<string | null>(null);
 
   const s = props.settings;
   const effEnabled = enabled ?? s?.enabled ?? true;
@@ -1055,8 +1060,16 @@ function RuleUpdatesCard(props: { settings: UpdateSettingsDto | null; loading: b
 
   const runMut = useMutation({
     mutationFn: () => ipsApi.runUpdateNow(),
-    onSuccess: () => {
-      toastOk("ET rules updated", "Emerging Threats feed refreshed (simulated)");
+    onSuccess: (next) => {
+      const engine = next.engine;
+      if (engine?.ranOnOs) {
+        toastOk(engine.reloaded ? "ET ruleset refreshed on host" : "ET ruleset refreshed", engine.note);
+      } else if (engine) {
+        toastErr(new Error(engine.note), "Engine refresh not run — schedule updated");
+      } else {
+        toastOk("ET rules updated", "Emerging Threats feed refreshed (simulated)");
+      }
+      setEngineNote(engine?.note ?? null);
       props.onChanged();
     },
     onError: (err) => toastErr(err, "Update failed"),
@@ -1084,7 +1097,7 @@ function RuleUpdatesCard(props: { settings: UpdateSettingsDto | null; loading: b
             {s.source}
           </Badge>
         </CardTitle>
-        <CardDescription>Suricata-update scheduling — the engine simulates the refresh cycle on its window.</CardDescription>
+        <CardDescription>Suricata-update scheduling — "Run update now" attempts a real host refresh when suricata-update + the OS gate allow it.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid gap-3 md:grid-cols-3">
@@ -1133,6 +1146,11 @@ function RuleUpdatesCard(props: { settings: UpdateSettingsDto | null; loading: b
             </Button>
           </div>
         </div>
+        {engineNote ? (
+          <p className="text-xs text-zinc-500">
+            <span className="font-medium text-zinc-700 dark:text-zinc-300">Engine:</span> {engineNote}
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );
