@@ -20,6 +20,8 @@ export interface OsStepResult {
   cmd: string;
   ok: boolean;
   stderr?: string;
+  /** cleanup step failure (e.g. del of a missing rule) — non-fatal */
+  soft?: boolean;
 }
 
 export interface OsApplyOutcome {
@@ -83,8 +85,16 @@ async function execPlan(plan: OsPlan): Promise<OsApplyOutcome> {
   const results: OsStepResult[] = [];
   for (const step of plan.steps) {
     const r = await runTool(step.cmd);
-    results.push({ cmd: step.cmd, ok: r.ok, stderr: r.ok ? undefined : r.stderr || r.error });
-    if (!r.ok) break; // transactional: stop at first failure
+    // `ip rule del` of an absent rule is cleanup, not a transaction failure —
+    // remaining dels + the table flush must still run
+    const soft = !r.ok && /^ip rule del /.test(step.cmd);
+    results.push({
+      cmd: step.cmd,
+      ok: r.ok || soft,
+      soft: soft || undefined,
+      stderr: r.ok || soft ? undefined : r.stderr || r.error,
+    });
+    if (!r.ok && !soft) break; // transactional: stop at first hard failure
   }
   const failed = results.filter((r) => !r.ok);
   return {

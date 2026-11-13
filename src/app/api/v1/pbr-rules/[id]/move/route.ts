@@ -23,28 +23,32 @@ export const POST = route(
     const max = rows.reduce((m, r) => Math.max(m, r.position), 0);
     const target = Math.min(body.position, max);
     const occupant = rows.find((r) => r.position === target);
-    if (occupant && occupant.id === me.id) {
-      return { data: { moved: false, rule: shapePbrRule(me) } };
+
+    let moved = false;
+    let swappedWith: string | null = null;
+    if (occupant && occupant.id !== me.id) {
+      moved = true;
+      swappedWith = occupant.name;
+      await db.$transaction(async (tx) => {
+        await tx.pbrRule.update({ where: { id: occupant.id }, data: { position: me.position } });
+        await tx.pbrRule.update({ where: { id: me.id }, data: { position: target } });
+      });
     }
 
-    await db.$transaction(async (tx) => {
-      if (occupant) {
-        await tx.pbrRule.update({ where: { id: occupant.id }, data: { position: me.position } });
-      }
-      await tx.pbrRule.update({ where: { id: me.id }, data: { position: target } });
-    });
-
     const updated = await db.pbrRule.findUnique({ where: { id } });
+    const rule = moved && updated ? shapePbrRule(updated) : shapePbrRule(me);
     return {
-      data: { moved: true, rule: updated ? shapePbrRule(updated) : null, swappedWith: occupant?.name ?? null },
-      audit: {
-        action: "pbr.move",
-        objectType: "pbr_rule",
-        objectId: id,
-        objectName: me.name,
-        before: { position: me.position },
-        after: { position: target, swappedWith: occupant?.name ?? null },
-      },
+      data: { moved, rule, swappedWith },
+      audit: moved
+        ? {
+            action: "pbr.move",
+            objectType: "pbr_rule",
+            objectId: id,
+            objectName: me.name,
+            before: { position: me.position },
+            after: { position: target, swappedWith },
+          }
+        : undefined,
     };
   },
 );

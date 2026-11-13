@@ -69,8 +69,8 @@ export function shapePbrRule(r: {
   serviceIds: string;
   outgoingIface: string | null;
   gateway: string | null;
-  description: string | null;
-  createdAt: Date;
+  description?: string | null;
+  createdAt?: Date;
 }) {
   return {
     id: r.id,

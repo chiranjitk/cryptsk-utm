@@ -74,6 +74,7 @@ import { BfdChip, PbrKernelBadge, RouteOsBadge } from "./net-ui";
 
 const ROUTES_KEY = ["network", "routes"] as const;
 const PBR_KEY = ["network", "pbr"] as const;
+const PBR_PLANS_KEY = ["network", "pbr-plans"] as const;
 const IFACES_KEY = ["network", "interfaces"] as const;
 
 /** Runtime extensions of the shared M03 endpoints (contract pins id+name). */
@@ -605,6 +606,10 @@ function PbrTab() {
   const [editing, setEditing] = useState<PbrRow | null>(null);
   const [deleting, setDeleting] = useState<PbrRow | null>(null);
   const [applyingRule, setApplyingRule] = useState<PbrRow | "all" | null>(null);
+  const [planDialogRule, setPlanDialogRule] = useState<PbrRow | "all" | null>(null);
+
+  // plan preview (GET /pbr-rules/apply) — shown in the per-rule plan dialog
+  const planPreviewQuery = useQuery({ queryKey: PBR_PLANS_KEY, queryFn: () => netApi.previewPbrPlans(), enabled: false, staleTime: 15_000 });
 
   const rules = useMemo(() => [...(pbrQuery.data?.data ?? [])].sort((a, b) => a.position - b.position), [pbrQuery.data]);
 
@@ -613,14 +618,17 @@ function PbrTab() {
     onSuccess: (outcomes) => {
       for (const o of outcomes) {
         if (o.os.gate === "off") toastOk(`Policy route ${o.name} — plan preview only`, o.os.reason);
-        else if (o.configOnly) toastOk(`Policy route ${o.name} — config-only`, "service matches need the fwmark dataplane (planned)");
+        else if (o.configOnly) toastOk(`Policy route ${o.name} — config-only`, "kernel cannot express this match — see the plan preview for the reason");
         else if (o.os.applied) toastOk(`Policy route ${o.name}`, "applied to the kernel");
         else toastErr(new NetApiError("OS_APPLY", o.os.reason), `Policy route ${o.name}`);
       }
       setApplyingRule(null);
     },
     onError: (err) => toastErr(err, "Kernel sync failed"),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: PBR_KEY }),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: PBR_KEY });
+      void queryClient.invalidateQueries({ queryKey: PBR_PLANS_KEY });
+    },
   });
 
   const moveMut = useMutation({
@@ -692,11 +700,23 @@ function PbrTab() {
         <Icons.Info className="h-4 w-4" />
         <AlertTitle>Policy-based routing</AlertTitle>
         <AlertDescription>
-          Address-based rules converge into real kernel policy tables (<code className="font-mono">ip rule</code> + dedicated lookup tables, priorities 5000+). Rules carrying a <b>service</b> match stay config-only until the fwmark dataplane lands — the Kernel column says "config-only" honestly. PBR evaluates before multi-WAN mode selection.
+          Rules converge into real kernel policy tables (<code className="font-mono">ip rule</code> + dedicated lookup tables, priorities 5000+). Address matches use from/to selectors; <b>service</b> matches compile to kernel protocol selectors (<code className="font-mono">ipproto tcp dport 443</code> style). Only matches the kernel cannot express stay config-only — the Kernel column reports it honestly. PBR evaluates before multi-WAN mode selection.
         </AlertDescription>
       </Alert>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={planPreviewQuery.isFetching}
+          onClick={() => {
+            setPlanDialogRule("all");
+            void planPreviewQuery.refetch();
+          }}
+          aria-label="Preview apply plans"
+        >
+          <Icons.Terminal className={cn("mr-1 h-4 w-4", planPreviewQuery.isFetching && "animate-spin")} /> Preview plans
+        </Button>
         <Button
           size="sm"
           variant="outline"
@@ -770,6 +790,15 @@ function PbrTab() {
                           <span className="text-zinc-300 dark:text-zinc-700">·</span>
                           <ObjectChips ids={r.serviceIds} map={svcById} />
                         </div>
+                        {r.matches && (r.matches.src.length > 0 || r.matches.dst.length > 0 || r.matches.services.length > 0) ? (
+                          <p className="mt-1 max-w-md truncate font-mono text-[10px] text-zinc-400" title={`${r.matches.src.join(", ") || "any"} → ${r.matches.dst.join(", ") || "any"}${r.matches.services.length ? ` · ${r.matches.services.join(" · ")}` : ""}`}>
+                            {r.matches.src.join(", ") || "any"} → {r.matches.dst.join(", ") || "any"}
+                            {r.matches.services.length ? ` · ${r.matches.services.join(" · ")}` : ""}
+                            {r.matches.srcUnresolved + r.matches.dstUnresolved > 0
+                              ? ` (+${r.matches.srcUnresolved + r.matches.dstUnresolved} non-CIDR objects skipped)`
+                              : ""}
+                          </p>
+                        ) : null}
                       </TableCell>
                       <TableCell>
                         <span className="font-mono text-xs">
@@ -800,6 +829,19 @@ function PbrTab() {
                             onClick={() => moveMut.mutate({ id: r.id, position: r.position + 1 })}
                           >
                             <Icons.ChevronDown className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            aria-label={`Preview kernel plan for ${r.name}`}
+                            title="Preview the ip rule / table commands for this policy route"
+                            onClick={() => {
+            setPlanDialogRule(r);
+            void planPreviewQuery.refetch();
+          }}
+                          >
+                            <Icons.Terminal className="h-3.5 w-3.5" />
                           </Button>
                           <Button
                             variant="ghost"
@@ -870,12 +912,69 @@ function PbrTab() {
         title="Sync policy routes to the kernel?"
         description={
           applyingRule === "all"
-            ? "Every rule converges: enabled rules install ip rule entries (priorities 5000+) + dedicated lookup tables; disabled rules withdraw theirs. Service-matched rules stay config-only (fwmark dataplane planned)."
+            ? "Every rule converges: enabled rules install ip rule entries (priorities 5000+) + dedicated lookup tables — address matches use from/to selectors, service matches compile to ipproto/sport/dport selectors; disabled rules withdraw theirs. Kernel-inexpressible matches stay config-only."
             : `Converge '${applyingRule?.name ?? ""}' into the kernel (gated by the appliance OS-apply policy).`
         }
         loading={pbrApplyMut.isPending}
         onConfirm={() => applyingRule && pbrApplyMut.mutate(applyingRule)}
       />
+
+      {/* plan preview dialog (GET /pbr-rules/apply — no exec) */}
+      <Dialog
+        open={planDialogRule !== null}
+        onOpenChange={(open) => {
+          if (!open) setPlanDialogRule(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icons.Terminal className="h-4 w-4 text-zinc-500" />
+              Kernel apply plans {planDialogRule === "all" ? "— all rules" : planDialogRule ? `— ${planDialogRule.name}` : ""}
+            </DialogTitle>
+            <DialogDescription>Preview only — nothing is executed until you use Sync to kernel.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {planPreviewQuery.isFetching && <p className="text-xs text-zinc-400">Building plans…</p>}
+            {planPreviewQuery.error ? (
+              <QueryError error={planPreviewQuery.error} onRetry={() => void planPreviewQuery.refetch()} />
+            ) : (
+              (planPreviewQuery.data ?? [])
+                .filter((p) => (planDialogRule === "all" ? true : planDialogRule != null && p.id === planDialogRule.id))
+                .map((p) => (
+                  <div key={p.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                      <p className="font-mono text-xs font-semibold">{p.name}</p>
+                      <PbrKernelBadge state={p.state} />
+                      {p.configOnly ? <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-600 dark:text-amber-400">config-only</Badge> : null}
+                    </div>
+                    <p className="mb-1.5 text-[11px] text-zinc-500">{p.reason}</p>
+                    {p.plan.length === 0 ? (
+                      <p className="text-xs text-zinc-400">No kernel steps needed.</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {p.plan.map((s, i) => (
+                          <li key={i} className="flex items-start gap-2 text-xs">
+                            <span className="font-mono text-zinc-700 dark:text-zinc-300">$ {s.cmd}</span>
+                            <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{s.summary}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))
+            )}
+            {!planPreviewQuery.isFetching && !planPreviewQuery.error && (planPreviewQuery.data ?? []).length === 0 && (
+              <p className="text-sm text-zinc-500">No policy routes to preview.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPlanDialogRule(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

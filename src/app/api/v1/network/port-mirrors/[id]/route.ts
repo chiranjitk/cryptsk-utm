@@ -10,8 +10,11 @@ import { db } from "@/lib/db";
 import { idParamSchema, mirrorBodySchema } from "@/lib/validators/network";
 import { assertIfacesExist } from "@/lib/network/iface-service";
 import { shapeMirror } from "@/lib/network/shapes";
+import { isProtectedMirrorIface } from "@/lib/network/mirror-os";
 
 export const dynamic = "force-dynamic";
+
+const CONSOLE_PROTECTED_HINT = "set CONSOLE_PROTECTED_IFACES to change";
 
 export const PUT = route(
   { area: "network", bodySchema: mirrorBodySchema, section: "interfaces" },
@@ -21,6 +24,14 @@ export const PUT = route(
     if (!before) throw ApiError.notFound(`Port mirror ${id} not found`);
 
     await assertIfacesExist(auth.tenantId, [body.srcIface, body.dstIface]);
+
+    // protected interfaces are never mirrored (config refused up front)
+    const prot = [body.srcIface, body.dstIface].filter((n) => isProtectedMirrorIface(n));
+    if (prot.length > 0) {
+      throw ApiError.validation(
+        `${prot.join(", ")} is a protected interface (${CONSOLE_PROTECTED_HINT}) — mirroring is refused`,
+      );
+    }
 
     // re-enabling must also respect the one-active-per-src rule (M02 §3)
     if (body.enabled) {

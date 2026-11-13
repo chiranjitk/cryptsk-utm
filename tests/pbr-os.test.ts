@@ -50,11 +50,65 @@ describe("buildPbrApplyPlan", () => {
     ]);
   });
 
-  it("service-matched rules are honest config-only (no kernel steps)", () => {
+  it("service-matched rules with unresolved ids are honest config-only", () => {
     const plan = buildPbrApplyPlan(rule({ serviceIds: [7] }), [{ id: 1, cidr: "10.0.0.0/8" }], []);
     expect(plan.configOnly).toBe(true);
     expect(plan.steps).toHaveLength(0);
-    expect(plan.reason).toMatch(/fwmark/i);
+    expect(plan.reason).toMatch(/unresolved/i);
+  });
+
+  it("service-matched rules compile to ipproto/dport selectors (kernel enforcement)", () => {
+    const plan = buildPbrApplyPlan(
+      rule({ serviceIds: [7] }),
+      [{ id: 1, cidr: "10.99.99.0/24" }],
+      [],
+      [
+        { id: 7, cidr: null, protocol: "tcp", srcPorts: [], dstPorts: [{ lo: 443, hi: 443 }], expressible: true },
+      ],
+    );
+    expect(plan.configOnly).toBe(false);
+    expect(plan.steps).toHaveLength(2);
+    expect(plan.steps[1].cmd).toBe(
+      `ip rule add priority ${PBR_PRIO_BASE + 10} from 10.99.99.0/24 ipproto tcp dport 443 table ${PBR_TABLE_BASE + 1}`,
+    );
+  });
+
+  it("port-range service selectors compile to dport lo-hi", () => {
+    const plan = buildPbrApplyPlan(
+      rule({ serviceIds: [8] }),
+      [],
+      [],
+      [
+        { id: 8, cidr: null, protocol: "udp", srcPorts: [{ lo: 5000, hi: 5100 }], dstPorts: [], expressible: true },
+      ],
+    );
+    expect(plan.configOnly).toBe(false);
+    expect(plan.steps[1].cmd).toBe(`ip rule add priority ${PBR_PRIO_BASE + 10} ipproto udp sport 5000-5100 table ${PBR_TABLE_BASE + 1}`);
+  });
+
+  it("malformed port tokens stay config-only", () => {
+    const plan = buildPbrApplyPlan(
+      rule({ serviceIds: [9] }),
+      [],
+      [],
+      [{ id: 9, cidr: null, protocol: "tcp", srcPorts: [], dstPorts: [], expressible: false }],
+    );
+    expect(plan.configOnly).toBe(true);
+    expect(plan.reason).toMatch(/not kernel-expressible/i);
+  });
+
+  it("cidr × service fan-out over the cap stays config-only", () => {
+    const src = Array.from({ length: 5 }, (_, i) => ({ id: i + 1, cidr: `10.1.${i}.0/24` }));
+    const svc = Array.from({ length: 20 }, (_, i) => ({
+      id: 100 + i,
+      cidr: null,
+      protocol: "tcp" as const,
+      srcPorts: [],
+      dstPorts: [{ lo: 1000 + i, hi: 1000 + i }],
+      expressible: true,
+    }));
+    const plan = buildPbrApplyPlan(rule(), src, [], svc);
+    expect(plan.configOnly).toBe(true);
   });
 
   it("disabled rules produce no kernel steps", () => {
@@ -103,8 +157,18 @@ describe("parseKernelPbrRules + pbrKernelState", () => {
     expect(pbrKernelState(rule({ position: 7 }), kernel)).toBe("missing");
   });
 
-  it("config-only for service-matched rules", () => {
-    expect(pbrKernelState(rule({ serviceIds: [5] }), kernel)).toBe("config-only");
+  it("config-only for service-matched rules (compiled plan reports it)", () => {
+    // service rules whose ids resolve nowhere → plan.configOnly → state
+    expect(pbrKernelState(rule({ serviceIds: [5] }), kernel, { configOnly: true })).toBe("config-only");
+  });
+
+  it("parses ipproto/sport/dport selectors + counter stats", () => {
+    const rows = parseKernelPbrRules(
+      `5010: from 10.99.99.0/24 ipproto tcp dport 443 lookup 10001\n5011: from all ipproto udp sport 5000-5100 lookup 10002 [hit_count 12 ref_count 1]`,
+    );
+    expect(rows[0]).toMatchObject({ priority: 5010, ipproto: "tcp", dport: "443", table: 10001 });
+    expect(rows[1]).toMatchObject({ priority: 5011, ipproto: "udp", sport: "5000-5100", table: 10002 });
+    expect(rows[1].stats).toContain("hit_count 12");
   });
 
   it("disabled rules report disabled", () => {

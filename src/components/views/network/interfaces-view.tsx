@@ -92,10 +92,15 @@ import {
   type ArpEntry,
   type OsRouteEntry,
   type DiagPingResult,
+  type TracerouteResult,
+  type DnsLookupResult,
+  type TcpCheckResult,
   type HostPort,
   type MacRow,
   type Mirror,
+  type MirrorApplyOutcome,
   type MirrorDirection,
+  type MirrorBody,
   type OsApplyResp,
   type OsStateResp,
   type SecondaryIp,
@@ -110,8 +115,10 @@ import {
 } from "@/lib/network/iface-rules";
 import {
   DirectionChip,
+  DataSourceBadge,
   IfaceConfigSummary,
   LinkDot,
+  MirrorKernelBadge,
   ModeChip,
   RoleBadge,
   Sparkline,
@@ -248,6 +255,24 @@ function ScrollWrap({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
+}
+
+/** Client-side CSV export for derived/diagnostic tables. */
+function downloadCsv(filename: string, rows: Array<Record<string, unknown>>): void {
+  if (rows.length === 0) return;
+  const headers = Object.keys(rows[0]);
+  const esc = (v: unknown) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers.join(","), ...rows.map((r) => headers.map((h) => esc(r[h])).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function InfoBanner(props: { title: string; children: React.ReactNode }) {
@@ -2042,10 +2067,13 @@ function LldpTab() {
   return (
     <div className="space-y-3">
       <InfoBanner title="Derived switching view">
-        Churned by the simulated switching generator — not persisted. Per-iface LLDP transmit toggles live in the Interfaces tab (config.lldp).
+        {query.data?.meta?.source === "live"
+          ? "Neighbors read from the host's lldpd (lldpctl) — real 802.1AB data. Per-iface LLDP transmit toggles live in the Interfaces tab (config.lldp)."
+          : "Churned by the simulated switching generator — not persisted. Install lldpd on the appliance to switch this table to real 802.1AB neighbors. Per-iface LLDP transmit toggles live in the Interfaces tab (config.lldp)."}
       </InfoBanner>
 
       <div className="flex flex-wrap items-center gap-2">
+        <DataSourceBadge source={query.data?.meta?.source} />
         <Select value={ifaceFilter} onValueChange={setIfaceFilter}>
           <SelectTrigger className="h-8 w-44" aria-label="Filter by local interface">
             <SelectValue />
@@ -2069,6 +2097,28 @@ function LldpTab() {
             aria-label="Search LLDP neighbors"
           />
         </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          disabled={filtered.length === 0}
+          onClick={() =>
+            downloadCsv(
+              "lldp-neighbors.csv",
+              filtered.map((r) => ({
+                localIface: r.localIface,
+                chassisId: r.chassisId,
+                systemName: r.systemName,
+                portId: r.portId,
+                portDesc: r.portDesc ?? "",
+                capabilities: r.capabilities.join(" "),
+                lastSeenSec: r.lastSeenSec,
+              })),
+            )
+          }
+        >
+          <Icons.Download className="mr-1 h-3.5 w-3.5" /> Export CSV
+        </Button>
       </div>
 
       <Card className="p-0">
@@ -2132,7 +2182,7 @@ function LldpTab() {
           )}
         </CardContent>
       </Card>
-      <p className="text-xs text-zinc-400">Auto-refreshes every 10 s.</p>
+      <p className="text-xs text-zinc-400">Auto-refreshes every 10 s. {query.data?.meta?.source === "live" ? "Data source: host lldpd." : "Data source: engine simulation."}</p>
     </div>
   );
 }
@@ -2196,9 +2246,32 @@ function MacTab({ ifaces }: { ifaces: Iface[] }) {
             aria-label="Search MAC table"
           />
         </div>
-        <Button size="sm" variant="outline" className="ml-auto" onClick={() => void query.refetch()} disabled={query.isFetching}>
+        <Button size="sm" variant="outline" onClick={() => void query.refetch()} disabled={query.isFetching}>
           <Icons.RefreshCw className={cn("mr-1 h-3.5 w-3.5", query.isFetching && "animate-spin")} /> Refresh
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          disabled={rows.length === 0}
+          onClick={() =>
+            downloadCsv(
+              "mac-table.csv",
+              rows.map((r) => ({ mac: r.mac, vlan: r.vlan, iface: r.iface, type: r.type, ageSec: r.ageSec })),
+            )
+          }
+        >
+          <Icons.Download className="mr-1 h-3.5 w-3.5" /> Export CSV
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+        <DataSourceBadge source={query.data?.meta?.source} />
+        <span>
+          {query.data?.meta?.source === "live"
+            ? "Dynamic entries read from the kernel bridge FDB (bridge fdb show); static entries derive from DHCP reservations and bridge membership."
+            : "Dynamic entries are engine-simulated; static entries derive from DHCP reservations and bridge membership."}
+        </span>
       </div>
 
       <Card className="p-0">
@@ -2255,7 +2328,7 @@ function MacTab({ ifaces }: { ifaces: Iface[] }) {
           )}
         </CardContent>
       </Card>
-      <p className="text-xs text-zinc-400">Auto-refreshes every 10 s; static entries derive from DHCP reservations and bridge membership.</p>
+      <p className="text-xs text-zinc-400">Auto-refreshes every 10 s. {query.data?.meta?.source === "live" ? "Dynamic FDB data source: kernel." : "Dynamic FDB data source: engine simulation."}</p>
     </div>
   );
 }
@@ -2268,6 +2341,10 @@ function MirrorsTab({ ifaces }: { ifaces: Iface[] }) {
   const rows = useMemo(() => query.data?.data ?? [], [query.data]);
 
   const [deleting, setDeleting] = useState<Mirror | null>(null);
+  const [editing, setEditing] = useState<Mirror | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [applying, setApplying] = useState<Mirror | "all" | null>(null);
+  const [applyOutcome, setApplyOutcome] = useState<MirrorApplyOutcome[] | null>(null);
 
   const toggleMut = useMutation({
     mutationFn: (mirror: Mirror) =>
@@ -2287,11 +2364,39 @@ function MirrorsTab({ ifaces }: { ifaces: Iface[] }) {
     onSettled: () => void queryClient.invalidateQueries({ queryKey: MIRRORS_KEY }),
   });
 
+  const applyMut = useMutation({
+    mutationFn: (target: Mirror | "all") => netApi.applyMirrors(target === "all" ? undefined : target.id),
+    onSuccess: (outcomes) => {
+      setApplyOutcome(outcomes);
+      setApplying(null);
+      for (const o of outcomes) {
+        if (o.os.gate === "off") toastOk(`SPAN ${o.name} — plan preview only`, o.os.reason);
+        else if (o.os.applied) toastOk(`SPAN ${o.name}`, o.state === "in-kernel" ? "mirroring installed in the kernel" : o.os.reason);
+        else toastErr(new NetApiError("OS_APPLY", o.os.reason), `SPAN ${o.name}`);
+      }
+    },
+    onError: (err) => toastErr(err, "Kernel sync failed"),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: MIRRORS_KEY }),
+  });
+
   return (
     <div className="space-y-3">
       <InfoBanner title="SPAN sessions">
-        Mirrored traffic feeds the IPS passive (IDS) tap on the appliance (tc mirred). In the sandbox mirrors are recorded config only — one active mirror per source interface (409 otherwise).
+        Mirrored traffic feeds the IPS passive (IDS) tap on the appliance. Sync converges sessions into real kernel mirroring (tc clsact + matchall → mirred); one active mirror per source interface (409 otherwise). Protected uplinks are never mirrored.
       </InfoBanner>
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={applyMut.isPending || rows.length === 0}
+          onClick={() => setApplying("all")}
+          aria-label="Apply all SPAN sessions to kernel"
+        >
+          <Icons.RefreshCw className={cn("mr-1 h-4 w-4", applyMut.isPending && "animate-spin")} /> Sync to kernel
+        </Button>
+        <AddMirrorButton ifaces={ifaces} />
+      </div>
 
       <Card className="p-0">
         <CardContent className="p-0">
@@ -2301,7 +2406,7 @@ function MirrorsTab({ ifaces }: { ifaces: Iface[] }) {
             </div>
           ) : query.isLoading ? (
             <div className="p-4">
-              <TableSkeleton rows={3} cols={5} />
+              <TableSkeleton rows={3} cols={6} />
             </div>
           ) : rows.length === 0 ? (
             <EmptyBlock
@@ -2311,20 +2416,29 @@ function MirrorsTab({ ifaces }: { ifaces: Iface[] }) {
             />
           ) : (
             <ScrollWrap>
-              <Table className="min-w-[680px] text-sm">
+              <Table className="min-w-[860px] text-sm">
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Source → capture</TableHead>
                     <TableHead className="w-24">Direction</TableHead>
                     <TableHead className="w-20">On</TableHead>
-                    <TableHead className="w-20 pr-2 text-right">Actions</TableHead>
+                    <TableHead className="w-32">Kernel</TableHead>
+                    <TableHead className="w-28 pr-2 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((m) => (
                     <TableRow key={m.id} className={cn(!m.enabled && "opacity-60")}>
-                      <TableCell className="font-medium">{m.name}</TableCell>
+                      <TableCell>
+                        <span className="block font-medium">{m.name}</span>
+                        {m.description ? <p className="max-w-40 truncate text-[11px] text-zinc-400">{m.description}</p> : null}
+                        {(m.protectedIfaces ?? []).length > 0 && (
+                          <Badge variant="outline" className="mt-1 border-rose-500/40 bg-rose-500/5 text-[10px] font-medium text-rose-500">
+                            protected: {m.protectedIfaces!.join(", ")}
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <span className="inline-flex items-center gap-1.5 font-mono text-xs">
                           {m.srcIface}
@@ -2343,16 +2457,44 @@ function MirrorsTab({ ifaces }: { ifaces: Iface[] }) {
                           onCheckedChange={() => toggleMut.mutate(m)}
                         />
                       </TableCell>
+                      <TableCell>
+                        <MirrorKernelBadge state={m.kernelState} />
+                      </TableCell>
                       <TableCell className="pr-2 text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-rose-600 hover:text-rose-700 dark:text-rose-400"
-                          aria-label={`Delete mirror ${m.name}`}
-                          onClick={() => setDeleting(m)}
-                        >
-                          <Icons.Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            aria-label={`Sync mirror ${m.name} to kernel`}
+                            title="Install/withdraw this SPAN session in the kernel"
+                            disabled={applyMut.isPending}
+                            onClick={() => setApplying(m)}
+                          >
+                            <Icons.RefreshCw className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            aria-label={`Edit mirror ${m.name}`}
+                            onClick={() => {
+                              setEditing(m);
+                              setEditorOpen(true);
+                            }}
+                          >
+                            <Icons.Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-rose-600 hover:text-rose-700 dark:text-rose-400"
+                            aria-label={`Delete mirror ${m.name}`}
+                            onClick={() => setDeleting(m)}
+                          >
+                            <Icons.Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -2363,36 +2505,107 @@ function MirrorsTab({ ifaces }: { ifaces: Iface[] }) {
         </CardContent>
       </Card>
 
+      {editorOpen && (
+        <MirrorEditor
+          key={editing?.id ?? "new"}
+          open={editorOpen}
+          onOpenChange={(open) => {
+            setEditorOpen(open);
+            if (!open) setEditing(null);
+          }}
+          ifaces={ifaces}
+          editing={editing}
+        />
+      )}
+
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
         title="Delete mirror session?"
-        description={`Delete SPAN session '${deleting?.name ?? ""}'? The capture interface stops receiving mirrored traffic.`}
+        description={`Delete SPAN session '${deleting?.name ?? ""}'? The capture interface stops receiving mirrored traffic; kernel filters are withdrawn best-effort on the next sync.`}
         loading={deleteMut.isPending}
         onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
       />
+
+      <ConfirmDialog
+        open={applying !== null}
+        onOpenChange={(open) => !open && setApplying(null)}
+        title="Sync SPAN sessions to the kernel?"
+        description={
+          applying === "all"
+            ? "Every session converges: enabled sessions install tc clsact + matchall → mirred filters; disabled sessions withdraw theirs. Protected uplinks are refused."
+            : `Converge '${applying?.name ?? ""}' into the kernel (gated by the appliance OS-apply policy).`
+        }
+        loading={applyMut.isPending}
+        onConfirm={() => applying && applyMut.mutate(applying)}
+      />
+
+      {/* apply plan + results (gated preview / exec) */}
+      <Dialog open={applyOutcome !== null} onOpenChange={(open) => !open && setApplyOutcome(null)}>
+        <DialogContent className="max-h-[85vh] w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icons.Terminal className="h-4 w-4 text-zinc-500" />
+              SPAN kernel sync results
+            </DialogTitle>
+            <DialogDescription>tc qdisc / tc filter commands executed on the appliance.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {(applyOutcome ?? []).map((o) => (
+              <div key={o.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <p className="font-mono text-xs font-semibold">{o.name}</p>
+                  <MirrorKernelBadge state={o.state} />
+                </div>
+                {(o.os.results ?? []).map((r, i) => (
+                  <p key={i} className="flex items-start gap-2 font-mono text-[11px]">
+                    {r.ok ? (
+                      <Icons.CircleCheck className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" />
+                    ) : (
+                      <Icons.CircleX className="mt-0.5 h-3 w-3 shrink-0 text-rose-500" />
+                    )}
+                    <span className="truncate">{r.cmd}</span>
+                    {!r.ok && r.stderr ? <span className="ml-auto shrink-0 text-[10px] text-rose-500">{r.stderr}</span> : null}
+                  </p>
+                ))}
+                {(!o.os.results || o.os.results.length === 0) && <p className="text-xs text-zinc-500">{o.os.reason}</p>}
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setApplyOutcome(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function MirrorEditor(props: { open: boolean; onOpenChange: (open: boolean) => void; ifaces: Iface[] }) {
+
+function MirrorEditor(props: { open: boolean; onOpenChange: (open: boolean) => void; ifaces: Iface[]; editing?: Mirror | null }) {
   const queryClient = useQueryClient();
-  const [name, setName] = useState("");
-  const [srcIface, setSrcIface] = useState("");
-  const [dstIface, setDstIface] = useState("");
-  const [direction, setDirection] = useState<MirrorDirection>("both");
-  const [enabled, setEnabled] = useState(true);
+  const editing = props.editing ?? null;
+  const isEdit = editing != null;
+
+  const [name, setName] = useState(editing?.name ?? "");
+  const [srcIface, setSrcIface] = useState(editing?.srcIface ?? "");
+  const [dstIface, setDstIface] = useState(editing?.dstIface ?? "");
+  const [direction, setDirection] = useState<MirrorDirection>(editing?.direction ?? "both");
+  const [enabled, setEnabled] = useState(editing?.enabled ?? true);
+  const [description, setDescription] = useState(editing?.description ?? "");
   const [error, setError] = useState<string | null>(null);
 
   const mut = useMutation({
-    mutationFn: () =>
-      netApi.createMirror({ name: name.trim(), srcIface, dstIface, direction, enabled, description: null }),
-    onSuccess: (created) => {
-      toastOk("Mirror session created", created.name);
+    mutationFn: (body: MirrorBody) =>
+      isEdit ? netApi.updateMirror(editing.id, body) : netApi.createMirror(body),
+    onSuccess: (saved) => {
+      toastOk(isEdit ? "Mirror session updated" : "Mirror session created", saved.name);
       props.onOpenChange(false);
       void queryClient.invalidateQueries({ queryKey: MIRRORS_KEY });
     },
-    onError: (err) => toastErr(err, "Create failed"),
+    onError: (err) => toastErr(err, isEdit ? "Update failed" : "Create failed"),
   });
 
   const submit = () => {
@@ -2401,7 +2614,14 @@ function MirrorEditor(props: { open: boolean; onOpenChange: (open: boolean) => v
     if (!dstIface) return setError("Capture interface is required");
     if (srcIface === dstIface) return setError("Source and capture interfaces must differ");
     setError(null);
-    mut.mutate();
+    mut.mutate({
+      name: name.trim(),
+      srcIface,
+      dstIface,
+      direction,
+      enabled,
+      description: description.trim() || null,
+    });
   };
 
   const ifaceNames = useMemo(() => props.ifaces.map((i) => ({ name: i.name, type: i.type })), [props.ifaces]);
@@ -2410,7 +2630,7 @@ function MirrorEditor(props: { open: boolean; onOpenChange: (open: boolean) => v
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="w-[calc(100vw-1rem)] max-w-md">
         <DialogHeader>
-          <DialogTitle>Add mirror session</DialogTitle>
+          <DialogTitle>{isEdit ? `Edit mirror session — ${editing.name}` : "Add mirror session"}</DialogTitle>
           <DialogDescription>
             Copy traffic from a source interface to a capture interface. Only one active mirror per source interface is allowed.
           </DialogDescription>
@@ -2462,6 +2682,15 @@ function MirrorEditor(props: { open: boolean; onOpenChange: (open: boolean) => v
               ))}
             </RadioGroup>
           </div>
+          <div>
+            <FieldLabel hint="optional">Description</FieldLabel>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="IDS tap for the LAN segment"
+              aria-label="Mirror session description"
+            />
+          </div>
           <Label className="flex items-center gap-2 text-sm">
             <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Enable mirror session" /> Enabled
           </Label>
@@ -2472,15 +2701,13 @@ function MirrorEditor(props: { open: boolean; onOpenChange: (open: boolean) => v
             Cancel
           </Button>
           <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
-            {mut.isPending ? "Creating…" : "Create mirror"}
+            {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create mirror"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
-
-// ── Diagnostics tab (vendor-style: host ports / ARP / routes / ping) ────────
 
 function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
   const portsQuery = useQuery({ queryKey: HOST_PORTS_KEY, queryFn: () => netApi.listHostPorts(), refetchInterval: 10_000 });
@@ -2493,11 +2720,50 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
   const [pingHost, setPingHost] = useState("");
   const [pingIface, setPingIface] = useState("");
   const [pingCount, setPingCount] = useState("3");
+  const [pingSize, setPingSize] = useState("0");
   const [pingResult2, setPingResult2] = useState<DiagPingResult | null>(null);
   const pingMut2 = useMutation({
-    mutationFn: () => netApi.pingDiag(pingHost.trim(), pingIface || undefined, Number(pingCount) || 3),
+    mutationFn: () =>
+      netApi.pingDiag(
+        pingHost.trim(),
+        pingIface || undefined,
+        Number(pingCount) || 3,
+        Number(pingSize) > 0 ? Number(pingSize) : undefined,
+        Number(pingSize) > 0,
+      ),
     onSuccess: (r) => setPingResult2(r),
     onError: (err) => toastErr(err, "Ping failed"),
+  });
+
+  // traceroute tool state
+  const [trHost, setTrHost] = useState("");
+  const [trIface, setTrIface] = useState("");
+  const [trResult, setTrResult] = useState<TracerouteResult | null>(null);
+  const trMut = useMutation({
+    mutationFn: () => netApi.tracerouteDiag(trHost.trim(), trIface || undefined, 10),
+    onSuccess: (r) => setTrResult(r),
+    onError: (err) => toastErr(err, "Traceroute failed"),
+  });
+
+  // DNS lookup tool state
+  const [dnsName, setDnsName] = useState("");
+  const [dnsServer, setDnsServer] = useState("");
+  const [dnsResult, setDnsResult] = useState<DnsLookupResult | null>(null);
+  const dnsMut = useMutation({
+    mutationFn: () => netApi.dnsLookupDiag(dnsName.trim(), dnsServer.trim() || undefined),
+    onSuccess: (r) => setDnsResult(r),
+    onError: (err) => toastErr(err, "DNS lookup failed"),
+  });
+
+  // TCP probe tool state
+  const [tcpHost, setTcpHost] = useState("");
+  const [tcpPort, setTcpPort] = useState("443");
+  const [tcpIface, setTcpIface] = useState("");
+  const [tcpResult, setTcpResult] = useState<TcpCheckResult | null>(null);
+  const tcpMut = useMutation({
+    mutationFn: () => netApi.tcpCheckDiag(tcpHost.trim(), Number(tcpPort) || 443, tcpIface || undefined),
+    onSuccess: (r) => setTcpResult(r),
+    onError: (err) => toastErr(err, "TCP probe failed"),
   });
 
   const ports = useMemo(() => portsQuery.data?.data ?? [], [portsQuery.data]);
@@ -2729,6 +2995,19 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
                 </SelectContent>
               </Select>
             </div>
+            <div className="w-36">
+              <FieldLabel hint="DF + payload size">Size (MTU test)</FieldLabel>
+              <Select value={pingSize} onValueChange={setPingSize}>
+                <SelectTrigger className="h-9" aria-label="Ping payload size (DF)">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">default</SelectItem>
+                  <SelectItem value="1200">1200 B + DF</SelectItem>
+                  <SelectItem value="1472">1472 B + DF (1500 MTU)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <Button
               size="sm"
               className="h-9 bg-zinc-700 text-white hover:bg-zinc-800"
@@ -2760,7 +3039,218 @@ function DiagnosticsTab({ ifaces }: { ifaces: Iface[] }) {
           )}
         </CardContent>
       </Card>
-      <p className="text-xs text-zinc-400">Inventory/ARP/routes auto-refresh every 10 s. Errors/drops ≠ 0 are highlighted — check them first when a link misbehaves.</p>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* traceroute tool */}
+        <Card className="p-0">
+          <CardContent className="space-y-3 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Traceroute (path probe)</p>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="w-52">
+                <FieldLabel hint="IPv4 or hostname">Host</FieldLabel>
+                <Input
+                  value={trHost}
+                  onChange={(e) => setTrHost(e.target.value)}
+                  placeholder="1.1.1.1"
+                  className="h-9 font-mono text-xs"
+                  aria-label="Traceroute host"
+                />
+              </div>
+              <div className="w-44">
+                <FieldLabel hint="binds -i">Source interface</FieldLabel>
+                <Select value={trIface || "any"} onValueChange={(v) => setTrIface(v === "any" ? "" : v)}>
+                  <SelectTrigger className="h-9" aria-label="Traceroute source interface">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="any">any (routing table)</SelectItem>
+                    {ports.map((p) => (
+                      <SelectItem key={p.name} value={p.name}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                size="sm"
+                className="h-9 bg-zinc-700 text-white hover:bg-zinc-800"
+                disabled={trMut.isPending || trHost.trim() === ""}
+                onClick={() => trMut.mutate()}
+                aria-label="Run traceroute"
+              >
+                <Icons.Route className="mr-1 h-3.5 w-3.5" /> {trMut.isPending ? "Tracing…" : "Run"}
+              </Button>
+            </div>
+            {trResult && (
+              <div className="space-y-2">
+                {trResult.tool === "tracepath" && (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400">tracepath fallback — no source-interface binding on this host.</p>
+                )}
+                {trResult.error ? (
+                  <p className="text-xs font-medium text-rose-600 dark:text-rose-400">{trResult.error}</p>
+                ) : trResult.hops.length > 0 ? (
+                  <Table className="text-xs">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12">Hop</TableHead>
+                        <TableHead>Address</TableHead>
+                        <TableHead className="text-right">RTT</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {trResult.hops.map((h) => (
+                        <TableRow key={h.hop}>
+                          <TableCell className="tabular-nums text-zinc-500">{h.hop}</TableCell>
+                          <TableCell className="font-mono">{h.ip ?? "*"}</TableCell>
+                          <TableCell className="text-right tabular-nums">{h.ms != null ? `${h.ms} ms` : "—"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <pre className="max-h-40 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] dark:border-zinc-800 dark:bg-zinc-900">
+                    {trResult.output || "no output"}
+                  </pre>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="space-y-4">
+          {/* DNS lookup tool */}
+          <Card className="p-0">
+            <CardContent className="space-y-3 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">DNS lookup (resolver test)</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="w-52">
+                  <FieldLabel hint="hostname">Name</FieldLabel>
+                  <Input
+                    value={dnsName}
+                    onChange={(e) => setDnsName(e.target.value)}
+                    placeholder="example.com"
+                    className="h-9 font-mono text-xs"
+                    aria-label="DNS lookup name"
+                  />
+                </div>
+                <div className="w-40">
+                  <FieldLabel hint="optional IPv4">Server</FieldLabel>
+                  <Input
+                    value={dnsServer}
+                    onChange={(e) => setDnsServer(e.target.value)}
+                    placeholder="system resolver"
+                    className="h-9 font-mono text-xs"
+                    aria-label="DNS server"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  className="h-9 bg-zinc-700 text-white hover:bg-zinc-800"
+                  disabled={dnsMut.isPending || dnsName.trim() === ""}
+                  onClick={() => dnsMut.mutate()}
+                  aria-label="Run DNS lookup"
+                >
+                  <Icons.Globe className="mr-1 h-3.5 w-3.5" /> {dnsMut.isPending ? "Resolving…" : "Run"}
+                </Button>
+              </div>
+              {dnsResult && (
+                <div className="space-y-2">
+                  {dnsResult.error ? (
+                    <p className="text-xs font-medium text-rose-600 dark:text-rose-400">{dnsResult.error}</p>
+                  ) : dnsResult.addresses.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {dnsResult.addresses.map((a) => (
+                        <Badge key={a} variant="outline" className="border-emerald-500/40 bg-emerald-500/10 font-mono text-[10px] text-emerald-600 dark:text-emerald-400">
+                          {a}
+                        </Badge>
+                      ))}
+                      <span className="ml-1 text-[10px] text-zinc-400">via {dnsResult.tool}</span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-500">No answer records{dnsResult.output ? " — see raw output" : ""}.</p>
+                  )}
+                  {dnsResult.output && dnsResult.addresses.length === 0 && (
+                    <pre className="max-h-32 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50 p-3 font-mono text-[11px] dark:border-zinc-800 dark:bg-zinc-900">
+                      {dnsResult.output}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* TCP probe tool */}
+          <Card className="p-0">
+            <CardContent className="space-y-3 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">TCP probe (service reachability)</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="w-44">
+                  <FieldLabel hint="IPv4 or hostname">Host</FieldLabel>
+                  <Input
+                    value={tcpHost}
+                    onChange={(e) => setTcpHost(e.target.value)}
+                    placeholder="1.1.1.1"
+                    className="h-9 font-mono text-xs"
+                    aria-label="TCP probe host"
+                  />
+                </div>
+                <div className="w-24">
+                  <FieldLabel>Port</FieldLabel>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={tcpPort}
+                    onChange={(e) => setTcpPort(e.target.value)}
+                    className="h-9 font-mono text-xs"
+                    aria-label="TCP probe port"
+                  />
+                </div>
+                <div className="w-40">
+                  <FieldLabel hint="optional bind">Source interface</FieldLabel>
+                  <Select value={tcpIface || "any"} onValueChange={(v) => setTcpIface(v === "any" ? "" : v)}>
+                    <SelectTrigger className="h-9" aria-label="TCP probe source interface">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="any">any (routing table)</SelectItem>
+                      {ports.map((p) => (
+                        <SelectItem key={p.name} value={p.name}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  size="sm"
+                  className="h-9 bg-zinc-700 text-white hover:bg-zinc-800"
+                  disabled={tcpMut.isPending || tcpHost.trim() === ""}
+                  onClick={() => tcpMut.mutate()}
+                  aria-label="Run TCP probe"
+                >
+                  <Icons.PlugZap className="mr-1 h-3.5 w-3.5" /> {tcpMut.isPending ? "Probing…" : "Run"}
+                </Button>
+              </div>
+              {tcpResult && (
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  {tcpResult.connected ? (
+                    <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      connected{tcpResult.latencyMs != null ? ` · ${tcpResult.latencyMs} ms` : ""}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                      failed
+                    </Badge>
+                  )}
+                  <span className="text-zinc-500">{tcpResult.error ?? tcpResult.output}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

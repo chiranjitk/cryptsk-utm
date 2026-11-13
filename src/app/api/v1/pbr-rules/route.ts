@@ -1,8 +1,13 @@
 /**
  * GET  /api/v1/pbr-rules — policy-based routing rules, ordered by position
- * (M02 §4 tab 2). POST /api/v1/pbr-rules — create; every address/service id
- * must exist in the mixed object∪group sets, outgoingIface must resolve,
- * position defaults to max+1 (M03-style mixed-ref semantics).
+ *      (M02 §4 tab 2). Each row carries an honest kernelState
+ *      (in-kernel | missing | config-only | disabled | null) computed from
+ *      the compiled match plan + live `ip rule`, plus the resolved match
+ *      summary (src/dst CIDRs + service selectors) for UI transparency.
+ * POST /api/v1/pbr-rules — create; every address/service id must exist in
+ *      the mixed object∪group sets, outgoingIface must resolve, position
+ *      defaults to max+1 and an explicitly occupied slot is rejected with
+ *      409 (dense 1..N kernel table mapping).
  */
 
 import { route } from "@/lib/api/handler";
@@ -12,7 +17,15 @@ import { netListQuery, pbrBodySchema, type PbrBody } from "@/lib/validators/netw
 import { assertIfacesExist } from "@/lib/network/iface-service";
 import { shapePbrRule } from "@/lib/network/shapes";
 import { loadAddressIdSet, loadServiceIdSet } from "@/lib/firewall/refs";
-import { pbrKernelState, readKernelPbrRules } from "@/lib/network/pbr-os";
+import {
+  buildPbrApplyPlan,
+  compileServiceSelectors,
+  pbrKernelState,
+  readKernelPbrRules,
+  resolvePbrCidrs,
+  resolveServiceSelectors,
+  type PbrKernelState,
+} from "@/lib/network/pbr-os";
 
 export const dynamic = "force-dynamic";
 
@@ -28,33 +41,80 @@ async function assertPbrRefs(tenantId: number, body: PbrBody): Promise<void> {
   if (body.outgoingIface) await assertIfacesExist(tenantId, [body.outgoingIface]);
 }
 
+/** Resolved match summary for one rule (UI transparency + kernel badge). */
+async function resolveMatches(tenantId: number, srcIds: number[], dstIds: number[], svcIds: number[]) {
+  const [src, dst, svc] = await Promise.all([
+    resolvePbrCidrs(tenantId, srcIds),
+    resolvePbrCidrs(tenantId, dstIds),
+    resolveServiceSelectors(tenantId, svcIds),
+  ]);
+  const compiled = compileServiceSelectors(svc);
+  return {
+    src,
+    dst,
+    svc,
+    summary: {
+      src: src.map((s) => s.cidr).filter((c): c is string => c !== null),
+      dst: dst.map((d) => d.cidr).filter((c): c is string => c !== null),
+      services: compiled.selectors.map((s) => [s.ipproto, s.sport ? `sport ${s.sport}` : "", s.dport ? `dport ${s.dport}` : ""].filter(Boolean).join(" ")),
+      srcUnresolved: src.filter((s) => s.cidr === null).length,
+      dstUnresolved: dst.filter((d) => d.cidr === null).length,
+    },
+  };
+}
+
 export const GET = route({ area: "network", querySchema: netListQuery }, async ({ auth }) => {
   const rows = await db.pbrRule.findMany({
     where: { tenantId: auth.tenantId },
     orderBy: { position: "asc" },
   });
-  const shaped = rows.map(shapePbrRule);
-  // honest kernel state: in-kernel | missing | config-only (svc match) | disabled | null
   const kernel = await readKernelPbrRules().catch(() => null);
-  return {
-    data: shaped.map((r) => ({
-      ...r,
-      kernelState: pbrKernelState(
-        {
-          id: r.id,
-          name: r.name,
-          position: r.position,
-          enabled: r.enabled,
-          srcAddrIds: r.srcAddrIds,
-          dstAddrIds: r.dstAddrIds,
-          serviceIds: r.serviceIds,
-          outgoingIface: r.outgoingIface,
-          gateway: r.gateway,
-        },
-        kernel,
-      ),
-    })),
-  };
+  const data: Array<{
+    id: number;
+    name: string;
+    position: number;
+    enabled: boolean;
+    srcAddrIds: number[];
+    dstAddrIds: number[];
+    serviceIds: number[];
+    outgoingIface: string | null;
+    gateway: string | null;
+    description: string | null;
+    createdAt: Date | null;
+    kernelState: PbrKernelState | null;
+    matches: {
+      src: string[];
+      dst: string[];
+      services: string[];
+      srcUnresolved: number;
+      dstUnresolved: number;
+    };
+  }> = [];
+  for (const row of rows) {
+    const shaped = shapePbrRule(row);
+    const view = {
+      id: shaped.id,
+      name: shaped.name,
+      position: shaped.position,
+      enabled: shaped.enabled,
+      srcAddrIds: shaped.srcAddrIds,
+      dstAddrIds: shaped.dstAddrIds,
+      serviceIds: shaped.serviceIds,
+      outgoingIface: shaped.outgoingIface,
+      gateway: shaped.gateway,
+    };
+    const resolved = await resolveMatches(auth.tenantId, shaped.srcAddrIds, shaped.dstAddrIds, shaped.serviceIds);
+    // honest kernel state via compiled plan (service rules may be enforceable now)
+    const plan = buildPbrApplyPlan(view, resolved.src, resolved.dst, resolved.svc);
+    data.push({
+      ...shaped,
+      description: shaped.description ?? null,
+      createdAt: shaped.createdAt ?? null,
+      kernelState: pbrKernelState(view, kernel, { configOnly: plan.configOnly }),
+      matches: resolved.summary,
+    });
+  }
+  return { data };
 });
 
 export const POST = route(
@@ -65,6 +125,16 @@ export const POST = route(
     // position appends at max+1 unless an explicit slot is provided (M03 pattern)
     const max = await db.pbrRule.aggregate({ where: { tenantId: auth.tenantId }, _max: { position: true } });
     const position = body.position ?? (max._max.position ?? 0) + 1;
+
+    // kernel tables map 1:1 to positions — an occupied slot would collide
+    if (body.position != null) {
+      const occupant = await db.pbrRule.findFirst({ where: { tenantId: auth.tenantId, position } });
+      if (occupant) {
+        throw ApiError.conflict(
+          `Position ${position} is occupied by '${occupant.name}' — use Move to swap, or let the position auto-append`,
+        );
+      }
+    }
 
     const created = await db.pbrRule.create({
       data: {

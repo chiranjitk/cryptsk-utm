@@ -396,3 +396,53 @@ export function IfaceConfigSummary({ iface, className }: { iface: Iface; classNa
 
   return <span className={cn("font-mono text-xs text-zinc-600 dark:text-zinc-300", className)}>{text}</span>;
 }
+
+/** Kernel SPAN state badge — in kernel / missing / disabled / n/a (tc missing). */
+export function MirrorKernelBadge({
+  state,
+  className,
+}: {
+  state: "in-kernel" | "missing" | "disabled" | null | undefined;
+  className?: string;
+}) {
+  if (state === null || state === undefined) {
+    return <Badge variant="outline" className={cn("border-zinc-300 bg-transparent text-zinc-400 dark:border-zinc-700", className)}>kernel n/a</Badge>;
+  }
+  if (state === "in-kernel") {
+    return (
+      <Badge variant="outline" className={cn("gap-1 border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", className)}>
+        <Icons.CircleCheck className="h-3 w-3" />
+        in kernel
+      </Badge>
+    );
+  }
+  if (state === "missing") {
+    return (
+      <Badge variant="outline" className={cn("gap-1 border-rose-600/50 bg-transparent text-rose-500", className)}>
+        <Icons.CircleX className="h-3 w-3" />
+        not installed
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className={cn("border-zinc-300 bg-transparent text-zinc-500 dark:border-zinc-700 dark:text-zinc-400", className)}>
+      off
+    </Badge>
+  );
+}
+
+/** Data-origin badge for derived tables — live kernel reads vs engine simulation. */
+export function DataSourceBadge({ source, className }: { source: string | undefined; className?: string }) {
+  if (source === "live") {
+    return (
+      <Badge variant="outline" className={cn("gap-1 border-emerald-500/40 bg-emerald-500/10 text-[10px] font-medium text-emerald-600 dark:text-emerald-400", className)}>
+        <Icons.RadioTower className="h-3 w-3" /> live
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className={cn("border-zinc-300 text-[10px] font-normal text-zinc-500 dark:border-zinc-700 dark:text-zinc-400", className)}>
+      simulated
+    </Badge>
+  );
+}

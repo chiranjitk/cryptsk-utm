@@ -12,7 +12,7 @@ import { idParamSchema, pbrBodySchema, type PbrBody } from "@/lib/validators/net
 import { assertIfacesExist } from "@/lib/network/iface-service";
 import { shapePbrRule } from "@/lib/network/shapes";
 import { loadAddressIdSet, loadServiceIdSet } from "@/lib/firewall/refs";
-import { buildPbrTeardownPlan, resolvePbrCidrs, type PbrRuleView } from "@/lib/network/pbr-os";
+import { buildPbrTeardownPlan, compileServiceSelectors, resolvePbrCidrs, resolveServiceSelectors, type PbrRuleView } from "@/lib/network/pbr-os";
 import { convergeRouteSafe } from "@/lib/network/route-apply";
 
 export const dynamic = "force-dynamic";
@@ -82,11 +82,17 @@ export const DELETE = route({ area: "network", section: "routing" }, async ({ au
     outgoingIface: row.outgoingIface,
     gateway: row.gateway,
   };
-  const [src, dst] = await Promise.all([
+  const [src, dst, svc] = await Promise.all([
     resolvePbrCidrs(auth.tenantId, view.srcAddrIds).catch(() => []),
     resolvePbrCidrs(auth.tenantId, view.dstAddrIds).catch(() => []),
+    resolveServiceSelectors(auth.tenantId, view.serviceIds).catch(() => []),
   ]);
-  const teardown = buildPbrTeardownPlan(view, src.filter((s) => s.cidr).length, dst.filter((d) => d.cidr).length);
+  const teardown = buildPbrTeardownPlan(
+    view,
+    src.filter((s) => s.cidr).length,
+    dst.filter((d) => d.cidr).length,
+    Math.max(1, compileServiceSelectors(svc).selectors.length),
+  );
   const os = await convergeRouteSafe(async () => ({ name: teardown.name, osName: null, steps: teardown.steps }));
 
   await db.pbrRule.delete({ where: { id } });

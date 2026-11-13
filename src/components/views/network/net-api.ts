@@ -96,6 +96,38 @@ export interface DiagPingResult {
   error?: string;
 }
 
+export interface TracerouteHop {
+  hop: number;
+  ip: string | null;
+  ms: number | null;
+}
+
+export interface TracerouteResult {
+  ok: boolean;
+  hops: TracerouteHop[];
+  output: string;
+  tool: "traceroute" | "tracepath" | null;
+  error?: string;
+}
+
+export interface DnsLookupResult {
+  ok: boolean;
+  addresses: string[];
+  server: string | null;
+  tool: "dig" | "host" | "nslookup" | null;
+  output: string;
+  error?: string;
+}
+
+export interface TcpCheckResult {
+  ok: boolean;
+  connected: boolean;
+  latencyMs: number | null;
+  boundTo: string | null;
+  output: string;
+  error?: string;
+}
+
 export interface NetDevCounters {
   name: string;
   rxBytes: number;
@@ -190,6 +222,19 @@ export interface Mirror {
   enabled: boolean;
   description: string | null;
   createdAt: string;
+  /** live kernel SPAN state (null = host without tc) */
+  kernelState?: "disabled" | "in-kernel" | "missing" | null;
+  /** interfaces refused on this host (CONSOLE_PROTECTED_IFACES) */
+  protectedIfaces?: string[];
+}
+
+export interface MirrorApplyOutcome {
+  id: number;
+  name: string;
+  srcIface: string;
+  dstIface: string;
+  state: "disabled" | "in-kernel" | "missing" | null;
+  os: OsApplyResp & { plan: OsPlan; gate: "on" | "off" };
 }
 
 export interface StaticRouteRow {
@@ -226,6 +271,14 @@ export interface PbrRow {
   description: string | null;
   /** live kernel policy state (null = host without iproute2) */
   kernelState?: PbrKernelState | null;
+  /** resolved match summary — what the rule actually enforces */
+  matches?: {
+    src: string[];
+    dst: string[];
+    services: string[];
+    srcUnresolved: number;
+    dstUnresolved: number;
+  };
   createdAt: string;
 }
 
@@ -402,6 +455,8 @@ export interface NetPageMeta {
   limit: number;
   total: number;
   totalPages: number;
+  /** data-origin marker for derived tables (lldp/mac): live | simulated */
+  source?: string;
 }
 
 export async function netFetchList<T>(path: string, params?: string): Promise<{ data: T[]; meta: NetPageMeta }> {
@@ -450,11 +505,29 @@ export const netApi = {
   listArp: () => netFetchList<ArpEntry>("/api/v1/network/arp"),
   listOsRoutes: () => netFetchList<OsRouteEntry>("/api/v1/network/routes"),
   listHostPorts: () => netFetchList<HostPort>("/api/v1/network/host-ports"),
-  pingDiag: (host: string, iface?: string, count = 3) =>
+  pingDiag: (host: string, iface?: string, count = 3, size?: number, df?: boolean) =>
     netFetch<DiagPingResult>("/api/v1/network/diagnostics/ping", {
       method: "POST",
       headers: JSON_HEADERS,
-      body: JSON.stringify({ host, ...(iface ? { iface } : {}), count }),
+      body: JSON.stringify({ host, ...(iface ? { iface } : {}), count, ...(size != null ? { size } : {}), ...(df != null ? { df } : {}) }),
+    }),
+  tracerouteDiag: (host: string, iface?: string, maxHops = 10) =>
+    netFetch<TracerouteResult>("/api/v1/network/diagnostics/traceroute", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ host, ...(iface ? { iface } : {}), maxHops }),
+    }),
+  dnsLookupDiag: (name: string, server?: string) =>
+    netFetch<DnsLookupResult>("/api/v1/network/diagnostics/dns-lookup", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(server ? { name, server } : { name }),
+    }),
+  tcpCheckDiag: (host: string, port: number, iface?: string) =>
+    netFetch<TcpCheckResult>("/api/v1/network/diagnostics/tcp-check", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ host, port, ...(iface ? { iface } : {}) }),
     }),
 
   // derived switching tables (engine views — not persisted)
@@ -468,6 +541,16 @@ export const netApi = {
   updateMirror: (id: number, body: MirrorBody) =>
     netFetch<Mirror>(`/api/v1/network/port-mirrors/${id}`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) }),
   deleteMirror: (id: number) => netFetch<{ ok: boolean }>(`/api/v1/network/port-mirrors/${id}`, { method: "DELETE" }),
+  applyMirrors: (id?: number) =>
+    netFetch<MirrorApplyOutcome[]>("/api/v1/network/port-mirrors/apply", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(id ? { id } : {}),
+    }),
+  previewMirrorPlans: () =>
+    netFetch<Array<{ id: number; name: string; enabled: boolean; state: "disabled" | "in-kernel" | "missing" | null; reason: string; plan: Array<{ cmd: string; summary: string }> }>>(
+      "/api/v1/network/port-mirrors/apply",
+    ),
 
   // static routes
   listRoutes: () => netFetchList<StaticRouteRow>("/api/v1/routes"),
