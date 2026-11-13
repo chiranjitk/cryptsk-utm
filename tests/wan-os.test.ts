@@ -107,6 +107,28 @@ describe("buildWanOsConvergePlan — secondary WAN source routing", () => {
     expect(plan.steps.filter((s) => /table 26\d/.test(s.cmd))).toHaveLength(0);
     expect(plan.reasons.some((r) => /no kernel gateway/.test(r))).toBe(true);
   });
+
+  it("sweeps orphaned kernel artifacts of a DELETED policy (idx 1)", () => {
+    // kernel still holds rule 3210/table 261 from a policy that no longer exists
+    const kernel = [rule(WAN_PRIO_BASE + 10, WAN_TABLE_BASE + 1, "20.20.30.1")];
+    const plan = buildWanOsConvergePlan(input([wan({ id: 7, iface: "ens35", ifaceIp: "10.9.9.2", ifaceCidr: "10.9.9.0/24", gateway: "10.9.9.1" })]), kernel);
+    const cmds = plan.steps.map((s) => s.cmd);
+    expect(cmds).toContain(`ip rule del priority ${WAN_PRIO_BASE + 10}`);
+    expect(cmds).toContain(`ip route flush table ${WAN_TABLE_BASE + 1}`);
+    // the surviving policy's own rule is installed normally
+    expect(cmds.some((c) => /ip rule add.*table 260/.test(c))).toBe(true);
+  });
+
+  it("sweeps when the deleted policy was the only secondary (prod case)", () => {
+    const kernel = [rule(WAN_PRIO_BASE, WAN_TABLE_BASE, "20.20.30.1")];
+    const primary = wan({ id: 1, iface: "ens32", ifaceIp: "103.244.7.219", ifaceCidr: "103.244.7.216/29", gateway: "103.244.7.217", priority: 1 });
+    const plan = buildWanOsConvergePlan(input([primary]), kernel);
+    const cmds = plan.steps.map((s) => s.cmd);
+    expect(cmds).toContain(`ip rule del priority ${WAN_PRIO_BASE}`);
+    expect(cmds).toContain(`ip route flush table ${WAN_TABLE_BASE}`);
+    // primary never gets per-WAN artifacts, so nothing else lands in the band
+    expect(cmds.filter((c) => /ip rule add/.test(c))).toHaveLength(0);
+  });
 });
 
 describe("buildWanOsConvergePlan — egress decision", () => {

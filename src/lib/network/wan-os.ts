@@ -247,6 +247,18 @@ export function buildWanOsConvergePlan(input: WanOsInput, kernel: KernelPbrRule[
     }
   }
 
+  // ── orphan sweep: kernel band entries with no owning policy ────────────────
+  // a DELETED policy is invisible to the per-WAN loop above — its table/rule
+  // would linger in the kernel forever; sweep anything unowned.
+  const managedPrios = new Set(managed.map((m) => m.prio));
+  for (const k of kernel ?? []) {
+    if (k.priority >= WAN_PRIO_BASE && k.priority < WAN_PRIO_BASE + WAN_TABLE_LIMIT * 10 && !managedPrios.has(k.priority)) {
+      const t = WAN_TABLE_BASE + Math.floor((k.priority - WAN_PRIO_BASE) / 10);
+      steps.push({ cmd: `ip rule del priority ${k.priority}`, summary: `withdraw orphaned multi-WAN rule ${k.priority} (policy deleted)` });
+      steps.push({ cmd: `ip route flush table ${t}`, summary: `flush orphaned multi-WAN table ${t}` });
+    }
+  }
+
   // ── managed egress decision (table 240; primary participates as candidate) ─
   const upWans = input.wans
     .filter((w) => w.enabled && w.gateway && (w.state === "up" || w.state === "degraded"))
