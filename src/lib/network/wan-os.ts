@@ -88,13 +88,28 @@ export interface WanOsApplyOutcome {
 /**
  * Assemble the planner input from the DB config plane + real OS facts
  * (interface primary IPv4/CIDR, per-iface gateway, main default owner).
+ * Gateway source precedence: the OS main-table gateway first (it is the
+ * authoritative reachability fact); a secondary WAN that does not own the
+ * main default has its gateway suppressed there by the ownership guard, so
+ * the console-config plane (interface config.gateway) fills in — exactly
+ * where an admin declares WAN2's next hop in a multi-WAN deployment.
  */
 export async function buildWanOsInput(): Promise<WanOsInput> {
-  const [rows, real] = await Promise.all([
+  const [rows, real, ifaces] = await Promise.all([
     db.wanPolicy.findMany({ where: { tenantId: 1 } }),
     readInterfaces().catch(() => []),
+    db.networkInterface.findMany({ where: { tenantId: 1 }, select: { name: true, config: true } }).catch(() => []),
   ]);
   const primaryIface = real.find((r) => r.isDefaultRoute)?.name ?? null;
+  const cfgGateway = new Map<string, string | null>();
+  for (const row of ifaces) {
+    try {
+      const cfg = JSON.parse(row.config) as { gateway?: unknown };
+      cfgGateway.set(row.name, typeof cfg.gateway === "string" && cfg.gateway ? cfg.gateway : null);
+    } catch {
+      cfgGateway.set(row.name, null);
+    }
+  }
   const wans: WanOsWanView[] = [];
   for (const row of rows) {
     const os = real.find((r) => r.name === row.interfaceName);
@@ -104,7 +119,7 @@ export async function buildWanOsInput(): Promise<WanOsInput> {
       ip && prefix != null
         ? `${networkOf(ip, Number(prefix))}/${prefix}`
         : ip;
-    const gateway = await readGatewayFor(row.interfaceName).catch(() => null);
+    const gateway = (await readGatewayFor(row.interfaceName).catch(() => null)) ?? cfgGateway.get(row.interfaceName) ?? null;
     wans.push({
       id: row.id,
       iface: row.interfaceName,
