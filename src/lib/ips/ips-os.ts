@@ -209,19 +209,19 @@ export function buildThresholdEntries(input: IpsGenInput): { lines: string[]; wa
     }
     if (ex.sid === 0) {
       // any-SID capture bypass: scope decides the track direction
-      if (ex.source) lines.push(`suppress gen_id 1, sig_id 0, track by_src, ip ${ex.source};`);
-      if (ex.dest) lines.push(`suppress gen_id 1, sig_id 0, track by_dst, ip ${ex.dest};`);
+      if (ex.source) lines.push(`suppress gen_id 1, sig_id 0, track by_src, ip ${ex.source}`);
+      if (ex.dest) lines.push(`suppress gen_id 1, sig_id 0, track by_dst, ip ${ex.dest}`);
     } else if (ex.source) {
-      lines.push(`suppress gen_id 1, sig_id ${ex.sid}, track by_src, ip ${ex.source};`);
+      lines.push(`suppress gen_id 1, sig_id ${ex.sid}, track by_src, ip ${ex.source}`);
     } else if (ex.dest) {
-      lines.push(`suppress gen_id 1, sig_id ${ex.sid}, track by_dst, ip ${ex.dest};`);
+      lines.push(`suppress gen_id 1, sig_id ${ex.sid}, track by_dst, ip ${ex.dest}`);
     } else {
-      lines.push(`suppress gen_id 1, sig_id ${ex.sid};`);
+      lines.push(`suppress gen_id 1, sig_id ${ex.sid}`);
     }
   }
 
   for (const th of policy?.thresholds ?? []) {
-    lines.push(`threshold gen_id 1, sig_id ${th.sid}, track ${th.track}, count ${th.count}, seconds ${th.seconds};`);
+    lines.push(`threshold gen_id 1, sig_id ${th.sid}, track ${th.track}, count ${th.count}, seconds ${th.seconds}`);
   }
 
   return { lines, warnings };

@@ -106,22 +106,22 @@ describe("buildThresholdEntries", () => {
     const { lines } = buildThresholdEntries(
       policyInput({ exceptions: [{ sid: 2200001, source: "10.0.0.5", comment: "false positive" }] }),
     );
-    expect(lines).toContain("suppress gen_id 1, sig_id 2200001, track by_src, ip 10.0.0.5;");
+    expect(lines).toContain("suppress gen_id 1, sig_id 2200001, track by_src, ip 10.0.0.5");
   });
 
   it("uses by_dst tracking when only dest is set", () => {
     const { lines } = buildThresholdEntries(policyInput({ exceptions: [{ sid: 2200002, dest: "192.168.10.0/24" }] }));
-    expect(lines).toContain("suppress gen_id 1, sig_id 2200002, track by_dst, ip 192.168.10.0/24;");
+    expect(lines).toContain("suppress gen_id 1, sig_id 2200002, track by_dst, ip 192.168.10.0/24");
   });
 
   it("suppresses a scoped sid globally when neither source nor dest is set", () => {
     const { lines } = buildThresholdEntries(policyInput({ exceptions: [{ sid: 2200003 }] }));
-    expect(lines).toContain("suppress gen_id 1, sig_id 2200003;");
+    expect(lines).toContain("suppress gen_id 1, sig_id 2200003");
   });
 
   it("converts sid 0 bypasses into any-SID suppress lines scoped by source", () => {
     const { lines } = buildThresholdEntries(policyInput({ exceptions: [{ sid: 0, source: "10.0.0.0/24" }] }));
-    expect(lines).toContain("suppress gen_id 1, sig_id 0, track by_src, ip 10.0.0.0/24;");
+    expect(lines).toContain("suppress gen_id 1, sig_id 0, track by_src, ip 10.0.0.0/24");
   });
 
   it("refuses an unscoped sid 0 bypass with a warning (would silence the whole ruleset)", () => {
@@ -132,7 +132,7 @@ describe("buildThresholdEntries", () => {
 
   it("converts thresholds into threshold lines with track/count/seconds", () => {
     const { lines } = buildThresholdEntries(policyInput({ thresholds: [{ sid: 2100005, track: "by_src", count: 10, seconds: 60 }] }));
-    expect(lines).toContain("threshold gen_id 1, sig_id 2100005, track by_src, count 10, seconds 60;");
+    expect(lines).toContain("threshold gen_id 1, sig_id 2100005, track by_src, count 10, seconds 60");
   });
 
   it("handles exceptions and thresholds together", () => {
@@ -153,7 +153,7 @@ describe("generateThresholdBlock", () => {
     const block = generateThresholdBlock(policyInput({ thresholds: [{ sid: 1, track: "by_src", count: 1, seconds: 1 }] }), "2026-01-01T00:00:00.000Z");
     expect(block.startsWith(MARKER_BEGIN)).toBe(true);
     expect(block.endsWith(MARKER_END)).toBe(true);
-    expect(block).toContain("threshold gen_id 1, sig_id 1, track by_src, count 1, seconds 1;");
+    expect(block).toContain("threshold gen_id 1, sig_id 1, track by_src, count 1, seconds 1");
   });
 
   it("keeps a placeholder so an empty policy still produces a valid block", () => {
