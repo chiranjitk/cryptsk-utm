@@ -61,6 +61,9 @@ const apps = [
       // naming these interfaces so the appliance can never cut its own access
       CONSOLE_OS_APPLY: "1",
       CONSOLE_OS_PROTECT: "lo,ens32",
+      // multi-WAN kernel enforcement (policy tables 240..279, ip rule 3200..3299)
+      // — explicit opt-in; off = WAN OS plans are computed and audited as previews
+      CONSOLE_WAN_OS: "1",
     },
     out_file: ROOT + "/logs/console-out.log",
     error_file: ROOT + "/logs/console-err.log",
