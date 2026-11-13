@@ -203,9 +203,15 @@ export interface StaticRouteRow {
   blackhole: boolean;
   enabled: boolean;
   description: string | null;
-  bfdState: "up" | "down" | null;
+  bfdState: "up" | "down" | "unknown" | null;
+  nhLatencyMs?: number | null;
+  /** live kernel FIB state (null = host without iproute2) */
+  osState?: RouteOsState | null;
   createdAt: string;
 }
+
+export type RouteOsState = "in-kernel" | "drifted" | "missing" | "disabled";
+export type PbrKernelState = "in-kernel" | "missing" | "config-only" | "disabled";
 
 export interface PbrRow {
   id: number;
@@ -218,6 +224,8 @@ export interface PbrRow {
   outgoingIface: string | null;
   gateway: string | null;
   description: string | null;
+  /** live kernel policy state (null = host without iproute2) */
+  kernelState?: PbrKernelState | null;
   createdAt: string;
 }
 
@@ -305,6 +313,34 @@ export interface StaticRouteBody {
   blackhole: boolean;
   enabled: boolean;
   description?: string | null;
+  /** bypass the 409 conflict flow (BR-ROUTE-DUP / BR-ROUTE-DEFAULT-PRIMARY) */
+  force?: boolean;
+}
+
+export interface RouteIssueDTO {
+  code: string;
+  message: string;
+  field?: string;
+  kind: "conflict" | "invalid" | "info";
+}
+
+/** one row outcome from POST /api/v1/routes/apply */
+export interface RouteApplyOutcome {
+  id: number;
+  name: string | null;
+  destinationCidr: string;
+  osState: RouteOsState | null;
+  os: OsApplyResp & { plan: OsPlan; gate: "on" | "off" };
+}
+
+/** one row outcome from POST /api/v1/pbr-rules/apply */
+export interface PbrApplyOutcome {
+  id: number;
+  name: string;
+  position: number;
+  state: PbrKernelState | null;
+  configOnly: boolean;
+  os: OsApplyResp & { plan: OsPlan; gate: "on" | "off" };
 }
 
 export interface PbrBody {
@@ -438,6 +474,15 @@ export const netApi = {
     netFetch<StaticRouteRow>(`/api/v1/routes/${id}`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) }),
   deleteRoute: (id: number) => netFetch<{ ok: boolean }>(`/api/v1/routes/${id}`, { method: "DELETE" }),
 
+  // OS kernel convergence (gated — plan/exec, mirrors interfaces apply)
+  applyRoutes: (id?: number) =>
+    netFetch<RouteApplyOutcome[]>("/api/v1/routes/apply", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(id ? { id } : {}),
+    }),
+  previewRoutePlans: () => netFetch<Array<{ id: number; destinationCidr: string; enabled: boolean; osState: RouteOsState | null; plan: Array<{ cmd: string; summary: string }> }>>("/api/v1/routes/apply"),
+
   // policy-based routing
   listPbr: () => netFetchList<PbrRow>("/api/v1/pbr-rules"),
   createPbr: (body: PbrBody) =>
@@ -445,6 +490,20 @@ export const netApi = {
   updatePbr: (id: number, body: PbrBody) =>
     netFetch<PbrRow>(`/api/v1/pbr-rules/${id}`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) }),
   deletePbr: (id: number) => netFetch<{ ok: boolean }>(`/api/v1/pbr-rules/${id}`, { method: "DELETE" }),
+  movePbr: (id: number, position: number) =>
+    netFetch<{ moved: boolean; rule: PbrRow | null; swappedWith: string | null }>(`/api/v1/pbr-rules/${id}/move`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ position }),
+    }),
+  applyPbr: (id?: number) =>
+    netFetch<PbrApplyOutcome[]>("/api/v1/pbr-rules/apply", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(id ? { id } : {}),
+    }),
+  previewPbrPlans: () =>
+    netFetch<Array<{ id: number; name: string; position: number; enabled: boolean; state: PbrKernelState | null; configOnly: boolean; reason: string; plan: Array<{ cmd: string; summary: string }> }>>("/api/v1/pbr-rules/apply"),
   togglePbr: (id: number, enabled: boolean) =>
     netFetch<PbrRow>(`/api/v1/pbr-rules/${id}/toggle`, {
       method: "PATCH",

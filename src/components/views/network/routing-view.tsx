@@ -61,13 +61,16 @@ import {
   isValidIpv4,
   netApi,
   routeBodyOf,
+  NetApiError,
   type Iface,
   type ObjectRef,
   type PbrBody,
   type PbrRow,
+  type RouteApplyOutcome,
+  type RouteIssueDTO,
   type StaticRouteRow,
 } from "./net-api";
-import { BfdChip } from "./net-ui";
+import { BfdChip, PbrKernelBadge, RouteOsBadge } from "./net-ui";
 
 const ROUTES_KEY = ["network", "routes"] as const;
 const PBR_KEY = ["network", "pbr"] as const;
@@ -91,6 +94,15 @@ function ScrollWrap({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
+}
+
+/** Toast summary of a gated OS-apply outcome (plan + results). */
+function applyOutcomeToToast(outcomes: RouteApplyOutcome[] | Array<{ os: { applied: boolean; gate: "on" | "off"; reason: string } }>, label: string) {
+  for (const o of outcomes) {
+    if (o.os.gate === "off") toastOk(`${label} — plan preview only`, o.os.reason);
+    else if (o.os.applied) toastOk(label, "applied to the kernel");
+    else toastErr(new NetApiError("OS_APPLY", o.os.reason), label);
+  }
 }
 
 function ObjectChips({ ids, map }: { ids: number[]; map: Map<number, ObjectInfo> }) {
@@ -171,19 +183,32 @@ function StaticRoutesTab() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<StaticRouteRow | null>(null);
   const [deleting, setDeleting] = useState<StaticRouteRow | null>(null);
+  /** 409 conflict → force-save confirm (BR-ROUTE-DUP / BR-ROUTE-DEFAULT-PRIMARY) */
+  const [conflict, setConflict] = useState<{ body: Parameters<typeof netApi.createRoute>[0]; editingId: number | null; issues: RouteIssueDTO[] } | null>(null);
+  const [applying, setApplying] = useState<StaticRouteRow | "all" | null>(null);
 
   const toggleMut = useMutation({
     mutationFn: (route: StaticRouteRow) =>
-      netApi.updateRoute(route.id, routeBodyOf(route, { enabled: !route.enabled })),
+      netApi.updateRoute(route.id, { ...routeBodyOf(route, { enabled: !route.enabled }), force: true }),
     onSuccess: (updated) => toastOk(updated.enabled ? "Route enabled" : "Route disabled", updated.destinationCidr),
     onError: (err) => toastErr(err, "Toggle failed"),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ROUTES_KEY }),
+  });
+
+  const applyMut = useMutation({
+    mutationFn: (target: StaticRouteRow | "all") => netApi.applyRoutes(target === "all" ? undefined : target.id),
+    onSuccess: (outcomes) => {
+      applyOutcomeToToast(outcomes, "Kernel sync");
+      setApplying(null);
+    },
+    onError: (err) => toastErr(err, "Kernel sync failed"),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ROUTES_KEY }),
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => netApi.deleteRoute(id),
     onSuccess: () => {
-      toastOk("Route deleted");
+      toastOk("Route deleted", "kernel entries withdrawn (best effort)");
       setDeleting(null);
     },
     onError: (err) => toastErr(err, "Delete failed"),
@@ -194,18 +219,29 @@ function StaticRoutesTab() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-zinc-500">
-          Floating static routes via distance (lower wins); the default route is a static route with 0.0.0.0/0. Ordering is not user-managed.
+          Floating static routes via distance (lower wins); the default route is a static route with 0.0.0.0/0. Rows sync to the kernel FIB with <code className="font-mono">ip route</code> — metric = distance, so the interface-managed primary default (metric 0) always stays authoritative.
         </p>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditing(null);
-            setEditorOpen(true);
-          }}
-          className="bg-zinc-700 text-white hover:bg-zinc-800"
-        >
-          <Icons.Plus className="mr-1 h-4 w-4" /> Add route
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={applyMut.isPending}
+            onClick={() => setApplying("all")}
+            aria-label="Apply all routes to kernel"
+          >
+            <Icons.RefreshCw className={cn("mr-1 h-4 w-4", applyMut.isPending && "animate-spin")} /> Sync to kernel
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditing(null);
+              setEditorOpen(true);
+            }}
+            className="bg-zinc-700 text-white hover:bg-zinc-800"
+          >
+            <Icons.Plus className="mr-1 h-4 w-4" /> Add route
+          </Button>
+        </div>
       </div>
 
       <Card className="p-0">
@@ -244,9 +280,10 @@ function StaticRoutesTab() {
                     <TableHead>Gateway</TableHead>
                     <TableHead>Interface</TableHead>
                     <TableHead className="w-20">Distance</TableHead>
-                    <TableHead className="w-32">BFD</TableHead>
+                    <TableHead className="w-20">Kernel</TableHead>
+                    <TableHead className="w-36">BFD</TableHead>
                     <TableHead className="w-16">On</TableHead>
-                    <TableHead className="w-24 pr-2 text-right">Actions</TableHead>
+                    <TableHead className="w-28 pr-2 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -268,6 +305,9 @@ function StaticRoutesTab() {
                       <TableCell className="font-mono text-xs">{r.interfaceName ?? "—"}</TableCell>
                       <TableCell className="tabular-nums">{r.distance}</TableCell>
                       <TableCell>
+                        <RouteOsBadge state={r.osState} />
+                      </TableCell>
+                      <TableCell>
                         <BfdChip state={r.bfd ? r.bfdState : null} />
                       </TableCell>
                       <TableCell>
@@ -280,6 +320,17 @@ function StaticRoutesTab() {
                       </TableCell>
                       <TableCell className="pr-2 text-right">
                         <div className="flex items-center justify-end gap-0.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            aria-label={`Sync route ${r.destinationCidr} to kernel`}
+                            title="Install/withdraw this route in the kernel FIB"
+                            disabled={applyMut.isPending}
+                            onClick={() => setApplying(r)}
+                          >
+                            <Icons.RefreshCw className="h-3.5 w-3.5" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -320,6 +371,7 @@ function StaticRoutesTab() {
           editing={editing}
           ifaces={ifaces}
           onSaved={() => void queryClient.invalidateQueries({ queryKey: ROUTES_KEY })}
+          onConflict={(body, editingId, issues) => setConflict({ body, editingId, issues })}
         />
       )}
 
@@ -327,9 +379,60 @@ function StaticRoutesTab() {
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
         title="Delete route?"
-        description={`Delete route '${deleting?.destinationCidr ?? ""}'? Traffic that relied on it falls back to shorter matches or the default route.`}
+        description={`Delete route '${deleting?.destinationCidr ?? ""}'? Traffic that relied on it falls back to shorter matches or the default route. Kernel entries are withdrawn best-effort.`}
         loading={deleteMut.isPending}
         onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
+      />
+
+      <ConfirmDialog
+        open={applying !== null}
+        onOpenChange={(open) => !open && setApplying(null)}
+        title="Sync routes to the kernel FIB?"
+        description={
+          applying === "all"
+            ? "Every route row converges: enabled rows install via ip route replace (metric = distance), disabled rows withdraw stale entries. ECMP members of other rows are never removed."
+            : `Converge '${applying?.destinationCidr ?? ""}' into the kernel FIB via ip route (gated by the appliance OS-apply policy).`
+        }
+        loading={applyMut.isPending}
+        onConfirm={() => applying && applyMut.mutate(applying)}
+      />
+
+      <ConfirmDialog
+        open={conflict !== null}
+        onOpenChange={(open) => !open && setConflict(null)}
+        title="Route conflicts — save anyway?"
+        description={(conflict?.issues ?? []).map((i) => `• ${i.message}`).join("\n")}
+        confirmLabel="Save anyway"
+        loading={false}
+        onConfirm={() => {
+          if (!conflict) return;
+          const body = { ...conflict.body, force: true } as Parameters<typeof netApi.createRoute>[0];
+          if (conflict.editingId != null) {
+            netApi
+              .updateRoute(conflict.editingId, body)
+              .then((saved) => {
+                toastOk("Route updated", saved.destinationCidr);
+                setEditorOpen(false);
+              })
+              .catch((err) => toastErr(err, "Update failed"))
+              .finally(() => {
+                setConflict(null);
+                void queryClient.invalidateQueries({ queryKey: ROUTES_KEY });
+              });
+          } else {
+            netApi
+              .createRoute(body)
+              .then((saved) => {
+                toastOk("Route created", saved.destinationCidr);
+                setEditorOpen(false);
+              })
+              .catch((err) => toastErr(err, "Create failed"))
+              .finally(() => {
+                setConflict(null);
+                void queryClient.invalidateQueries({ queryKey: ROUTES_KEY });
+              });
+          }
+        }}
       />
     </div>
   );
@@ -341,6 +444,8 @@ function RouteEditor(props: {
   editing: StaticRouteRow | null;
   ifaces: Iface[];
   onSaved: () => void;
+  /** 409 conflicts surface here for the force-save confirm flow */
+  onConflict?: (body: Parameters<typeof netApi.createRoute>[0], editingId: number | null, issues: RouteIssueDTO[]) => void;
 }) {
   const editing = props.editing;
   const isEdit = editing != null;
@@ -364,7 +469,17 @@ function RouteEditor(props: {
       props.onOpenChange(false);
       props.onSaved();
     },
-    onError: (err) => toastErr(err, isEdit ? "Update failed" : "Create failed"),
+    onError: (err, body) => {
+      // 409 with issue list → force-save confirm flow instead of a bare toast
+      if (err instanceof NetApiError && err.code === "CONFLICT") {
+        const issues = (err.details as { issues?: RouteIssueDTO[] } | undefined)?.issues;
+        if (issues && issues.length > 0) {
+          props.onConflict?.(body as Parameters<typeof netApi.createRoute>[0], isEdit && editing ? editing.id : null, issues);
+          return;
+        }
+      }
+      toastErr(err, isEdit ? "Update failed" : "Create failed");
+    },
   });
 
   const submit = () => {
@@ -489,8 +604,33 @@ function PbrTab() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<PbrRow | null>(null);
   const [deleting, setDeleting] = useState<PbrRow | null>(null);
+  const [applyingRule, setApplyingRule] = useState<PbrRow | "all" | null>(null);
 
   const rules = useMemo(() => [...(pbrQuery.data?.data ?? [])].sort((a, b) => a.position - b.position), [pbrQuery.data]);
+
+  const pbrApplyMut = useMutation({
+    mutationFn: (target: PbrRow | "all") => netApi.applyPbr(target === "all" ? undefined : target.id),
+    onSuccess: (outcomes) => {
+      for (const o of outcomes) {
+        if (o.os.gate === "off") toastOk(`Policy route ${o.name} — plan preview only`, o.os.reason);
+        else if (o.configOnly) toastOk(`Policy route ${o.name} — config-only`, "service matches need the fwmark dataplane (planned)");
+        else if (o.os.applied) toastOk(`Policy route ${o.name}`, "applied to the kernel");
+        else toastErr(new NetApiError("OS_APPLY", o.os.reason), `Policy route ${o.name}`);
+      }
+      setApplyingRule(null);
+    },
+    onError: (err) => toastErr(err, "Kernel sync failed"),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: PBR_KEY }),
+  });
+
+  const moveMut = useMutation({
+    mutationFn: ({ id, position }: { id: number; position: number }) => netApi.movePbr(id, position),
+    onSuccess: (res) => {
+      if (res.moved) toastOk("Policy route moved", res.swappedWith ? `swapped with ${res.swappedWith}` : undefined);
+    },
+    onError: (err) => toastErr(err, "Move failed"),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: PBR_KEY }),
+  });
 
   const addrById = useMemo(() => {
     const m = new Map<number, ObjectInfo>();
@@ -552,11 +692,20 @@ function PbrTab() {
         <Icons.Info className="h-4 w-4" />
         <AlertTitle>Policy-based routing</AlertTitle>
         <AlertDescription>
-          Matching connections are fwmarked into per-WAN policy tables (ip rule fwmark). PBR evaluates before multi-WAN mode selection.
+          Address-based rules converge into real kernel policy tables (<code className="font-mono">ip rule</code> + dedicated lookup tables, priorities 5000+). Rules carrying a <b>service</b> match stay config-only until the fwmark dataplane lands — the Kernel column says "config-only" honestly. PBR evaluates before multi-WAN mode selection.
         </AlertDescription>
       </Alert>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pbrApplyMut.isPending}
+          onClick={() => setApplyingRule("all")}
+          aria-label="Apply all policy routes to kernel"
+        >
+          <Icons.RefreshCw className={cn("mr-1 h-4 w-4", pbrApplyMut.isPending && "animate-spin")} /> Sync to kernel
+        </Button>
         <Button size="sm" onClick={openCreate} className="bg-zinc-700 text-white hover:bg-zinc-800">
           <Icons.Plus className="mr-1 h-4 w-4" /> Add policy route
         </Button>
@@ -593,7 +742,8 @@ function PbrTab() {
                     <TableHead>Name</TableHead>
                     <TableHead>Match (src → dst · service)</TableHead>
                     <TableHead>Action</TableHead>
-                    <TableHead className="w-24 pr-2 text-right">Actions</TableHead>
+                    <TableHead className="w-32">Kernel</TableHead>
+                    <TableHead className="w-28 pr-2 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -626,8 +776,42 @@ function PbrTab() {
                           {r.outgoingIface ? `→ ${r.outgoingIface}` : r.gateway ? `→ ${r.gateway}` : "—"}
                         </span>
                       </TableCell>
+                      <TableCell>
+                        <PbrKernelBadge state={r.kernelState} />
+                      </TableCell>
                       <TableCell className="pr-2 text-right">
                         <div className="flex items-center justify-end gap-0.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            aria-label={`Move ${r.name} up`}
+                            disabled={r.position <= 1 || moveMut.isPending}
+                            onClick={() => moveMut.mutate({ id: r.id, position: r.position - 1 })}
+                          >
+                            <Icons.ChevronUp className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            aria-label={`Move ${r.name} down`}
+                            disabled={r.position >= rules.length || moveMut.isPending}
+                            onClick={() => moveMut.mutate({ id: r.id, position: r.position + 1 })}
+                          >
+                            <Icons.ChevronDown className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            aria-label={`Sync policy route ${r.name} to kernel`}
+                            title="Install/withdraw this policy route in the kernel"
+                            disabled={pbrApplyMut.isPending}
+                            onClick={() => setApplyingRule(r)}
+                          >
+                            <Icons.RefreshCw className="h-3.5 w-3.5" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -675,9 +859,22 @@ function PbrTab() {
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
         title="Delete policy route?"
-        description={`Delete policy route '${deleting?.name ?? ""}'? Matching connections fall back to multi-WAN mode selection.`}
+        description={`Delete policy route '${deleting?.name ?? ""}'? Matching connections fall back to multi-WAN mode selection. Kernel policy entries are withdrawn best-effort.`}
         loading={deleteMut.isPending}
         onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
+      />
+
+      <ConfirmDialog
+        open={applyingRule !== null}
+        onOpenChange={(open) => !open && setApplyingRule(null)}
+        title="Sync policy routes to the kernel?"
+        description={
+          applyingRule === "all"
+            ? "Every rule converges: enabled rules install ip rule entries (priorities 5000+) + dedicated lookup tables; disabled rules withdraw theirs. Service-matched rules stay config-only (fwmark dataplane planned)."
+            : `Converge '${applyingRule?.name ?? ""}' into the kernel (gated by the appliance OS-apply policy).`
+        }
+        loading={pbrApplyMut.isPending}
+        onConfirm={() => applyingRule && pbrApplyMut.mutate(applyingRule)}
       />
     </div>
   );

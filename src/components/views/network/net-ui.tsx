@@ -161,9 +161,9 @@ export function ModeChip({ mode, className }: { mode: IfaceMode; className?: str
   );
 }
 
-// ── BFD chip (engine-simulated reachability state) ──────────────────────────
+// ── BFD chip (REAL ping-based next-hop reachability, 30 s cache) ─────────────
 
-export function BfdChip({ state, className }: { state: "up" | "down" | null; className?: string }) {
+export function BfdChip({ state, className }: { state: "up" | "down" | "unknown" | null; className?: string }) {
   if (state === "up") {
     return (
       <Badge
@@ -171,7 +171,7 @@ export function BfdChip({ state, className }: { state: "up" | "down" | null; cla
         className={cn("gap-1 border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", className)}
       >
         <Icons.CircleCheck className="h-3 w-3" />
-        BFD up
+        Next-hop up
       </Badge>
     );
   }
@@ -179,13 +179,96 @@ export function BfdChip({ state, className }: { state: "up" | "down" | null; cla
     return (
       <Badge variant="outline" className={cn("gap-1 border-rose-600/60 bg-transparent text-rose-500", className)}>
         <Icons.CircleX className="h-3 w-3" />
-        BFD down
+        Next-hop down
+      </Badge>
+    );
+  }
+  if (state === "unknown") {
+    return (
+      <Badge
+        variant="outline"
+        className={cn("gap-1 border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400", className)}
+      >
+        <Icons.CircleDashed className="h-3 w-3" />
+        Next-hop ?
       </Badge>
     );
   }
   return (
     <Badge variant="outline" className={cn("border-zinc-300 bg-transparent text-zinc-500 dark:border-zinc-700 dark:text-zinc-400", className)}>
-      BFD off
+      Probe off
+    </Badge>
+  );
+}
+
+// ── kernel-sync badges (routing — vendor Status column parity) ───────────────
+
+export function RouteOsBadge({ state }: { state: "in-kernel" | "drifted" | "missing" | "disabled" | null | undefined }) {
+  if (state === null || state === undefined) {
+    return <Badge variant="outline" className="border-zinc-300 bg-transparent text-zinc-400 dark:border-zinc-700">kernel n/a</Badge>;
+  }
+  if (state === "in-kernel") {
+    return (
+      <Badge variant="outline" className="gap-1 border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+        <Icons.CircleCheck className="h-3 w-3" />
+        in kernel
+      </Badge>
+    );
+  }
+  if (state === "drifted") {
+    return (
+      <Badge variant="outline" className="gap-1 border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+        <Icons.AlertTriangle className="h-3 w-3" />
+        drifted
+      </Badge>
+    );
+  }
+  if (state === "missing") {
+    return (
+      <Badge variant="outline" className="gap-1 border-rose-600/50 bg-transparent text-rose-500">
+        <Icons.CircleX className="h-3 w-3" />
+        not installed
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="border-zinc-300 bg-transparent text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+      off
+    </Badge>
+  );
+}
+
+export function PbrKernelBadge({ state }: { state: "in-kernel" | "missing" | "config-only" | "disabled" | null | undefined }) {
+  if (state === null || state === undefined) {
+    return <Badge variant="outline" className="border-zinc-300 bg-transparent text-zinc-400 dark:border-zinc-700">kernel n/a</Badge>;
+  }
+  if (state === "in-kernel") {
+    return (
+      <Badge variant="outline" className="gap-1 border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+        <Icons.CircleCheck className="h-3 w-3" />
+        in kernel
+      </Badge>
+    );
+  }
+  if (state === "config-only") {
+    return (
+      <Badge variant="outline" className="gap-1 border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+        <Icons.Info className="h-3 w-3" />
+        config-only
+      </Badge>
+    );
+  }
+  if (state === "missing") {
+    return (
+      <Badge variant="outline" className="gap-1 border-rose-600/50 bg-transparent text-rose-500">
+        <Icons.CircleX className="h-3 w-3" />
+        not installed
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="border-zinc-300 bg-transparent text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+      off
     </Badge>
   );
 }

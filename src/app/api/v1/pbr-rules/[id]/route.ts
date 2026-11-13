@@ -1,6 +1,8 @@
 /**
  * PUT/DELETE /api/v1/pbr-rules/{id} — replace / delete a PBR rule
- * (PUT re-validates object/group refs + outgoingIface; 404s on missing).
+ * (PUT re-validates object/group refs + outgoingIface; 404s on missing.
+ * Position moves go through /move — PUT keeps the row in place.)
+ * DELETE withdraws the rule's kernel policy entries (best effort, gated).
  */
 
 import { route } from "@/lib/api/handler";
@@ -10,6 +12,8 @@ import { idParamSchema, pbrBodySchema, type PbrBody } from "@/lib/validators/net
 import { assertIfacesExist } from "@/lib/network/iface-service";
 import { shapePbrRule } from "@/lib/network/shapes";
 import { loadAddressIdSet, loadServiceIdSet } from "@/lib/firewall/refs";
+import { buildPbrTeardownPlan, resolvePbrCidrs, type PbrRuleView } from "@/lib/network/pbr-os";
+import { convergeRouteSafe } from "@/lib/network/route-apply";
 
 export const dynamic = "force-dynamic";
 
@@ -66,9 +70,29 @@ export const DELETE = route({ area: "network", section: "routing" }, async ({ au
   const row = await db.pbrRule.findFirst({ where: { id, tenantId: auth.tenantId } });
   if (!row) throw ApiError.notFound(`PBR rule ${id} not found`);
 
+  // withdraw kernel policy entries first (gated; DB delete never rolls back)
+  const view: PbrRuleView = {
+    id: row.id,
+    name: row.name,
+    position: row.position,
+    enabled: row.enabled,
+    srcAddrIds: JSON.parse(row.srcAddrIds || "[]"),
+    dstAddrIds: JSON.parse(row.dstAddrIds || "[]"),
+    serviceIds: JSON.parse(row.serviceIds || "[]"),
+    outgoingIface: row.outgoingIface,
+    gateway: row.gateway,
+  };
+  const [src, dst] = await Promise.all([
+    resolvePbrCidrs(auth.tenantId, view.srcAddrIds).catch(() => []),
+    resolvePbrCidrs(auth.tenantId, view.dstAddrIds).catch(() => []),
+  ]);
+  const teardown = buildPbrTeardownPlan(view, src.filter((s) => s.cidr).length, dst.filter((d) => d.cidr).length);
+  const os = await convergeRouteSafe(async () => ({ name: teardown.name, osName: null, steps: teardown.steps }));
+
   await db.pbrRule.delete({ where: { id } });
   return {
     data: { ok: true },
+    os,
     audit: {
       action: "pbr.delete",
       objectType: "pbr_rule",

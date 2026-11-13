@@ -12,6 +12,7 @@ import { netListQuery, pbrBodySchema, type PbrBody } from "@/lib/validators/netw
 import { assertIfacesExist } from "@/lib/network/iface-service";
 import { shapePbrRule } from "@/lib/network/shapes";
 import { loadAddressIdSet, loadServiceIdSet } from "@/lib/firewall/refs";
+import { pbrKernelState, readKernelPbrRules } from "@/lib/network/pbr-os";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,28 @@ export const GET = route({ area: "network", querySchema: netListQuery }, async (
     where: { tenantId: auth.tenantId },
     orderBy: { position: "asc" },
   });
-  return { data: rows.map(shapePbrRule) };
+  const shaped = rows.map(shapePbrRule);
+  // honest kernel state: in-kernel | missing | config-only (svc match) | disabled | null
+  const kernel = await readKernelPbrRules().catch(() => null);
+  return {
+    data: shaped.map((r) => ({
+      ...r,
+      kernelState: pbrKernelState(
+        {
+          id: r.id,
+          name: r.name,
+          position: r.position,
+          enabled: r.enabled,
+          srcAddrIds: r.srcAddrIds,
+          dstAddrIds: r.dstAddrIds,
+          serviceIds: r.serviceIds,
+          outgoingIface: r.outgoingIface,
+          gateway: r.gateway,
+        },
+        kernel,
+      ),
+    })),
+  };
 });
 
 export const POST = route(

@@ -291,6 +291,11 @@ export const routeBodySchema = z
 
 export type RouteBody = z.infer<typeof routeBodySchema>;
 
+/** create/update with conflict-force (BR-ROUTE-DUP / BR-ROUTE-DEFAULT-PRIMARY 409s) */
+export const routeCreateSchema = routeBodySchema.extend({
+  force: z.boolean().default(false),
+});
+
 // ── policy-based routing ────────────────────────────────────────────────────
 
 export const pbrBodySchema = z
@@ -318,6 +323,11 @@ export const pbrBodySchema = z
   });
 
 export type PbrBody = z.infer<typeof pbrBodySchema>;
+
+/** POST /pbr-rules/{id}/move — reorder by swapping with the occupant */
+export const pbrMoveBody = z.object({
+  position: z.number().int().min(1).max(1000),
+});
 
 // ── port mirroring (SPAN) ───────────────────────────────────────────────────
 
