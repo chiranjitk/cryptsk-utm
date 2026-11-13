@@ -25,9 +25,11 @@ export interface EngineLike {
   readonly dnsRing: DnsQueryLogEntry[];
   readonly uptimeSec: number;
   readonly tickNumber: number;
-  readonly wanStates: Array<{ iface: string; state: string }>;
+  readonly wanStates: Array<{ iface: string; state: string; latencyMs?: number | null; detail?: string }>;
   systemVitals(): { cpuPct: number; memPct: number; diskPct: number; tempC: number };
   forceProbe(iface: string): Promise<"up" | "degraded" | "down" | "unknown" | null> | ("up" | "degraded" | "down" | "unknown" | null);
+  /** optional: host data plane supports kernel multi-WAN convergence (G2) */
+  wanOsReconverge?(): void;
   start(): Promise<void>;
 }
 

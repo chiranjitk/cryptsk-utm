@@ -16,7 +16,7 @@ import { shapeWanPolicy } from "@/lib/network/shapes";
 export const dynamic = "force-dynamic";
 
 export const GET = route({ area: "network", querySchema: netListQuery }, async ({ auth }) => {
-  const live = new Map(getEngine().wanStates.map((w) => [w.iface, w.state]));
+  const live = new Map(getEngine().wanStates.map((w) => [w.iface, w]));
   const rows = await db.wanPolicy.findMany({
     where: { tenantId: auth.tenantId },
     orderBy: [{ priority: "asc" }, { id: "asc" }],
@@ -28,6 +28,16 @@ export const POST = route(
   { area: "network", bodySchema: wanPolicyBodySchema, section: "routing" },
   async ({ auth, body }) => {
     await assertIfacesExist(auth.tenantId, [body.interfaceName]);
+
+    // enterprise validation (G3): a WAN policy targets a WAN-role interface
+    const ni = await db.networkInterface.findFirst({
+      where: { tenantId: auth.tenantId, name: body.interfaceName },
+    });
+    if (ni && ni.role !== "wan") {
+      throw ApiError.validation(
+        `${body.interfaceName} has role "${ni.role}" — WAN policies target interfaces with the "wan" role (assign it in the Interfaces tab first)`,
+      );
+    }
 
     const existing = await db.wanPolicy.findFirst({
       where: { tenantId: auth.tenantId, interfaceName: body.interfaceName },
@@ -53,6 +63,8 @@ export const POST = route(
         enabled: body.enabled,
       },
     });
+    // kernel policy routing follows the new policy (G2 — no-op when gate off)
+    getEngine().wanOsReconverge?.();
     return {
       data: shapeWanPolicy(created),
       audit: { action: "wan.create", objectType: "wan_policy", objectId: created.id, objectName: created.interfaceName },

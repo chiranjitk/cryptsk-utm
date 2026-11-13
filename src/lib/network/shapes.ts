@@ -103,7 +103,7 @@ export function shapeWanPolicy(
     state: string;
     enabled: boolean;
   },
-  liveState?: string,
+  live?: { state: string; latencyMs?: number | null; detail?: string | null },
 ) {
   return {
     id: p.id,
@@ -118,7 +118,10 @@ export function shapeWanPolicy(
     failThreshold: p.failThreshold,
     okThreshold: p.okThreshold,
     // live engine state wins when the probe map knows the iface (M02 §5)
-    state: liveState ?? p.state,
+    state: live?.state ?? p.state,
+    // last real probe telemetry (G5) — null when the engine has not probed yet
+    probeLatencyMs: live?.latencyMs ?? null,
+    probeDetail: live?.detail ?? null,
     enabled: p.enabled,
   };
 }

@@ -34,7 +34,7 @@ export type MetricsTickPayload = {
   conntrackCount: number;
 };
 
-export type WanStatusPayload = { iface: string; state: string };
+export type WanStatusPayload = { iface: string; state: string; latencyMs?: number | null };
 export type AlertNewPayload = { id: number; type: string; severity: string; title: string; message?: string | null };
 export type VpnStatusPayload = { vpnId: number; status: string; statusMessage?: string | null };
 export type ConfigUpdatedPayload = { section: string };

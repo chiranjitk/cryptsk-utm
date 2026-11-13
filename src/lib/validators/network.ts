@@ -360,9 +360,41 @@ export const wanProbeTypeSchema = z.enum(["icmp", "tcp", "dns", "http"]);
 export const probeTargetDefaults: Record<z.infer<typeof wanProbeTypeSchema>, string> = {
   icmp: "1.1.1.1",
   dns: "1.1.1.1",
-  http: "http://connectivity-check.example.net/",
+  http: "http://1.1.1.1",
   tcp: "1.1.1.1:443",
 };
+
+const HOST_OR_FQDN = /^(\d{1,3}(\.\d{1,3}){3}|[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)+)$/;
+
+/** Per-type probeTarget shape (enterprise gap: dead/invalid targets wasted a probe slot). */
+export function probeTargetValidFor(type: z.infer<typeof wanProbeTypeSchema>, target: string): string | null {
+  const t = target.trim();
+  if (!t) return "Probe target is required";
+  switch (type) {
+    case "icmp":
+    case "dns":
+      if (!HOST_OR_FQDN.test(t)) return "Target must be an IPv4 address or a hostname";
+      return null;
+    case "tcp": {
+      const m = /^([^:]+):(\d{1,5})$/.exec(t);
+      if (!m || !HOST_OR_FQDN.test(m[1]) || Number(m[2]) < 1 || Number(m[2]) > 65535) {
+        return "TCP target must be host:port (e.g. 1.1.1.1:443)";
+      }
+      return null;
+    }
+    case "http": {
+      try {
+        const u = new URL(t);
+        if (u.protocol !== "http:" && u.protocol !== "https:") return "HTTP target must be an http(s):// URL";
+        return null;
+      } catch {
+        return "HTTP target must be an http(s):// URL";
+      }
+    }
+    default:
+      return null;
+  }
+}
 
 export const wanPolicyBodySchema = z
   .object({
@@ -378,7 +410,13 @@ export const wanPolicyBodySchema = z
     okThreshold: z.number().int().min(1).max(10).default(3),
     enabled: z.boolean().default(true),
   })
-  .transform((v) => ({ ...v, probeTarget: v.probeTarget ?? probeTargetDefaults[v.probeType] }));
+  .transform((v) => ({ ...v, probeTarget: v.probeTarget ?? probeTargetDefaults[v.probeType] }))
+  .superRefine((v, ctx) => {
+    const err = probeTargetValidFor(v.probeType, v.probeTarget);
+    if (err) {
+      ctx.addIssue({ code: "custom", path: ["probeTarget"], message: err });
+    }
+  });
 
 export type WanPolicyBody = z.infer<typeof wanPolicyBodySchema>;
 

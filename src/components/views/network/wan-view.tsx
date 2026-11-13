@@ -293,6 +293,13 @@ export function WanView() {
                       thresholds: fail <span className="tabular-nums text-zinc-800 dark:text-zinc-200">{p.failThreshold}</span> / ok{" "}
                       <span className="tabular-nums text-zinc-800 dark:text-zinc-200">{p.okThreshold}</span>
                     </p>
+                    {p.probeDetail ? (
+                      <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500" title={p.probeDetail}>
+                        last probe:{" "}
+                        {p.probeLatencyMs != null ? <span className="tabular-nums text-zinc-600 dark:text-zinc-300">{p.probeLatencyMs} ms — </span> : null}
+                        {p.probeDetail}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="mt-auto flex items-center justify-between gap-2 pt-2">
                     <Label className="flex items-center gap-2 text-xs">

@@ -72,7 +72,7 @@ export type EngineEvent =
         diff: Array<{ id: number; userName?: string | null; status?: string; bytesIn?: number; bytesOut?: number; lastActivity?: string }>;
       };
     }
-  | { seq: number; type: "wan:status"; payload: { iface: string; state: "up" | "down" | "degraded" } }
+  | { seq: number; type: "wan:status"; payload: { iface: string; state: "up" | "down" | "degraded"; latencyMs?: number | null } }
   | { seq: number; type: "vpn:status"; payload: { vpnId: number; status: "up" | "down" | "connecting" | "error"; statusMessage?: string } }
   | { seq: number; type: "config:updated"; payload: { section: string } };
 

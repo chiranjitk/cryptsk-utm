@@ -242,6 +242,9 @@ export interface WanPolicy {
   failThreshold: number;
   okThreshold: number;
   state: WanState;
+  /** last real probe telemetry (live engine overlay, null = not probed yet) */
+  probeLatencyMs?: number | null;
+  probeDetail?: string | null;
   enabled: boolean;
 }
 

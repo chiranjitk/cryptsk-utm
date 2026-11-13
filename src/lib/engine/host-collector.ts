@@ -48,9 +48,36 @@ import {
   detectSuricataEve,
   detectKeaLeases,
   detectUnboundLog,
-  probeGateway,
   type WgPeerDump,
 } from "@/lib/host/tools";
+import { runWanProbe, nextWanState, type WanHysteresis } from "@/lib/network/wan-probe";
+import { convergeWanOs } from "@/lib/network/wan-os";
+
+/**
+ * Per-policy WAN probe runtime (enterprise gap G1 fix) — the engine now
+ * carries the policy's ACTUAL probe config instead of one hardcoded
+ * gateway TCP:53 check for every interface.
+ */
+interface WanProbeCfg {
+  id: number;
+  mode: string;
+  weight: number;
+  priority: number;
+  probeType: "icmp" | "tcp" | "dns" | "http";
+  probeTarget: string;
+  intervalSec: number;
+  timeoutMs: number;
+  failThreshold: number;
+  okThreshold: number;
+  enabled: boolean;
+}
+
+interface WanRuntime extends WanHysteresis {
+  cfg: WanProbeCfg;
+  latencyMs: number | null;
+  detail: string;
+  lastTs: number;
+}
 
 export interface HostLogRingEntry {
   kind: "firewall" | "ips";
@@ -103,8 +130,9 @@ class HostCollector {
   private udpEndpoints = 0;
   private conntrackReal: number | null = null;
 
-  // WAN probe state (real)
-  private wanProbes = new Map<string, { state: "up" | "degraded" | "down" | "unknown"; latencyMs: number | null; detail: string; lastTs: number }>();
+  // WAN probe state (real, per-policy config honored)
+  private wanProbes = new Map<string, WanRuntime>();
+  private wanOsConvergeTimer: ReturnType<typeof setTimeout> | null = null;
 
   // optional real sources (resolved lazily)
   private evePath: string | null | undefined; // undefined = not yet probed
@@ -140,8 +168,21 @@ class HostCollector {
     return { total: this.tcpSessions.total, established: this.tcpSessions.established, udp: this.udpEndpoints };
   }
 
-  get wanStates(): Array<{ iface: string; state: string }> {
-    return [...this.wanProbes.entries()].map(([iface, p]) => ({ iface, state: p.state }));
+  get wanStates(): Array<{ iface: string; state: string; latencyMs: number | null; detail: string }> {
+    return [...this.wanProbes.entries()].map(([iface, p]) => ({ iface, state: p.state, latencyMs: p.latencyMs, detail: p.detail }));
+  }
+
+  /**
+   * OS-level multi-WAN reconverge — called by the wan-policies API after
+   * CRUD and by the probe cycle on state transitions. Debounced 1 s so a
+   * burst of edits produces one kernel convergence.
+   */
+  wanOsReconverge(): void {
+    if (this.wanOsConvergeTimer) clearTimeout(this.wanOsConvergeTimer);
+    this.wanOsConvergeTimer = setTimeout(() => {
+      this.wanOsConvergeTimer = null;
+      void convergeWanOs().catch(() => {});
+    }, 1000);
   }
 
   /**
@@ -163,17 +204,34 @@ class HostCollector {
     };
   }
 
-  /** Real immediate probe (M02 §5 "Probe now") — null when iface is not tracked. */
+  /**
+   * Real immediate probe (M02 §5 "Probe now") — runs the policy's OWN probe
+   * type/target/timeout (G1 fix) as a one-shot authoritative result: state,
+   * latency and detail update directly (hysteresis runs are reset). Returns
+   * null when the iface has no WAN policy.
+   */
   async forceProbe(iface: string): Promise<"up" | "degraded" | "down" | "unknown" | null> {
-    const tracked = [...this.wanProbes.keys()];
-    if (!tracked.includes(iface)) return null;
-    const result = await probeGateway(iface);
-    const prev = this.wanProbes.get(iface);
-    this.wanProbes.set(iface, { ...result, lastTs: Date.now() });
-    if (prev && prev.state !== result.state) {
-      this.persistWanState(iface, result.state);
-      if (result.state !== "unknown") {
-        emitEvent({ type: "wan:status", payload: { iface, state: result.state } });
+    let rt = this.wanProbes.get(iface);
+    if (!rt) {
+      // policy created after the last reload — try the DB directly
+      await this.wanConfigReload().catch(() => {});
+      rt = this.wanProbes.get(iface);
+      if (!rt) return null;
+    }
+    const spec = await this.wanProbeSpec(iface, rt.cfg);
+    const result = await runWanProbe(spec);
+    const prev = rt.state;
+    rt.lastTs = Date.now();
+    rt.latencyMs = result.latencyMs;
+    rt.detail = result.detail;
+    if (result.state !== "unknown") {
+      rt.state = result.state;
+      rt.failRun = 0;
+      rt.okRun = 0;
+      if (prev !== result.state) {
+        this.persistWanState(iface, result.state);
+        emitEvent({ type: "wan:status", payload: { iface, state: result.state, latencyMs: result.latencyMs } });
+        this.wanOsReconverge(); // egress decision may have flipped
       }
     }
     return result.state;
@@ -219,10 +277,7 @@ class HostCollector {
     this.tempC = await readThermalC();
     // real WAN policies from DB (config plane; probe results are real)
     try {
-      const wans = await db.wanPolicy.findMany({ where: { tenantId: 1 }, select: { interfaceName: true, enabled: true } });
-      for (const w of wans) {
-        if (w.enabled) this.wanProbes.set(w.interfaceName, { state: "unknown", latencyMs: null, detail: "not probed yet", lastTs: 0 });
-      }
+      await this.wanConfigReload();
     } catch {
       // DB not ready yet — probes re-read on the WAN cycle
     }
@@ -243,7 +298,8 @@ class HostCollector {
         if (this.metricsRing.length > METRICS_RING_CAP) this.metricsRing.shift();
         emitEvent({ type: "metrics:tick", payload: tickPayload });
       }
-      if (myTick % WAN_EVERY === 0) await this.wanProbeStep().catch(() => {});
+      // WAN probes run every tick — each policy probes on its OWN interval
+      await this.wanProbeStep().catch(() => {});
       if (myTick % SOURCES_EVERY === 0) await this.realSourcesStep().catch(() => {});
       if (myTick % SLOW_EVERY === 0) await this.slowStep().catch(() => {});
       await this.thresholdStep(tickPayload).catch(() => {});
@@ -325,37 +381,125 @@ class HostCollector {
     };
   }
 
-  // ── WAN probes (real gateway TCP checks) ───────────────────────────────────
+  // ── WAN probes (per-policy, real; G1 fix) ─────────────────────────────────
+
+  /** Re-read WAN policies into per-policy runtimes (admin edits/deletes after boot). */
+  private async wanConfigReload(): Promise<void> {
+    const wans = await db.wanPolicy.findMany({ where: { tenantId: 1 } });
+    const seen = new Set<string>();
+    for (const w of wans) {
+      seen.add(w.interfaceName);
+      const cfg: WanProbeCfg = {
+        id: w.id,
+        mode: w.mode,
+        weight: w.weight,
+        priority: w.priority,
+        probeType: (w.probeType as WanProbeCfg["probeType"]) ?? "icmp",
+        probeTarget: w.probeTarget,
+        intervalSec: w.intervalSec,
+        timeoutMs: w.timeoutMs,
+        failThreshold: w.failThreshold,
+        okThreshold: w.okThreshold,
+        enabled: w.enabled,
+      };
+      const rt = this.wanProbes.get(w.interfaceName);
+      if (!rt) {
+        if (w.enabled) {
+          this.wanProbes.set(w.interfaceName, { cfg, state: "unknown", failRun: 0, okRun: 0, latencyMs: null, detail: "not probed yet", lastTs: 0 });
+        }
+        continue;
+      }
+      if (!w.enabled) {
+        // disabled — drop tracking; DB state was reset to "unknown" by the API
+        this.wanProbes.delete(w.interfaceName);
+        continue;
+      }
+      const changed = JSON.stringify(rt.cfg) !== JSON.stringify(cfg);
+      rt.cfg = cfg;
+      if (changed) {
+        // probe definition changed — restart the threshold runs honestly
+        rt.failRun = 0;
+        rt.okRun = 0;
+      }
+    }
+    for (const k of [...this.wanProbes.keys()]) {
+      if (!seen.has(k)) this.wanProbes.delete(k); // policy deleted
+    }
+  }
+
+  /** Probe spec for a policy — binds to the WAN iface so multi-WAN probes use their own path. */
+  private async wanProbeSpec(iface: string, cfg: WanProbeCfg) {
+    let ifaceIp: string | null = null;
+    try {
+      const real = await readInterfaces();
+      const os = real.find((r) => r.name === iface);
+      const primary = os?.ipv4[0] ?? null;
+      ifaceIp = primary ? primary.split("/")[0] : null;
+    } catch {
+      // no interface info — probe leaves via the main table
+    }
+    return {
+      ifaceName: iface,
+      ifaceIp,
+      probeType: cfg.probeType,
+      probeTarget: cfg.probeTarget,
+      timeoutMs: cfg.timeoutMs,
+    };
+  }
 
   private async wanProbeStep(): Promise<void> {
     const verbose = myTickVerbose(this.tickNo);
     const t0 = Date.now();
     // re-read WAN policies periodically (admin adds rows after boot)
-    try {
-      const wans = await db.wanPolicy.findMany({ where: { tenantId: 1 }, select: { interfaceName: true, enabled: true } });
-      for (const w of wans) {
-        if (w.enabled && !this.wanProbes.has(w.interfaceName)) {
-          this.wanProbes.set(w.interfaceName, { state: "unknown", latencyMs: null, detail: "not probed yet", lastTs: 0 });
-        }
+    if (this.tickNo % WAN_EVERY === 0 || this.wanProbes.size === 0) {
+      try {
+        await this.wanConfigReload();
+      } catch {
+        // DB unavailable — keep current state
       }
-    } catch {
-      // DB unavailable — keep current state
     }
-    for (const [iface] of this.wanProbes) {
-      const result = (await this.stageTimeout(`probeGateway:${iface}`, probeGateway(iface), 8000)) ?? {
+    const now = Date.now();
+    const due: string[] = [...this.wanProbes.entries()]
+      .filter(([, rt]) => now - rt.lastTs >= rt.cfg.intervalSec * 1000)
+      .map(([iface]) => iface);
+    // one readInterfaces() per step shared by all due probes
+    const specCache = new Map<string, Awaited<ReturnType<HostCollector["wanProbeSpec"]>>>();
+    let transitioned = false;
+    for (const iface of due) {
+      const rt = this.wanProbes.get(iface);
+      if (!rt) continue;
+      let spec = specCache.get(iface);
+      if (!spec) {
+        spec = await this.wanProbeSpec(iface, rt.cfg);
+        specCache.set(iface, spec);
+      }
+      const outcome = (await this.stageTimeout(`wanProbe:${iface}`, runWanProbe(spec), rt.cfg.timeoutMs + 4000)) ?? {
         state: "unknown" as const,
         latencyMs: null,
         detail: "probe watchdog detached",
       };
-      if (verbose) console.log(`[host-collector] wan probe ${iface} → ${result.state} (${Date.now() - t0}ms)`);
-      const prev = this.wanProbes.get(iface)!;
-      this.wanProbes.set(iface, { ...result, lastTs: Date.now() });
-      if (prev.state !== result.state) {
-        this.persistWanState(iface, result.state);
-        if (result.state !== "unknown") {
-          emitEvent({ type: "wan:status", payload: { iface, state: result.state } });
-        }
+      rt.lastTs = Date.now();
+      rt.latencyMs = outcome.latencyMs;
+      rt.detail = outcome.detail;
+      if (outcome.state === "unknown") {
+        // broken target/tool — honest telemetry, never counted as a failure run
+        if (verbose) console.log(`[host-collector] wan probe ${iface} → unknown: ${outcome.detail}`);
+        continue;
       }
+      const applied = nextWanState({ state: rt.state, failRun: rt.failRun, okRun: rt.okRun }, outcome.state, rt.cfg.failThreshold, rt.cfg.okThreshold);
+      rt.state = applied.state;
+      rt.failRun = applied.failRun;
+      rt.okRun = applied.okRun;
+      if (verbose) console.log(`[host-collector] wan probe ${iface} → ${outcome.state} (${Date.now() - t0}ms) state=${applied.state}`);
+      if (applied.changed) {
+        this.persistWanState(iface, applied.state);
+        emitEvent({ type: "wan:status", payload: { iface, state: applied.state, latencyMs: outcome.latencyMs } });
+        transitioned = true;
+      }
+    }
+    if (transitioned || this.tickNo % (WAN_EVERY * 6) === 0) {
+      // kernel policy routing follows the health decision (G2)
+      await convergeWanOs().catch(() => {});
     }
   }
 
