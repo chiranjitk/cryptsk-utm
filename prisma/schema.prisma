@@ -239,6 +239,7 @@ model WanPolicy {
   okThreshold   Int     @default(3) @map("ok_threshold")
   state         String  @default("unknown") @map("state") // up | degraded | down | unknown
   enabled       Boolean @default(true)
+  description   String?
 
   tenant    Tenant          @relation(fields: [tenantId], references: [id])
   // compound FK: interfaces.name is unique per tenant, not globally (see @@unique on NetworkInterface);

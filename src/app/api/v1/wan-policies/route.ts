@@ -61,6 +61,7 @@ export const POST = route(
         okThreshold: body.okThreshold,
         state: "unknown",
         enabled: body.enabled,
+        description: body.description ?? null,
       },
     });
     // kernel policy routing follows the new policy (G2 — no-op when gate off)

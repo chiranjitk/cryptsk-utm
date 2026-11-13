@@ -27,6 +27,7 @@ import { db } from "@/lib/db";
 import { readInterfaces } from "@/lib/host/proc";
 import { readGatewayFor } from "@/lib/host/tools";
 import type { KernelPbrRule } from "./pbr-os";
+import type { WanTransitionEvent } from "./wan-sla";
 
 // ── managed kernel real estate ──────────────────────────────────────────────
 
@@ -417,4 +418,88 @@ export async function convergeWanOs(
       plan: { steps: [], egressTable: null, managedTables: [], activeEgress: null, reasons: [] },
     };
   }
+}
+
+// ── status / kernel visibility (GUI↔OS honesty) ─────────────────────────────
+
+export interface WanOsRouteDump {
+  table: number;
+  routes: string[];
+}
+
+export interface WanOsKernelFacts {
+  /** `ip` (iproute2) binary available — everything else needs it */
+  ipAvailable: boolean;
+  /** managed-band `ip rule` entries (3200..3299) actually in the kernel */
+  bandRules: KernelPbrRule[];
+  /** managed egress table (240) live contents — the engine's current decision */
+  egress: WanOsRouteDump | null;
+  /** non-empty per-WAN source tables (260..271) with their rules */
+  perWan: WanOsRouteDump[];
+}
+
+export interface WanOsStatus {
+  gate: "on" | "off";
+  /** main-table default-route owner (excluded from source management) */
+  primaryIface: string | null;
+  /** config-plane view the planner converges from (DB states may lag probes) */
+  wans: WanOsWanView[];
+  kernel: WanOsKernelFacts;
+  /** what the NEXT converge pass would do right now (idempotent preview) */
+  preview: { stepCount: number; activeEgress: WanOsPlan["activeEgress"]; reasons: string[]; steps: WanOsStep[] };
+  /** real failover event log (newest first) — attached by the route from the engine */
+  events?: WanTransitionEvent[];
+}
+
+/** keep only the managed multi-WAN rule band (3200..3299) */
+export function filterWanBandRules(rules: KernelPbrRule[]): KernelPbrRule[] {
+  return rules.filter((k) => k.priority >= WAN_PRIO_BASE && k.priority < WAN_PRIO_BASE + WAN_TABLE_LIMIT * 10);
+}
+
+/** `ip route show table N` output → clean route lines */
+export function parseRouteTableDump(out: string): string[] {
+  return out
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+}
+
+/**
+ * Assemble the full GUI↔kernel status: gate, planner input, live kernel facts
+ * (band rules + table dumps) and an idempotent preview of the next converge
+ * pass. Read-only — never executes a step.
+ */
+export async function wanOsStatus(): Promise<WanOsStatus> {
+  const { hasTool, runTool } = await import("@/lib/host/tools");
+  const ipAvailable = await hasTool("ip");
+  const input = await buildWanOsInput().catch(() => ({ primaryIface: null, wans: [] as WanOsWanView[] }));
+  const { readKernelPbrRules } = await import("./pbr-os");
+  const kernelRules = ipAvailable ? await readKernelPbrRules().catch(() => null) : null;
+
+  const dumpTable = async (table: number): Promise<string[]> => {
+    const r = await runTool(`ip route show table ${table} 2>/dev/null`, 4000);
+    return r.ok ? parseRouteTableDump(r.stdout) : [];
+  };
+  const egressRoutes = ipAvailable ? await dumpTable(WAN_EGRESS_TABLE).catch(() => [] as string[]) : [];
+  const perWan: WanOsRouteDump[] = [];
+  if (ipAvailable) {
+    for (let t = WAN_TABLE_BASE; t < WAN_TABLE_BASE + WAN_TABLE_LIMIT; t++) {
+      const routes = await dumpTable(t).catch(() => [] as string[]);
+      if (routes.length > 0) perWan.push({ table: t, routes });
+    }
+  }
+
+  const plan = buildWanOsConvergePlan(input, kernelRules);
+  return {
+    gate: process.env.CONSOLE_WAN_OS === "1" ? "on" : "off",
+    primaryIface: input.primaryIface,
+    wans: input.wans,
+    kernel: {
+      ipAvailable,
+      bandRules: kernelRules ? filterWanBandRules(kernelRules) : [],
+      egress: egressRoutes.length > 0 ? { table: WAN_EGRESS_TABLE, routes: egressRoutes } : null,
+      perWan,
+    },
+    preview: { stepCount: plan.steps.length, activeEgress: plan.activeEgress, reasons: plan.reasons, steps: plan.steps },
+  };
 }

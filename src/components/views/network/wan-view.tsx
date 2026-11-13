@@ -58,6 +58,7 @@ import {
 import { ModeChip, StateBadge } from "./net-ui";
 
 const WAN_KEY = ["network", "wan-policies"] as const;
+const WAN_OS_KEY = ["network", "wan-os-status"] as const;
 const IFACES_KEY = ["network", "interfaces"] as const;
 
 const WAN_MODES: WanMode[] = ["priority", "failover", "load_balance"];
@@ -69,11 +70,49 @@ const MODE_LABEL: Record<WanMode, string> = {
   load_balance: "load balance",
 };
 
+const HOST_OR_FQDN = /^(\d{1,3}(\.\d{1,3}){3}|[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)+)$/;
+
+/** client mirror of the server's per-type probeTarget validation */
+function targetValidFor(type: ProbeType, target: string): string | null {
+  const t = target.trim();
+  if (!t) return "Probe target is required";
+  switch (type) {
+    case "icmp":
+    case "dns":
+      if (!HOST_OR_FQDN.test(t)) return "Target must be an IPv4 address or a hostname";
+      return null;
+    case "tcp": {
+      const m = /^([^:]+):(\d{1,5})$/.exec(t);
+      if (!m || !HOST_OR_FQDN.test(m[1]) || Number(m[2]) < 1 || Number(m[2]) > 65535) {
+        return "TCP target must be host:port (e.g. 1.1.1.1:443)";
+      }
+      return null;
+    }
+    case "http": {
+      try {
+        const u = new URL(t);
+        if (u.protocol !== "http:" && u.protocol !== "https:") return "HTTP target must be an http(s):// URL";
+        return null;
+      } catch {
+        return "HTTP target must be an http(s):// URL";
+      }
+    }
+    default:
+      return null;
+  }
+}
+
 export function WanView() {
   const queryClient = useQueryClient();
 
   const policiesQuery = useQuery({ queryKey: WAN_KEY, queryFn: () => netApi.listWanPolicies() });
   const ifacesQuery = useQuery({ queryKey: IFACES_KEY, queryFn: () => netApi.listIfaces() });
+  // GUI↔kernel visibility (gate, managed tables, band rules, failover events)
+  const osStatusQuery = useQuery({
+    queryKey: WAN_OS_KEY,
+    queryFn: () => netApi.getWanOsStatus(),
+    refetchInterval: 15_000,
+  });
 
   // live state overlay from wan:status + last-known states for transition toasts
   const [overlay, setOverlay] = useState<Record<string, WanState>>({});
@@ -102,11 +141,13 @@ export function WanView() {
       refetchTimerRef.current = setTimeout(() => {
         refetchTimerRef.current = null;
         void queryClient.invalidateQueries({ queryKey: WAN_KEY });
+        void queryClient.invalidateQueries({ queryKey: WAN_OS_KEY });
       }, 1000);
     },
     onConfigUpdated: (c) => {
       if (c.section === "interfaces" || c.section === "routing") {
         void queryClient.invalidateQueries({ queryKey: WAN_KEY });
+        void queryClient.invalidateQueries({ queryKey: WAN_OS_KEY });
       }
     },
   });
@@ -136,6 +177,7 @@ export function WanView() {
     onSuccess: () => {
       toastOk("WAN policy deleted");
       setDeleting(null);
+      void queryClient.invalidateQueries({ queryKey: WAN_OS_KEY });
     },
     onError: (err) => toastErr(err, "Delete failed"),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: WAN_KEY }),
@@ -147,6 +189,7 @@ export function WanView() {
     onSuccess: (updated) => {
       lastStatesRef.current[updated.interfaceName] = updated.state;
       toastOk(updated.enabled ? "WAN policy enabled" : "WAN policy disabled", updated.interfaceName);
+      void queryClient.invalidateQueries({ queryKey: WAN_OS_KEY });
     },
     onError: (err) => toastErr(err, "Toggle failed"),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: WAN_KEY }),
@@ -205,6 +248,150 @@ export function WanView() {
             </p>
           </div>
         </div>
+      </Card>
+
+      {/* GUI↔kernel enforcement panel — REAL policy-routing state, not a promise */}
+      <Card className="p-4">
+        <CardHeader className="flex-row items-center justify-between space-y-0 p-0 pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <Icons.Network className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+            Kernel enforcement — managed policy routing
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            {osStatusQuery.data ? (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] font-semibold uppercase",
+                  osStatusQuery.data.gate === "on"
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                    : "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+                )}
+              >
+                OS apply {osStatusQuery.data.gate === "on" ? "on" : "off"}
+              </Badge>
+            ) : null}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void osStatusQuery.refetch()}
+              disabled={osStatusQuery.isFetching}
+              aria-label="Refresh kernel enforcement state"
+            >
+              {osStatusQuery.isFetching ? (
+                <Icons.LoaderCircle className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Icons.RefreshCw className="mr-1 h-3.5 w-3.5" />
+              )}
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {osStatusQuery.error ? (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">Kernel state unavailable — {String((osStatusQuery.error as Error).message)}</p>
+          ) : !osStatusQuery.data ? (
+            <Skeleton className="h-24 w-full rounded-lg" />
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-3">
+              {/* decision */}
+              <div className="space-y-1.5 text-xs">
+                <p className="font-medium text-zinc-700 dark:text-zinc-200">Egress decision (table 240)</p>
+                <p className="text-zinc-500 dark:text-zinc-400">
+                  primary default-route owner: {" "}
+                  <span className="font-mono text-zinc-700 dark:text-zinc-200">{osStatusQuery.data.primaryIface ?? "—"}</span>
+                </p>
+                <p className="text-zinc-500 dark:text-zinc-400">
+                  active egress: {" "}
+                  {osStatusQuery.data.preview.activeEgress ? (
+                    <Badge variant="outline" className="mx-0.5 border-zinc-500/30 bg-zinc-500/10 font-mono text-[11px] text-zinc-600 dark:text-zinc-300">
+                      {osStatusQuery.data.preview.activeEgress.iface} ({osStatusQuery.data.preview.activeEgress.style})
+                    </Badge>
+                  ) : (
+                    <span className="font-medium text-rose-600 dark:text-rose-400">— offline —</span>
+                  )}
+                </p>
+                {osStatusQuery.data.kernel.egress ? (
+                  <div className="max-h-24 space-y-0.5 overflow-y-auto rounded-md border border-zinc-200 bg-zinc-50 p-2 font-mono text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
+                    {osStatusQuery.data.kernel.egress.routes.map((r, i) => (
+                      <p key={i} className="truncate" title={r}>
+                        {r}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-zinc-400 dark:text-zinc-500">table 240 empty — no up WAN with a gateway (honest offline)</p>
+                )}
+              </div>
+
+              {/* managed kernel real estate + drift */}
+              <div className="space-y-1.5 text-xs">
+                <p className="font-medium text-zinc-700 dark:text-zinc-200">Managed kernel objects</p>
+                <p className="text-zinc-500 dark:text-zinc-400">
+                  ip rule band 3200..3299: <span className="tabular-nums font-medium text-zinc-700 dark:text-zinc-200">{osStatusQuery.data.kernel.bandRules.length}</span>
+                  {" · "}per-WAN tables in use: <span className="tabular-nums font-medium text-zinc-700 dark:text-zinc-200">{osStatusQuery.data.kernel.perWan.length}</span>
+                </p>
+                {osStatusQuery.data.kernel.bandRules.length > 0 ? (
+                  <div className="max-h-24 space-y-0.5 overflow-y-auto rounded-md border border-zinc-200 bg-zinc-50 p-2 font-mono text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
+                    {osStatusQuery.data.kernel.bandRules.map((k) => (
+                      <p key={k.priority} className="truncate" title={k.raw}>
+                        {k.raw}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+                {osStatusQuery.data.preview.stepCount > 0 ? (
+                  <p className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                    drift: next converge would run {osStatusQuery.data.preview.stepCount} step(s)
+                    {osStatusQuery.data.gate === "off" ? " (gate off — preview only)" : ""}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400">in sync — no pending kernel steps</p>
+                )}
+                {osStatusQuery.data.preview.reasons.length > 0 ? (
+                  <div className="max-h-20 space-y-0.5 overflow-y-auto text-[11px] text-zinc-400 dark:text-zinc-500">
+                    {osStatusQuery.data.preview.reasons.map((r, i) => (
+                      <p key={i}>· {r}</p>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              {/* failover event log */}
+              <div className="space-y-1.5 text-xs">
+                <p className="font-medium text-zinc-700 dark:text-zinc-200">Failover event log (real transitions)</p>
+                {osStatusQuery.data.events.length === 0 ? (
+                  <p className="text-[11px] text-zinc-400 dark:text-zinc-500">no up/down transitions recorded yet</p>
+                ) : (
+                  <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
+                    {osStatusQuery.data.events.map((e, i) => (
+                      <p key={`${e.ts}-${i}`} className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                        <span className="tabular-nums text-zinc-400 dark:text-zinc-500">
+                          {new Date(e.ts).toLocaleTimeString()}
+                        </span>
+                        <span className="font-mono text-zinc-700 dark:text-zinc-200">{e.iface}</span>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "px-1 py-0 text-[10px] font-semibold uppercase",
+                            e.to === "down"
+                              ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-900/40 dark:text-rose-300"
+                              : e.to === "degraded"
+                                ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                                : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+                          )}
+                        >
+                          {e.from} → {e.to}
+                        </Badge>
+                        {e.latencyMs != null ? <span className="tabular-nums">{e.latencyMs} ms</span> : null}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       {policiesQuery.error ? (
@@ -300,6 +487,29 @@ export function WanView() {
                         {p.probeDetail}
                       </p>
                     ) : null}
+                    {p.sla && p.sla.samples > 0 ? (
+                      <p className="flex flex-wrap gap-x-3 text-[11px] text-zinc-400 dark:text-zinc-500">
+                        <span>sla window {p.sla.samples} probes</span>
+                        {p.sla.avgLatencyMs != null ? (
+                          <span>
+                            avg <span className="tabular-nums text-zinc-600 dark:text-zinc-300">{p.sla.avgLatencyMs} ms</span>
+                          </span>
+                        ) : null}
+                        {p.sla.jitterMs != null ? (
+                          <span>
+                            jitter <span className="tabular-nums text-zinc-600 dark:text-zinc-300">{p.sla.jitterMs} ms</span>
+                          </span>
+                        ) : null}
+                        <span className={p.sla.lossPct > 0 ? "font-medium text-rose-600 dark:text-rose-400" : undefined}>
+                          loss <span className="tabular-nums">{p.sla.lossPct}%</span>
+                        </span>
+                      </p>
+                    ) : null}
+                    {p.description ? (
+                      <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500" title={p.description}>
+                        {p.description}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="mt-auto flex items-center justify-between gap-2 pt-2">
                     <Label className="flex items-center gap-2 text-xs">
@@ -320,6 +530,7 @@ export function WanView() {
                             failThreshold: p.failThreshold,
                             okThreshold: p.okThreshold,
                             enabled: checked,
+                            description: p.description ?? null,
                           };
                           toggleEnabledMut.mutate({ id: p.id, body });
                         }}
@@ -394,6 +605,7 @@ function WanPolicyEditor(props: {
   const [timeoutMs, setTimeoutMs] = useState(String(editing?.timeoutMs ?? 2000));
   const [failThreshold, setFailThreshold] = useState(String(editing?.failThreshold ?? 3));
   const [okThreshold, setOkThreshold] = useState(String(editing?.okThreshold ?? 3));
+  const [description, setDescription] = useState(editing?.description ?? "");
   const [enabled, setEnabled] = useState(editing?.enabled ?? true);
   const [error, setError] = useState<string | null>(null);
 
@@ -413,14 +625,16 @@ function WanPolicyEditor(props: {
     const prio = Number(priority);
     if (!Number.isInteger(prio) || prio < 1 || prio > 10) return setError("Priority must be an integer between 1 and 10");
     const interval = Number(intervalSec);
-    if (!Number.isInteger(interval) || interval < 1) return setError("Probe interval must be a positive integer (seconds)");
+    if (!Number.isInteger(interval) || interval < 2 || interval > 300) return setError("Probe interval must be an integer between 2 and 300 seconds");
     const timeout = Number(timeoutMs);
-    if (!Number.isInteger(timeout) || timeout < 100) return setError("Probe timeout must be at least 100 ms");
+    if (!Number.isInteger(timeout) || timeout < 100 || timeout > 10000) return setError("Probe timeout must be between 100 and 10000 ms");
     const failN = Number(failThreshold);
     const okN = Number(okThreshold);
-    if (!Number.isInteger(failN) || failN < 1) return setError("Fail threshold must be a positive integer");
-    if (!Number.isInteger(okN) || okN < 1) return setError("OK threshold must be a positive integer");
-    if (!probeTarget.trim()) return setError("Probe target is required");
+    if (!Number.isInteger(failN) || failN < 1 || failN > 10) return setError("Fail threshold must be an integer between 1 and 10");
+    if (!Number.isInteger(okN) || okN < 1 || okN > 10) return setError("OK threshold must be an integer between 1 and 10");
+    const targetErr = targetValidFor(probeType, probeTarget);
+    if (targetErr) return setError(targetErr);
+    if (description.trim().length > 255) return setError("Description must be 255 characters or fewer");
     setError(null);
     mut.mutate({
       interfaceName,
@@ -434,6 +648,7 @@ function WanPolicyEditor(props: {
       failThreshold: failN,
       okThreshold: okN,
       enabled,
+      description: description.trim() || null,
     });
   };
 
@@ -489,7 +704,7 @@ function WanPolicyEditor(props: {
 
           {mode === "load_balance" && (
             <div>
-              <FieldLabel hint={`${weight}% of new connections`}>Weight</FieldLabel>
+              <FieldLabel hint="relative share across load-balanced WANs">Weight</FieldLabel>
               <div className="flex items-center gap-3">
                 <Slider
                   value={[weight]}
@@ -502,6 +717,9 @@ function WanPolicyEditor(props: {
                 />
                 <span className="w-12 text-right text-sm font-medium tabular-nums">{weight}%</span>
               </div>
+              <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                Weights are RELATIVE: with WAN-A 70 and WAN-B 30, ≈70% of new connections take WAN-A (only when every active policy is load balance).
+              </p>
             </div>
           )}
 
@@ -547,21 +765,32 @@ function WanPolicyEditor(props: {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <FieldLabel hint="seconds">Interval</FieldLabel>
-              <Input type="number" min={1} value={intervalSec} onChange={(e) => setIntervalSec(e.target.value)} aria-label="Probe interval" />
+              <FieldLabel hint="2–300 s">Interval</FieldLabel>
+              <Input type="number" min={2} max={300} value={intervalSec} onChange={(e) => setIntervalSec(e.target.value)} aria-label="Probe interval" />
             </div>
             <div>
-              <FieldLabel hint="ms">Timeout</FieldLabel>
-              <Input type="number" min={100} step={100} value={timeoutMs} onChange={(e) => setTimeoutMs(e.target.value)} aria-label="Probe timeout" />
+              <FieldLabel hint="100–10000 ms">Timeout</FieldLabel>
+              <Input type="number" min={100} max={10000} step={100} value={timeoutMs} onChange={(e) => setTimeoutMs(e.target.value)} aria-label="Probe timeout" />
             </div>
             <div>
-              <FieldLabel hint="bad probes → down">Fail threshold</FieldLabel>
-              <Input type="number" min={1} value={failThreshold} onChange={(e) => setFailThreshold(e.target.value)} aria-label="Fail threshold" />
+              <FieldLabel hint="1–10 bad probes → down">Fail threshold</FieldLabel>
+              <Input type="number" min={1} max={10} value={failThreshold} onChange={(e) => setFailThreshold(e.target.value)} aria-label="Fail threshold" />
             </div>
             <div>
-              <FieldLabel hint="good probes → up">OK threshold</FieldLabel>
-              <Input type="number" min={1} value={okThreshold} onChange={(e) => setOkThreshold(e.target.value)} aria-label="OK threshold" />
+              <FieldLabel hint="1–10 good probes → up">OK threshold</FieldLabel>
+              <Input type="number" min={1} max={10} value={okThreshold} onChange={(e) => setOkThreshold(e.target.value)} aria-label="OK threshold" />
             </div>
+          </div>
+
+          <div>
+            <FieldLabel hint="optional operator note">Description</FieldLabel>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="e.g. primary fibre uplink — SLA 99.9%"
+              maxLength={255}
+              aria-label="WAN policy description"
+            />
           </div>
 
           <Label className="flex items-center gap-2 text-sm">

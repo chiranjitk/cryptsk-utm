@@ -60,6 +60,7 @@ export const PUT = route(
         failThreshold: body.failThreshold,
         okThreshold: body.okThreshold,
         enabled: body.enabled,
+        description: body.description ?? null,
         ...(redefined ? { state: "unknown" } : {}),
       },
     });

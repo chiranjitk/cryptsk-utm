@@ -300,7 +300,63 @@ export interface WanPolicy {
   /** last real probe telemetry (live engine overlay, null = not probed yet) */
   probeLatencyMs?: number | null;
   probeDetail?: string | null;
+  /** SLA window over the last real probes (latency / jitter / loss, spec L657) */
+  sla?: WanSla | null;
+  description?: string | null;
   enabled: boolean;
+}
+
+/** rolling SLA window computed by the engine from REAL probe outcomes */
+export interface WanSla {
+  samples: number;
+  lastTs: number | null;
+  avgLatencyMs: number | null;
+  jitterMs: number | null;
+  /** 0..100 */
+  lossPct: number;
+  upCount: number;
+  degradedCount: number;
+  downCount: number;
+}
+
+/** real up/down transition recorded by the engine (failover event log) */
+export interface WanTransitionEvent {
+  ts: number;
+  iface: string;
+  from: string;
+  to: string;
+  latencyMs: number | null;
+}
+
+/** GET /wan-policies/os — GUI↔kernel visibility for the multi-WAN integration */
+export interface WanOsStatus {
+  gate: "on" | "off";
+  primaryIface: string | null;
+  wans: Array<{
+    id: number;
+    iface: string;
+    ifaceIp: string | null;
+    ifaceCidr: string | null;
+    gateway: string | null;
+    mode: WanMode;
+    weight: number;
+    priority: number;
+    state: WanState;
+    enabled: boolean;
+  }>;
+  kernel: {
+    ipAvailable: boolean;
+    bandRules: Array<{ priority: number; from: string | null; table: number | null; raw: string }>;
+    egress: { table: number; routes: string[] } | null;
+    perWan: Array<{ table: number; routes: string[] }>;
+  };
+  preview: {
+    stepCount: number;
+    activeEgress: { iface: string; style: string } | null;
+    reasons: string[];
+    steps: Array<{ cmd: string; summary: string }>;
+  };
+  events: WanTransitionEvent[];
 }
 
 /** Minimal picker/zone shape pinned by the M02 contract (id + name). */
@@ -443,6 +499,7 @@ export interface WanPolicyBody {
   failThreshold: number;
   okThreshold: number;
   enabled: boolean;
+  description?: string | null;
 }
 
 // ── error handling ──────────────────────────────────────────────────────────
@@ -619,6 +676,7 @@ export const netApi = {
 
   // multi-WAN policies
   listWanPolicies: () => netFetchList<WanPolicy>("/api/v1/wan-policies"),
+  getWanOsStatus: () => netFetch<WanOsStatus>("/api/v1/wan-policies/os"),
   createWanPolicy: (body: WanPolicyBody) =>
     netFetch<WanPolicy>("/api/v1/wan-policies", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) }),
   updateWanPolicy: (id: number, body: WanPolicyBody) =>

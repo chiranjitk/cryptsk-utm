@@ -409,6 +409,7 @@ export const wanPolicyBodySchema = z
     failThreshold: z.number().int().min(1).max(10).default(3),
     okThreshold: z.number().int().min(1).max(10).default(3),
     enabled: z.boolean().default(true),
+    description: z.string().max(255).optional().nullable(),
   })
   .transform((v) => ({ ...v, probeTarget: v.probeTarget ?? probeTargetDefaults[v.probeType] }))
   .superRefine((v, ctx) => {

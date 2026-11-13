@@ -13,6 +13,7 @@
 
 import type { MetricsTick, IpsEventEntry, FirewallLogEntry } from "./events";
 import type { DnsQueryLogEntry } from "./generators/dns-queries";
+import type { WanSlaStats, WanTransitionEvent } from "@/lib/network/wan-sla";
 import { getMockEngine, type LogRingEntry } from "./mock-engine";
 import { getHostCollector, type HostLogRingEntry } from "./host-collector";
 import { getAgentEngine } from "./agent-engine";
@@ -25,7 +26,9 @@ export interface EngineLike {
   readonly dnsRing: DnsQueryLogEntry[];
   readonly uptimeSec: number;
   readonly tickNumber: number;
-  readonly wanStates: Array<{ iface: string; state: string; latencyMs?: number | null; detail?: string }>;
+  readonly wanStates: Array<{ iface: string; state: string; latencyMs?: number | null; detail?: string; sla?: WanSlaStats }>;
+  /** optional: host data plane failover event log (real up/down transitions) */
+  readonly wanTransitionEvents?: WanTransitionEvent[];
   systemVitals(): { cpuPct: number; memPct: number; diskPct: number; tempC: number };
   forceProbe(iface: string): Promise<"up" | "degraded" | "down" | "unknown" | null> | ("up" | "degraded" | "down" | "unknown" | null);
   /** optional: host data plane supports kernel multi-WAN convergence (G2) */

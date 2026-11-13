@@ -51,6 +51,14 @@ import {
   type WgPeerDump,
 } from "@/lib/host/tools";
 import { runWanProbe, nextWanState, type WanHysteresis } from "@/lib/network/wan-probe";
+import {
+  computeWanSla,
+  pushWanEvent,
+  pushWanSample,
+  type WanProbeSample,
+  type WanSlaStats,
+  type WanTransitionEvent,
+} from "@/lib/network/wan-sla";
 import { convergeWanOs } from "@/lib/network/wan-os";
 
 /**
@@ -133,6 +141,10 @@ class HostCollector {
   // WAN probe state (real, per-policy config honored)
   private wanProbes = new Map<string, WanRuntime>();
   private wanOsConvergeTimer: ReturnType<typeof setTimeout> | null = null;
+  // SLA accounting (spec L657: latency/jitter/loss) + failover event log —
+  // REAL probe outcomes only; rings are bounded and dropped with the policy
+  private wanHistory = new Map<string, WanProbeSample[]>();
+  private wanEvents: WanTransitionEvent[] = [];
 
   // optional real sources (resolved lazily)
   private evePath: string | null | undefined; // undefined = not yet probed
@@ -168,8 +180,34 @@ class HostCollector {
     return { total: this.tcpSessions.total, established: this.tcpSessions.established, udp: this.udpEndpoints };
   }
 
-  get wanStates(): Array<{ iface: string; state: string; latencyMs: number | null; detail: string }> {
-    return [...this.wanProbes.entries()].map(([iface, p]) => ({ iface, state: p.state, latencyMs: p.latencyMs, detail: p.detail }));
+  get wanStates(): Array<{ iface: string; state: string; latencyMs: number | null; detail: string; sla?: WanSlaStats }> {
+    return [...this.wanProbes.entries()].map(([iface, p]) => ({
+      iface,
+      state: p.state,
+      latencyMs: p.latencyMs,
+      detail: p.detail,
+      sla: computeWanSla(this.wanHistory.get(iface)),
+    }));
+  }
+
+  /** failover event log (newest first) — real up/down transitions only */
+  get wanTransitionEvents(): WanTransitionEvent[] {
+    return [...this.wanEvents];
+  }
+
+  /** SLA stats per tracked WAN (spec L657) — computed from the real probe ring */
+  wanSlaStats(): Record<string, WanSlaStats> {
+    const out: Record<string, WanSlaStats> = {};
+    for (const [iface, ring] of this.wanHistory) out[iface] = computeWanSla(ring);
+    return out;
+  }
+
+  private recordWanSample(iface: string, verdict: "up" | "degraded" | "down", latencyMs: number | null): void {
+    this.wanHistory.set(iface, pushWanSample(this.wanHistory.get(iface) ?? [], { ts: Date.now(), verdict, latencyMs }));
+  }
+
+  private recordWanTransition(iface: string, from: string, to: string, latencyMs: number | null): void {
+    this.wanEvents = pushWanEvent(this.wanEvents, { ts: Date.now(), iface, from, to, latencyMs });
   }
 
   /**
@@ -225,10 +263,12 @@ class HostCollector {
     rt.latencyMs = result.latencyMs;
     rt.detail = result.detail;
     if (result.state !== "unknown") {
+      this.recordWanSample(iface, result.state, result.latencyMs);
       rt.state = result.state;
       rt.failRun = 0;
       rt.okRun = 0;
       if (prev !== result.state) {
+        this.recordWanTransition(iface, prev, result.state, result.latencyMs);
         this.persistWanState(iface, result.state);
         emitEvent({ type: "wan:status", payload: { iface, state: result.state, latencyMs: result.latencyMs } });
         this.wanOsReconverge(); // egress decision may have flipped
@@ -412,6 +452,7 @@ class HostCollector {
       if (!w.enabled) {
         // disabled — drop tracking; DB state was reset to "unknown" by the API
         this.wanProbes.delete(w.interfaceName);
+        this.wanHistory.delete(w.interfaceName);
         continue;
       }
       const changed = JSON.stringify(rt.cfg) !== JSON.stringify(cfg);
@@ -423,7 +464,10 @@ class HostCollector {
       }
     }
     for (const k of [...this.wanProbes.keys()]) {
-      if (!seen.has(k)) this.wanProbes.delete(k); // policy deleted
+      if (!seen.has(k)) {
+        this.wanProbes.delete(k); // policy deleted
+        this.wanHistory.delete(k);
+      }
     }
   }
 
@@ -486,12 +530,15 @@ class HostCollector {
         if (verbose) console.log(`[host-collector] wan probe ${iface} → unknown: ${outcome.detail}`);
         continue;
       }
+      this.recordWanSample(iface, outcome.state, outcome.latencyMs);
+      const prevState = rt.state;
       const applied = nextWanState({ state: rt.state, failRun: rt.failRun, okRun: rt.okRun }, outcome.state, rt.cfg.failThreshold, rt.cfg.okThreshold);
       rt.state = applied.state;
       rt.failRun = applied.failRun;
       rt.okRun = applied.okRun;
       if (verbose) console.log(`[host-collector] wan probe ${iface} → ${outcome.state} (${Date.now() - t0}ms) state=${applied.state}`);
       if (applied.changed) {
+        this.recordWanTransition(iface, prevState, applied.state, outcome.latencyMs);
         this.persistWanState(iface, applied.state);
         emitEvent({ type: "wan:status", payload: { iface, state: applied.state, latencyMs: outcome.latencyMs } });
         transitioned = true;

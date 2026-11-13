@@ -3,6 +3,8 @@ import {
   buildWanOsConvergePlan,
   buildWanOsTeardownPlan,
   wanStepGuarded,
+  filterWanBandRules,
+  parseRouteTableDump,
   WAN_EGRESS_TABLE,
   WAN_TABLE_BASE,
   WAN_PRIO_BASE,
@@ -201,5 +203,35 @@ describe("wanStepGuarded — executor red-line guard", () => {
     expect(wanStepGuarded(`ip rule add from all table ${WAN_TABLE_BASE}`)).toBe(false);
     expect(wanStepGuarded(`ip route replace default dev lo table ${WAN_TABLE_BASE}`)).toBe(false);
     expect(wanStepGuarded("nft add table inet evil")).toBe(false);
+  });
+});
+
+describe("kernel visibility helpers (GUI↔OS status)", () => {
+  it("filterWanBandRules keeps only the 3200..3319 managed band (12 policies × 10)", () => {
+    const rules = [
+      rule(0, null),
+      rule(220, 220),
+      rule(3200, 260, "20.20.30.1"),
+      rule(3210, 261),
+      rule(3310, 271),
+      rule(3320, 10001),
+      rule(5000, 10001),
+    ];
+    const band = filterWanBandRules(rules);
+    expect(band.map((r) => r.priority)).toEqual([3200, 3210, 3310]);
+  });
+
+  it("filterWanBandRules tolerates null kernel output", () => {
+    expect(filterWanBandRules([])).toEqual([]);
+  });
+
+  it("parseRouteTableDump cleans whitespace and drops empties", () => {
+    const out = "\n  default via 103.244.7.217 dev ens32 src 103.244.7.219 metric 1  \n\n  10.99.99.0/24 dev ens34 proto kernel scope link \n";
+    expect(parseRouteTableDump(out)).toEqual([
+      "default via 103.244.7.217 dev ens32 src 103.244.7.219 metric 1",
+      "10.99.99.0/24 dev ens34 proto kernel scope link",
+    ]);
+    expect(parseRouteTableDump("")).toEqual([]);
+    expect(parseRouteTableDump("\n \n")).toEqual([]);
   });
 });

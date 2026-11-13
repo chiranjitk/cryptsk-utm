@@ -4,6 +4,7 @@
  */
 
 import { parseIdArray } from "@/lib/json";
+import type { WanSlaStats } from "./wan-sla";
 
 export function shapeMirror(m: {
   id: number;
@@ -102,8 +103,9 @@ export function shapeWanPolicy(
     okThreshold: number;
     state: string;
     enabled: boolean;
+    description?: string | null;
   },
-  live?: { state: string; latencyMs?: number | null; detail?: string | null },
+  live?: { state: string; latencyMs?: number | null; detail?: string | null; sla?: WanSlaStats },
 ) {
   return {
     id: p.id,
@@ -122,6 +124,9 @@ export function shapeWanPolicy(
     // last real probe telemetry (G5) — null when the engine has not probed yet
     probeLatencyMs: live?.latencyMs ?? null,
     probeDetail: live?.detail ?? null,
+    // SLA window (latency/jitter/loss over the last real probes, spec L657)
+    sla: live?.sla ?? null,
+    description: p.description ?? null,
     enabled: p.enabled,
   };
 }

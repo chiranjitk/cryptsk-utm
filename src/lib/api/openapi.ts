@@ -44,11 +44,12 @@ export const ROUTE_MANIFEST: readonly RouteDef[] = [
   ["POST", "/routes", "Create static route", "Network"],
   ["PUT", "/routes/{id}", "Update static route", "Network"],
   ["DELETE", "/routes/{id}", "Delete static route", "Network"],
-  ["GET", "/wan-policies", "Multi-WAN policies + probe states", "Network"],
+  ["GET", "/wan-policies", "Multi-WAN policies + probe states + SLA windows", "Network"],
   ["POST", "/wan-policies", "Create WAN policy", "Network"],
   ["PUT", "/wan-policies/{id}", "Update WAN policy", "Network"],
   ["DELETE", "/wan-policies/{id}", "Delete WAN policy", "Network"],
   ["POST", "/wan-policies/{id}/probe", "Force WAN probe now", "Network"],
+  ["GET", "/wan-policies/os", "Multi-WAN kernel enforcement status (gate, tables 240/260+, band rules, drift preview, failover event log)", "Network"],
 
   // ── OBJECTS ─────────────────────────────────────────────────────────────
   ["GET", "/zones", "List security zones", "Objects"],
