@@ -4,7 +4,9 @@
  * writes status/statusMessage — transitions come from enable/disable and the
  * tunnel state machine. Integrity: config delete cascades sessions (ER §2);
  * port collisions → 409; remote-access pool overlaps (config or group) → 400.
- * Key/PSK generation is a string helper only — no real crypto (SIMULATION §9).
+ * Key/PSK generation is REAL crypto since the OS integration: WireGuard keys
+ * are X25519 (lib/vpn/crypto.ts), PSKs are CSPRNG 256-bit — client bundles
+ * carry material that works against real swanctl / wg / openvpn instances.
  */
 
 import { db } from "@/lib/db";
@@ -25,6 +27,40 @@ import type {
 } from "./types";
 import type { VpnConfigCreateInput, VpnConfigUpdateInput, VpnSessionsQuery, VpnUserGroupCreateInput, VpnUserGroupUpdateInput } from "@/lib/validators/vpn";
 import type { PageMeta } from "@/lib/api/envelope";
+import { generateWgKeypair, wgPublicKeyFromPrivate } from "./crypto";
+import {
+  readVpnOsFacts,
+  tunnelOsStatus,
+  readOpenVpnCaCert,
+  readOpenVpnTaKey,
+  connName,
+  convergeVpnOs,
+  type VpnOsConfigInput,
+} from "./os";
+
+/** Serialized converge queue — concurrent mutations (double PUT, PUT+DELETE)
+ *  would otherwise race: a stale plan built from old facts can RE-START a
+ *  service the newer plan just stopped (observed live). Each converge now
+ *  runs to completion before the next reads facts. */
+let convergeChain: Promise<unknown> = Promise.resolve();
+
+/** Fire-and-forget OS converge after a config mutation (never blocks, never throws). */
+function convergeAfterMutation(): void {
+  convergeChain = convergeChain
+    .then(() => convergeVpnOs())
+    .catch(() => {});
+}
+
+/** toVpnOsConfigInput for the os layer. */
+function osInput(row: NonNullable<VpnRow>): VpnOsConfigInput {
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    enabled: row.enabled,
+    config: parseJson<VpnConfigPayload>(row.config, {} as VpnConfigPayload),
+  };
+}
 
 type VpnRow = Awaited<ReturnType<typeof db.vpnConfig.findFirst>>;
 
@@ -189,6 +225,7 @@ export async function createConfig(tenantId: number, body: VpnConfigCreateInput)
   if (body.enabled) {
     emitEvent({ type: "vpn:status", payload: { vpnId: created.id, status: "connecting", statusMessage: "IKE/DPD negotiation in progress" } });
   }
+  convergeAfterMutation();
   return shapeConfig(created, 0);
 }
 
@@ -228,6 +265,7 @@ export async function updateConfig(tenantId: number, id: number, body: VpnConfig
   });
   if (enabling) emitEvent({ type: "vpn:status", payload: { vpnId: id, status: "connecting", statusMessage: "IKE/DPD negotiation in progress" } });
   if (disabling) emitEvent({ type: "vpn:status", payload: { vpnId: id, status: "down", statusMessage: "Disabled by operator" } });
+  convergeAfterMutation();
   const live = await db.vpnSession.count({ where: { vpnId: id, status: { not: "disconnected" } } });
   return shapeConfig(updated, live);
 }
@@ -237,6 +275,8 @@ export async function deleteConfig(tenantId: number, id: number): Promise<void> 
   if (!existing) throw ApiError.notFound("VPN config not found");
   // sessions cascade via the FK (schema onDelete: Cascade)
   await db.vpnConfig.delete({ where: { id } });
+  // orphan sweep: unload conn / wg-quick down / stop openvpn unit
+  convergeAfterMutation();
 }
 
 // ── tunnel status detail (M05 §4) ───────────────────────────────────────────
@@ -265,6 +305,65 @@ export async function statusDetail(tenantId: number, id: number): Promise<VpnSta
 
   const type = row.type as VpnType;
   const cfg = parseJson<VpnConfigPayload>(row.config, {} as VpnConfigPayload);
+
+  // ── OS-backed status (real swanctl/wg/openvpn facts) ──────────────────────
+  // Applied whenever the host plane is observable — sandbox (no tools) falls
+  // through to the engine-simulated view below.
+  try {
+    const osCfg = osInput(row);
+    const facts = await readVpnOsFacts([connName(row.name).slice(4)]);
+    if (facts.available && (facts.charonRunning || facts.wgIfaces.length > 0 || facts.openvpnServices.some((s) => s.active))) {
+      const v = tunnelOsStatus(osCfg, facts);
+      const sessions = await db.vpnSession.findMany({
+        where: { vpnId: id, tenantId },
+        select: { status: true, bytesIn: true, bytesOut: true },
+      });
+      const active = sessions.filter((s) => s.status === "active").length;
+      const idle = sessions.filter((s) => s.status === "idle").length;
+      const detail: VpnStatusDetailDto = {
+        status: v.status,
+        statusMessage: v.statusMessage,
+        dpdSec: null,
+        lastHandshakeSec: v.lastHandshakeSec,
+        transferIn: v.transferIn,
+        transferOut: v.transferOut,
+        peers: [],
+      };
+      if (type === "wireguard_s2s" || type === "wireguard_remote") {
+        const c = cfg as WgS2sConfig;
+        detail.dpdSec = (c as WgRemoteConfig).keepaliveSec ?? c.peers[0]?.keepaliveSec ?? 25;
+        detail.peers = c.peers.map((p) => ({
+          name: p.name,
+          handshakeSec: v.lastHandshakeSec,
+          transferIn: c.peers.length ? Math.floor(v.transferIn / c.peers.length) : 0,
+          transferOut: c.peers.length ? Math.floor(v.transferOut / c.peers.length) : 0,
+        }));
+        if (type === "wireguard_remote") detail.sessions = { active, idle, total: sessions.filter((s) => s.status !== "disconnected").length };
+        detail.lastHandshakeSec = v.lastHandshakeSec;
+      } else if (type === "ipsec_s2s" || type === "ipsec_remote") {
+        const c = cfg as IpsecConfig;
+        detail.dpdSec = c.dpdSec ?? 30;
+        detail.antiReplayWindow = c.replayWindow ?? 128;
+        detail.authMethod = c.authMethod ?? "psk";
+        detail.localSubnets = c.localSubnets;
+        detail.remoteSubnets = c.remoteSubnets;
+        detail.remoteIp = c.remoteIp ?? null;
+        if (v.status === "up") {
+          detail.peers = [{ name: c.remoteIp ?? "trap-policy", handshakeSec: null, transferIn: v.transferIn, transferOut: v.transferOut }];
+        }
+        detail.lastHandshakeSec = null;
+      } else if (type === "openvpn") {
+        const c = cfg as OpenVpnConfig;
+        detail.dpdSec = c.keepaliveSec ?? 10;
+        detail.sessions = { active, idle, total: sessions.filter((s) => s.status !== "disconnected").length };
+      }
+      return detail;
+    }
+  } catch {
+    /* fall through to the engine view */
+  }
+
+  // ── engine-simulated status (no OS plane observable) ──────────────────────
   const up = row.status === "up";
   const { inBytes, outBytes } = simulatedTransfer(id, row.name);
   const lastHandshakeSec = up ? 5 + Math.floor(hash32(`${id}-${Math.floor(Date.now() / 30_000)}`) * 50) : null;
@@ -325,25 +424,25 @@ export async function statusDetail(tenantId: number, id: number): Promise<VpnSta
   return detail;
 }
 
-// ── client bundles (M05 §4/§5 — server-generated) ───────────────────────────
-
-function randomKey(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  let out = "";
-  for (let i = 0; i < 44; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return `${out}==`;
-}
-
-function derivePublicKey(priv: string): string {
-  // deterministic fake public key — SIMULATION_LAYER §9 (no real crypto)
-  return `pk-${Buffer.from(priv.slice(0, 24) || "cryptsk").toString("base64url")}`;
-}
+// ── client bundles (M05 §4/§5 — server-generated, REAL key material) ────────
 
 function slug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "tunnel";
 }
 
 async function applianceWanIp(): Promise<string> {
+  // OS truth first: the REAL address on the default-route (WAN) interface —
+  // the config plane can hold seed placeholders (203.0.113.2) that would
+  // produce useless client bundles on a live appliance
+  try {
+    const { readInterfaces } = await import("@/lib/host/proc");
+    const ifaces = await readInterfaces();
+    const wanOs = ifaces.find((i) => i.isDefaultRoute) ?? ifaces.find((i) => i.ipv4?.some((a) => a && !a.startsWith("127.")));
+    const osIp = wanOs?.ipv4?.find((a) => a && !a.startsWith("127."));
+    if (osIp) return osIp.split("/")[0];
+  } catch {
+    /* fall through to the config plane */
+  }
   const wan = await db.networkInterface.findFirst({ where: { tenantId: 1, role: "wan" }, select: { config: true } });
   const cfg = wan ? parseJson<{ ip?: string }>(wan.config, {}) : {};
   return cfg.ip ?? "203.0.113.2";
@@ -365,6 +464,12 @@ export async function clientBundle(tenantId: number, id: number, peerName?: stri
     const c = cfg as WgS2sConfig;
     const peer = peerName ? c.peers.find((p) => p.name === peerName) : c.peers[0];
     if (!peer) throw ApiError.validation(peerName ? `Peer "${peerName}" not found on this tunnel` : "Tunnel has no peers");
+    const hubPub = wgPublicKeyFromPrivate(c.privateKey);
+    if (!hubPub) {
+      throw ApiError.validation(
+        "Stored private key is not a valid WireGuard base64 key — regenerate it (editor → generate) before issuing bundles",
+      );
+    }
     const wan = await applianceWanIp();
     const content = [
       `# WireGuard peer bundle for ${peer.name} — tunnel ${row.name}`,
@@ -374,7 +479,7 @@ export async function clientBundle(tenantId: number, id: number, peerName?: stri
       `Address = ${peer.allowedIps[0] ?? c.address}`,
       ``,
       `[Peer]`,
-      `PublicKey = ${derivePublicKey(c.privateKey)}`,
+      `PublicKey = ${hubPub}`,
       `Endpoint = ${wan}:${c.listenPort}`,
       `AllowedIPs = ${c.address}`,
       ...(peer.keepaliveSec ? [`PersistentKeepalive = ${peer.keepaliveSec}`] : []),
@@ -385,7 +490,13 @@ export async function clientBundle(tenantId: number, id: number, peerName?: stri
 
   if (type === "wireguard_remote") {
     const c = cfg as WgRemoteConfig;
-    const clientPriv = randomKey();
+    const hubPub = wgPublicKeyFromPrivate(c.privateKey);
+    if (!hubPub) {
+      throw ApiError.validation(
+        "Stored private key is not a valid WireGuard base64 key — regenerate it (editor → generate) before issuing bundles",
+      );
+    }
+    const client = generateWgKeypair();
     const assigned = nextFreeIp(c.pool, [
       ...c.peers.flatMap((p) => p.allowedIps),
       ...(await db.vpnSession.findMany({ where: { vpnId: id, status: { not: "disconnected" } }, select: { assignedIp: true } })).map((s) => s.assignedIp ?? ""),
@@ -394,20 +505,22 @@ export async function clientBundle(tenantId: number, id: number, peerName?: stri
     // bundle generation appends a provisioned peer to the config (M05 §5)
     const nextPeers = [
       ...c.peers,
-      { name: peerName2, publicKey: derivePublicKey(clientPriv), allowedIps: [`${assigned}/32`] },
+      { name: peerName2, publicKey: client.publicKey, allowedIps: [`${assigned}/32`] },
     ];
     const nextCfg: WgRemoteConfig = { ...c, peers: nextPeers };
     await db.vpnConfig.update({ where: { id }, data: { config: JSON.stringify(nextCfg) } });
+    // push the new peer live so the hub accepts it without a manual re-apply
+    convergeAfterMutation();
 
     const wan = await applianceWanIp();
     const content = [
       `[Interface]`,
-      `PrivateKey = ${clientPriv}`,
+      `PrivateKey = ${client.privateKey}`,
       `Address = ${assigned}/32`,
       ...(c.dns ? [`DNS = ${c.dns}`] : []),
       ``,
       `[Peer]`,
-      `PublicKey = ${derivePublicKey(c.privateKey)}`,
+      `PublicKey = ${hubPub}`,
       `Endpoint = ${wan}:${c.listenPort}`,
       `AllowedIPs = ${c.pool}`,
       `PersistentKeepalive = ${c.keepaliveSec ?? 25}`,
@@ -421,30 +534,42 @@ export async function clientBundle(tenantId: number, id: number, peerName?: stri
     };
   }
 
-  // openvpn
+  // openvpn — REAL PKI material once the tunnel is applied to the OS
   const c = cfg as OpenVpnConfig;
   const wan = await applianceWanIp();
+  // the OS dir follows the IFNAMSIZ-truncated conn name (utm-<slug> ≤ 15),
+  // NOT the plain name slug — they diverge for names longer than 11 chars
+  const vpnSlug = connName(row.name).slice(4);
+  const ca = await readOpenVpnCaCert(vpnSlug);
+  const ta = c.tls ? await readOpenVpnTaKey(vpnSlug) : null;
   const content = [
     `client`,
     `proto ${c.proto}`,
     `remote ${wan} ${c.port}`,
     `dev tun`,
-    `cipher ${c.cipher}`,
+    `data-ciphers ${c.cipher}`,
     `auth ${c.auth}`,
-    ...(c.tls ? [`tls-auth ta.key 1`] : []),
     ...(c.dns ? [`dhcp-option DNS ${c.dns}`] : []),
     `remote-cert-tls server`,
-    `<ca>`,
-    `#-----BEGIN CERTIFICATE-----`,
-    `# placeholder CA (sandbox simulation — SIMULATION_LAYER §9)`,
-    `#-----END CERTIFICATE-----`,
-    `</ca>`,
-    `<key>`,
-    `# placeholder client key`,
-    `</key>`,
+    ...(ca
+      ? [
+          `<ca>`,
+          ca.trim(),
+          `</ca>`,
+          ...(ta ? [`<tls-crypt>`, ta, `</tls-crypt>`] : []),
+          `<key>`,
+          `# client key — issue per-client certificates via the PKI module`,
+          `</key>`,
+        ]
+      : [
+          `<ca>`,
+          `# CA not present — apply this tunnel to the OS (VPN → OS sync) to`,
+          `# bootstrap the managed PKI, then re-download this bundle.`,
+          `</ca>`,
+        ]),
     ``,
   ].join("\n");
-  return { filename: `${slug(row.name)}-client.ovpn`, contentType: "text/plain", content, notice };
+  return { filename: `${slug(row.name)}-client.ovpn`, contentType: "text/plain", content, notice: ca ? notice : notice ?? "PKI not bootstrapped yet — see notice in bundle." };
 }
 
 // ── sessions ────────────────────────────────────────────────────────────────

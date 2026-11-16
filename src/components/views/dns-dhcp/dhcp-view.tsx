@@ -57,6 +57,7 @@ import {
   OptionsEditor,
   useDhcpConfigInvalidation,
 } from "./dns-dhcp-ui";
+import { DnsDhcpOsSync } from "./os-sync";
 import { cn } from "@/lib/utils";
 
 type TabKey = "subnets" | "reservations" | "leases" | "relay";
@@ -102,35 +103,38 @@ export function DhcpView() {
   };
 
   return (
-    <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-      <TabsList className="flex w-full flex-wrap justify-start gap-1 sm:w-auto">
-        {TABS.map((t) => {
-          const count = countFor(t.key);
-          return (
-            <TabsTrigger key={t.key} value={t.key} className="text-xs sm:text-sm">
-              {t.label}
-              {count !== null && (
-                <span className="ml-1.5 rounded-full bg-zinc-500/10 px-1.5 py-0 text-[10px] tabular-nums text-zinc-600 dark:text-zinc-300">
-                  {count}
-                </span>
-              )}
-            </TabsTrigger>
-          );
-        })}
-      </TabsList>
-      <TabsContent value="subnets" className="mt-3 space-y-3">
-        <SubnetsTab goToReservations={() => setTab("reservations")} />
-      </TabsContent>
-      <TabsContent value="reservations" className="mt-3 space-y-3">
-        <ReservationsTab />
-      </TabsContent>
-      <TabsContent value="leases" className="mt-3 space-y-3">
-        <LeasesTab />
-      </TabsContent>
-      <TabsContent value="relay" className="mt-3 space-y-3">
-        <RelayTab />
-      </TabsContent>
-    </Tabs>
+    <div className="space-y-3">
+      <DnsDhcpOsSync />
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
+        <TabsList className="flex w-full flex-wrap justify-start gap-1 sm:w-auto">
+          {TABS.map((t) => {
+            const count = countFor(t.key);
+            return (
+              <TabsTrigger key={t.key} value={t.key} className="text-xs sm:text-sm">
+                {t.label}
+                {count !== null && (
+                  <span className="ml-1.5 rounded-full bg-zinc-500/10 px-1.5 py-0 text-[10px] tabular-nums text-zinc-600 dark:text-zinc-300">
+                    {count}
+                  </span>
+                )}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+        <TabsContent value="subnets" className="mt-3 space-y-3">
+          <SubnetsTab goToReservations={() => setTab("reservations")} />
+        </TabsContent>
+        <TabsContent value="reservations" className="mt-3 space-y-3">
+          <ReservationsTab />
+        </TabsContent>
+        <TabsContent value="leases" className="mt-3 space-y-3">
+          <LeasesTab />
+        </TabsContent>
+        <TabsContent value="relay" className="mt-3 space-y-3">
+          <RelayTab />
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
 

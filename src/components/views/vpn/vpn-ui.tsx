@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import * as Icons from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRealtime } from "@/lib/realtime";
+import { vpnApi } from "./vpn-api";
 import type { VpnSessionStatus, VpnStatus, VpnType } from "./vpn-api";
 
 // ── realtime invalidation (scoped per-view, config channel) ─────────────────
@@ -136,9 +137,35 @@ export function SecretField(props: {
   onChange: (v: string) => void;
   placeholder?: string;
   generate?: boolean;
+  /** server-side REAL crypto: "wg" = X25519 keypair, "psk" = CSPRNG 256-bit */
+  generateKind?: "wg" | "psk";
+  /** fires with the matching PUBLIC key when generateKind === "wg" */
+  onGeneratedPublicKey?: (pub: string) => void;
   id?: string;
 }) {
   const [show, setShow] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const doGenerate = async () => {
+    if (!props.generateKind) {
+      props.onChange(generateSecret());
+      return;
+    }
+    setGenerating(true);
+    try {
+      const k = await vpnApi.keygen();
+      if (props.generateKind === "wg") {
+        props.onChange(k.wgPrivateKey);
+        props.onGeneratedPublicKey?.(k.wgPublicKey);
+      } else {
+        props.onChange(k.psk);
+      }
+    } catch {
+      // offline / API hiccup — fall back to the client-side placeholder
+      props.onChange(generateSecret());
+    } finally {
+      setGenerating(false);
+    }
+  };
   return (
     <div className="flex items-center gap-1.5">
       <Input
@@ -167,13 +194,31 @@ export function SecretField(props: {
           size="icon"
           className="h-9 w-9 shrink-0"
           aria-label="Generate secret"
-          title="Generate placeholder key (simulated)"
-          onClick={() => props.onChange(generateSecret())}
+          title={
+            props.generateKind === "wg"
+              ? "Generate a real X25519 keypair (server-side)"
+              : props.generateKind === "psk"
+                ? "Generate a real 256-bit PSK (server-side CSPRNG)"
+                : "Generate placeholder key (simulated)"
+          }
+          onClick={() => void doGenerate()}
+          disabled={generating}
         >
-          <Icons.Wand2 className="h-4 w-4" />
+          {generating ? <Icons.LoaderCircle className="h-4 w-4 animate-spin" /> : <Icons.Wand2 className="h-4 w-4" />}
         </Button>
       ) : null}
     </div>
+  );
+}
+
+/** Hint line showing the derived server public key after keypair generation. */
+export function HubPublicKeyHint({ pub }: { pub: string | null }) {
+  if (!pub) return null;
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-zinc-500">
+      <span>Server public key (configure on the remote peer):</span>
+      <code className="break-all rounded bg-zinc-100 px-1 font-mono text-[10px] dark:bg-zinc-800">{pub}</code>
+    </p>
   );
 }
 

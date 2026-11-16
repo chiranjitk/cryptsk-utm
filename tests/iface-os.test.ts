@@ -2,7 +2,7 @@
  * Unit tests for the OS sync module (src/lib/network/iface-os.ts) — bun test.
  * Pins the drift diff and the generated iproute2 apply plan.
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 
 import { buildApplyPlan, diffIfaceOs } from "@/lib/network/iface-os";
 import type { IfaceRuleView } from "@/lib/network/iface-rules";

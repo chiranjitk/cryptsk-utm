@@ -53,6 +53,9 @@ const DEFAULT_RESOLVER: ResolverSettings = {
   dot: false,
   forwardZones: [],
   doh: { enabled: false, port: 443 },
+  listenInterfaces: ["127.0.0.1", "::1"],
+  accessControl: [],
+  logQueries: false,
 };
 
 function toPolicyDTO(row: {
@@ -268,7 +271,14 @@ export async function getResolverSettings(tenantId: number): Promise<ResolverSet
   });
   if (!row) return { ...DEFAULT_RESOLVER };
   const parsed = parseJson<Partial<ResolverSettings>>(row.value, {});
-  return { ...DEFAULT_RESOLVER, ...parsed, doh: parsed.doh ?? DEFAULT_RESOLVER.doh };
+  return {
+    ...DEFAULT_RESOLVER,
+    ...parsed,
+    doh: parsed.doh ?? DEFAULT_RESOLVER.doh,
+    listenInterfaces: parsed.listenInterfaces?.length ? parsed.listenInterfaces : DEFAULT_RESOLVER.listenInterfaces,
+    accessControl: parsed.accessControl ?? [],
+    logQueries: parsed.logQueries ?? false,
+  };
 }
 
 export async function putResolverSettings(tenantId: number, settings: ResolverSettings): Promise<ResolverSettingsDTO> {

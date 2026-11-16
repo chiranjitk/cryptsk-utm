@@ -61,11 +61,25 @@ export const wgRemoteConfigSchema = z.object({
 
 // ── IPSec (s2s + remote share one shape; remoteIp only on s2s) ──────────────
 
+/** Strict CIDR — network address only (no host bits set). charon/strongswan
+ *  silently normalize traffic selectors like 10.250.20.0/16 → 10.250.0.0/16
+ *  (observed live on the appliance), which desyncs GUI↔kernel honesty —
+ *  reject at the edge instead. */
+export const strictCidrSchema = cidrSchema.refine((v) => {
+  const [ip, prefixRaw] = v.split("/");
+  const prefix = Number(prefixRaw);
+  if (prefix === 0 || prefix >= 32) return true;
+  const octets = ip.split(".").map(Number);
+  const addr = ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+  const mask = (0xffffffff << (32 - prefix)) >>> 0;
+  return (addr & mask) === addr;
+}, "Must be a network address (host bits must be zero, e.g. 10.250.0.0/16 — charon would silently normalize 10.250.20.0/16)");
+
 export const ipsecConfigSchema = z.object({
   localIp: ipv4Schema,
   remoteIp: ipv4Schema.optional().or(z.literal("")),
-  localSubnets: z.array(cidrSchema).min(1, "At least one local subnet is required").max(32),
-  remoteSubnets: z.array(cidrSchema).max(32),
+  localSubnets: z.array(strictCidrSchema).min(1, "At least one local subnet is required").max(32),
+  remoteSubnets: z.array(strictCidrSchema).max(32),
   psk: z.string().min(1, "PSK is required").max(256),
   ike: z.string().min(1, "IKE proposal is required").max(128),
   esp: z.string().min(1, "ESP proposal is required").max(128),
@@ -150,8 +164,21 @@ export const vpnUserGroupCreateSchema = z.object({
   memberUsernames: z.array(z.string().min(1).max(64)).max(256).default([]),
 });
 
-export const vpnUserGroupUpdateSchema = vpnUserGroupCreateSchema.partial().refine(
-  (v) => Object.keys(v).length > 0,
+/** PATCH-style update — no create-time defaults injected on absent keys
+ *  (zod v4 .partial() would fire `memberUsernames: []` and wipe membership). */
+export const vpnUserGroupUpdateSchema = z
+  .object({
+    name: vpnUserGroupCreateSchema.shape.name.optional(),
+    description: vpnUserGroupCreateSchema.shape.description.optional(),
+    pool: vpnUserGroupCreateSchema.shape.pool.optional(),
+    dns: vpnUserGroupCreateSchema.shape.dns.optional(),
+    idleTimeoutMin: vpnUserGroupCreateSchema.shape.idleTimeoutMin.optional(),
+    maxSessionMin: vpnUserGroupCreateSchema.shape.maxSessionMin.optional(),
+    maxSessionsPerUser: vpnUserGroupCreateSchema.shape.maxSessionsPerUser.optional(),
+    memberUsernames: vpnUserGroupCreateSchema.shape.memberUsernames.removeDefault().optional(),
+  })
+  .refine(
+    (v) => Object.keys(v).length > 0,
   { message: "Empty update" },
 );
 

@@ -127,7 +127,50 @@ export const vpnApi = {
   updateGroup: (id: number, body: VpnUserGroupBody) =>
     vpnFetch<VpnUserGroupDto>(`/api/v1/vpn/user-groups/${id}`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) }),
   deleteGroup: (id: number) => vpnFetch<{ ok: boolean }>(`/api/v1/vpn/user-groups/${id}`, { method: "DELETE" }),
+  // ── OS integration (GUI↔swanctl/wg/openvpn) ───────────────────────────────
+  osStatus: () => vpnFetch<VpnOsStatus>("/api/v1/vpn/os-status"),
+  applyOs: () => vpnFetch<VpnOsApplyOutcome>("/api/v1/vpn/apply", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
+  keygen: () => vpnFetch<{ wgPrivateKey: string; wgPublicKey: string; psk: string }>("/api/v1/vpn/keygen"),
 };
+
+// ── OS sync DTOs (mirror lib/vpn/os.ts shapes) ──────────────────────────────
+
+export interface VpnOsDriftEntry {
+  id: number;
+  name: string;
+  type: string;
+  enabled: boolean;
+  osState: string;
+  detail: string | null;
+}
+
+export interface VpnOsStatus {
+  gate: "on" | "off";
+  available: boolean;
+  tools: { swanctl: boolean; wg: boolean; wgQuick: boolean; openvpn: boolean };
+  charonRunning: boolean;
+  ikePortsBound: boolean;
+  swanctlConns: string[];
+  establishedSas: Array<{ conn: string; establishedSec: number | null; childBytesIn: number; childBytesOut: number }>;
+  wgIfaces: Array<{ iface: string; up: boolean; listenPort: number | null; peers: number; rxBytes: number; txBytes: number; lastHandshakeSec: number | null }>;
+  openvpnServices: Array<{ slug: string; active: boolean; pid: number | null }>;
+  drift: VpnOsDriftEntry[];
+  summary: { total: number; inSync: number; driftCount: number };
+}
+
+export interface VpnOsApplyOutcome {
+  gate: "on" | "off";
+  applied: boolean;
+  reason: string;
+  plan: {
+    steps: Array<{ cmd: string; summary: string; kind: string }>;
+    managedConns: string[];
+    managedIfaces: string[];
+    skipped: Array<{ name: string; reason: string }>;
+    reasons: string[];
+  };
+  results?: Array<{ cmd: string; ok: boolean; stderr?: string }>;
+}
 
 /** Trigger a browser download for a client-bundle payload (M05 §4). */
 export function downloadBundle(bundle: ClientBundleDto): void {

@@ -58,9 +58,10 @@ import {
   type WgRemoteConfig,
   type WgS2sConfig,
 } from "./vpn-api";
-import { CidrListEditor, SecretField, SubtypeChip, TunnelStatusBadge, VpnTypeChip, useVpnConfigInvalidation } from "./vpn-ui";
+import { CidrListEditor, HubPublicKeyHint, SecretField, SubtypeChip, TunnelStatusBadge, VpnTypeChip, useVpnConfigInvalidation } from "./vpn-ui";
 import { ConfirmDialog, EditorSection, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
 import { GroupsPanel } from "./groups-panel";
+import { VpnOsSync } from "./os-sync";
 
 const CONFIGS_KEY = ["vpn", "configs"] as const;
 
@@ -157,6 +158,8 @@ export function ConfigsView() {
       <p className="text-sm text-zinc-500">
         Site-to-site and remote-access tunnels across WireGuard, IPSec (IKEv2) and OpenVPN.
       </p>
+
+      <VpnOsSync />
 
       {configsQuery.isError ? (
         <QueryError error={configsQuery.error} onRetry={() => void configsQuery.refetch()} />
@@ -535,6 +538,7 @@ type SetCfg = (patch: Partial<VpnConfigPayload>) => void;
 type ErrFn = (path: string) => string | undefined;
 
 function WgS2sSection({ cfg, setCfg, err }: { cfg: WgS2sConfig; setCfg: SetCfg; err: ErrFn }) {
+  const [hubPub, setHubPub] = useState<string | null>(null);
   const updatePeer = (i: number, patch: Partial<WgPeer>) => {
     const peers = cfg.peers.map((p, idx) => (idx === i ? { ...p, ...patch } : p));
     setCfg({ peers });
@@ -545,7 +549,15 @@ function WgS2sSection({ cfg, setCfg, err }: { cfg: WgS2sConfig; setCfg: SetCfg; 
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="sm:col-span-3">
             <FieldLabel>Private key</FieldLabel>
-            <SecretField value={cfg.privateKey} onChange={(v) => setCfg({ privateKey: v })} generate placeholder="server private key" />
+            <SecretField
+              value={cfg.privateKey}
+              onChange={(v) => setCfg({ privateKey: v })}
+              generate
+              generateKind="wg"
+              onGeneratedPublicKey={setHubPub}
+              placeholder="server private key"
+            />
+            <HubPublicKeyHint pub={hubPub} />
             {err("privateKey") ? <p className="mt-1 text-[11px] text-rose-500">{err("privateKey")}</p> : null}
           </div>
           <div>
@@ -566,7 +578,6 @@ function WgS2sSection({ cfg, setCfg, err }: { cfg: WgS2sConfig; setCfg: SetCfg; 
           </div>
         </div>
       </EditorSection>
-
       <EditorSection title={`Peers (${cfg.peers.length})`}>
         <div className="space-y-3">
           {cfg.peers.length === 0 ? (
@@ -650,12 +661,21 @@ function WgS2sSection({ cfg, setCfg, err }: { cfg: WgS2sConfig; setCfg: SetCfg; 
 }
 
 function WgRemoteSection({ cfg, setCfg, err }: { cfg: WgRemoteConfig; setCfg: SetCfg; err: ErrFn }) {
+  const [hubPub, setHubPub] = useState<string | null>(null);
   return (
     <EditorSection title="Remote-access hub">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <FieldLabel>Private key</FieldLabel>
-          <SecretField value={cfg.privateKey} onChange={(v) => setCfg({ privateKey: v })} generate placeholder="server private key" />
+          <SecretField
+            value={cfg.privateKey}
+            onChange={(v) => setCfg({ privateKey: v })}
+            generate
+            generateKind="wg"
+            onGeneratedPublicKey={setHubPub}
+            placeholder="server private key"
+          />
+          <HubPublicKeyHint pub={hubPub} />
           {err("privateKey") ? <p className="mt-1 text-[11px] text-rose-500">{err("privateKey")}</p> : null}
         </div>
         <div>
@@ -741,7 +761,13 @@ function IpsecSection({ cfg, setCfg, err, remote }: { cfg: IpsecConfig; setCfg: 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <FieldLabel hint={remote ? "EAP or PSK" : "pre-shared key"}>PSK</FieldLabel>
-            <SecretField value={cfg.psk} onChange={(v) => setCfg({ psk: v })} generate placeholder="pre-shared key" />
+            <SecretField
+              value={cfg.psk}
+              onChange={(v) => setCfg({ psk: v })}
+              generate
+              generateKind="psk"
+              placeholder="pre-shared key"
+            />
             {err("psk") ? <p className="mt-1 text-[11px] text-rose-500">{err("psk")}</p> : null}
           </div>
           <div>

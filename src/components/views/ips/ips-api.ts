@@ -152,15 +152,86 @@ export const ipsApi = {
     }),
   listCategories: () =>
     ipsFetch<{ categories: CategoryDefDto[]; total: number }>("/api/v1/ips/rule-categories"),
-  getUpdateSettings: () => ipsFetch<UpdateSettingsDto>("/api/v1/ips/update-settings"),
+  getUpdateSettings: () => ipsFetch<UpdateSettingsDto & { engine?: RuleUpdateEngineResult }>("/api/v1/ips/update-settings"),
   saveUpdateSettings: (body: { enabled: boolean; interval: "daily" | "weekly"; time: string }) =>
     ipsFetch<UpdateSettingsDto>("/api/v1/ips/update-settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) }),
   runUpdateNow: () =>
-    ipsFetch<UpdateSettingsDto>("/api/v1/ips/update-settings", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
+    ipsFetch<UpdateSettingsDto & { engine?: RuleUpdateEngineResult }>("/api/v1/ips/update-settings", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
   listEvents: (params: string) => ipsFetchList<IpsEventDto>("/api/v1/ips/events", params),
   suppressEvent: (id: number, duration: "24h" | "7d" | "forever") =>
     ipsFetch<IpsEventDto>(`/api/v1/ips/events/${id}/suppress`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ duration }) }),
+  getOs: () => ipsFetch<IpsOsStatus>("/api/v1/ips/os"),
+  osApply: () => ipsFetch<IpsOsApplyOutcome>("/api/v1/ips/os", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ action: "apply" }) }),
+  osRollback: () => ipsFetch<{ rolledBack: boolean; backupDir: string | null; reloaded: boolean; detail: string }>("/api/v1/ips/os", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ action: "rollback" }) }),
+  osUpdateRules: () => ipsFetch<{ ranOnOs: boolean; reloaded: boolean; note: string; outputTail: string | null }>("/api/v1/ips/os", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ action: "update-rules" }) }),
 };
+
+// ── OS integration types (/api/v1/ips/os) ───────────────────────────────────
+
+export interface IpsOsFactsDto {
+  available: boolean;
+  service: string | null;
+  version: string | null;
+  runningMode: string | null;
+  evePath: string | null;
+  rulesFiles: Array<{ name: string; sids: number; alert: number; drop: number; pass: number; bytes: number }>;
+  updaterInstalled: boolean;
+  yamlHasManagedFile: boolean;
+  yamlHasThresholdFile: boolean;
+  thresholdManagedLines: number;
+}
+
+export interface IpsOsDriftDto {
+  managedRulesInSync: boolean;
+  thresholdInSync: boolean;
+  yamlInSync: boolean;
+  inSync: boolean;
+}
+
+export interface IpsOsStatus {
+  gate: "on" | "off";
+  facts: IpsOsFactsDto;
+  plan: {
+    defaultPolicy: { id: number; name: string; mode: string } | null;
+    enabledPolicyCount: number;
+    managedRuleCount: number;
+    thresholdEntryCount: number;
+    yamlNeedsManagedFile: boolean;
+    yamlNeedsThresholdFile: boolean;
+    warnings: string[];
+    managedRules: string;
+    thresholdBlock: string;
+  };
+  drift: IpsOsDriftDto;
+  lastApply: {
+    lastApplyAt: string;
+    policyId: number;
+    policyName: string;
+    backupDir: string;
+    validateOk: boolean;
+    reloaded: boolean;
+  } | null;
+}
+
+export interface IpsOsApplyOutcome {
+  applied: boolean;
+  rolledBack: boolean;
+  appliedAt: string | null;
+  policyId: number | null;
+  policyName: string | null;
+  backupDir: string | null;
+  validateOk: boolean;
+  reloaded: boolean;
+  warnings: string[];
+  detail: string | null;
+}
+
+export interface RuleUpdateEngineResult {
+  ranOnOs: boolean;
+  reloaded: boolean;
+  note: string;
+  outputTail: string | null;
+}
 
 // ── small helpers ───────────────────────────────────────────────────────────
 
