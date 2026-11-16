@@ -649,6 +649,51 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-16 — Batch 2 "Pure White Edition": T11–T20 added (white bg + non-green accents, 10 distinct LAYOUTS)
+
+- **Trigger:** user: "pure white bg and secondery color any other except green". Batch 1 (red
+  edition) rejected earlier ("i dont like any of thise looks make more 10 take time and build");
+  this session delivered the promised 10 new templates under the new color constraint.
+- **Design decision:** Batch 1's weakness = 10 recolors of one shared MOCK skeleton. Batch 2
+  gives every template a **custom layout + class namespace** (no `.mockroot` injection; batch-1
+  MOCK untouched). Shared `.b2` frame + component base (`.ev` rows, `[data-bars]`, `[data-health]`,
+  `.donut`, `.lv`, `.up/.down`, `.lgd`) driven by per-template vars `--acc/--acc2/--accBr/--accSoft/
+  --ink/--mut/--hair/--bw/--card`; JS builders stamp identical data (18 bars, 5 events, 4 health)
+  into all `[data-*]` hosts so comparison stays apples-to-apples.
+- **The 10 (all bg `#ffffff`, all light-first, all with `.tN.dark` variant, ZERO green):**
+  11 Cobalt Ledger #1e4fd8 — newspaper broadsheet (masthead/headline deck/3 ruled cols/folio),
+  Playfair; 12 Violet Bento #7c3aed — floating pill nav + bento grid w/ violet hero tile;
+  13 Tuxedo Index #141414 — Swiss mono yearbook, 54px glyph rail, 42px mono numerals (dark = chalk
+  on slate); 14 Rose Clay #e0478b — claymorphism blobs + capsule search; 15 Tangerine Rail #ea580c —
+  icon-only rail + warm gradient hero card; 16 Magenta Pop #d9036b — neo-brutalist comic panels,
+  3px ink borders, halftone dots, Archivo Black, scrolling ticker (dark = white ink borders);
+  17 Cerulean Dock #0284c7 — window chrome + floating frosted-glass bottom dock; 18 Gilt Deco
+  #9a6b16 — art-deco plate frame, diamond studs, sunburst medallion, Cormorant Garamond,
+  golden frieze (dark = black-gold luxe); 19 Blueprint Sheet #1a3fb0 — grid paper, sheet tabs,
+  dashed margin, title block, APPROVED stamp (dark = TRUE cyanotype #0a1638, white lines);
+  20 Cocoa Split #8a4b24 — master–detail split (cream campaign list / detail pane).
+- **Gallery chrome flipped to light** (body #eef0f4, white cards) so white templates present
+  honestly; added `.batch-div` divider + `.qgl` nav label; header/modenote/footer updated to
+  20 templates; quick-nav gained 10 colored dots; fonts URL += Archivo Black + Cormorant Garamond.
+- **De-greened Batch 1 too** (user said NO green anywhere): base `.k-delta.up`→amber #b45309,
+  `.m-chip.live`→amber, `.ok-dot`→#fbbf24, `.act.block`→blue #1d4ed8, `:root --c3`→#a78bfa,
+  all `.light .m-chip.live/.ok-dot/.k-delta.up/.act.block` overrides re-colored. File grep:
+  0 green/teal/emerald hexes remain (only copy text "zero green").
+- **Pill:** design-gallery-link.tsx → "20 templates, pure white + your color".
+- **Verification (agent-browser):** `.tpl`=20, `.b2`=10, `.mockroot .mock`=10; bars 10/10 hosts
+  filled (18 bars), events 10/10 (5 rows), health 8/8 (4 rows). Native bgs t11–t20 ALL
+  rgb(255,255,255). Dark all → 20× `.dark`, distinct bgs (#0d1120/#110c1f/#0c0c0c/#1e1220/#1c1209/
+  #0f0f12/#0b1621/#0e0b06/#0a1638/#18100a). Light all → 10/10 back to pure white. Green hex scan
+  clean. 10/10 template screenshots reviewed (distinct layouts confirmed) + t12/t18/t19 dark
+  shots (t19 cyanotype verified). 0 console errors/page errors. Fixed en route: smooth-scroll
+  screenshot lag (scroll-behavior:auto), T12/T16 donut hole text overflow (smaller hole fonts),
+  T12 tile heights (hero bars 64px, donut 100px), T15 events 4-col compact. pm2 both online,
+  gallery 200, `/` 200, pill renders in DOM; dev.log only pre-existing 401 polling noise.
+- **Next:** user picks ONE template (11–20 expected, 01–10 still available) → full-app conversion
+  (tokens → globals.css/theme → shell → login → all 20+ modules) → remove DesignGalleryLink pill.
+  Mix-and-match tweaks welcome ("14 but with 19's mono font"). Batch-1 red edition retained for
+  comparison only.
+
 ### 2026-11-16 — Red edition: gallery rebuilt to white/red + dark-red only (user directive)
 
 - **Trigger:** user: "remove all theme genarate all base color white/red or dar red" — all 20
