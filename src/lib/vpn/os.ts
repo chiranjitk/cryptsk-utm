@@ -605,15 +605,13 @@ export function buildVpnApplyPlan(configs: VpnOsConfigInput[], facts: VpnOsFacts
 
   // ── ipsec: rewrite the managed file (enabled conns only), then ONE
   // --load-conns --file pass installs new/changed configs AND unloads conns
-  // that are gone from the file (strongswan 6 file-diff semantics)
+  // that are gone from the file (strongswan 6 file-diff semantics — verified
+  // live: an emptied file reports "no connections found, 1 unloaded")
   files.push({ path: MANAGED_SWANCTL_FILE, content: swanConns.length > 0 ? renderSwanctlManaged(swanConns) : "", backup: true });
+  steps.push({ cmd: `swanctl --load-conns --file ${MANAGED_SWANCTL_FILE}`, summary: swanConns.length > 0 ? `load conns: ${swanConns.map((c) => c.name).join(", ")} (trap policies)` : "unload stale managed conns (file-diff)", kind: "ipsec" });
   if (swanConns.length > 0) {
     files.push({ path: MANAGED_PSK_FILE, content: renderSwanctlManaged(swanConns), backup: true });
     steps.push({ cmd: "swanctl --load-creds", summary: "load PSK secrets", kind: "secret" });
-    steps.push({ cmd: `swanctl --load-conns --file ${MANAGED_SWANCTL_FILE}`, summary: `load conns: ${swanConns.map((c) => c.name).join(", ")} (trap policies)`, kind: "ipsec" });
-  } else {
-    // file emptied — the file-diff load-conns pass unloads everything the
-    // managed file previously installed; no explicit step needed here
   }
   for (const c of swanConns) managedConns.push(c.name);
 
