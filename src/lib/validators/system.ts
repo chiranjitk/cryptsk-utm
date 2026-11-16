@@ -56,6 +56,14 @@ export const haConfigSchema = z
     trackedInterfaces: z.array(ifaceNameSchema).max(16).default([]),
     failAfterSec: z.number().int().min(3, "failAfterSec must be ≥ 3").max(3600).default(10),
     holdDownSec: z.number().int().min(0).max(86400).default(60),
+    // Keepalived-native knobs (spec §1.13) — console generates /etc/keepalived/keepalived.conf
+    vrid: z.number().int().min(1, "VRID must be 1-255").max(255, "VRID must be 1-255").default(51),
+    advertIntSec: z.number().int().min(1, "Advert interval must be 1-255 s").max(255, "Advert interval must be 1-255 s").default(1),
+    authPass: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{4,8}$/, "VRRP auth_pass must be 4-8 alphanumeric characters (VRRPv2 limit)")
+      .nullish(),
+    preempt: z.boolean().default(true),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.holdDownSec < cfg.failAfterSec) {
@@ -71,6 +79,9 @@ export const haConfigSchema = z
       }
       if (!cfg.peerIp) {
         ctx.addIssue({ code: "custom", path: ["peerIp"], message: "Enabling HA requires a peer IP" });
+      }
+      if (!cfg.virtualIp) {
+        ctx.addIssue({ code: "custom", path: ["virtualIp"], message: "Enabling HA requires a virtual IP (the floating address)" });
       }
     }
   });

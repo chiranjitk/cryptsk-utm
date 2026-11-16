@@ -8,6 +8,25 @@ import type { HaConfigDTO, HaStatusDTO } from "@/lib/ha/service";
 
 export type { HaConfigDTO, HaStatusDTO };
 
+export interface HaApplyResultDTO {
+  applied: boolean;
+  refused?: string;
+  reason?: string;
+  rolledBack?: boolean;
+  confHash?: string;
+  backupFile?: string;
+  plan: { steps: { step: string; cmd: string }[]; confText: string };
+  results: { step: string; ok: boolean; detail?: string }[];
+}
+
+export interface HaValidateResultDTO {
+  available: boolean;
+  ok: boolean | null;
+  confText: string;
+  confHash: string;
+  detail: string;
+}
+
 export interface PageMeta {
   page: number;
   limit: number;
@@ -57,4 +76,6 @@ export const haApi = {
   getConfig: () => fetchJson<HaConfigDTO>("/api/v1/ha/config"),
   putConfig: (body: Record<string, unknown>) =>
     fetchJson<HaConfigDTO>("/api/v1/ha/config", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) }),
+  applyToOs: () => fetchJson<HaApplyResultDTO>("/api/v1/ha/apply", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
+  validateConf: () => fetchJson<HaValidateResultDTO>("/api/v1/ha/validate", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
 };
