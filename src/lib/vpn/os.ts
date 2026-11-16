@@ -79,6 +79,9 @@ export interface VpnOsStep {
   cmd: string;
   summary: string;
   kind: "ipsec" | "wireguard" | "openvpn" | "pki" | "secret" | "cleanup";
+  /** cleanup/probe steps whose failure is EXPECTED (no SAs to terminate, PKI
+   *  absent) — recorded but never triggers rollback */
+  optional?: boolean;
 }
 
 export interface VpnOsPlan {
@@ -108,6 +111,11 @@ export interface VpnOsFacts {
   establishedSas: Array<{ conn: string; establishedSec: number | null; childBytesIn: number; childBytesOut: number }>;
   wgIfaces: Array<{ iface: string; up: boolean; listenPort: number | null; peers: number; rxBytes: number; txBytes: number; lastHandshakeSec: number | null }>;
   openvpnServices: Array<{ slug: string; active: boolean; pid: number | null }>;
+}
+
+/** systemctl is-active reports "active"; accept both spellings defensively. */
+function isServiceRunning(state: string | undefined | null): boolean {
+  return state === "running" || state === "active";
 }
 
 export interface VpnDriftEntry {
@@ -320,11 +328,14 @@ const UTMSN = `[a-z0-9][a-z0-9-]{0,${IFNAME_MAX - 5}}`; // slug inside utm-<slug
 export function vpnStepGuarded(cmd: string): boolean {
   const c = cmd.trim();
   if (!c) return false;
-  // swanctl: only load/unload/terminate of utm-* conns, and cred loading
-  if (/^swanctl --load-conn --name utm-[a-z0-9-]+$/.test(c)) return true;
+  // swanctl: strongswan 6.x model — load/unload happens per FILE (conns
+  // removed from the managed file are unloaded by --load-conns), creds
+  // load is global, terminate/uninstall target utm-* selectors only
+  if (c === `swanctl --load-conns --file ${MANAGED_SWANCTL_FILE}`) return true;
+  if (c === `swanctl --load-conns --file ${MANAGED_PSK_FILE}`) return true;
   if (/^swanctl --load-creds$/.test(c)) return true;
-  if (/^swanctl --unload-conn --name utm-[a-z0-9-]+$/.test(c)) return true;
   if (/^swanctl --terminate --ike utm-[a-z0-9-]+$/.test(c)) return true;
+  if (/^swanctl --uninstall --child utm-[a-z0-9-]+$/.test(c)) return true;
   // wg-quick: bring up/down managed ifaces only; strip is a read-only parser
   if (new RegExp(`^wg-quick (up|down) utm-${UTMSN}$`).test(c)) return true;
   if (new RegExp(`^wg-quick strip utm-${UTMSN}$`).test(c)) return true;
@@ -411,7 +422,7 @@ export async function readVpnOsFacts(slugs: string[]): Promise<VpnOsFacts> {
     readServiceStates(["strongswan"]),
     runTool("ss -ulnp 2>/dev/null", 5000),
   ]);
-  facts.charonRunning = (svcStates?.["strongswan"] ?? null) === "running";
+  facts.charonRunning = isServiceRunning(svcStates?.["strongswan"]);
   facts.ikePortsBound = /:(500|4500)\s/.test(portsRes.stdout) && /charon/.test(portsRes.stdout);
 
   // swanctl plane (VICI)
@@ -565,10 +576,11 @@ export function buildVpnApplyPlan(configs: VpnOsConfigInput[], facts: VpnOsFacts
     if (c.type === "ipsec_s2s" && c.enabled) {
       swanConns.push({ name, cfg: c.config as IpsecConfig });
     } else if (c.type === "ipsec_s2s" && !c.enabled) {
-      // disabled in GUI but possibly still loaded → explicit teardown
+      // disabled in GUI but possibly still loaded → explicit teardown;
+      // the managed file rewrite + file-diff load unloads the config itself
       if (facts.swanctlConns.includes(name)) {
-        steps.push({ cmd: `swanctl --terminate --ike ${name}`, summary: `terminate IKE ${name} (disabled)`, kind: "cleanup" });
-        steps.push({ cmd: `swanctl --unload-conn --name ${name}`, summary: `unload conn ${name} (disabled)`, kind: "cleanup" });
+        steps.push({ cmd: `swanctl --terminate --ike ${name}`, summary: `terminate IKE ${name} (disabled)`, kind: "cleanup", optional: true });
+        steps.push({ cmd: `swanctl --uninstall --child ${name}-net`, summary: `uninstall trap policies ${name}-net (disabled)`, kind: "cleanup", optional: true });
       }
     } else if (c.type === "ipsec_remote") {
       skipped.push({
@@ -591,19 +603,19 @@ export function buildVpnApplyPlan(configs: VpnOsConfigInput[], facts: VpnOsFacts
     }
   }
 
-  // ── ipsec: write managed file, load each conn live (validator), secrets
+  // ── ipsec: rewrite the managed file (enabled conns only), then ONE
+  // --load-conns --file pass installs new/changed configs AND unloads conns
+  // that are gone from the file (strongswan 6 file-diff semantics)
+  files.push({ path: MANAGED_SWANCTL_FILE, content: swanConns.length > 0 ? renderSwanctlManaged(swanConns) : "", backup: true });
   if (swanConns.length > 0) {
-    files.push({ path: MANAGED_SWANCTL_FILE, content: renderSwanctlManaged(swanConns), backup: true });
     files.push({ path: MANAGED_PSK_FILE, content: renderSwanctlManaged(swanConns), backup: true });
     steps.push({ cmd: "swanctl --load-creds", summary: "load PSK secrets", kind: "secret" });
-    for (const c of swanConns) {
-      steps.push({ cmd: `swanctl --load-conn --name ${c.name}`, summary: `load conn ${c.name} (trap policy)`, kind: "ipsec" });
-      managedConns.push(c.name);
-    }
+    steps.push({ cmd: `swanctl --load-conns --file ${MANAGED_SWANCTL_FILE}`, summary: `load conns: ${swanConns.map((c) => c.name).join(", ")} (trap policies)`, kind: "ipsec" });
   } else {
-    files.push({ path: MANAGED_SWANCTL_FILE, content: "", backup: true });
-    files.push({ path: MANAGED_PSK_FILE, content: "", backup: true });
+    // file emptied — the file-diff load-conns pass unloads everything the
+    // managed file previously installed; no explicit step needed here
   }
+  for (const c of swanConns) managedConns.push(c.name);
 
   // ── wireguard: per-tunnel file + up/down
   for (const w of wgConns) {
@@ -633,13 +645,11 @@ export function buildVpnApplyPlan(configs: VpnOsConfigInput[], facts: VpnOsFacts
     managedIfaces.push(`utm-${slug}`);
   }
 
-  // ── orphan sweep: OS objects utm-* not backed by any DB config
+  // ── orphan sweep: OS objects utm-* not backed by any DB config.
+  // swanctl conns are covered by the file-diff load pass above (the managed
+  // file is rewritten from DB state — conns missing from it are unloaded); 
+  // wg/openvpn orphans need explicit teardown.
   const dbNames = new Set(configs.map((c) => connName(c.name)));
-  for (const loaded of facts.swanctlConns) {
-    if (!dbNames.has(loaded)) {
-      steps.push({ cmd: `swanctl --unload-conn --name ${loaded}`, summary: `orphan: unload ${loaded}`, kind: "cleanup" });
-    }
-  }
   for (const w of facts.wgIfaces) {
     if (!dbNames.has(w.iface)) {
       steps.push({ cmd: `wg-quick down ${w.iface}`, summary: `orphan: down ${w.iface}`, kind: "cleanup" });
@@ -800,23 +810,43 @@ export async function execVpnApplyPlan(plan: VpnOsPlan): Promise<VpnOsApplyOutco
     }
   }
 
-  // execute; validation failures roll back
-  const results: Array<{ cmd: string; ok: boolean; stderr?: string }> = [];
-  const loadedConns: string[] = [];
+  // execute; REQUIRED-step failures roll back, optional-step failures are
+  // recorded (cleanup steps legitimately fail when there is nothing to clean)
+  const results: Array<{ cmd: string; ok: boolean; stderr?: string; optional?: boolean }> = [];
   const startedUnits: string[] = [];
   let rolledBack = false;
   for (const step of fullSteps) {
     const r = await runTool(step.cmd, step.kind === "pki" ? 20000 : 12000);
-    results.push({ cmd: step.cmd, ok: r.ok, stderr: r.ok ? undefined : (r.stderr || r.error) });
-    if (!r.ok) {
+    results.push({
+      cmd: step.cmd,
+      ok: r.ok || step.optional === true,
+      stderr: r.ok ? undefined : (r.stderr || r.error),
+      optional: step.optional,
+    });
+    if (!r.ok && step.optional !== true) {
       // validation failure → automatic rollback
-      for (const cn of loadedConns) await runTool(`swanctl --unload-conn --name ${cn}`, 8000);
       for (const u of startedUnits) await runTool(`systemctl stop ${u}`, 10000);
       await restoreBackup(backupDir, plan);
+      // ipsec file-diff: re-converge from the RESTORED managed file so the
+      // previously-loaded conn set is re-installed exactly as it was
+      const restoredSwanctl = plan.files.find((f) => f.path === MANAGED_SWANCTL_FILE);
+      if (restoredSwanctl) {
+        const prev = await fs.readFile(MANAGED_SWANCTL_FILE, "utf8").catch(() => null);
+        if (prev !== null && prev.trim().length > 0) {
+          await runTool(`swanctl --load-conns --file ${MANAGED_SWANCTL_FILE}`, 15000);
+        } else if (prev !== null) {
+          // file restored to empty — nothing should stay loaded from it
+          // (charon has no per-file unload in 6.x; trap policies are swept
+          // by --uninstall for the utm-* children we know of)
+          for (const cn of plan.managedConns) await runTool(`swanctl --uninstall --child ${cn}-net`, 8000);
+        }
+      }
       rolledBack = true;
       break;
     }
-    if (step.cmd.startsWith("swanctl --load-conn")) loadedConns.push(step.cmd.split("--name ")[1]);
+    if (!r.ok && step.optional === true) {
+      continue;
+    }
     if (step.cmd.startsWith("systemctl start")) startedUnits.push(step.cmd.split(" ")[2]);
   }
 

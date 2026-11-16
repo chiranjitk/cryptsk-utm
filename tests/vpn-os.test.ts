@@ -262,11 +262,11 @@ describe("renderOpenVpnServerConf", () => {
 // ── command guard (red lines) ───────────────────────────────────────────────
 
 describe("vpnStepGuarded — managed namespace only", () => {
-  it("allows swanctl load/unload/terminate + creds for utm-*", () => {
-    expect(vpnStepGuarded("swanctl --load-conn --name utm-branch")).toBe(true);
-    expect(vpnStepGuarded("swanctl --unload-conn --name utm-branch")).toBe(true);
-    expect(vpnStepGuarded("swanctl --terminate --ike utm-branch")).toBe(true);
+  it("allows strongswan 6 file-based load + terminate/uninstall for utm-*", () => {
+    expect(vpnStepGuarded("swanctl --load-conns --file /etc/swanctl/conf.d/utm-managed.conf")).toBe(true);
     expect(vpnStepGuarded("swanctl --load-creds")).toBe(true);
+    expect(vpnStepGuarded("swanctl --terminate --ike utm-branch")).toBe(true);
+    expect(vpnStepGuarded("swanctl --uninstall --child utm-branch-net")).toBe(true);
   });
 
   it("allows wg-quick up/down/strip and scoped wg set for utm-*", () => {
@@ -286,6 +286,9 @@ describe("vpnStepGuarded — managed namespace only", () => {
   it("REJECTS red-line attempts", () => {
     // non-managed namespaces
     expect(vpnStepGuarded("swanctl --load-conn --name customer-vpn")).toBe(false);
+    expect(vpnStepGuarded("swanctl --load-conns --file /etc/swanctl/conf.d/other.conf")).toBe(false);
+    expect(vpnStepGuarded("swanctl --load-conn --name utm-branch")).toBe(false); // removed in strongswan 6
+    expect(vpnStepGuarded("swanctl --unload-conn --name utm-branch")).toBe(false); // does not exist in 6.0.1
     expect(vpnStepGuarded("wg-quick up wg0")).toBe(false);
     expect(vpnStepGuarded("systemctl start openvpn-server@corp.service")).toBe(false);
     // destructive / out-of-scope commands
@@ -298,7 +301,7 @@ describe("vpnStepGuarded — managed namespace only", () => {
     expect(vpnStepGuarded("openssl req -x509 -key /etc/ssl/private/steal.key -out /tmp/x.crt")).toBe(false);
     expect(vpnStepGuarded("wg set utm-branch peer BAD allowed-ips 0.0.0.0/0")).toBe(false);
     expect(vpnStepGuarded("cat /etc/shadow > /tmp/x")).toBe(false);
-    expect(vpnStepGuarded("swanctl --load-conn --name utm-x; rm -rf /")).toBe(false);
+    expect(vpnStepGuarded("swanctl --terminate --ike utm-x; rm -rf /")).toBe(false);
     expect(vpnStepGuarded("")).toBe(false);
   });
 });
@@ -410,7 +413,7 @@ describe("buildVpnApplyPlan", () => {
     expect(plan.files.some((f) => f.path.endsWith("/etc/swanctl/conf.d/utm-managed.conf"))).toBe(true);
     expect(plan.files.some((f) => f.path.endsWith("/etc/wireguard/utm-wg-hub.conf"))).toBe(true);
     const cmds = plan.steps.map((s) => s.cmd);
-    expect(cmds).toContain("swanctl --load-conn --name utm-branch");
+    expect(cmds).toContain(`swanctl --load-conns --file /etc/swanctl/conf.d/utm-managed.conf`);
     expect(cmds).toContain("wg-quick strip utm-wg-hub");
     expect(cmds).toContain("wg-quick up utm-wg-hub");
     for (const s of plan.steps) expect(vpnStepGuarded(s.cmd)).toBe(true);
@@ -421,26 +424,32 @@ describe("buildVpnApplyPlan", () => {
       [cfg({ name: "Branch", type: "ipsec_s2s", enabled: false, config: ipsecCfg() })],
       emptyFacts({ swanctlConns: ["utm-branch"] }),
     );
-    // no conn install, but the orphan/teardown pass unloads it
-    expect(plan.steps.some((s) => s.cmd === "swanctl --unload-conn --name utm-branch")).toBe(true);
-    expect(plan.steps.some((s) => s.cmd === "swanctl --load-conn --name utm-branch")).toBe(false);
+    // no conn install, but the disabled-teardown pass terminates + uninstalls
+    // and the managed file is rewritten WITHOUT the conn (file-diff unload)
+    expect(plan.steps.some((s) => s.cmd === "swanctl --terminate --ike utm-branch")).toBe(true);
+    expect(plan.steps.some((s) => s.cmd === "swanctl --uninstall --child utm-branch-net")).toBe(true);
+    expect(plan.steps.some((s) => s.kind === "ipsec" && s.kind !== "cleanup" && s.cmd.includes("load-conns"))).toBe(false);
+    const swanFile = plan.files.find((f) => f.path.endsWith("utm-managed.conf"));
+    expect(swanFile?.content ?? "").not.toContain("utm-branch {");
+    for (const s of plan.steps) expect(vpnStepGuarded(s.cmd)).toBe(true);
   });
 
-  it("orphan sweep removes OS objects without a DB config", () => {
+  it("orphan sweep removes wg/openvpn orphans; stale conns unload via file-diff", () => {
     const plan = buildVpnApplyPlan(
       [],
       emptyFacts({
-        swanctlConns: ["utm-gone", "utm-foreign"],
         wgIfaces: [{ iface: "utm-wg-gone", up: true, listenPort: 1, peers: 0, rxBytes: 0, txBytes: 0, lastHandshakeSec: null }],
         openvpnServices: [{ slug: "ovpn-gone", active: true, pid: 5 }],
       }),
     );
     const cmds = plan.steps.map((s) => s.cmd);
-    expect(cmds).toContain("swanctl --unload-conn --name utm-gone");
-    expect(cmds).toContain("swanctl --unload-conn --name utm-foreign");
     expect(cmds).toContain("wg-quick down utm-wg-gone");
     expect(cmds).toContain("systemctl stop openvpn-server@utm-ovpn-gone.service");
     expect(cmds).toContain("systemctl disable openvpn-server@utm-ovpn-gone.service");
+    // managed file rewritten empty — load-conns (if any conns existed) unloads them
+    const swanFile = plan.files.find((f) => f.path.endsWith("utm-managed.conf"));
+    expect(swanFile?.content).toBe("");
+    for (const s of plan.steps) expect(vpnStepGuarded(s.cmd)).toBe(true);
   });
 
   it("honestly skips ipsec_remote with a provisioning reason", () => {
