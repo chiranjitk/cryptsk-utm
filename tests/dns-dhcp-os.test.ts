@@ -123,8 +123,8 @@ describe("renderUnboundManaged", () => {
 
   it("maps policy actions to local-zone types with allow-list override semantics", () => {
     const out = renderUnboundManaged({ settings: resolver(), policies: [policy()], records: [] });
-    expect(out).toContain('type: transparent'); // allow entry
-    expect(out).toContain('type: redirect'); // sinkhole action
+    expect(out).toContain('local-zone: "good.example.com." transparent'); // allow entry
+    expect(out).toContain('local-zone: "ads.example.com." redirect'); // sinkhole action
     expect(out).toContain('local-data: "ads.example.com. 300 IN A 0.0.0.0"');
     expect(out).not.toContain("always_nxdomain");
   });
@@ -135,7 +135,7 @@ describe("renderUnboundManaged", () => {
       policies: [policy({ action: "nxdomain" })],
       records: [],
     });
-    expect(out).toContain("type: always_nxdomain");
+    expect(out).toContain('local-zone: "ads.example.com." always_nxdomain');
     expect(out).not.toContain("redirect");
   });
 

@@ -259,11 +259,8 @@ export function renderUnboundManaged(input: RenderUnboundInput): string {
   }
   if (zones.size > 0) {
     L.push(`# DNS policies — managed local-zones (allow-list entries before block-list)`);
-    for (const [d, type] of zones) {
-      L.push(`local-zone:`);
-      L.push(`\tname: "${d}."`);
-      L.push(`\ttype: ${type}`);
-    }
+    L.push(`server:`);
+    for (const [d, type] of zones) L.push(`\tlocal-zone: "${d}." ${type}`);
     L.push(``);
   }
 
