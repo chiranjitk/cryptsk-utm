@@ -649,6 +649,46 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-16 — Red edition: gallery rebuilt to white/red + dark-red only (user directive)
+
+- **Trigger:** user: "remove all theme genarate all base color white/red or dar red" — all 20
+  prior templates removed; gallery rebuilt from scratch (full file rewrite of
+  `public/design-templates.html`; pre-rewrite backup at /tmp/design-templates-backup.html).
+- **Deliverable:** 10 templates, palette strictly white/red/dark-red (reds: #c8102e, #d92d3a,
+  #dc2626, #e05262, #e63946, #e6455a, #f43f5e, #ff2e4c, #ff3b52 + oxblood/ink neutrals).
+  1 Crimson Studio (light — white canvas, crimson #d92d3a, red-gradient bars/ink hl,
+  Bricolage fnum, dark variant charcoal+crimson);
+  2 Scarlet Editorial (light — white paper, Playfair serif numerals, ink+scarlet column-ruled
+  KPIs, dark variant warm ink paper);
+  3 Red Brutal (light — zero radius, 2px ink borders, hard #e63946 drop-shadows, Space Mono
+  caps, dark variant cream borders + #ff4d5e shadows);
+  4 Blush Cloud (light — blush #faf0ee, rose #e05262 cards, wine #8f2d3c hl, dark variant
+  wine #1f0f13);
+  5 Signal Enterprise (light — light-gray console, #dc2626 signal red, Plex Mono KPIs, zebra
+  tables, dark variant #121417 + #ef4444);
+  6 Oxblood Lounge (dark — #230d11 oxblood lacquer, ivory Fraunces serif, rose-glow numerals
+  #f2959f, crimson buttons, light variant ivory + #8f1f30);
+  7 Cherry Noir (dark — #120a0d, glowing #ff2e4c neon, red-tinted glass panels, light variant
+  white + #c8102e);
+  8 Crimson Glass (dark — drifting crimson/rose/ember aurora + frosted panels, light variant
+  porcelain + soft red clouds);
+  9 Garnet Metal (dark — carbon weave, garnet gradient numerals via background-clip:text,
+  Unbounded, light variant white + garnet);
+  10 Ember Mono (dark — red-phosphor terminal, #ff3b52 glow, scanlines, grep search,
+  blinking cursor, light variant warm paper #fbf1ec + #c8102e mono, no glow).
+  Generic `.light` semantic chips kept; donut slice vars per-theme within red family.
+- **Chrome:** title "10 Red & White Templates", sub "red edition", quick-nav 10 red-dotted
+  links, modenote "5 dark-first, 5 light-first", footer invites Template 11 tweaks; app pill
+  (design-gallery-link.tsx) → "pick 1 of 10 red themes"; fonts URL trimmed to the 9 used
+  families.
+- **Verification (agent-browser):** 10/10 mocks render, 0 page errors; native bgs all 10
+  correct (t1 #f7f5f3 … t6 #230d11 … t10 #0c0507); Light all → 10×.light (t6 ivory #f9f1ea,
+  t10 paper #fbf1ec, t6 bars red-on-ivory); Dark all → 10×.dark (t1 #171314, t4 wine #1f0f13,
+  t5 red button #ef4444); Native mix resets 0/0. Screenshots: T1 Crimson Studio, T6 Oxblood
+  Lounge, T10 Ember Mono — all strictly red/white/dark-red. lint clean; gallery + app 200.
+- **Next:** user picks ONE red template (or a tweak like "2 but rounder") → full-app conversion
+  (tokens → globals.css/theme, shell, login, all module views), then remove the pill.
+
 ### 2026-11-16 — Batch 2: templates 11–20 (user rejected all of batch 1)
 
 - **Trigger:** user rejected the entire first batch ("i dont like any of thise looks make more 10

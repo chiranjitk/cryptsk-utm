@@ -19,7 +19,7 @@ export function DesignGalleryLink() {
     >
       <Palette className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span>
-        New look — <span className="font-bold">pick 1 of 20 templates</span>
+        New look — <span className="font-bold">pick 1 of 10 red themes</span>
       </span>
     </a>
   );
