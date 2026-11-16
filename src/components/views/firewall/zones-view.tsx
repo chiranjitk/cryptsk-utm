@@ -470,7 +470,7 @@ function ZoneEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
             {mut.isPending ? "Saving…" : editing ? "Save changes" : "Create zone"}
           </Button>
         </DialogFooter>

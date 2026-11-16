@@ -19,7 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useRealtime, type AlertNewPayload } from "@/lib/realtime";
-import { EmptyBlock, toastErr, toastOk } from "../firewall/fw-ui";
+import { EmptyBlock, QueryError, toastErr, toastOk } from "../firewall/fw-ui";
 import { SeverityBadge, TypeIcon, deepLinkForType, fmtRelative } from "./system-ui";
 import { systemApi, type NotificationDTO } from "./system-api";
 
@@ -129,6 +129,11 @@ export function NotificationCenter() {
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="h-14 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
               ))}
+            </div>
+          ) : list.isError ? (
+            // error → actionable retry, never a silent "all caught up" (UI audit)
+            <div className="p-3">
+              <QueryError error={list.error} onRetry={() => void list.refetch()} />
             </div>
           ) : (list.data?.data.length ?? 0) === 0 ? (
             <EmptyBlock

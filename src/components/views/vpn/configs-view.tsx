@@ -40,6 +40,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { csvDateStamp, downloadCsv } from "@/lib/csv";
 import {
   configSummary,
   fmtBytes,
@@ -182,9 +183,48 @@ export function ConfigsView() {
                       ? "IKEv2 site-to-site tunnels and EAP remote access with PSK or certificate profiles."
                       : "OpenVPN SSL remote access with per-client bundles (.ovpn)."}
                 </p>
-                <Button size="sm" className="gap-1.5" onClick={() => openCreate(family)}>
-                  <Icons.Plus className="h-4 w-4" /> Add {family === "openvpn" ? "OpenVPN" : family}
-                </Button>
+                <div className="flex items-center gap-2">
+                  {/* export the currently loaded configs of this family — no additional fetch */}
+                  <TooltipProvider delayDuration={100}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5 disabled:pointer-events-auto"
+                          aria-label={`Export ${family} configs CSV`}
+                          disabled={byFamily(family).length === 0}
+                          onClick={() => {
+                            const rows = byFamily(family);
+                            downloadCsv(
+                              `vpn-${family}-configs-${csvDateStamp()}.csv`,
+                              [
+                                { key: "id", label: "id" },
+                                { key: "name", label: "name" },
+                                { key: "type", label: "type" },
+                                { key: "enabled", label: "enabled" },
+                                { key: "status", label: "status" },
+                                { key: "statusMessage", label: "status_message" },
+                                { key: "sessionCount", label: "session_count" },
+                              ],
+                              rows,
+                            );
+                            toastOk("CSV exported", `${rows.length} ${family} tunnel configs (currently loaded)`);
+                          }}
+                        >
+                          <Icons.Download className="h-4 w-4" /> Export CSV
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="max-w-64">
+                        <p className="font-medium">Export CSV</p>
+                        <p className="text-[11px]">Downloads the {family} configs currently loaded — no additional fetch.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <Button size="sm" className="gap-1.5" onClick={() => openCreate(family)}>
+                    <Icons.Plus className="h-4 w-4" /> Add {family === "openvpn" ? "OpenVPN" : family}
+                  </Button>
+                </div>
               </div>
 
               {configsQuery.isLoading ? (

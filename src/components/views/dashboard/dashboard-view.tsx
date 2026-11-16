@@ -98,7 +98,7 @@ function GaugeCard({ label, value, unit, pct, icon, tone }: { label: string; val
       <CardContent className="flex items-center gap-3 p-4">
         <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", tone)}>{icon}</div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs text-slate-500 dark:text-slate-400">{label}</p>
+          <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{label}</p>
           <p className="font-display text-lg font-bold leading-tight tracking-tight tabular-nums">
             {value}
             {unit ? <span className="ml-0.5 text-xs font-normal text-zinc-400">{unit}</span> : null}

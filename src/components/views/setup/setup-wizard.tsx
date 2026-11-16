@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { toastErr, toastOk } from "../firewall/fw-ui";
+import { QueryError, toastErr, toastOk } from "../firewall/fw-ui";
 import { listInterfaceNames, dhcpApi, type IfaceLite } from "../dns-dhcp/dns-dhcp-api";
 import { systemApi } from "../system/system-api";
 import type { PolicyTemplateDTO } from "@/lib/system/service";
@@ -203,6 +203,8 @@ export function SetupWizard(props: { onFinished: () => void }) {
                 wanType={wanType}
                 setWanType={setWanType}
                 loading={ifaces.isLoading}
+                error={ifaces.isError ? ifaces.error : null}
+                onRetry={() => void ifaces.refetch()}
               />
             ) : step === 2 ? (
               <LanStep
@@ -225,6 +227,8 @@ export function SetupWizard(props: { onFinished: () => void }) {
               <TemplateStep
                 templates={templates.data ?? []}
                 loading={templates.isLoading}
+                error={templates.isError ? templates.error : null}
+                onRetry={() => void templates.refetch()}
                 applied={appliedTemplate}
                 onApply={(id) => applyTemplate.mutate(id)}
                 applying={applyTemplate.isPending}
@@ -325,6 +329,8 @@ function WanStep(props: {
   wanType: "static" | "dhcp" | "pppoe";
   setWanType: (v: "static" | "dhcp" | "pppoe") => void;
   loading: boolean;
+  error: unknown;
+  onRetry: () => void;
 }) {
   return (
     <div className="space-y-4">
@@ -365,6 +371,11 @@ function WanStep(props: {
           </RadioGroup>
         </div>
       </div>
+      {props.error ? (
+        <div className="p-1">
+          <QueryError error={props.error} onRetry={props.onRetry} />
+        </div>
+      ) : null}
       <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-2 text-[11px] text-zinc-500 dark:border-zinc-800">
         Demo note: the wizard records your choice for the summary; the actual interface/wan-policy writes happen in{" "}
         <span className="font-mono">#</span>⁠<span className="font-mono">/network/interfaces</span> — this step saves
@@ -448,6 +459,8 @@ function LanStep(props: {
 function TemplateStep(props: {
   templates: PolicyTemplateDTO[];
   loading: boolean;
+  error: unknown;
+  onRetry: () => void;
   applied: string | null;
   onApply: (id: string) => void;
   applying: boolean;
@@ -490,7 +503,18 @@ function TemplateStep(props: {
           </div>
         ))}
       </div>
-      {props.loading ? <p className="text-xs text-zinc-400">Loading templates…</p> : null}
+      {props.loading ? (
+        <div className="space-y-2">
+          <div className="h-16 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
+          <div className="h-16 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
+        </div>
+      ) : props.error ? (
+        <QueryError error={props.error} onRetry={props.onRetry} />
+      ) : props.templates.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-3 text-center text-xs text-zinc-500 dark:border-zinc-800">
+          No policy templates available — continuing with the seed policy.
+        </p>
+      ) : null}
     </div>
   );
 }

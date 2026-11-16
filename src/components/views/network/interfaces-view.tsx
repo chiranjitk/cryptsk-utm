@@ -2092,7 +2092,7 @@ function IfaceEditor(props: {
           <Button
             onClick={submit}
             disabled={mut.isPending || lintErrorCount > 0}
-            className="bg-amber-700 text-white hover:bg-amber-800"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create interface"}
           </Button>
@@ -2873,7 +2873,7 @@ function MirrorEditor(props: { open: boolean; onOpenChange: (open: boolean) => v
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create mirror"}
           </Button>
         </DialogFooter>

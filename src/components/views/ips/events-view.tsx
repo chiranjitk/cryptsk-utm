@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { downloadCsv, csvDateStamp } from "@/lib/csv";
 import { useRealtime } from "@/lib/realtime";
 import {
   ipsApi,
@@ -444,6 +445,48 @@ export function EventsView() {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
+              {/* export the rows already in memory (this page + live tail) — no additional fetch */}
+              <TooltipProvider delayDuration={100}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1 text-xs disabled:pointer-events-auto"
+                      aria-label="Export events CSV"
+                      disabled={rows.length === 0}
+                      onClick={() => {
+                        downloadCsv(
+                          `ips-events-${csvDateStamp()}.csv`,
+                          [
+                            { key: "timestamp", label: "timestamp" },
+                            { key: "severity", label: "severity" },
+                            { key: "category", label: "category" },
+                            { key: "action", label: "action" },
+                            { key: "sid", label: "sid" },
+                            { key: "srcIp", label: "src_ip" },
+                            { key: "srcPort", label: "src_port" },
+                            { key: "dstIp", label: "dst_ip" },
+                            { key: "dstPort", label: "dst_port" },
+                            { key: "message", label: "message" },
+                            { key: "suppressedUntil", label: "suppressed_until" },
+                            { key: "id", label: "id" },
+                          ],
+                          rows,
+                        );
+                        toastOk("CSV exported", `${rows.length.toLocaleString()} rows — currently loaded events`);
+                      }}
+                    >
+                      <Icons.Download className="h-3.5 w-3.5" />
+                      CSV
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left" className="max-w-64">
+                    <p className="font-medium">Export CSV</p>
+                    <p className="text-[11px]">Downloads the rows currently loaded (this page + live tail) — no additional fetch.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <div className="flex items-center gap-1.5">
                 <Switch id="live-tail" checked={liveEnabled} onCheckedChange={setLiveEnabled} aria-label="Toggle live tail" />
                 <Label htmlFor="live-tail" className="cursor-pointer text-xs text-zinc-500">

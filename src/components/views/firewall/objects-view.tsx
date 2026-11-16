@@ -295,7 +295,7 @@ export function ObjectsView() {
       ) : (
         <div className="max-h-[60vh] overflow-auto [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-300 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700">
           <Table className="min-w-[640px] text-sm">
-            <TableHeader>
+            <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
                 {headers.map((h) => (
                   <TableHead key={h}>{h}</TableHead>
@@ -740,7 +740,7 @@ function AddressObjectDialog(props: { state: AddressDialogState; onOpenChange: (
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
             {mut.isPending ? "Saving…" : editing ? "Save changes" : "Create object"}
           </Button>
         </DialogFooter>
@@ -830,7 +830,7 @@ function GroupDialog(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
             {mut.isPending ? "Saving…" : editing ? "Save changes" : "Create group"}
           </Button>
         </DialogFooter>
@@ -982,7 +982,7 @@ function ServiceDialog(props: { state: ServiceDialogState; onOpenChange: (open: 
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
             {mut.isPending ? "Saving…" : editing ? "Save changes" : "Create service"}
           </Button>
         </DialogFooter>
@@ -1209,7 +1209,7 @@ function ScheduleDialog(props: { state: ScheduleDialogState; onOpenChange: (open
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
             {mut.isPending ? "Saving…" : editing ? "Save changes" : "Create schedule"}
           </Button>
         </DialogFooter>

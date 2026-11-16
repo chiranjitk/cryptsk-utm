@@ -448,7 +448,7 @@ function GatewayEditor(props: { gateway: EmailGatewayDTO | null; onClose: () => 
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create gateway"}
           </Button>
         </DialogFooter>
@@ -537,7 +537,7 @@ function GatewaysCard() {
                   : "min-w-[860px]"
               }
             >
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead>Listener</TableHead>
                   <TableHead className="w-16">Port</TableHead>
@@ -869,7 +869,7 @@ function PolicyFormBody({ policy }: { policy: EmailPolicyDTO }) {
       {err && <p className="text-xs text-rose-600">{err}</p>}
 
       <div className="flex justify-end">
-        <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending} onClick={submit}>
+        <Button className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={save.isPending} onClick={submit}>
           {save.isPending ? "Saving…" : "Save policy"}
         </Button>
       </div>
@@ -1034,7 +1034,7 @@ function RuleEditor(props: { rule: EmailRoutingRuleDTO | null; onClose: () => vo
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create rule"}
           </Button>
         </DialogFooter>
@@ -1119,7 +1119,7 @@ function RoutingRulesCard() {
                   : "min-w-[760px]"
               }
             >
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead className="w-16">Prio</TableHead>
                   <TableHead>Name</TableHead>
@@ -1488,7 +1488,7 @@ function MailLogCard() {
                   : "min-w-[820px]"
               }
             >
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead className="w-28">Verdict</TableHead>
                   <TableHead>From → To</TableHead>

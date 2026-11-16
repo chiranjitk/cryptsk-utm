@@ -9,7 +9,8 @@
  */
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
+import { CommandPalette, closeCommandPalette, openCommandPalette, toggleCommandPalette } from "./command-palette";
+import { ShortcutsDialog, useGoToShortcuts } from "./shortcuts-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
 import { motion, useReducedMotion } from "framer-motion";
@@ -221,7 +222,7 @@ function Dock({ current, allNavOpen, onAllNavOpenChange, onNavigate }: { current
               <BrandLogo className="h-8 w-8 shrink-0" />
               <div>
                 <p className="text-sm font-semibold leading-tight">Cryptsk</p>
-                <p className="text-[11px] leading-tight text-slate-500">UTM / NGFW Console</p>
+                <p className="text-[11px] leading-tight text-slate-500 dark:text-slate-400">UTM / NGFW Console</p>
               </div>
             </div>
             <ScrollArea className="min-h-0 flex-1">
@@ -240,7 +241,6 @@ export function AppShell() {
   const queryClient = useQueryClient();
   const { resolvedTheme, setTheme } = useTheme();
   const [allNavOpen, setAllNavOpen] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const shortcutHint = useSyncExternalStore(emptySubscribe, getIsApple, getIsAppleServer) ? "\u2318K" : "Ctrl+K";
   const setupGate = useSetupCompleted();
   const reduceMotion = useReducedMotion();
@@ -248,11 +248,11 @@ export function AppShell() {
 
   const navigateTo = useCallback(
     (path: string) => {
-      setPaletteOpen(false);
+      closeCommandPalette();
       setAllNavOpen(false);
       if (window.location.hash !== `#${path}`) window.location.hash = path;
     },
-    [setPaletteOpen, setAllNavOpen],
+    [setAllNavOpen],
   );
 
   const skipToContent = useCallback(() => {
@@ -272,12 +272,15 @@ export function AppShell() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setPaletteOpen((open) => !open);
+        toggleCommandPalette();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [shellMounted]);
+
+  // "?" opens the shortcuts help; g-then-key sequences navigate (g d / g f / g l)
+  useGoToShortcuts({ enabled: shellMounted, onNavigate: navigateTo });
 
   // config:updated → invalidate everything (section-aware refinement lands with M03+)
   useRealtime(["metrics", "alerts", "config"], {
@@ -386,7 +389,7 @@ export function AppShell() {
               variant="outline"
               className="h-11 gap-2 rounded-xl bg-white/70 px-3 text-xs text-slate-500 hover:bg-white lg:h-9 dark:bg-white/5 dark:hover:bg-white/10"
               aria-label="Open command palette"
-              onClick={() => setPaletteOpen(true)}
+              onClick={openCommandPalette}
             >
               <Icons.Search className="h-4 w-4" />
               <span className="hidden sm:inline">Search…</span>
@@ -416,7 +419,7 @@ export function AppShell() {
               <DropdownMenuContent align="end" className="w-52">
                 <DropdownMenuLabel>
                   <p className="text-sm font-medium">{me.username}</p>
-                  <p className="text-xs text-slate-500">{me.role ?? "api key"}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{me.role ?? "api key"}</p>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout} className="text-rose-600 focus:text-rose-600 dark:text-rose-400">
@@ -529,38 +532,10 @@ export function AppShell() {
         </main>
 
         {/* global command palette — ⌘/Ctrl+K, Esc closes, Enter navigates, arrows move (cmdk) */}
-        <CommandDialog open={paletteOpen} onOpenChange={setPaletteOpen}>
-          <CommandInput placeholder="Search views and commands…" />
-          <CommandList>
-            <CommandEmpty>No matching view or command.</CommandEmpty>
-            {NAV_GROUPS.map((group) => (
-              <CommandGroup key={group.label} heading={group.label}>
-                {group.paths.map((p) => {
-                  const paletteView = viewFor(p)!;
-                  return (
-                    <CommandItem key={p} value={`${paletteView.title} ${p}`} onSelect={() => navigateTo(p)}>
-                      <Icon name={paletteView.icon} className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{paletteView.title}</span>
-                    </CommandItem>
-                  );
-                })}
-              </CommandGroup>
-            ))}
-            <CommandSeparator />
-            <CommandGroup heading="Preferences">
-              <CommandItem
-                value="Toggle dark mode theme"
-                onSelect={() => {
-                  setTheme(resolvedTheme === "dark" ? "light" : "dark");
-                  setPaletteOpen(false);
-                }}
-              >
-                {resolvedTheme === "dark" ? <Icons.Sun className="h-4 w-4 shrink-0" /> : <Icons.Moon className="h-4 w-4 shrink-0" />}
-                <span>Toggle dark mode</span>
-              </CommandItem>
-            </CommandGroup>
-          </CommandList>
-        </CommandDialog>
+        <CommandPalette onNavigate={navigateTo} onLogout={() => void logout()} />
+
+        {/* keyboard-shortcuts help — "?" key, palette footer, openShortcutsDialog() */}
+        <ShortcutsDialog />
 
         {/* sticky footer — pushes down naturally on overflow; mb-20 clears the fixed dock */}
         <footer className="mb-20 mt-auto border-t px-4 py-3 text-xs text-slate-500 dark:text-slate-400">

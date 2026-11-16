@@ -57,7 +57,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
       <div className="mb-6 flex flex-col items-center gap-2">
         <BrandLogo className="h-12 w-12 drop-shadow-lg" />
         <h1 className="font-display text-xl font-bold tracking-tight">Cryptsk Console</h1>
-        <p className="text-sm text-slate-500">UTM / NGFW management — real-host telemetry</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">UTM / NGFW management — real-host telemetry</p>
       </div>
 
       <Card className="w-full max-w-sm">

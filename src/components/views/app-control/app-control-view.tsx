@@ -486,7 +486,7 @@ function AddRuleDialog(props: { policyId: number; onClose: () => void }) {
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending || !appName} onClick={submit}>
+          <Button className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={save.isPending || !appName} onClick={submit}>
             {save.isPending ? "Saving…" : "Add rule"}
           </Button>
         </DialogFooter>
@@ -629,7 +629,7 @@ function RulesTable({ policyId }: { policyId: number }) {
                 : "min-w-[880px]"
             }
           >
-            <TableHeader>
+            <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
                 <TableHead>App</TableHead>
                 <TableHead className="w-28">Category</TableHead>
@@ -1054,7 +1054,7 @@ function LogsCard() {
                   : "min-w-[640px]"
               }
             >
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead className="w-24">Action</TableHead>
                   <TableHead>App</TableHead>

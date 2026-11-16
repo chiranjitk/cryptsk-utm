@@ -835,7 +835,7 @@ function Nat66Card(props: {
         ) : (
           <div className="max-h-96 overflow-y-auto">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead className="w-32">Type</TableHead>
@@ -1126,7 +1126,7 @@ function Dhcpv6Editor(props: { server: Dhcpv6ServerDTO | null; ifaces: string[];
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending} onClick={submit}>
+          <Button className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={save.isPending} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create server"}
           </Button>
         </DialogFooter>
@@ -1209,7 +1209,7 @@ function Dhcpv6Card(props: {
         ) : (
           <div className="max-h-96 overflow-y-auto">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead className="w-20">Iface</TableHead>
                   <TableHead>Pool</TableHead>

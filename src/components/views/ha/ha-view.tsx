@@ -806,6 +806,7 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
                 </p>
               </div>
               <Switch
+                aria-label="Preempt on recovery"
                 checked={form.preempt}
                 disabled={!isAdmin}
                 onCheckedChange={(v) => setForm((f) => ({ ...f, preempt: v }))}
@@ -817,6 +818,7 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
                 <p className="text-[11px] text-zinc-500">Sync configuration to peer — custom engineering (Phase 2).</p>
               </div>
               <Switch
+                aria-label="Configuration sync"
                 checked={form.syncConfig}
                 disabled={!isAdmin}
                 onCheckedChange={(v) => setForm((f) => ({ ...f, syncConfig: v }))}
@@ -830,6 +832,7 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
                 </p>
               </div>
               <Switch
+                aria-label="Session sync (conntrackd)"
                 checked={form.sessionSync}
                 disabled={!isAdmin}
                 onCheckedChange={(v) => setForm((f) => ({ ...f, sessionSync: v }))}

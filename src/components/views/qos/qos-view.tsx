@@ -877,7 +877,7 @@ function PolicyDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
+          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
             {save.isPending ? "Saving…" : editing ? "Save changes" : "Create policy"}
           </Button>
         </DialogFooter>
@@ -1168,7 +1168,7 @@ function RuleDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending || !canSave} className="bg-amber-700 text-white hover:bg-amber-800">
+          <Button onClick={() => save.mutate()} disabled={save.isPending || !canSave} className="bg-primary text-primary-foreground hover:bg-primary/90">
             {save.isPending ? "Saving…" : editing ? "Save changes" : "Create rule"}
           </Button>
         </DialogFooter>

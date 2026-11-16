@@ -509,7 +509,7 @@ export function RuleEditor(props: {
             </div>
             <div>
               <FieldLabel hint="Enter or comma to add">Tags</FieldLabel>
-              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-zinc-200 p-2 has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-ring/60 dark:border-zinc-800">
                 {form.tags.map((t) => (
                   <Badge key={t} variant="outline" className="gap-1 border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300">
                     {t}
