@@ -38,9 +38,17 @@ import {
   type VpnOsConfigInput,
 } from "./os";
 
+/** Serialized converge queue — concurrent mutations (double PUT, PUT+DELETE)
+ *  would otherwise race: a stale plan built from old facts can RE-START a
+ *  service the newer plan just stopped (observed live). Each converge now
+ *  runs to completion before the next reads facts. */
+let convergeChain: Promise<unknown> = Promise.resolve();
+
 /** Fire-and-forget OS converge after a config mutation (never blocks, never throws). */
 function convergeAfterMutation(): void {
-  void convergeVpnOs().catch(() => {});
+  convergeChain = convergeChain
+    .then(() => convergeVpnOs())
+    .catch(() => {});
 }
 
 /** toVpnOsConfigInput for the os layer. */

@@ -700,14 +700,21 @@ async function backupFiles(files: VpnOsPlan["files"], ts: string): Promise<strin
   }
 }
 
-async function writePlanFiles(plan: VpnOsPlan): Promise<Array<{ path: string; ok: boolean; error?: string }>> {
-  const out: Array<{ path: string; ok: boolean; error?: string }> = [];
+async function writePlanFiles(plan: VpnOsPlan): Promise<Array<{ path: string; ok: boolean; changed?: boolean; error?: string }>> {
+  const out: Array<{ path: string; ok: boolean; changed?: boolean; error?: string }> = [];
   for (const f of plan.files) {
     try {
+      let changed = true;
+      try {
+        const cur = await fs.readFile(f.path, "utf8");
+        changed = cur !== f.content;
+      } catch {
+        /* new file */
+      }
       await fs.mkdir(path.dirname(f.path), { recursive: true });
       await fs.writeFile(f.path, f.content, "utf8");
       await fs.chmod(f.path, 0o600);
-      out.push({ path: f.path, ok: true });
+      out.push({ path: f.path, ok: true, changed });
     } catch (err) {
       out.push({ path: f.path, ok: false, error: err instanceof Error ? err.message : "write failed" });
     }
@@ -799,6 +806,20 @@ export async function execVpnApplyPlan(plan: VpnOsPlan): Promise<VpnOsApplyOutco
   if (firstOvpnIdx >= 0 && pkiSteps.length > 0) fullSteps.splice(firstOvpnIdx, 0, ...pkiSteps);
   else if (pkiSteps.length > 0) fullSteps.push(...pkiSteps);
 
+  // idempotent convergence: drop `systemctl restart openvpn-*` steps whose
+  // conf file was NOT changed by this apply (zero-step in-sync — no kernel
+  // churn, no needless session drops)
+  const confChanged = new Map(writeResults.filter((w) => w.path.endsWith(".conf")).map((w) => [w.path, w.changed === true]));
+  const filteredSteps = fullSteps.filter((s) => {
+    const m = /^systemctl restart openvpn-server\@utm-([a-z0-9-]+)\.service$/.exec(s.cmd);
+    if (!m) return true;
+    const confPath = path.join(OPENVPN_SERVER_DIR, `utm-${m[1]}.conf`);
+    return confChanged.get(confPath) === true;
+  });
+  const dropped = fullSteps.length - filteredSteps.length;
+  fullSteps.length = 0;
+  fullSteps.push(...filteredSteps);
+
   for (const step of fullSteps) {
     if (!vpnStepGuarded(step.cmd)) {
       await restoreBackup(backupDir, plan);
@@ -858,14 +879,16 @@ export async function execVpnApplyPlan(plan: VpnOsPlan): Promise<VpnOsApplyOutco
     reason: rolledBack
       ? `validation failed at "${failed[0]?.cmd}" — automatic rollback (${failed[0]?.stderr ?? ""})`
       : failed.length === 0
-        ? "applied to OS (swanctl/wg-quick/openvpn live)"
+        ? dropped > 0
+          ? `in sync — ${dropped} redundant step(s) skipped (conf unchanged)`
+          : "applied to OS (swanctl/wg-quick/openvpn live)"
         : `${failed.length}/${results.length} step(s) failed (non-transactional cleanup steps continue)`,
     plan,
     results,
   };
   await persistState({
     lastApply: { at: new Date().toISOString(), backupDir, applied: outcome.applied, reason: outcome.reason },
-    steps: fullSteps.length,
+    steps: fullSteps.length + dropped,
     results,
   });
   return outcome;
