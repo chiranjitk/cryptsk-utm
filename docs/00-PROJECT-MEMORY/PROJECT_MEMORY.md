@@ -649,6 +649,28 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-16 — Design template gallery for full-app redesign (awaiting user pick)
+
+- **Trigger:** user rejected the current look & feel; asked for 5-10 unique design templates to
+  choose from before a whole-app visual conversion ("modern, beautiful, eye-catching, unique").
+- **Deliverable:** standalone gallery at `public/design-templates.html` (static asset — no new
+  app route, SPA untouched). Same dashboard mock (KPIs, traffic chart, threat-mix donut, live
+  events table, system health) injected into 10 hand-built CSS themes via one JS template +
+  per-theme var scopes: 01 Neon Cyber Ops, 02 Aurora Glass, 03 Swiss Precision, 04 Cloud Cream,
+  05 Industrial Brutalist, 06 Obsidian & Gold, 07 Phosphor Terminal, 08 Violet Nova,
+  09 Arctic Enterprise, 10 Sunset Dune. Includes quick-nav anchors and a "reply 'Template N'"
+  selection affordance (mix-and-match allowed).
+- **Discoverability:** new `src/components/shell/design-gallery-link.tsx` floating pill
+  (Palette icon, bottom-right to avoid the Next dev badge collision) wired into AppShell's
+  authenticated return and LoginView. Removed once the redesign lands.
+- **Verification:** lint clean; `/` and `/design-templates.html` both 200; agent-browser: 10/10
+  mocks rendered, zero page errors, screenshots of T1/T5/T7 + login + shell (pill visible in
+  both states, palette icon intact); admin/admin123 golden path still works (dashboard live
+  telemetry). dev.log healthy; the repeating `GET /api/internal/events 401` loop is
+  pre-existing unauthenticated polling, unrelated to this change.
+- **Next:** convert login + shell + all module views to the user's chosen template
+  (tokens → globals.css/theme, shell chrome, per-view polish). Zero API/schema changes so far.
+
 ### 2026-11-13 — QA marathon Round 10 (cross-cutting regression + final polish)
 
 - **Scope:** final sweep — close remaining cheap deferred items, rg cross-cutting audits,
