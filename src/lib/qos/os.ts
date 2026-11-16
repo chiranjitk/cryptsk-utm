@@ -29,6 +29,11 @@
  * ("default":"0x100" in qdisc JSON) — the renderer always uses the same
  * literal string for classid / flowid / default so parses compare equal.
  *
+ * Re-install semantics: `tc qdisc replace` CANNOT change an existing same-kind
+ * HTB root (kernel "Change operation not supported" — verified on the
+ * appliance), so converge is `qdisc del` (best-effort reset step) + `qdisc
+ * add` — fully idempotent, verified by the drift check afterwards.
+ *
  * Red lines (mirror mirror-os): tc verbs only; `lo` and
  * CONSOLE_PROTECTED_IFACES (default ens32) are hard-refused; every apply is
  * snapshot-first (tc -j qdisc show) with auto-restore of the previous root
@@ -214,7 +219,7 @@ export function renderQosIface(policy: QosPolicyShape, iface: string): RenderedI
   const catchAllIdx = policy.rules.findIndex(isCatchAll);
   const defClassid = catchAllIdx >= 0 ? `1:${100 + catchAllIdx}` : REMAINDER_CLASS;
 
-  cmds.push(`tc qdisc replace dev ${iface} root handle ${ROOT_HANDLE} htb default ${defClassid.split(":")[1]}`);
+  cmds.push(`tc qdisc add dev ${iface} root handle ${ROOT_HANDLE} htb default ${defClassid.split(":")[1]}`);
   cmds.push(`tc class add dev ${iface} parent ${ROOT_HANDLE} classid ${ROOT_CLASS} htb rate ${budget}kbit ceil ${budget}kbit`);
   classes.push({ classid: ROOT_CLASS, rateKbps: budget, ceilKbps: budget, prio: 0 });
 
@@ -473,7 +478,7 @@ export function computeQosDrift(rendered: RenderedIface, qdisc: ParsedQdisc | nu
 
 // ── apply plan ──────────────────────────────────────────────────────────────
 
-export type QosPlanStepKind = "snapshot" | "modprobe" | "exec" | "verify" | "restore" | "writefile";
+export type QosPlanStepKind = "snapshot" | "modprobe" | "reset" | "exec" | "verify" | "restore" | "writefile";
 
 export interface QosPlanStep {
   step: string;
@@ -585,6 +590,9 @@ export function buildQosApplyPlan(input: {
   }
 
   for (const iface of installIfaces) {
+    // best-effort reset — del fails harmlessly when the root is empty; the
+    // subsequent `add` is what actually asserts kernel state
+    steps.push({ step: `reset ${iface} root`, cmd: `tc qdisc del dev ${iface} root`, iface, kind: "reset" });
     for (const cmd of expected[iface].cmds) {
       steps.push({ step: `install ${iface}`, cmd, iface, kind: "exec" });
     }

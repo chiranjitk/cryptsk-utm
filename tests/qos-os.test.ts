@@ -81,7 +81,7 @@ describe("renderQosIface", () => {
 
   it("renders an HTB tree with budget root, fq_codel leaves and unique prios", () => {
     const r = renderQosIface(full, "ens34");
-    expect(r.cmds[0]).toBe("tc qdisc replace dev ens34 root handle 1: htb default 102");
+    expect(r.cmds[0]).toBe("tc qdisc add dev ens34 root handle 1: htb default 102");
     expect(r.cmds[1]).toContain("classid 1:1 htb rate 10000kbit ceil 10000kbit");
     // rule classes: 1:100 (voice), 1:101 (bulk), 1:102 = catch-all → default
     expect(r.cmds.some((c) => c.includes("classid 1:100 htb rate 2000kbit ceil 5000kbit prio 0"))).toBe(true);
@@ -244,7 +244,6 @@ describe("qosStepGuarded", () => {
     expect(qosStepGuarded("modprobe sch_htb")).toBe(true);
 
     for (const evil of [
-      "tc qdisc del dev ens32 root", // tc but protected iface — guard is cmd-shape only; refusal is policy-level
       "rm -rf /",
       "reboot",
       "sh -c evil",
@@ -252,7 +251,6 @@ describe("qosStepGuarded", () => {
       "iptables -F",
       "",
     ]) {
-      if (evil === "tc qdisc del dev ens32 root") continue; // shape-valid (policy refusal handles it)
       expect(qosStepGuarded(evil)).toBe(false);
     }
     // chained commands fail the regex (no spaces around ';' matched)
@@ -285,13 +283,20 @@ describe("buildQosApplyPlan", () => {
     rules: [{ id: 1, name: "voice", priority: 0, guaranteedKbps: 2000, maxKbps: 5000, dscpMark: 46, matchApps: ["SIP"], matchCidrs: [] }],
   });
 
-  it("orders: modprobe → snapshots → install → verify → state file", () => {
+  it("orders: modprobe → snapshots → reset → install → verify → state file", () => {
     const plan = buildQosApplyPlan({ policies: [p], managedIfaces: ["ens34"], mode: "exec", ts: "t" });
     const kinds = plan.steps.map((s) => s.kind);
     expect(kinds[0]).toBe("modprobe");
     expect(kinds[1]).toBe("snapshot");
-    expect(kinds.indexOf("verify")).toBeGreaterThan(kinds.indexOf("install") === -1 ? kinds.indexOf("snapshot") : kinds.indexOf("snapshot"));
+    expect(kinds).toContain("reset");
+    expect(kinds.indexOf("reset")).toBeGreaterThan(kinds.indexOf("snapshot"));
     expect(kinds[kinds.length - 1]).toBe("writefile");
+    // reset step is the best-effort del that makes add idempotent
+    const reset = plan.steps.find((s) => s.kind === "reset");
+    expect(reset?.cmd).toBe("tc qdisc del dev ens34 root");
+    // install uses `add` (replace cannot change an existing same-kind htb root)
+    const addRoot = plan.steps.find((s) => s.cmd.includes("htb default"));
+    expect(addRoot?.cmd).toContain("tc qdisc add dev ens34 root handle 1:");
     expect(plan.steps.filter((s) => s.kind === "verify").map((s) => s.cmd)).toEqual([
       "tc -j qdisc show dev ens34",
       "tc -j class show dev ens34",

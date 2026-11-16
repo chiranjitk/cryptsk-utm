@@ -340,7 +340,7 @@ export async function applyQosToOs(tenantId: number, exec: boolean): Promise<Qos
     if (s.kind === "restore") {
       const iface = s.iface ?? "";
       const snap = snapshots.get(iface);
-      const cmd = snap ? renderRestoreQdisc(iface, snap) : `tc qdisc add dev ${iface} root fq_codel`;
+      const cmd = (snap && renderRestoreQdisc(iface, snap)) || `tc qdisc add dev ${iface} root fq_codel`;
       if (!cmd) {
         results.push({ step: s.step, ok: true, detail: "no previous root qdisc to restore" });
         continue;
@@ -352,6 +352,15 @@ export async function applyQosToOs(tenantId: number, exec: boolean): Promise<Qos
         failDetail = `restore failed for ${iface}: ${(r.stderr || r.error || "").slice(0, 200)}`;
         break;
       }
+      continue;
+    }
+
+    if (s.kind === "reset") {
+      // best-effort: the root may be empty (fresh apply) — a real failure
+      // (missing iface etc.) surfaces at the subsequent install `add`
+      const r = await runTool(s.cmd, 10000);
+      touchedIfaces.add(s.iface ?? "");
+      results.push({ step: s.step, ok: true, detail: r.ok ? "root cleared" : "root already empty" });
       continue;
     }
 
@@ -396,7 +405,7 @@ export async function applyQosToOs(tenantId: number, exec: boolean): Promise<Qos
     }
 
     // plain exec (modprobe / install / teardown)
-    if (s.cmd.startsWith("tc qdisc del") || s.cmd.startsWith("tc qdisc replace")) touchedIfaces.add(s.iface ?? "");
+    if (s.cmd.startsWith("tc qdisc del") || s.cmd.startsWith("tc qdisc add dev") && s.cmd.includes(" root handle")) touchedIfaces.add(s.iface ?? "");
     results.push({ step: s.step, ok: true, detail: r.stdout.trim().slice(0, 200) || undefined });
   }
 
@@ -407,7 +416,7 @@ export async function applyQosToOs(tenantId: number, exec: boolean): Promise<Qos
     for (const iface of [...touchedIfaces].filter(Boolean)) {
       const del = await runTool(`tc qdisc del dev ${iface} root`, 10000);
       const snap = snapshots.get(iface);
-      const restoreCmd = snap ? renderRestoreQdisc(iface, snap) : `tc qdisc add dev ${iface} root fq_codel`;
+      const restoreCmd = (snap && renderRestoreQdisc(iface, snap)) || `tc qdisc add dev ${iface} root fq_codel`;
       const restore = restoreCmd ? await runTool(restoreCmd, 10000) : { ok: true, stdout: "", stderr: "" };
       if (!del.ok || !restore.ok) allOk = false;
     }
