@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cryptsk UTM — Pick Your Redesign (10 Templates)</title>
+<title>Cryptsk UTM — Pick Your Redesign (10 Templates · Dark + Light)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=JetBrains+Mono:wght@500;700;800&family=Manrope:wght@500;600;700;800&family=Playfair+Display:wght@600;700&family=Sora:wght@500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Mono:wght@500;700&family=JetBrains+Mono:wght@500;700;800&family=Manrope:wght@500;600;700;800&family=Playfair+Display:wght@600;700&family=Sora:wght@500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
 /* ============ gallery chrome ============ */
 *{box-sizing:border-box;margin:0;padding:0}
@@ -20,7 +20,8 @@ a{color:inherit;text-decoration:none}
 .how{margin-top:20px;border:1px solid #2a2a35;background:#12121a;border-radius:14px;padding:15px 18px;font-size:13.5px;color:#c7c7d6;line-height:1.8}
 .how b{color:#fff}
 .quick{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
-.quick a{font-size:12px;font-weight:700;padding:7px 13px;border-radius:999px;border:1px solid #2a2a35;color:#b9b9cc;background:#12121a;transition:border-color .15s,color .15s}
+.quick a{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;padding:7px 13px;border-radius:999px;border:1px solid #2a2a35;color:#b9b9cc;background:#12121a;transition:border-color .15s,color .15s}
+.quick a i{width:9px;height:9px;border-radius:3px;display:inline-block;flex-shrink:0}
 .quick a:hover{border-color:#6a6a80;color:#fff}
 .modebar{display:flex;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap}
 .modelab{font-size:12.5px;color:#9a9ab0;font-weight:600}
@@ -139,24 +140,24 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
 }
 
 /* ============ T1 Neon Cyber Ops ============ */
-.t1{--bg:#04070b;--side:#060a10;--panel:rgba(10,17,26,.92);--panel2:rgba(13,21,32,.9);--line:rgba(34,211,238,.16);--line2:rgba(34,211,238,.08);--text:#dff4ff;--muted:#5e8199;--accent:#22d3ee;--accent2:#a3e635;--accentSoft:rgba(34,211,238,.12);--accentInk:#03141b;--r:10px;--fr:8px;--fnum:'JetBrains Mono',ui-monospace,monospace}
-.t1 .mock{font-family:'Space Grotesk',ui-sans-serif,system-ui}
-.t1 .mock::before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(34,211,238,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.045) 1px,transparent 1px);background-size:26px 26px;pointer-events:none;z-index:0}
+.t1{--bg:#070410;--side:#0a0616;--panel:rgba(23,10,36,.92);--panel2:rgba(29,13,44,.9);--line:rgba(255,46,136,.2);--line2:rgba(255,46,136,.09);--text:#ffe9f4;--muted:#a06a96;--accent:#ff2e88;--accent2:#57a6ff;--accentSoft:rgba(255,46,136,.13);--accentInk:#200413;--r:10px;--fr:8px;--fnum:'JetBrains Mono',ui-monospace,monospace}
+.t1 .mock{font-family:'Space Grotesk',ui-sans-serif,system-ui;background-image:radial-gradient(46% 26% at 50% 110%,rgba(255,46,136,.14),transparent 70%);--c1:#f472b6;--c2:#fbbf24;--c3:#57a6ff}
+.t1 .mock::before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,46,136,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(87,166,255,.05) 1px,transparent 1px);background-size:26px 26px;pointer-events:none;z-index:0}
 .t1 .mock::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px);pointer-events:none;z-index:2;opacity:.55}
-.t1 .k-val{text-shadow:0 0 16px rgba(34,211,238,.5)}
+.t1 .k-val{text-shadow:0 0 16px rgba(255,46,136,.55)}
 .t1 .m-logodot{clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%);border-radius:0}
 .t1 .m-item.active{box-shadow:inset 2px 0 0 var(--accent)}
-.t1 .m-card{box-shadow:inset 0 0 26px rgba(34,211,238,.045)}
+.t1 .m-card{box-shadow:inset 0 0 26px rgba(255,46,136,.05)}
 .t1 .m-chart .bar{border-radius:2px}
 
 /* ============ T2 Aurora Glass ============ */
-.t2{--bg:#070b16;--side:rgba(10,15,28,.55);--panel:rgba(255,255,255,.07);--panel2:rgba(255,255,255,.05);--line:rgba(255,255,255,.15);--line2:rgba(255,255,255,.07);--text:#eef1ff;--muted:#9aa6c8;--accent:#2dd4bf;--accent2:#c084fc;--accentSoft:rgba(45,212,191,.16);--accentInk:#04211c;--r:18px;--fr:12px}
-.t2 .mock{font-family:'Manrope',ui-sans-serif,system-ui}
-.t2 .mock::before{content:"";position:absolute;inset:-25%;z-index:0;background:radial-gradient(38% 32% at 16% 8%,rgba(45,212,191,.4),transparent 62%),radial-gradient(34% 30% at 84% 12%,rgba(192,132,252,.36),transparent 62%),radial-gradient(44% 38% at 62% 96%,rgba(244,114,182,.28),transparent 64%);filter:blur(34px);animation:drift 16s ease-in-out infinite alternate}
+.t2{--bg:#0e0a17;--side:rgba(18,12,32,.55);--panel:rgba(255,255,255,.07);--panel2:rgba(255,255,255,.05);--line:rgba(255,255,255,.15);--line2:rgba(255,255,255,.07);--text:#f6eff4;--muted:#b0a0bb;--accent:#fb7185;--accent2:#c4b5fd;--accentSoft:rgba(251,113,133,.16);--accentInk:#330614;--r:18px;--fr:12px}
+.t2 .mock{font-family:'Manrope',ui-sans-serif,system-ui;--c1:#f472b6;--c2:#c4b5fd;--c3:#fbbf24}
+.t2 .mock::before{content:"";position:absolute;inset:-25%;z-index:0;background:radial-gradient(38% 32% at 16% 8%,rgba(251,113,133,.4),transparent 62%),radial-gradient(34% 30% at 84% 12%,rgba(196,181,253,.38),transparent 62%),radial-gradient(44% 38% at 62% 96%,rgba(253,186,116,.28),transparent 64%);filter:blur(34px);animation:drift 16s ease-in-out infinite alternate}
 .t2 .m-side{position:relative;z-index:1;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
 .t2 .m-top{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
 .t2 .m-card{backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 10px 34px rgba(2,6,23,.4)}
-.t2 .m-donut .hole{background:rgba(10,15,28,.75);backdrop-filter:blur(8px)}
+.t2 .m-donut .hole{background:rgba(18,12,32,.75);backdrop-filter:blur(8px)}
 
 /* ============ T3 Swiss Precision ============ */
 .t3{--bg:#fafafa;--side:#ffffff;--panel:#ffffff;--panel2:#f3f3f2;--line:#e4e4e1;--line2:#eeeeec;--text:#101013;--muted:#8c8c92;--accent:#ff3b30;--accent2:#101013;--accentSoft:rgba(255,59,48,.07);--accentInk:#ffffff;--r:0px;--fr:0px}
@@ -174,16 +175,36 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
 .t3 .c-head b{font-size:11px;text-transform:uppercase;letter-spacing:.12em}
 .t3 .m-donut .hole{background:#fff}
 
+/* T3 dark — midnight swiss: charcoal paper, same razor corners, scarlet stays */
+.t3.dark{--bg:#101013;--side:#0c0c0f;--panel:#16161a;--panel2:#1d1d22;--line:#2e2e36;--line2:#24242b;--text:#f3f3f5;--muted:#93939e;--accent:#ff453a;--accent2:#f3f3f5;--accentSoft:rgba(255,69,58,.13);--accentInk:#ffffff}
+.t3.dark .m-chart .bar{background:#f3f3f5}
+.t3.dark .m-chart .bar.hl{background:#ff453a}
+.t3.dark .m-btn.solid{background:#f3f3f5;color:#101013}
+.t3.dark .m-logodot{background:#f3f3f5;color:#101013}
+.t3.dark .m-item.active{color:#f3f3f5;box-shadow:inset 3px 0 0 #ff453a}
+.t3.dark .k-label{color:#f3f3f5;opacity:.55}
+.t3.dark .m-donut .hole{background:#16161a}
+
 /* ============ T4 Cloud Cream ============ */
-.t4{--bg:#faf6ef;--side:#fffcf6;--panel:#ffffff;--panel2:#f6efe3;--line:#ece1cf;--line2:#f1e8d9;--text:#2c2620;--muted:#a18e77;--accent:#10b981;--accent2:#f59e0b;--accentSoft:#e7f7ef;--accentInk:#05301f;--r:20px;--fr:12px}
+.t4{--bg:#faf6ef;--side:#fffcf6;--panel:#ffffff;--panel2:#f6efe3;--line:#ece1cf;--line2:#f1e8d9;--text:#2c2620;--muted:#a18e77;--accent:#eda012;--accent2:#fb923c;--accentSoft:#fdf1d9;--accentInk:#3d2500;--r:20px;--fr:12px}
 .t4 .mock{font-family:'Manrope',ui-sans-serif,system-ui}
 .t4 .m-card{border:none;box-shadow:0 10px 28px rgba(84,60,26,.09),0 2px 6px rgba(84,60,26,.05)}
-.t4 .m-chart .bar{border-radius:7px;background:linear-gradient(180deg,#34d399,#10b981)}
-.t4 .m-chart .bar.hl{background:linear-gradient(180deg,#fcd34d,#f59e0b)}
-.t4 .m-item.active{color:#0b7a5c;font-weight:800}
+.t4 .m-chart .bar{border-radius:7px;background:linear-gradient(180deg,#fbc757,#eda012)}
+.t4 .m-chart .bar.hl{background:linear-gradient(180deg,#fdba74,#fb923c)}
+.t4 .m-item.active{color:#a3690b;font-weight:800}
 .t4 .m-avatar{background:#ffe7d9;color:#c2571f;border-color:#ffd9c2}
 .t4 .m-bell{border-radius:12px}
-.t4 .m-btn.solid{background:#10b981}
+.t4 .m-btn.solid{background:#eda012;color:#3d2500}
+
+/* T4 dark — cocoa & honey: warm chocolate canvas, honey glow, same cozy radii */
+.t4.dark{--bg:#1a120d;--side:#221711;--panel:#281c15;--panel2:#322419;--line:#42301f;--line2:#352619;--text:#f8ebdb;--muted:#b39a80;--accent:#f2b01e;--accent2:#fb923c;--accentSoft:rgba(242,176,30,.14);--accentInk:#2a1802}
+.t4.dark .m-card{border:1px solid #42301f;box-shadow:0 12px 30px rgba(0,0,0,.42)}
+.t4.dark .m-chart .bar{background:linear-gradient(180deg,#fbc757,#eda012)}
+.t4.dark .m-chart .bar.hl{background:linear-gradient(180deg,#fdba74,#fb923c)}
+.t4.dark .m-item.active{color:#fcd34d}
+.t4.dark .m-avatar{background:#3d2c17;color:#fbc757;border-color:#57401f}
+.t4.dark .m-btn.solid{background:#f2b01e;color:#2a1802}
+.t4.dark .m-donut .hole{background:#281c15}
 
 /* ============ T5 Industrial Brutalist ============ */
 .t5{--bg:#0f0f0f;--side:#0b0b0b;--panel:#151515;--panel2:#1c1c1c;--line:#f0f0f0;--line2:#2a2a2a;--text:#f2f2f2;--muted:#9a9a9a;--accent:#ffd60a;--accent2:#ff5c1f;--accentSoft:rgba(255,214,10,.12);--accentInk:#0f0f0f;--r:0px;--fr:0px;--fnum:'JetBrains Mono',ui-monospace,monospace}
@@ -251,14 +272,24 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
 .t8 .m-logodot{background:linear-gradient(135deg,#8b5cf6,#ec4899);color:#fff}
 
 /* ============ T9 Arctic Enterprise ============ */
-.t9{--bg:#f3f5f7;--side:#ffffff;--panel:#ffffff;--panel2:#eef2f5;--line:#dfe5ea;--line2:#e9eef2;--text:#18242e;--muted:#7c8b98;--accent:#0d9488;--accent2:#0f766e;--accentSoft:rgba(13,148,136,.09);--accentInk:#ffffff;--r:10px;--fr:8px;--fnum:'IBM Plex Mono',ui-monospace,monospace}
+.t9{--bg:#f3f5f8;--side:#ffffff;--panel:#ffffff;--panel2:#eef1f6;--line:#dde3ec;--line2:#e8edf3;--text:#17223a;--muted:#75829c;--accent:#2563eb;--accent2:#60a5fa;--accentSoft:rgba(37,99,235,.09);--accentInk:#ffffff;--r:10px;--fr:8px;--fnum:'IBM Plex Mono',ui-monospace,monospace}
 .t9 .mock{font-family:ui-sans-serif,system-ui}
-.t9 .m-item.active{color:#0b7268;font-weight:700}
-.t9 .m-chart .bar{background:#14b8a6}
-.t9 .m-chart .bar.hl{background:#0f766e}
-.t9 .m-table tbody tr:nth-child(even) td{background:#f7fafc}
-.t9 .m-avatar{background:#ccf3ec;color:#0b7268;border-color:#b2e7dc}
-.t9 .m-btn.solid{background:#0d9488}
+.t9 .m-item.active{color:#1d4ed8;font-weight:700}
+.t9 .m-chart .bar{background:#2563eb}
+.t9 .m-chart .bar.hl{background:#60a5fa}
+.t9 .m-table tbody tr:nth-child(even) td{background:#f6f8fc}
+.t9 .m-avatar{background:#dbe7fe;color:#1d4ed8;border-color:#c3d7fc}
+.t9 .m-btn.solid{background:#2563eb}
+
+/* T9 dark — midnight cobalt: deep navy panels, cobalt glow, same compact grid */
+.t9.dark{--bg:#0d1424;--side:#111a2e;--panel:#15203a;--panel2:#1b2846;--line:#28375c;--line2:#1f2c4c;--text:#e7edf8;--muted:#8296b8;--accent:#3b82f6;--accent2:#60a5fa;--accentSoft:rgba(59,130,246,.15);--accentInk:#ffffff}
+.t9.dark .m-item.active{color:#93c5fd}
+.t9.dark .m-chart .bar{background:#3b82f6}
+.t9.dark .m-chart .bar.hl{background:#60a5fa}
+.t9.dark .m-table tbody tr:nth-child(even) td{background:#101a30}
+.t9.dark .m-avatar{background:#1e3258;color:#93c5fd;border-color:#2c4270}
+.t9.dark .m-btn.solid{background:#3b82f6;color:#fff}
+.t9.dark .m-card{box-shadow:0 8px 22px rgba(0,0,0,.35);border-color:#28375c}
 .t9 .m-card{box-shadow:0 1px 2px rgba(24,36,46,.05)}
 
 /* ============ T10 Sunset Dune ============ */
@@ -274,10 +305,12 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
 .t10 .m-avatar{background:#3a2a20;color:#fdba74;border-color:#57392a}
 .t10 .m-donut .hole{background:#231a17}
 
-/* ============ LIGHT MODE VARIANTS (toggle adds .light to every section) ============
-   Dark templates get a daylight reinterpretation that keeps their design language.
-   The 3 already-light templates only pick up the darker semantic chips below. */
-.light .mock{--c1:#e11d48;--c2:#d97706;--c3:#059669}
+/* ============ MODE VARIANTS ============
+   "Light all" adds .light to every section — dark-first templates switch to a daylight
+   reinterpretation that keeps their design language. "Dark all" adds .dark — the 3
+   light-first templates (T3/T4/T9) switch to their midnight versions. "Native mix"
+   removes both and shows each template in its original mode. */
+.light .mock{--c1:#e11d48;--c2:#d97706;--c3:#7c3aed}
 .light .k-delta.up{color:#15803d;background:rgba(21,128,61,.1)}
 .light .k-delta.down{color:#be123c;background:rgba(190,18,60,.08)}
 .light .m-chip.live{color:#15803d;background:rgba(21,128,61,.08);border-color:rgba(21,128,61,.35)}
@@ -290,18 +323,20 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
 .light .act.flag{color:#a16207}
 .light .act.quar{color:#a16207}
 
-/* T1 light — daylight ops: white cards on mist-blue, cyan/lime accents kept */
-.t1.light{--bg:#f2f8fb;--side:#e9f2f7;--panel:#ffffff;--panel2:#eef5f9;--line:rgba(8,145,178,.2);--line2:rgba(8,145,178,.1);--text:#0b2733;--muted:#5b7c8c;--accent:#0891b2;--accent2:#65a30d;--accentSoft:rgba(8,145,178,.1);--accentInk:#ffffff}
-.t1.light .mock::before{background-image:linear-gradient(rgba(8,145,178,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(8,145,178,.06) 1px,transparent 1px)}
+/* T1 light — daylight synthwave: white cards on mist-rose, magenta/blue accents kept */
+.t1.light{--bg:#fdf3f8;--side:#fbe9f1;--panel:#ffffff;--panel2:#fcecf3;--line:rgba(214,31,110,.22);--line2:rgba(214,31,110,.11);--text:#3b0a24;--muted:#a06a8c;--accent:#d6246e;--accent2:#2563eb;--accentSoft:rgba(214,31,110,.1);--accentInk:#ffffff}
+.t1.light .mock{background-image:radial-gradient(46% 26% at 50% 110%,rgba(214,31,110,.08),transparent 70%);--c1:#ec4899;--c2:#d97706;--c3:#2563eb}
+.t1.light .mock::before{background-image:linear-gradient(rgba(214,31,110,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(37,99,235,.07) 1px,transparent 1px)}
 .t1.light .mock::after{display:none}
-.t1.light .k-val{text-shadow:none;color:#0e7490}
-.t1.light .m-card{box-shadow:0 1px 2px rgba(11,39,51,.06)}
+.t1.light .k-val{text-shadow:none;color:#be1a5f}
+.t1.light .m-card{box-shadow:0 1px 2px rgba(59,10,36,.06)}
 
-/* T2 light — pastel aurora: soft color clouds on porcelain glass */
-.t2.light{--bg:#f3f5fc;--side:rgba(255,255,255,.65);--panel:rgba(255,255,255,.7);--panel2:rgba(255,255,255,.55);--line:rgba(30,41,59,.12);--line2:rgba(30,41,59,.07);--text:#1e293b;--muted:#64748b;--accent:#0d9488;--accent2:#7c3aed;--accentSoft:rgba(13,148,136,.12);--accentInk:#ffffff}
-.t2.light .mock::before{background:radial-gradient(38% 32% at 16% 8%,rgba(13,148,136,.18),transparent 62%),radial-gradient(34% 30% at 84% 12%,rgba(124,58,237,.16),transparent 62%),radial-gradient(44% 38% at 62% 96%,rgba(219,39,119,.12),transparent 64%)}
+/* T2 light — pastel rose glass: soft rose/lilac clouds on porcelain */
+.t2.light{--bg:#f7f4fa;--side:rgba(255,255,255,.65);--panel:rgba(255,255,255,.7);--panel2:rgba(255,255,255,.55);--line:rgba(63,24,58,.12);--line2:rgba(63,24,58,.07);--text:#33192e;--muted:#8b7490;--accent:#e11d48;--accent2:#7c3aed;--accentSoft:rgba(225,29,72,.1);--accentInk:#ffffff}
+.t2.light .mock{--c1:#ec4899;--c2:#a78bfa;--c3:#f59e0b}
+.t2.light .mock::before{background:radial-gradient(38% 32% at 16% 8%,rgba(225,29,72,.16),transparent 62%),radial-gradient(34% 30% at 84% 12%,rgba(124,58,237,.15),transparent 62%),radial-gradient(44% 38% at 62% 96%,rgba(234,88,12,.11),transparent 64%)}
 .t2.light .m-donut .hole{background:rgba(255,255,255,.85)}
-.t2.light .m-card{box-shadow:0 8px 26px rgba(30,41,59,.1)}
+.t2.light .m-card{box-shadow:0 8px 26px rgba(51,25,46,.1)}
 
 /* T5 light — paper industrial: white cards, ink borders, amber hard shadows */
 .t5.light{--bg:#f4f4f3;--side:#ececea;--panel:#ffffff;--panel2:#efefed;--line:#171717;--line2:#d9d9d6;--text:#171717;--muted:#6b6b6b;--accent:#eab308;--accent2:#ea580c;--accentSoft:rgba(234,179,8,.18);--accentInk:#171717}
@@ -373,31 +408,32 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
 
   <header class="gal-head">
     <h1>Cryptsk UTM <span>· redesign templates</span></h1>
-    <p class="sub">10 unique visual directions — every template renders the <b>same dashboard</b> (KPIs, traffic chart, threat mix, live events, system health) so you can compare them fairly. All built in real CSS: what you see is what your app becomes.</p>
+    <p class="sub">10 visual directions across the <b>full color wheel</b> — magenta, rose, scarlet, honey, yellow, gold, terminal green, violet, cobalt, ember — every template renders the <b>same dashboard</b> (KPIs, traffic chart, threat mix, live events, system health) so you can compare them fairly. All built in real CSS: what you see is what your app becomes.</p>
     <div class="how">
       <b>How to choose:</b> scroll through all ten, then reply in chat with the number — e.g. <b>&#8220;Template 7&#8221;</b>.
       You can also mix and match: <b>&#8220;Template 2, but with Template 3's density&#8221;</b>, <b>&#8220;Template 1 in light mode&#8221;</b>,
       or describe any tweak (colors, fonts, corners, light/dark). Once you pick, I will convert the entire app —
-      login screen, sidebar, all 20+ modules — to that design. <b>Tip:</b> use the Dark / Light switch below —
-      every template has both a dark and a daylight version.
+      login screen, sidebar, all 20+ modules — to that design. <b>Tip:</b> every template has a dark AND a daylight
+      version — flip the whole gallery with the mode buttons below.
     </div>
     <div class="modebar" role="group" aria-label="Preview mode">
       <span class="modelab">Preview mode:</span>
-      <button type="button" id="mode-dark" class="modebtn active">Dark — original</button>
-      <button type="button" id="mode-light" class="modebtn">Light — daylight versions</button>
-      <span class="modenote">dark templates get a daylight reinterpretation; the 3 light ones just get darker text chips</span>
+      <button type="button" id="mode-native" class="modebtn active">Native mix</button>
+      <button type="button" id="mode-dark" class="modebtn">Dark all</button>
+      <button type="button" id="mode-light" class="modebtn">Light all</button>
+      <span class="modenote">7 templates are dark-first, 3 are light-first — each has a full version of the other mode too</span>
     </div>
     <nav class="quick" aria-label="Template quick navigation">
-      <a href="#t1">01 Neon</a>
-      <a href="#t2">02 Aurora</a>
-      <a href="#t3">03 Swiss</a>
-      <a href="#t4">04 Cream</a>
-      <a href="#t5">05 Brutal</a>
-      <a href="#t6">06 Gold</a>
-      <a href="#t7">07 Terminal</a>
-      <a href="#t8">08 Violet</a>
-      <a href="#t9">09 Arctic</a>
-      <a href="#t10">10 Dune</a>
+      <a href="#t1"><i style="background:#ff2e88"></i>01 Neon</a>
+      <a href="#t2"><i style="background:#fb7185"></i>02 Aurora</a>
+      <a href="#t3"><i style="background:#ff3b30"></i>03 Swiss</a>
+      <a href="#t4"><i style="background:#eda012"></i>04 Cream</a>
+      <a href="#t5"><i style="background:#ffd60a"></i>05 Brutal</a>
+      <a href="#t6"><i style="background:#d4af37"></i>06 Gold</a>
+      <a href="#t7"><i style="background:#4ade80"></i>07 Terminal</a>
+      <a href="#t8"><i style="background:#a78bfa"></i>08 Violet</a>
+      <a href="#t9"><i style="background:#2563eb"></i>09 Cobalt</a>
+      <a href="#t10"><i style="background:#fb923c"></i>10 Dune</a>
     </nav>
     <noscript><p style="margin-top:16px;color:#fb7185">JavaScript is disabled — the dashboard previews below need JavaScript to render.</p></noscript>
   </header>
@@ -408,9 +444,9 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
       <div class="tpl-no">01</div>
       <div>
         <div class="tpl-name">Neon Cyber Ops</div>
-        <p class="tpl-desc">Futuristic SOC command center: glowing cyan and lime on deep space black, hexagonal logo mark, blueprint grid and subtle scanlines. The boldest &#8220;elite security product&#8221; look.</p>
-        <div class="tpl-tags"><span>Dark</span><span>Neon glow</span><span>Futuristic</span></div>
-        <div class="pal"><i style="background:#22d3ee"></i><i style="background:#a3e635"></i><i style="background:#04070b"></i></div>
+        <p class="tpl-desc">Synthwave SOC command center: hot magenta and electric blue on deep space black, neon horizon glow, hexagonal logo mark, blueprint grid and subtle scanlines. The boldest &#8220;elite security product&#8221; look.</p>
+        <div class="tpl-tags"><span>Dark</span><span>Magenta</span><span>Synthwave</span></div>
+        <div class="pal"><i style="background:#ff2e88"></i><i style="background:#57a6ff"></i><i style="background:#070410"></i></div>
       </div>
       <div class="pick">reply &#8220;Template 1&#8221;</div>
     </div>
@@ -423,9 +459,9 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
       <div class="tpl-no">02</div>
       <div>
         <div class="tpl-name">Aurora Glass</div>
-        <p class="tpl-desc">Premium glassmorphism: frosted translucent panels floating over drifting aurora light (teal, violet, pink). Soft, expensive, animated — the &#8220;show it off to investors&#8221; look.</p>
-        <div class="tpl-tags"><span>Dark</span><span>Glass</span><span>Animated</span></div>
-        <div class="pal"><i style="background:#2dd4bf"></i><i style="background:#c084fc"></i><i style="background:#f472b6"></i></div>
+        <p class="tpl-desc">Premium glassmorphism: frosted translucent panels floating over drifting rose, lilac and peach light. Soft, expensive, animated — the &#8220;show it off to investors&#8221; look.</p>
+        <div class="tpl-tags"><span>Dark</span><span>Rose</span><span>Glass</span></div>
+        <div class="pal"><i style="background:#fb7185"></i><i style="background:#c4b5fd"></i><i style="background:#fdba74"></i></div>
       </div>
       <div class="pick">reply &#8220;Template 2&#8221;</div>
     </div>
@@ -453,9 +489,9 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
       <div class="tpl-no">04</div>
       <div>
         <div class="tpl-name">Cloud Cream</div>
-        <p class="tpl-desc">Friendly soft-UI: warm cream canvas, floating white cards with cozy layered shadows, mint and honey pastels, big rounded corners. Security that feels approachable instead of scary.</p>
-        <div class="tpl-tags"><span>Light</span><span>Soft</span><span>Friendly</span></div>
-        <div class="pal"><i style="background:#10b981"></i><i style="background:#f59e0b"></i><i style="background:#faf6ef"></i></div>
+        <p class="tpl-desc">Friendly soft-UI: warm cream canvas, floating white cards with cozy layered shadows, honey and apricot pastels, big rounded corners. Security that feels approachable instead of scary.</p>
+        <div class="tpl-tags"><span>Light</span><span>Honey</span><span>Soft</span></div>
+        <div class="pal"><i style="background:#eda012"></i><i style="background:#fb923c"></i><i style="background:#faf6ef"></i></div>
       </div>
       <div class="pick">reply &#8220;Template 4&#8221;</div>
     </div>
@@ -498,7 +534,7 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
       <div class="tpl-no">07</div>
       <div>
         <div class="tpl-name">Phosphor Terminal</div>
-        <p class="tpl-desc">Retro CRT hacker console: pure black, phosphor green glow on every number, blinking cursor, grep-style search box, all monospace. Pure nostalgia — your firewall as a 1980s mainframe.</p>
+        <p class="tpl-desc">Retro CRT hacker console: pure black, phosphor green glow on every number, blinking cursor, grep-style search box, all monospace. Deliberately the <b>only green</b> in the lineup — pure nostalgia, your firewall as a 1980s mainframe.</p>
         <div class="tpl-tags"><span>Dark</span><span>Retro</span><span>Terminal</span></div>
         <div class="pal"><i style="background:#4ade80"></i><i style="background:#a3e635"></i><i style="background:#000000"></i></div>
       </div>
@@ -527,10 +563,10 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
     <div class="tpl-head">
       <div class="tpl-no">09</div>
       <div>
-        <div class="tpl-name">Arctic Enterprise</div>
-        <p class="tpl-desc">The safe enterprise choice: crisp light slate, calm teal accents, zebra-striped tables, monospace KPIs, compact spacing. Familiar, clean, fast — closest to a polished Fortinet/Palo Alto refresh.</p>
-        <div class="tpl-tags"><span>Light</span><span>Enterprise</span><span>Calm</span></div>
-        <div class="pal"><i style="background:#0d9488"></i><i style="background:#0f766e"></i><i style="background:#f3f5f7"></i></div>
+        <div class="tpl-name">Cobalt Enterprise</div>
+        <p class="tpl-desc">The safe enterprise choice: crisp light slate, confident cobalt accents, zebra-striped tables, monospace KPIs, compact spacing. Familiar, clean, fast — closest to a polished Fortinet/Palo Alto refresh.</p>
+        <div class="tpl-tags"><span>Light</span><span>Cobalt</span><span>Enterprise</span></div>
+        <div class="pal"><i style="background:#2563eb"></i><i style="background:#60a5fa"></i><i style="background:#f3f5f8"></i></div>
       </div>
       <div class="pick">reply &#8220;Template 9&#8221;</div>
     </div>
@@ -661,22 +697,25 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
     roots[r].innerHTML = MOCK;
   }
 
-  // dark / light preview toggle — flips every template section at once
+  // preview mode toggle: native mix / dark all / light all — flips every template at once
   var tpls = document.querySelectorAll('.tpl');
+  var btnN = document.getElementById('mode-native');
   var btnD = document.getElementById('mode-dark');
   var btnL = document.getElementById('mode-light');
-  function setMode(light) {
+  var btns = [btnN, btnD, btnL];
+  function setMode(mode) {
     for (var s = 0; s < tpls.length; s++) {
-      tpls[s].classList.toggle('light', !!light);
+      tpls[s].classList.toggle('light', mode === 'light');
+      tpls[s].classList.toggle('dark', mode === 'dark');
     }
-    if (btnD && btnL) {
-      btnD.classList.toggle('active', !light);
-      btnL.classList.toggle('active', !!light);
+    for (var b = 0; b < btns.length; b++) {
+      if (btns[b]) btns[b].classList.toggle('active', btns[b].id === 'mode-' + mode);
     }
   }
-  if (btnD && btnL) {
-    btnL.addEventListener('click', function () { setMode(true); });
-    btnD.addEventListener('click', function () { setMode(false); });
+  if (btnN && btnD && btnL) {
+    btnN.addEventListener('click', function () { setMode('native'); });
+    btnD.addEventListener('click', function () { setMode('dark'); });
+    btnL.addEventListener('click', function () { setMode('light'); });
   }
 })();
 </script>

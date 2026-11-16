@@ -649,6 +649,37 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-16 — Gallery color diversification ("always teal green" complaint)
+
+- **Trigger:** user complained the lineup was monochrome-green ("why u use always teal green,
+  u dont have no color") — audit showed 5/10 templates leaned teal/green (T1 cyan+lime,
+  T2 teal aurora, T4 emerald, T7 phosphor, T9 teal enterprise).
+- **Recolors (4 templates, full var scopes + hardcoded rule pairs):** T1 → synthwave
+  **magenta #ff2e88 + electric blue #57a6ff** (deep purple-black bg, magenta/blue grid, neon
+  horizon radial, magenta KPI glow, pink/blue donut vars); T2 → **rose #fb7185 + lilac
+  #c4b5fd + peach** aurora glass (rose/lilac/amber donut, plum-navy bg); T4 → **honey
+  #eda012 + apricot #fb923c** on cream (honey bars/buttons/active nav); T9 renamed
+  **"Cobalt Enterprise"** → **cobalt #2563eb + #60a5fa** on light slate (cobalt bars, avatar,
+  active nav, zebra tint). T7 phosphor green kept deliberately as the ONLY green (desc now
+  says so); T3 red / T5 yellow / T6 gold / T8 violet / T10 ember untouched.
+- **Mode toggle upgraded to 3-way:** "Native mix" (default, no classes) / "Dark all" (adds
+  `.dark` to all) / "Light all" (adds `.light` to all). NEW midnight variants so the 3
+  light-first templates also have a dark version: `.t3.dark` charcoal Swiss, `.t4.dark`
+  cocoa & honey, `.t9.dark` midnight cobalt. Gallery sub-copy now lists the hue wheel;
+  quick-nav pills got per-template accent color dots; T1/T2 light variants recolored to
+  match new hues (mist-rose synthwave light, pastel rose glass light); generic `.light`
+  donut `--c3` switched emerald→violet #7c3aed; IBM Plex Mono added to the fonts link.
+- **Verification (agent-browser):** title + 10/10 mocks render; zero page errors; computed
+  colors per mode (native T1 #070410 / T9 #f3f5f8 / T4 honey gradient / T2 rose #fb7185;
+  Light all → 10×`.light` with T1 #fdf3f8, T5 white cards, T7 green-light; Dark all → 10×
+  `.dark` with T3 #101013, T4 #1a120d, T9 #0d1424 + cobalt #3b82f6 buttons; Native mix
+  resets to 0/0). Screenshots confirmed: T1 synthwave magenta/blue, T2 rose-lilac glass,
+  T9 cobalt enterprise, T4 honey cream, T10 dune, T7 intentional green. pm2 both online,
+  `/` and gallery 200, dev.log only pre-existing 401 polling loop.
+- **Next:** unchanged — convert login + shell + all module views to the user's chosen
+  template (tokens → globals.css/theme, shell chrome, per-view polish) in their preferred
+  mode; then remove the DesignGalleryLink pill. Zero API/schema changes so far.
+
 ### 2026-11-16 — Design template gallery for full-app redesign (awaiting user pick)
 
 - **Trigger:** user rejected the current look & feel; asked for 5-10 unique design templates to
