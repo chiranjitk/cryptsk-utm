@@ -100,6 +100,56 @@ export interface ImportResultDTO {
   skipped: number;
 }
 
+// ── OS enforcement DTOs (mirror /api/v1/url-filter/os payloads) ───────────
+
+export interface UrlOsPolicyStatus {
+  id: number;
+  name: string;
+  enabled: boolean;
+  /** sha256[:16] of the policy's rendered squid.conf section (null when disabled) */
+  renderHash: string | null;
+  categoryRules: CategoryRuleDTO[];
+  customListCounts: { block: number; allow: number };
+  warnings: string[];
+}
+
+export interface UrlOsStatusDTO {
+  available: boolean;
+  dataPlaneMode: string;
+  gate: "on" | "off";
+  note: string;
+  unitState: string | null;
+  managedFile: string;
+  port3128Bound: boolean;
+  version: string | null;
+  /** null when squid is unavailable (honest "unknown", never fake sync) */
+  inSync: boolean | null;
+  driftReasons: string[];
+  state: { confHash: string; appliedAt: string; backupDir: string | null; applied: boolean } | null;
+  policies: UrlOsPolicyStatus[];
+  warnings: string[];
+}
+
+export interface UrlApplyResultDTO {
+  action: "apply" | "rollback";
+  applied: boolean;
+  refused?: string;
+  reason: string;
+  gate: "on" | "off";
+  rolledBack: boolean;
+  confHash?: string;
+  backupDir?: string | null;
+  plan: {
+    steps: { step: string; cmd: string; kind: string }[];
+    rollbackSteps: { step: string; cmd: string; kind: string }[];
+    warnings: string[];
+    skipped: { name: string; reason: string }[];
+    confText: string;
+    guarded: boolean;
+  };
+  results: { step: string; ok: boolean; detail?: string }[];
+}
+
 export interface PageMeta {
   page: number;
   limit: number;
@@ -196,7 +246,7 @@ export const urlFilterApi = {
     }),
 
   // simulated test
-  testUrl: (policyId: number, url: string) =>
+  testPolicy: (policyId: number, url: string) =>
     fetchJson<UrlTestResultDTO>(`/api/v1/url-filter/policies/${policyId}/test`, {
       method: "POST",
       headers: JSON_HEADERS,
@@ -220,6 +270,15 @@ export const urlFilterApi = {
   // logs + stats
   listLogs: (params: string) => fetchJsonList<UrlFilterLogDTO>("/api/v1/url-filter/logs", params),
   getStats: () => fetchJson<UrlFilterStatsDTO>("/api/v1/url-filter/stats"),
+
+  // OS enforcement (Squid) — plan preview when the CONSOLE_OS_APPLY gate is off
+  getOsStatus: () => fetchJson<UrlOsStatusDTO>("/api/v1/url-filter/os"),
+  applyToOs: (action: "apply" | "rollback") =>
+    fetchJson<UrlApplyResultDTO>("/api/v1/url-filter/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action }),
+    }),
 };
 
 // ── shared param builder (skips empty values — keeps query keys stable) ─────

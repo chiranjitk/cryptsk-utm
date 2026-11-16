@@ -44,6 +44,8 @@ import { cn } from "@/lib/utils";
 import { ConfirmDialog, DensityToggle, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk, ROW_FLASH_CLASS, useTableDensity } from "../firewall/fw-ui";
 import { logsApi, type LogStats, type NetflowTargetDTO, type ReportScheduleDTO, type StatsRange, type SyslogTargetDTO } from "./logs-api";
 import { fmtTs } from "./logs-ui";
+import { LogsOsPanel } from "./os-apply";
+import { usePermissions } from "../system/system-ui";
 
 // ADR-019 §2.5 locked chart palette (rev 2: zinc leads, red keeps its alarm value —
 // NO blue/teal/emerald/indigo series; severity pie mirrors the §5.15 events-bar recipe)
@@ -898,6 +900,7 @@ function NetflowEditor(props: { onClose: () => void; initial: NetflowTargetDTO |
 
 function ForwardingTab() {
   const queryClient = useQueryClient();
+  const { canWrite } = usePermissions();
   const [syslogEditor, setSyslogEditor] = useState<{ open: boolean; initial: SyslogTargetDTO | null }>({ open: false, initial: null });
   const [netflowEditor, setNetflowEditor] = useState<{ open: boolean; initial: NetflowTargetDTO | null }>({ open: false, initial: null });
   const [deleting, setDeleting] = useState<{ kind: "syslog" | "netflow"; row: SyslogTargetDTO | NetflowTargetDTO } | null>(null);
@@ -1111,6 +1114,11 @@ function ForwardingTab() {
           )}
         </CardContent>
       </Card>
+
+      {/* OS forwarding panel — spans both columns below the two target cards */}
+      <div className="lg:col-span-2">
+        <LogsOsPanel isAdmin={canWrite("log_forwarding")} />
+      </div>
 
       {syslogEditor.open && (
         <SyslogEditor

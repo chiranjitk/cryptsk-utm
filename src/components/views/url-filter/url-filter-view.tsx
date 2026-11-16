@@ -60,6 +60,8 @@ import {
   type UrlLogAction,
   type UrlPolicyDTO,
 } from "./url-filter-api";
+import { UrlOsPanel } from "./os-apply";
+import { usePermissions } from "../system/system-ui";
 import {
   ConfirmDialog,
   DensityToggle,
@@ -724,7 +726,7 @@ function TestUrlCard({ policy }: { policy: UrlPolicyDTO }) {
   const [err, setErr] = useState<string | null>(null);
 
   const run = useMutation({
-    mutationFn: () => urlFilterApi.testUrl(policy.id, url.trim()),
+    mutationFn: () => urlFilterApi.testPolicy(policy.id, url.trim()),
     onSuccess: (r) => {
       setErr(null);
       invalidateAll(queryClient); // test persists a log row + shifts stats
@@ -1136,6 +1138,7 @@ function PolicyCard(props: {
 
 export function UrlFilterView() {
   const queryClient = useQueryClient();
+  const { canWrite } = usePermissions();
   const policiesQuery = useQuery({ queryKey: POLICIES_KEY, queryFn: urlFilterApi.listPolicies });
   const policies = policiesQuery.data ?? [];
 
@@ -1166,6 +1169,9 @@ export function UrlFilterView() {
   return (
     <div className="space-y-4">
       <StatsStrip />
+
+      {/* OS enforcement (Squid) — status + admin-gated apply/rollback */}
+      <UrlOsPanel isAdmin={canWrite("url_filter")} />
 
       <div className="grid items-start gap-4 lg:grid-cols-[340px_1fr]">
         {/* master list */}

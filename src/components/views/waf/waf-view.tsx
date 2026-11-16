@@ -44,6 +44,8 @@ import {
   useTableDensity,
 } from "../firewall/fw-ui";
 import { copyText, FieldErrorText, INVALID_CLS } from "../network/net-ui";
+import { WafOsPanel } from "./os-apply";
+import { usePermissions } from "../system/system-ui";
 import {
   CRS_VERSIONS,
   EXCLUSION_SCOPES,
@@ -1250,6 +1252,7 @@ function StatsStrip({ stats }: { stats: WafStats | undefined }) {
 
 export function WafView() {
   const queryClient = useQueryClient();
+  const { canWrite } = usePermissions();
   const vhostsQuery = useQuery({ queryKey: ["waf", "vhosts"], queryFn: wafApi.listVhosts });
   const policiesQuery = useQuery({ queryKey: ["waf", "policies"], queryFn: wafApi.listPolicies });
   const statsQuery = useQuery({ queryKey: ["waf", "stats"], queryFn: wafApi.getStats });
@@ -1467,6 +1470,8 @@ export function WafView() {
           )}
         </>
       )}
+
+      <WafOsPanel isAdmin={canWrite("waf")} />
 
       <Card className="p-0">
         <CardHeader className="flex-row items-center justify-between space-y-0 p-4 pb-3">

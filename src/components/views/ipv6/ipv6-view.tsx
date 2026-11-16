@@ -69,6 +69,8 @@ import {
   type RaMode,
 } from "./ipv6-api";
 import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import { usePermissions } from "../system/system-ui";
+import { Ipv6OsPanel } from "./os-apply";
 
 function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ["ipv6"] });
@@ -1292,6 +1294,10 @@ function Dhcpv6Card(props: {
 
 export function Ipv6View() {
   const queryClient = useQueryClient();
+  // ipv6 write roles == dns_dhcp write roles in the RBAC matrix — dns_dhcp is
+  // part of the /auth/me permission summary contract, ipv6 is not, so the
+  // client gate uses the role-identical area (server enforces area "ipv6").
+  const { canWrite } = usePermissions();
 
   const nat66Query = useQuery({ queryKey: ["ipv6", "nat66"], queryFn: ipv6Api.listNat66 });
   const dhcpv6Query = useQuery({ queryKey: ["ipv6", "dhcpv6"], queryFn: ipv6Api.listDhcpv6 });
@@ -1369,6 +1375,9 @@ export function Ipv6View() {
         onEdit={(server) => setDhcpEditing(server)}
         onDelete={(server) => setDhcpDeleting(server)}
       />
+
+      {/* OS integration (kea-dhcp6 + radvd + utm_nat66) — admin-gated apply */}
+      <Ipv6OsPanel isAdmin={canWrite("dns_dhcp")} />
 
       {/* dialogs */}
       {nat66AddOpen && <Nat66Editor rule={null} ifaces={ifaces} onClose={() => setNat66AddOpen(false)} />}

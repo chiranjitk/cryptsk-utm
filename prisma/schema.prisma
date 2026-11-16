@@ -89,6 +89,7 @@ model Tenant {
   prefixLists       PrefixList[]
   routeMaps         RouteMap[]
   communityLists    CommunityList[]
+  bgpSettings       BgpSettings[]
   bgpNeighbors      BgpNeighbor[]
   ospfInterfaces    OspfInterface[]
   ospfSettings      OspfSettings[]
@@ -1526,6 +1527,22 @@ model CommunityList {
 
   @@unique([tenantId, name])
   @@map("community_lists")
+}
+
+model BgpSettings {
+  id              Int      @id @default(autoincrement())
+  tenantId        Int      @default(1) @map("tenant_id")
+  localAs         Int      @map("local_as")
+  routerId        String   @map("router_id")
+  gracefulRestart Boolean  @default(false) @map("graceful_restart")
+  enabled         Boolean  @default(false)
+  osConfHash      String?  @map("os_conf_hash")
+  osAppliedAt     DateTime? @map("os_applied_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("bgp_settings")
 }
 
 model BgpNeighbor {

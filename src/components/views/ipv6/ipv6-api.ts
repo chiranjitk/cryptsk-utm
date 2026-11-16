@@ -16,6 +16,7 @@ import type {
   PrefixDelegationDTO,
 } from "@/app/api/v1/ipv6/shared";
 import type { Dhcpv6PrefixLength, Nat66Type, PdPrefixLength, RaMode } from "@/lib/validators/ipv6";
+import type { Ipv6ApplyOutcome, Ipv6OsStatus } from "@/lib/ipv6/os-service";
 
 export type {
   Dhcpv6ServerDTO,
@@ -25,6 +26,11 @@ export type {
   PrefixDelegationDTO,
 };
 export type { Dhcpv6PrefixLength, Nat66Type, PdPrefixLength, RaMode };
+export type { Ipv6OsStatusDTO, Ipv6ApplyResultDTO };
+
+/** Server-side type aliases (type-only import — erased before bundling). */
+type Ipv6OsStatusDTO = Ipv6OsStatus;
+type Ipv6ApplyResultDTO = Ipv6ApplyOutcome;
 
 // ── constants (mirror lib/validators/ipv6.ts) ───────────────────────────────
 
@@ -127,6 +133,11 @@ export const ipv6Api = {
   // status + simulated IA_PD lease
   getStatus: () => fetchJson<Ipv6StatusDTO>("/api/v1/ipv6/status"),
   getPrefixDelegation: () => fetchJson<PrefixDelegationDTO>("/api/v1/ipv6/prefix-delegation"),
+
+  // ── OS apply (kea-dhcp6 + radvd + utm_nat66 + sysctl) ────────────────────
+  getOsStatus: () => fetchJson<Ipv6OsStatusDTO>("/api/v1/ipv6/os-status"),
+  applyToOs: () =>
+    fetchJson<Ipv6ApplyResultDTO>("/api/v1/ipv6/apply", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
 
   /** Interface names from the EXISTING /api/v1/interfaces endpoint (paged data). */
   listInterfaceNames: async (): Promise<string[]> => {

@@ -248,6 +248,26 @@ export async function regenerateRib(tenantId: number): Promise<RibRegenResult> {
   return { added, updated, removed: stale.length, total: rows.length, byProtocol };
 }
 
+// ── RIB refresh dispatcher (host mode → REAL vtysh read) ─────────────────────
+
+export type RibRefreshSource = "live-frr" | "simulated";
+
+/**
+ * POST /rib/refresh core: in HOST mode with a reachable frr (vtysh present +
+ * unit active) the RIB is synced from the REAL FRR table via
+ * `vtysh -c "show ip route json"` (lib/dynamic-routing/os-service →
+ * syncRibFromVtysh). Anything else — simulated data plane, vtysh missing,
+ * frr down, unparseable output — falls back to the deterministic simulated
+ * regenerateRib so the endpoint ALWAYS produces an honest, consistent table.
+ */
+export async function refreshRib(tenantId: number): Promise<RibRegenResult & { source: RibRefreshSource }> {
+  const { syncRibFromVtysh } = await import("@/lib/dynamic-routing/os-service");
+  const real = await syncRibFromVtysh(tenantId).catch(() => null);
+  if (real) return real;
+  const simulated = await regenerateRib(tenantId);
+  return { ...simulated, source: "simulated" as const };
+}
+
 // ── overview aggregate (GET /overview) ───────────────────────────────────────
 
 export interface DrOverview {

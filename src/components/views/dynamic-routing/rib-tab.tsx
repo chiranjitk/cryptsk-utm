@@ -31,6 +31,7 @@ import { drApi, type RibProtocol } from "./dynamic-routing-api";
 import { RibProtocolBadge } from "./dr-ui";
 
 const RIB_KEY = ["dynamic-routing", "rib"] as const;
+const OS_KEY = ["dynamic-routing", "os"] as const;
 
 const PROTOCOLS: Array<RibProtocol | "all"> = ["all", "bgp", "ospf", "static", "connected"];
 
@@ -50,12 +51,16 @@ export function RibTab() {
     onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ["dynamic-routing"] });
       toastOk(
-        "RIB refreshed",
-        `+${r.added} added · ${r.updated} updated · ${r.removed} removed — ${r.total} routes (bgp ${r.byProtocol.bgp}, ospf ${r.byProtocol.ospf}, static ${r.byProtocol.static}, connected ${r.byProtocol.connected})`,
+        r.source === "live-frr" ? "RIB synced from live FRR" : "RIB refreshed (simulated)",
+        `${r.source === "live-frr" ? "vtysh show ip route json" : "simulated regeneration"} — +${r.added} added · ${r.updated} updated · ${r.removed} removed — ${r.total} routes (bgp ${r.byProtocol.bgp}, ospf ${r.byProtocol.ospf}, static ${r.byProtocol.static}, connected ${r.byProtocol.connected})`,
       );
     },
     onError: (err) => toastErr(err, "RIB refresh failed"),
   });
+
+  // live FRR availability → honest note (host mode + vtysh = real sync)
+  const osQ = useQuery({ queryKey: OS_KEY, queryFn: drApi.getOsStatus });
+  const liveFrr = osQ.data?.available === true && osQ.data.dataPlaneMode === "host";
 
   const rows = ribQ.data ?? [];
 
@@ -63,7 +68,9 @@ export function RibTab() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-zinc-500">
-          Simulated FRR view — refresh syncs established BGP sessions, OSPF interfaces and static routes.
+          {liveFrr
+            ? `Live FRR sync — refresh reads the REAL routing table via vtysh (frr ${osQ.data?.serviceState ?? "unknown"}).`
+            : "Simulated FRR view — refresh syncs established BGP sessions, OSPF interfaces and static routes."}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Select value={protocol} onValueChange={(v) => setProtocol(v as RibProtocol | "all")}>

@@ -110,6 +110,116 @@ export interface Paged<T> {
   meta: PageMeta;
 }
 
+// ── OS layer DTOs (Postfix + Rspamd — mirror lib/email-security/os-service.ts) ─
+
+export interface EmailOsFileFact {
+  path: string;
+  present: boolean;
+  bytes: number;
+  hash: string | null;
+}
+
+export interface EmailOsGatewayStatus {
+  id: number;
+  name: string;
+  mode: GatewayMode;
+  listenPort: number;
+  relayDomains: string[];
+  upstreamHost: string | null;
+  tlsMode: TlsMode;
+  enabled: boolean;
+  /** sha256-16 of the gateway's rendered identity */
+  renderHash: string;
+  /** transport-map lines this gateway contributed */
+  transportLines: string[];
+}
+
+export interface EmailOsRuleStatus {
+  id: number;
+  name: string;
+  matchDomain: string;
+  action: RoutingAction;
+  targetHost: string | null;
+  priority: number;
+  enabled: boolean;
+}
+
+export interface EmailOsPolicySummary {
+  spamThreshold: number;
+  blockPhishing: boolean;
+  blockMalware: boolean;
+  scanArchives: boolean;
+  maxMessageSizeMb: number;
+  blockedExtensions: string[];
+  spfVerify: boolean;
+  dkimVerify: boolean;
+  dmarcPolicy: DmarcPolicy;
+  quarantineRetentionDays: number;
+  enabled: boolean;
+}
+
+export interface EmailOsState {
+  confHash: string | null;
+  gatewayIds: number[];
+  appliedAt: string | null;
+  stopped?: boolean;
+}
+
+export interface EmailOsStatusDTO {
+  available: boolean;
+  dataPlaneMode: string;
+  gate: "on" | "off";
+  note: string;
+  postfixState: string | null;
+  rspamdState: string | null;
+  clamdReachable: boolean | null;
+  portsBound: { p25: boolean | null; p11332: boolean | null; p11334: boolean | null };
+  managedFiles: EmailOsFileFact[];
+  confHash: string | null;
+  inSync: boolean | null;
+  managedByConsole: boolean;
+  driftReasons: string[];
+  state: EmailOsState | null;
+  gateways: EmailOsGatewayStatus[];
+  policy: EmailOsPolicySummary;
+  rules: EmailOsRuleStatus[];
+  plan: { confHash: string | null; gatewayIds: number[]; files: Array<{ path: string; bytes: number; kind: string }> };
+  warnings: string[];
+}
+
+export interface EmailOsStepResult {
+  step: string;
+  ok: boolean;
+  detail?: string;
+}
+
+export interface EmailOsApplyResultDTO {
+  gate: "on" | "off";
+  applied: boolean;
+  refused?: string;
+  reason: string;
+  skipped?: boolean;
+  rolledBack: boolean;
+  confHash?: string | null;
+  backupDir?: string;
+  plan: {
+    steps: Array<{ step: string; cmd: string; kind: string; optional?: boolean }>;
+    files: Array<{ path: string; bytes: number; kind: string }>;
+    gatewayIds: number[];
+    warnings: string[];
+  };
+  results: EmailOsStepResult[];
+}
+
+export interface EmailOsRollbackResultDTO {
+  rolledBack: boolean;
+  backupDir: string | null;
+  restored: number;
+  postmapped: boolean;
+  restarted: boolean;
+  detail: string;
+}
+
 // ── fetch plumbing (same shape as url-filter-api.ts) ────────────────────────
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -208,6 +318,15 @@ export const emailSecurityApi = {
 
   // stats
   getStats: () => fetchJson<EmailStatsDTO>("/api/v1/email-security/stats"),
+
+  // OS integration (Postfix + Rspamd + ClamAV)
+  getOsStatus: () => fetchJson<EmailOsStatusDTO>("/api/v1/email-security/os"),
+  applyToOs: (action: "apply" | "rollback" = "apply") =>
+    fetchJson<EmailOsApplyResultDTO | EmailOsRollbackResultDTO>("/api/v1/email-security/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action }),
+    }),
 };
 
 // ── shared param builder (skips empty values — keeps query keys stable) ─────

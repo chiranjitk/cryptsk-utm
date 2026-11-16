@@ -82,6 +82,8 @@ import {
 } from "../firewall/fw-ui";
 import { cn } from "@/lib/utils";
 import { useRealtime } from "@/lib/realtime";
+import { usePermissions } from "../system/system-ui";
+import { EmailOsPanel } from "./os-apply";
 
 /** Stats + mail log poll cadence (spec: no socket events for this view). */
 const POLL_MS = 10_000;
@@ -1618,6 +1620,7 @@ function MailLogCard() {
 
 export function EmailSecurityView() {
   useEmailSecurityInvalidation();
+  const { canWrite } = usePermissions();
   return (
     <div className="space-y-4">
       <StatsStrip />
@@ -1655,6 +1658,9 @@ export function EmailSecurityView() {
           <TestMessageCard />
         </TabsContent>
       </Tabs>
+
+      {/* OS enforcement panel — Postfix + Rspamd + ClamAV convergence, admin-gated */}
+      <EmailOsPanel isAdmin={canWrite("email_security")} />
     </div>
   );
 }

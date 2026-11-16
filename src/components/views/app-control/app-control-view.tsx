@@ -93,6 +93,7 @@ import {
   toastOk,
   useTableDensity,
 } from "../firewall/fw-ui";
+import { AppControlOsApply } from "./os-apply";
 
 const CATALOG_KEY = ["app-control", "catalog"] as const;
 const GROUPS_KEY = ["app-control", "user-groups"] as const;
@@ -1309,6 +1310,10 @@ export function AppControlView() {
                   <RulesTable key={`rules-${selected.id}`} policyId={selected.id} />
                 </CardContent>
               </Card>
+
+              {/* GUI↔nftables integration — dedicated `inet utm_appctl` table,
+                  mounted under the rules table (write-capable roles only) */}
+              <AppControlOsApply />
 
               <TestAppCard key={`test-${selected.id}`} policy={selected} />
             </>

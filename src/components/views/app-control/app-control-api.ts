@@ -84,6 +84,64 @@ export interface UserGroupOptionDTO {
   name: string;
 }
 
+// ── OS integration DTOs (mirror src/lib/app-control/os.ts + os-service.ts) ──
+
+export interface AppctlWarning {
+  scope: "rule" | "policy";
+  policyId: number;
+  ruleId: number | null;
+  name: string;
+  code: string;
+  message: string;
+}
+
+export interface AppctlCounts {
+  policies: number;
+  rules: number;
+  statements: number;
+  skipped: number;
+}
+
+export interface AppctlCounter {
+  ruleId: number;
+  appName: string;
+  packets: number;
+  bytes: number;
+}
+
+export interface AppctlOsStatus {
+  gate: "on" | "off";
+  mode: string;
+  available: boolean;
+  nftVersion: string | null;
+  tablePresent: boolean;
+  drift: { applied: boolean; inSync: boolean; reasons: string[] };
+  counts: AppctlCounts;
+  warnings: AppctlWarning[];
+  skippedApps: string[];
+  statements: string[];
+  file: string;
+  counters: AppctlCounter[];
+  pendingConfirm: { ts: string; deadlineAt: string; mode: string; backupFile: string } | null;
+  tableDump: string | null;
+}
+
+export interface AppctlApplyOutcome {
+  gate: "on" | "off";
+  applied: boolean;
+  rolledBack: boolean;
+  rollbackReason: string | null;
+  confirmSec: number;
+  confirmDeadlineAt: string | null;
+  ts: string;
+  warnings: AppctlWarning[];
+  counts: AppctlCounts | null;
+  file: string;
+  health: { baseline: unknown; after: unknown; postRollback: unknown };
+  results: Array<{ step: string; ok: boolean; detail?: string }>;
+  persistence: Array<{ step: string; ok: boolean; detail?: string }>;
+}
+
 export interface PageMeta {
   page: number;
   limit: number;
@@ -209,6 +267,27 @@ export const appControlApi = {
   // logs + stats
   listLogs: (params: string) => fetchJsonList<AppLogDTO>("/api/v1/app-control/logs", params),
   getStats: () => fetchJson<AppStatsDTO>("/api/v1/app-control/stats"),
+
+  // OS integration — dedicated `inet utm_appctl` nftables table
+  getOsStatus: () => fetchJson<AppctlOsStatus>("/api/v1/app-control/os"),
+  applyToOs: (body: Record<string, unknown>) =>
+    fetchJson<AppctlApplyOutcome>("/api/v1/app-control/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  confirmApply: (ts: string) =>
+    fetchJson<{ confirmed: boolean; ts: string }>("/api/v1/app-control/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action: "confirm", ts }),
+    }),
+  rollback: () =>
+    fetchJson<{ rolledBack: boolean; file: string | null; detail: string }>("/api/v1/app-control/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action: "rollback" }),
+    }),
 
   /**
    * User groups for rule scoping chips — endpoint may not exist yet in every

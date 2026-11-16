@@ -160,6 +160,10 @@ export const logsApi = {
   deleteSyslogTarget: (id: number) =>
     fetchJson<{ ok: boolean }>(`/api/v1/logs/syslog-targets/${id}`, { method: "DELETE" }),
 
+  // ── OS forwarding (rsyslog) ─────────────────────────────────────────────
+  getOsStatus: () => fetchJson<LogsOsStatusDTO>("/api/v1/logs/os-status"),
+  applyToOs: () => fetchJson<LogsApplyResultDTO>("/api/v1/logs/apply", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
+
   // ── netflow targets ─────────────────────────────────────────────────────
   listNetflowTargets: () => fetchJson<NetflowTargetDTO[]>("/api/v1/logs/netflow-targets"),
   createNetflowTarget: (body: Record<string, unknown>) =>
@@ -184,6 +188,51 @@ export const logsApi = {
   suppressIpsEvent: (id: number, duration: "24h" | "7d" | "forever") =>
     fetchJson<IpsEventDTO>(`/api/v1/ips/events/${id}/suppress`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ duration }) }),
 };
+
+// ── OS forwarding DTOs (mirror /api/v1/logs/os-status + /apply payloads) ────
+
+export interface LogsOsTargetStatus {
+  id: number;
+  name: string;
+  host: string;
+  port: number;
+  protocol: "udp" | "tcp" | "tls";
+  minSeverity: "info" | "low" | "medium" | "high" | "critical";
+  enabled: boolean;
+  /** live omfwd socket seen by `ss` — informational, never flips inSync */
+  socketConnected: boolean | null;
+  /** sha256-16 of the rendered action line; null when the target is disabled */
+  renderHash: string | null;
+}
+
+export interface LogsOsStatusDTO {
+  available: boolean;
+  dataPlaneMode: string;
+  note: string;
+  unitState: string | null;
+  managedFile: string;
+  inSync: boolean | null;
+  driftReasons: string[];
+  state: { confHash: string; appliedAt: string; targetIds: number[] } | null;
+  targets: LogsOsTargetStatus[];
+  warnings: string[];
+}
+
+export interface LogsApplyResultDTO {
+  applied: boolean;
+  refused?: string;
+  reason?: string;
+  /** zero-churn: live hash + unit already matched — nothing touched */
+  skipped?: boolean;
+  rolledBack: boolean;
+  confHash?: string;
+  backupDir?: string;
+  plan: {
+    steps: { step: string; cmd: string; kind: string }[];
+    targets: unknown;
+  };
+  results: { step: string; ok: boolean; detail?: string }[];
+}
 
 // ── shared param builder ────────────────────────────────────────────────────
 

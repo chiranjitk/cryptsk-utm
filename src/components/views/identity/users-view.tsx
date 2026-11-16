@@ -61,6 +61,8 @@ import {
 } from "./identity-api";
 import { InfoNote, RoleBadge, useIdentityConfigInvalidation } from "./identity-ui";
 import { RadiusTab, DirectoryTab, AuthSettingsTab } from "./identity-panels";
+import { IdentityOsPanel } from "./os-apply";
+import { usePermissions } from "../system/system-ui";
 import { ROLES } from "@/lib/auth/rbac";
 import { cn } from "@/lib/utils";
 
@@ -116,6 +118,7 @@ const ROLE_DESCRIPTIONS: Array<[string, string]> = [
 
 export function UsersView() {
   useIdentityConfigInvalidation();
+  const { canWrite } = usePermissions();
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -131,8 +134,9 @@ export function UsersView() {
           <TabsTrigger value="directory" className="text-xs sm:text-sm">Directory Sources</TabsTrigger>
           <TabsTrigger value="auth" className="text-xs sm:text-sm">Auth Settings</TabsTrigger>
         </TabsList>
-        <TabsContent value="radius" className="mt-3">
+        <TabsContent value="radius" className="mt-3 space-y-4">
           <RadiusTab />
+          <IdentityOsPanel isAdmin={canWrite("identity")} />
         </TabsContent>
         <TabsContent value="directory" className="mt-3">
           <DirectoryTab />

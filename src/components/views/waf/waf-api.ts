@@ -101,6 +101,76 @@ export interface WafStats {
   byVhost: Record<string, number>;
 }
 
+// ── OS enforcement DTOs (mirror /api/v1/waf/os payloads) ────────────────
+
+export interface WafOsManagedFileDTO {
+  path: string;
+  present: boolean;
+  bytes: number;
+  hash: string | null;
+}
+
+export interface WafOsVhostStatusDTO {
+  id: number;
+  hostname: string;
+  mode: string;
+  renderHash: string;
+  policy: {
+    id: number;
+    crs: boolean;
+    crsVersion: string;
+    paranoiaLevel: number;
+    thresholds: { in: number; out: number };
+    learning: boolean;
+    rateLimit: { rpm: number; burst: number } | null;
+  } | null;
+  exclusions: Array<{ id: number; scope: string; matchValue: string; ruleId: number | null }>;
+  warnings: string[];
+}
+
+export interface WafOsStatusDTO {
+  available: boolean;
+  dataPlaneMode: string;
+  gate: "on" | "off";
+  unitState: string | null;
+  managedFiles: WafOsManagedFileDTO[];
+  portsBound: boolean | null;
+  inSync: boolean;
+  managedByConsole: boolean;
+  driftReasons: string[];
+  confHash: string | null;
+  crs: { dir: string | null; installed: boolean; version: string };
+  lastApply: { confHash: string | null; vhostIds: number[]; appliedAt: string | null; lastApply?: { at: string; backupDir: string | null; applied: boolean; reason: string } };
+  vhosts: WafOsVhostStatusDTO[];
+  warnings: string[];
+}
+
+export interface WafApplyResultDTO {
+  gate: "on" | "off";
+  applied: boolean;
+  refused?: string;
+  reason: string;
+  rolledBack: boolean;
+  confHash?: string;
+  backupDir?: string;
+  plan: {
+    steps: { step: string; cmd: string; kind: string; optional?: boolean }[];
+    files: { path: string; bytes: number; kind: string }[];
+    managedVhostIds: number[];
+    warnings: string[];
+  };
+  /** step outcomes — present on exec (gate on), absent on plan preview */
+  results?: { step: string; ok: boolean; detail?: string }[];
+}
+
+export interface WafRollbackResultDTO {
+  rolledBack: boolean;
+  backupDir: string | null;
+  revalidated: boolean;
+  reloaded: boolean;
+  detail: string;
+}
+
 /** Active certificate entry for the vhost TLS binding (from M14 PKI list). */
 export interface CertOption {
   id: number;
@@ -193,6 +263,21 @@ export const wafApi = {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify(body),
+    }),
+
+  // OS enforcement (nginx + ModSecurity) — status, apply, rollback
+  getOsStatus: () => fetchJson<WafOsStatusDTO>("/api/v1/waf/os"),
+  applyToOs: () =>
+    fetchJson<WafApplyResultDTO>("/api/v1/waf/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action: "apply" }),
+    }),
+  rollbackOs: () =>
+    fetchJson<WafRollbackResultDTO>("/api/v1/waf/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action: "rollback" }),
     }),
 
   // logs + stats
