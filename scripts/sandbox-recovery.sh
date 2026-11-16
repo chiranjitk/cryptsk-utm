@@ -76,28 +76,49 @@ else
 fi
 
 # ── 4. pm2: (re)install if wiped, take over from the watchdog dev server ──────
+
+# Fast path: pm2 apps already online AND app already serving → nothing to do.
+PM2_UTM_PID=$(pm2 pid cryptsk-utm 2>/dev/null || true)
+if [ -n "$PM2_UTM_PID" ] && ps -p "$PM2_UTM_PID" >/dev/null 2>&1; then
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://localhost:3000/ 2>/dev/null || echo 000)
+  if [ "$CODE" = "200" ]; then
+    log "pm2 cryptsk-utm already running and healthy (HTTP 200) — nothing to do"
+    exit 0
+  fi
+fi
+
 if ! command -v pm2 >/dev/null 2>&1; then
   log "installing pm2"
   npm install -g pm2
 fi
 
-# kill any watchdog-started uncapped dev server holding :3000/:3003
+# Kill any watchdog-started uncapped dev server holding :3000/:3003.
+# Runs BEFORE pm2 apps exist, so EVERY listener on those ports is a stray.
+# Kill the whole PROCESS GROUP (bun run dev → next dev → next-server die together,
+# otherwise the parent respawns/rebinds and pm2 crash-loops on EADDRINUSE).
 for pid in $(ss -tlnp 2>/dev/null | grep -E ':(3000|3003)\b' | grep -oP 'pid=\K[0-9]+' | sort -u); do
-  # only kill if NOT already a pm2 child
-  if ! ps -o ppid= -p "$pid" 2>/dev/null | grep -q "$(pm2 pid cryptsk-utm 2>/dev/null || echo -1)\|$(pm2 pid realtime-service 2>/dev/null || echo -2)"; then
+  PGID=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
+  if [ -n "$PGID" ] && [ "$PGID" != "1" ]; then
+    log "stopping stray process tree on port (pid $pid, pgid $PGID)"
+    kill -- -"$PGID" 2>/dev/null || kill "$pid" 2>/dev/null || true
+  else
     log "stopping stray process on port (pid $pid)"
     kill "$pid" 2>/dev/null || true
   fi
 done
-sleep 2
+sleep 3
 
-# start (or restore) under pm2
+# stop stale pm2 entries so the restart counter resets and ports are re-bound cleanly
+pm2 delete cryptsk-utm 2>/dev/null || true
+pm2 delete realtime-service 2>/dev/null || true
+
+# start under pm2
 pm2 start ecosystem.config.cjs
 pm2 save
 
 # ── 5. wait for first compile and report ──────────────────────────────────────
 log "waiting for the app to come up on :3000"
-for i in $(seq 1 30); do
+for i in $(seq 1 60); do
   sleep 5
   CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 http://localhost:3000/ 2>/dev/null || echo 000)
   if [ "$CODE" = "200" ]; then
@@ -109,5 +130,5 @@ for i in $(seq 1 30); do
     exit 0
   fi
 done
-log "WARNING: app did not return 200 within 150s — check dev.log"
+log "WARNING: app did not return 200 within 300s — check dev.log"
 exit 1
