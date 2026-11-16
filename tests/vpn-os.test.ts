@@ -428,7 +428,9 @@ describe("buildVpnApplyPlan", () => {
     // and the managed file is rewritten WITHOUT the conn (file-diff unload)
     expect(plan.steps.some((s) => s.cmd === "swanctl --terminate --ike utm-branch")).toBe(true);
     expect(plan.steps.some((s) => s.cmd === "swanctl --uninstall --child utm-branch-net")).toBe(true);
-    expect(plan.steps.some((s) => s.kind === "ipsec" && s.kind !== "cleanup" && s.cmd.includes("load-conns"))).toBe(false);
+    // file-diff load-conns STILL runs (empty file) so the conn config unloads
+    expect(plan.steps.some((s) => s.cmd === `swanctl --load-conns --file /etc/swanctl/conf.d/utm-managed.conf`)).toBe(true);
+    expect(plan.steps.some((s) => s.cmd === "swanctl --load-creds")).toBe(false); // no secrets without enabled conns
     const swanFile = plan.files.find((f) => f.path.endsWith("utm-managed.conf"));
     expect(swanFile?.content ?? "").not.toContain("utm-branch {");
     for (const s of plan.steps) expect(vpnStepGuarded(s.cmd)).toBe(true);
@@ -456,7 +458,10 @@ describe("buildVpnApplyPlan", () => {
     const plan = buildVpnApplyPlan([cfg({ name: "Road Warriors", type: "ipsec_remote", config: ipsecCfg() })], emptyFacts());
     expect(plan.skipped).toHaveLength(1);
     expect(plan.skipped[0].reason).toContain("FreeRADIUS");
-    expect(plan.steps.some((s) => s.kind === "ipsec")).toBe(false);
+    // the file-diff load-conns pass still runs (empty file) but NO conn is rendered
+    expect(plan.steps.some((s) => s.summary.includes("load conns:"))).toBe(false);
+    const swanFile = plan.files.find((f) => f.path.endsWith("utm-managed.conf"));
+    expect(swanFile?.content ?? "").not.toContain("connections {");
   });
 
   it("does not re-up a wireguard iface that is already up (idempotent)", () => {
