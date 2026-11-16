@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { BrandLogo } from "@/components/shell/brand-logo";
-import { DesignGalleryLink } from "@/components/shell/design-gallery-link";
 
 /** Seeded demo accounts (prisma/seed.ts §Users) — Fill buttons populate the form, never auto-submit. */
 const DEMO_ACCOUNTS = [
@@ -55,7 +54,6 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
 
   return (
     <div className="cerulean-stage flex min-h-screen flex-col items-center justify-center bg-background p-4">
-      <DesignGalleryLink />
       <div className="mb-6 flex flex-col items-center gap-2">
         <BrandLogo className="h-12 w-12 drop-shadow-lg" />
         <h1 className="font-display text-xl font-bold tracking-tight">Cryptsk Console</h1>

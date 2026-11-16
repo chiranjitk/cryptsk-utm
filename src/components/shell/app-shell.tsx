@@ -72,7 +72,6 @@ import { BackupsView } from "@/components/views/system/backups-view";
 import { NotificationCenter } from "@/components/views/system/notification-center";
 import { SetupWizard, useSetupCompleted } from "@/components/views/setup/setup-wizard";
 import { BrandLogo } from "@/components/shell/brand-logo";
-import { DesignGalleryLink } from "@/components/shell/design-gallery-link";
 import { fetchApi, useRealtime, useRealtimeStatus, type RealtimeStatus } from "@/lib/realtime";
 import { cn } from "@/lib/utils";
 
@@ -332,7 +331,6 @@ export function AppShell() {
 
   return (
     <div className="cerulean-stage flex min-h-screen flex-col bg-background">
-      <DesignGalleryLink />
       {/* skip-to-content — button (not hash anchor) so routing hash stays intact */}
       <button
         type="button"

@@ -45,7 +45,7 @@
 }
 
 :root {
-  /* T17 "Cerulean Dock" skin (owner-picked from /design-templates.html):
+  /* T17 "Cerulean Dock" skin (owner-picked):
      pure-white stage, cerulean #0284c7 primary, blue-tinted hairlines #e2eaf1,
      ink #101c28, muted #7e91a3, 18px cards with soft layered shadows.
      amber/emerald/rose stay semantic (status) — never brand accent. */
@@ -164,7 +164,7 @@
   }
 }
 
-/* ── Cerulean Dock skin utilities (mirrors .t17 in design-templates.html) ── */
+/* ── Cerulean Dock skin utilities ── */
 
 /* soft layered card shadow — light: blue-slate, dark: pure black */
 @utility shadow-soft {
