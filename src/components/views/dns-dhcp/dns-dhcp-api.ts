@@ -150,6 +150,101 @@ export async function listInterfaceNames(): Promise<IfaceLite[]> {
   return fetchJsonList<IfaceLite>("/api/v1/interfaces", "limit=100").then((r) => r.data);
 }
 
+// ── OS sync (GUI↔OS honesty view + apply, mirrors vpn-api.ts) ───────────────
+
+export interface OsDriftEntry {
+  id: number;
+  name: string;
+  kind: string;
+  osState: "in-sync" | "drift" | "missing" | "disabled" | "unsupported";
+  detail: string | null;
+}
+
+export interface DnsOsFactsDto {
+  gate: "on" | "off";
+  available: boolean;
+  tools: { unbound: boolean; checkconf: boolean; control: boolean };
+  running: boolean;
+  ports53Bound: boolean;
+  checkconfOk: boolean | null;
+  controlOk: boolean;
+  version: string | null;
+  managedFilePresent: boolean;
+  logQueriesEnabled: boolean;
+  logFileBytes: number | null;
+  effectiveInterfaces: string[];
+  drift: OsDriftEntry[];
+}
+
+export interface KeaLeaseViewDto {
+  address: string;
+  hwaddr: string;
+  hostname: string;
+  subnetId: number;
+  state: string;
+  expireEpoch: number;
+  expiresinSec: number;
+}
+
+export interface DhcpOsFactsDto {
+  gate: "on" | "off";
+  available: boolean;
+  tools: { keaDhcp4: boolean; dhcrelay: boolean };
+  running: boolean;
+  port67Bound: boolean;
+  configValid: boolean | null;
+  version: string | null;
+  confPresent: boolean;
+  liveManagedSubnetIds: number[];
+  liveForeignSubnetIds: number[];
+  relayUnitExists: boolean;
+  relayDefaultsPresent: boolean;
+  leases: KeaLeaseViewDto[];
+  leaseCount: number;
+  leaseReadError: string | null;
+  mergeError: string | null;
+  drift: OsDriftEntry[];
+}
+
+export interface DnsDhcpOsStatus {
+  dns: DnsOsFactsDto;
+  dhcp: DhcpOsFactsDto;
+  summary: { total: number; inSync: number; driftCount: number; unsupported: number };
+}
+
+export interface OsPlanDto {
+  steps: Array<{ cmd: string; summary: string; kind: string; optional?: boolean }>;
+  files: Array<{ path: string; content: string; backup: boolean }>;
+  managedZones?: string[];
+  managedRecords?: string[];
+  managedSubnets?: Array<{ id: number; cidr: string; iface: string; pool: string }>;
+  preservedSubnets?: string[];
+  skipped: Array<{ name: string; reason: string }>;
+  reasons: string[];
+}
+
+export interface OsOutcomeDto {
+  gate: "on" | "off";
+  applied: boolean;
+  reason: string;
+  plan: OsPlanDto;
+  results?: Array<{ cmd: string; ok: boolean; stderr?: string }>;
+}
+
+export interface DnsDhcpOsApplyOutcome {
+  applied: boolean;
+  gate: "on" | "off";
+  reason: string;
+  dns: OsOutcomeDto;
+  dhcp: OsOutcomeDto;
+}
+
+export const dnsDhcpOsApi = {
+  osStatus: () => fetchJson<DnsDhcpOsStatus>("/api/v1/dns-dhcp/os-status"),
+  applyOs: () =>
+    fetchJson<DnsDhcpOsApplyOutcome>("/api/v1/dns-dhcp/apply", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
+};
+
 // ── formatters ──────────────────────────────────────────────────────────────
 
 export function fmtDateTime(ts: string | null): string {

@@ -29,6 +29,13 @@ const DNS_NAME_RE = /^[a-zA-Z0-9_]([a-zA-Z0-9_-]{0,61}[a-zA-Z0-9_])?(\.[a-zA-Z0-
 export const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/;
 const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/;
 const IFNAME_RE = /^[a-zA-Z0-9._-]{1,15}$/;
+const CIDR_V4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(3[0-2]|[12]?\d)$/;
+
+const cidrV4Schema = z
+  .string()
+  .trim()
+  .regex(CIDR_V4_RE, "Must be an IPv4 CIDR like 10.99.99.0/24")
+  .refine((v) => v.split("/")[0].split(".").every((o) => Number(o) >= 0 && Number(o) <= 255), "CIDR octets must be 0-255");
 
 export const ipv4Schema = z.string().regex(IPV4_RE, "Must be a valid IPv4 address");
 export const ipv6Schema = z.string().regex(IPV6_RE, "Must be a valid IPv6 address");
@@ -163,6 +170,13 @@ export const resolverSettingsSchema = z.object({
   doh: z
     .object({ enabled: z.boolean().default(false), port: portSchema.default(443) })
     .default({ enabled: false, port: 443 }),
+  /** unbound `interface:` list — IPs on this host (loopback by default).
+   *  OS apply adds listeners only; resolv.conf/dnsmasq are never touched. */
+  listenInterfaces: z.array(ipv4Schema.or(z.literal("::1"))).max(4, "At most 4 listen interfaces").default(["127.0.0.1", "::1"]),
+  /** unbound `access-control:` CIDR allow list (loopback always allowed). */
+  accessControl: z.array(cidrV4Schema).max(16, "At most 16 ACL CIDRs").default([]),
+  /** unbound `log-queries:` — feeds the Query Log tab via the host collector. */
+  logQueries: z.boolean().default(false),
 });
 
 // ── DHCP subnets ────────────────────────────────────────────────────────────

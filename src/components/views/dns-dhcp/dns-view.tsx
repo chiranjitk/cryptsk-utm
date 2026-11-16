@@ -54,6 +54,7 @@ import {
   ResultBadge,
   useDnsConfigInvalidation,
 } from "./dns-dhcp-ui";
+import { DnsDhcpOsSync } from "./os-sync";
 import { cn } from "@/lib/utils";
 
 type TabKey = "settings" | "policies" | "records" | "querylog";
@@ -83,27 +84,30 @@ export function DnsView() {
   }, [tab]);
 
   return (
-    <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-      <TabsList className="flex w-full flex-wrap justify-start gap-1 sm:w-auto">
-        {TABS.map((t) => (
-          <TabsTrigger key={t.key} value={t.key} className="text-xs sm:text-sm">
-            {t.label}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-      <TabsContent value="settings" className="mt-3 space-y-3">
-        <ResolverSettingsTab />
-      </TabsContent>
-      <TabsContent value="policies" className="mt-3 space-y-3">
-        <PoliciesTab />
-      </TabsContent>
-      <TabsContent value="records" className="mt-3 space-y-3">
-        <RecordsTab />
-      </TabsContent>
-      <TabsContent value="querylog" className="mt-3 space-y-3">
-        <QueryLogTab />
-      </TabsContent>
-    </Tabs>
+    <div className="space-y-3">
+      <DnsDhcpOsSync />
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
+        <TabsList className="flex w-full flex-wrap justify-start gap-1 sm:w-auto">
+          {TABS.map((t) => (
+            <TabsTrigger key={t.key} value={t.key} className="text-xs sm:text-sm">
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value="settings" className="mt-3 space-y-3">
+          <ResolverSettingsTab />
+        </TabsContent>
+        <TabsContent value="policies" className="mt-3 space-y-3">
+          <PoliciesTab />
+        </TabsContent>
+        <TabsContent value="records" className="mt-3 space-y-3">
+          <RecordsTab />
+        </TabsContent>
+        <TabsContent value="querylog" className="mt-3 space-y-3">
+          <QueryLogTab />
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
 
@@ -136,6 +140,9 @@ function ResolverForm({ initial }: { initial: ResolverSettingsDTO }) {
   const [cacheSizeMb, setCacheSizeMb] = useState(String(initial.cacheSizeMb));
   const [rrl, setRrl] = useState(initial.rrl);
   const [dot, setDot] = useState(initial.dot);
+  const [logQueries, setLogQueries] = useState(initial.logQueries ?? false);
+  const [listenIfaces, setListenIfaces] = useState<string[]>(initial.listenInterfaces ?? ["127.0.0.1", "::1"]);
+  const [acls, setAcls] = useState<string[]>(initial.accessControl ?? []);
   const [zones, setZones] = useState<ForwardZoneRow[]>(
     initial.forwardZones.map((z) => ({ domain: z.domain, server: z.server, port: z.port ? String(z.port) : "" })),
   );
@@ -154,7 +161,10 @@ function ResolverForm({ initial }: { initial: ResolverSettingsDTO }) {
           .filter((z) => z.domain.trim() && z.server.trim())
           .map((z) => ({ domain: z.domain.trim(), server: z.server.trim(), ...(z.port ? { port: Number(z.port) } : {}) })),
         doh: { enabled: dohEnabled, port: Number(dohPort) || 443 },
-      }),
+        listenInterfaces: listenIfaces.filter((i) => i.trim()),
+        accessControl: acls.filter((a) => a.trim()),
+        logQueries,
+      } as ResolverSettingsDTO),
     onSuccess: () => {
       setServerErrors({});
       toastOk("Resolver settings applied", "DNS configuration saved");
@@ -197,11 +207,27 @@ function ResolverForm({ initial }: { initial: ResolverSettingsDTO }) {
               <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">DNS over TLS (DoT)</span>
               <Switch checked={dot} onCheckedChange={setDot} aria-label="Toggle DoT" />
             </label>
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">Query logging (log-queries)</span>
+              <Switch checked={logQueries} onCheckedChange={setLogQueries} aria-label="Toggle query logging" />
+            </label>
             <InfoNote>
-              Display-only in sandbox; Unbound DoT termination (tls-port 853) and the dnsproxy DoH sidecar run on the appliance.
+              DoT serves TLS:853 with a self-signed cert bootstrapped on apply. Query logging feeds the Query Log tab from the
+              real unbound log. Applied to the OS via “Apply to OS” above.
             </InfoNote>
           </EditorSection>
         </div>
+
+        <EditorSection title="Listeners & access control">
+          <FieldLabel hint="IPs on this host; loopback by default">unbound interfaces</FieldLabel>
+          <IpListEditor values={listenIfaces} onChange={setListenIfaces} placeholder="e.g. 127.0.0.1" addLabel="Add listener" />
+          {err("listenInterfaces") && <p className="text-[11px] text-rose-500">{err("listenInterfaces")}</p>}
+          <div className="pt-2">
+            <FieldLabel hint="CIDRs allowed to query (loopback always allowed)">access-control CIDRs</FieldLabel>
+            <IpListEditor values={acls} onChange={setAcls} placeholder="e.g. 10.99.99.0/24" addLabel="Add ACL" />
+            {err("accessControl") && <p className="text-[11px] text-rose-500">{err("accessControl")}</p>}
+          </div>
+        </EditorSection>
 
         <EditorSection title="Forward zones (per-domain conditional forwarding)">
           {zones.length === 0 && <p className="text-[11px] text-zinc-400">No forward zones — queries go to the default forwarders.</p>}
