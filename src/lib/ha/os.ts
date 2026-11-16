@@ -124,7 +124,14 @@ export function renderKeepalivedConf(cfg: HaKeepalivedInput, ctx: KeepalivedRend
   if (!cfg.preempt) {
     L.push("\tnopreempt");
   } else if (cfg.holdDownSec > 0) {
-    L.push(`\tpreempt_delay ${cfg.holdDownSec}`);
+    if (cfg.role === "active") {
+      // keepalived clears preempt_delay when the initial state is MASTER
+      // (config-test warning: "preempt delay will not work with initial
+      // state MASTER") — render an explicit note instead of a broken knob.
+      L.push("\t! preempt_delay ignored: initial state MASTER (hold-down applies after failback from BACKUP)");
+    } else {
+      L.push(`\tpreempt_delay ${cfg.holdDownSec}`);
+    }
   }
   if (useUnicast && cfg.peerIp) {
     L.push("\tunicast_peer {");
@@ -407,6 +414,41 @@ export function isHaBackupPath(file: string): boolean {
   if (!file.startsWith(`${HA_STATE_DIR}/`)) return false;
   if (file.includes("..")) return false; // traversal guard
   return HA_BACKUP_RE.test(file.split("/").pop() ?? "");
+}
+
+// ── keepalived -t interpretation ───────────────────────────────────────
+
+export type KeepalivedTestResult = {
+  ok: boolean;
+  hasErrors: boolean;
+  warnings: string[];
+  detail: string;
+};
+
+/**
+ * `keepalived -t` exits non-zero for WARNINGS too (exit code = problem count),
+ * but warnings are self-correcting ("... - clearing") while errors mean the
+ * config cannot run. A test is a hard failure only when output contains an
+ * error / exiting line; warnings alone pass with the warning text surfaced.
+ */
+export function interpretKeepalivedTest(output: string, execOk: boolean): KeepalivedTestResult {
+  const lines = output.split("\n").map((l) => l.trim()).filter(Boolean);
+  const warnings = lines.filter((l) => /warning/i.test(l));
+  const errorLines = lines.filter((l) => /\berror\b/i.test(l) || /exiting/i.test(l));
+  const hasErrors = errorLines.length > 0 || (!execOk && lines.length === 0);
+  return {
+    ok: !hasErrors,
+    hasErrors,
+    warnings,
+    detail:
+      errorLines.length > 0
+        ? errorLines.join(" | ").slice(0, 400)
+        : warnings.length > 0
+          ? `keepalived -t passed with ${warnings.length} warning(s): ${warnings.join(" | ").slice(0, 300)}`
+          : execOk
+            ? "keepalived -t passed (rc=0)"
+            : "keepalived -t failed with no output (exec error)",
+  };
 }
 
 // ── journal parsing (status enrichment) ─────────────────────────────────────

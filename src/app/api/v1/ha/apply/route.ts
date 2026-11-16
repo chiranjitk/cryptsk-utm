@@ -25,6 +25,7 @@ import {
   hardRefusal,
   haStepGuarded,
   isHaBackupPath,
+  interpretKeepalivedTest,
   KEEPALIVED_STAGE,
   KEEPALIVED_CONF,
 } from "@/lib/ha/os";
@@ -97,13 +98,27 @@ export const POST = route({ area: "ha", section: "ha" }, async ({ auth }) => {
       break;
     }
     const r = await runTool(s.cmd, 20000);
-    const detail = (r.ok ? r.stdout : `${r.stderr || r.error || ""}`).trim().slice(0, 400);
-    results.push({ step: s.step, ok: r.ok, detail: detail || undefined });
+    // keepalived -t exits non-zero for warnings too — errors only are fatal
+    const isTestStep = s.step.startsWith("validate");
+    const verdict = isTestStep ? interpretKeepalivedTest(`${r.stderr}${r.stdout}`, r.ok) : null;
+    if (verdict) {
+      if (!verdict.ok) {
+        failed = true;
+        failDetail = `step '${s.step}' failed: ${verdict.detail}`;
+        results.push({ step: s.step, ok: false, detail: verdict.detail });
+        break;
+      }
+      results.push({ step: s.step, ok: true, detail: verdict.detail || undefined });
+      continue;
+    }
     if (!r.ok) {
       failed = true;
-      failDetail = `step '${s.step}' failed: ${detail || "exec error"}`;
+      failDetail = `step '${s.step}' failed: ${(r.stderr || r.error || "").trim().slice(0, 300) || "exec error"}`;
+      results.push({ step: s.step, ok: false, detail: failDetail });
       break;
     }
+    const detail = r.stdout.trim().slice(0, 400);
+    results.push({ step: s.step, ok: true, detail: detail || undefined });
   }
 
   // ── auto-rollback: restore the backup + restart again (only if live conf moved) ──

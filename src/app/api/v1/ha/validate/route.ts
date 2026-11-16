@@ -11,7 +11,7 @@ import { route } from "@/lib/api/handler";
 import { runTool, hasTool } from "@/lib/host/tools";
 import { getDataPlaneMode } from "@/lib/engine";
 import { getHaConfig, toKeepalivedInput, buildHaFacts } from "@/lib/ha/service";
-import { renderKeepalivedConf, haConfHash, haStepGuarded, HA_VALIDATE_TMP } from "@/lib/ha/os";
+import { renderKeepalivedConf, haConfHash, haStepGuarded, interpretKeepalivedTest, HA_VALIDATE_TMP } from "@/lib/ha/os";
 
 export const dynamic = "force-dynamic";
 
@@ -46,14 +46,14 @@ export const POST = route({ area: "ha", section: "ha" }, async ({ auth }) => {
   }
   const r = await runTool(cmd, 15000);
   await rm(HA_VALIDATE_TMP, { force: true }).catch(() => {});
-  const output = `${r.stderr}${r.stdout}`.trim();
+  const verdict = interpretKeepalivedTest(`${r.stderr}${r.stdout}`, r.ok);
   return {
     data: {
       available: true,
-      ok: r.ok,
+      ok: verdict.ok,
       confText,
       confHash: haConfHash(confText),
-      detail: r.ok ? output || "keepalived -t passed (rc=0)" : output || "keepalived -t failed",
+      detail: verdict.detail,
     },
   };
 });

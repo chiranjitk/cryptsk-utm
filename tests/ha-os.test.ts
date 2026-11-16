@@ -16,6 +16,7 @@ import {
   haStepGuarded,
   isHaBackupPath,
   parseVrrpStateFromJournal,
+  interpretKeepalivedTest,
   haConfHash,
   HA_INSTANCE_NAME,
   KEEPALIVED_CONF,
@@ -98,8 +99,8 @@ describe("renderKeepalivedConf", () => {
     expect(conf).toContain("unicast_src_ip 10.99.99.252");
     expect(conf).toContain("unicast_peer {");
     expect(conf).toContain("\t\t10.99.99.254");
-    expect(conf).toContain("preempt_delay 60");
     expect(conf).not.toContain("nopreempt");
+    expect(conf).toContain("preempt_delay ignored: initial state MASTER"); // hold-down documented, not a broken knob
     expect(conf).toContain("\t\t10.99.99.253/32 dev ens34");
     expect(conf).toContain("track_interface {");
     expect(conf).toContain("\t\tens34");
@@ -136,6 +137,18 @@ describe("renderKeepalivedConf", () => {
     expect(conf).not.toContain("preempt_delay");
   });
 
+  it("initial state MASTER: hold-down renders a documented note instead of a broken preempt_delay", () => {
+    // keepalived -t: "preempt delay will not work with initial state MASTER - clearing"
+    const conf = renderKeepalivedConf(cfg({ role: "active", preempt: true, holdDownSec: 60 }), { routerId: "r" });
+    expect(conf).not.toMatch(/^\tpreempt_delay/m);
+    expect(conf).toContain("preempt_delay ignored: initial state MASTER");
+  });
+
+  it("initial state BACKUP keeps preempt_delay (hold-down honored)", () => {
+    const conf = renderKeepalivedConf(cfg({ role: "standby", preempt: true, holdDownSec: 60 }), { routerId: "r" });
+    expect(conf).toContain("preempt_delay 60");
+  });
+
   it("sanitizes the router_id (non hostname-safe chars dropped)", () => {
     const conf = renderKeepalivedConf(cfg(), { routerId: "ut m@primary!!" });
     expect(conf).toContain("router_id utmprimary");
@@ -146,6 +159,40 @@ describe("renderKeepalivedConf", () => {
     const b = renderKeepalivedConf(cfg(), { routerId: "R" });
     expect(a).toBe(b);
     expect(haConfHash(a)).toBe(haConfHash(b));
+  });
+});
+
+// ── keepalived -t interpretation (warnings ≠ errors) ───────────────────────
+
+describe("interpretKeepalivedTest", () => {
+  it("treats the real MASTER+preempt_delay warning as a pass", () => {
+    const v = interpretKeepalivedTest(
+      "(VI_CONSOLE) Warning - preempt delay will not work with initial state MASTER - clearing",
+      false, // keepalived -t exits non-zero on warnings
+    );
+    expect(v.ok).toBe(true);
+    expect(v.hasErrors).toBe(false);
+    expect(v.detail).toContain("warning");
+  });
+
+  it("treats errors / exiting as a hard failure", () => {
+    const v = interpretKeepalivedTest(
+      "(VI_CONSOLE) Error - unknown keyword foo\nkeepalived -t exiting with 1 error(s)",
+      false,
+    );
+    expect(v.ok).toBe(false);
+    expect(v.hasErrors).toBe(true);
+    expect(v.detail).toContain("Error");
+  });
+
+  it("rc=0 with no output passes clean", () => {
+    const v = interpretKeepalivedTest("", true);
+    expect(v.ok).toBe(true);
+    expect(v.detail).toContain("rc=0");
+  });
+
+  it("exec failure with no output is a hard failure", () => {
+    expect(interpretKeepalivedTest("", false).ok).toBe(false);
   });
 });
 
