@@ -98,8 +98,8 @@ function GaugeCard({ label, value, unit, pct, icon, tone }: { label: string; val
       <CardContent className="flex items-center gap-3 p-4">
         <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", tone)}>{icon}</div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs text-zinc-500">{label}</p>
-          <p className="text-lg font-semibold leading-tight tabular-nums">
+          <p className="truncate text-xs text-slate-500 dark:text-slate-400">{label}</p>
+          <p className="font-display text-lg font-bold leading-tight tracking-tight tabular-nums">
             {value}
             {unit ? <span className="ml-0.5 text-xs font-normal text-zinc-400">{unit}</span> : null}
           </p>
@@ -120,7 +120,7 @@ function StatChip({ icon: Icon, label, value, valueTone }: { icon: Icons.LucideI
     <span className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white/70 px-2.5 py-1.5 text-xs dark:border-zinc-800 dark:bg-zinc-900/70">
       <Icon className="h-3.5 w-3.5 text-zinc-400" />
       <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
-      <span className={cn("font-semibold tabular-nums text-zinc-800 dark:text-zinc-100", valueTone)}>{value}</span>
+      <span className={cn("font-display font-semibold tabular-nums text-zinc-800 dark:text-zinc-100", valueTone)}>{value}</span>
     </span>
   );
 }
@@ -419,7 +419,7 @@ export function DashboardView() {
           <Card>
             <CardContent className="p-4 md:p-6">
               <p className="text-xs text-zinc-500">Active sessions</p>
-              <p className="mt-1 text-3xl font-semibold tabular-nums">{activeSessions.toLocaleString()}</p>
+              <p className="mt-1 font-display text-3xl font-bold tracking-tight tabular-nums">{activeSessions.toLocaleString()}</p>
               <p className="mt-1 text-[11px] text-zinc-400">conntrack · live counter</p>
             </CardContent>
           </Card>

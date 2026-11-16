@@ -8,6 +8,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-sora);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -44,75 +45,78 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  /* Brand theme (ADR-019 rev): white surfaces, dark-red primary (red-800),
-     red accents; zinc secondary/info, amber + emerald stay semantic. */
+  /* T17 "Cerulean Dock" skin (owner-picked from /design-templates.html):
+     pure-white stage, cerulean #0284c7 primary, blue-tinted hairlines #e2eaf1,
+     ink #101c28, muted #7e91a3, 18px cards with soft layered shadows.
+     amber/emerald/rose stay semantic (status) — never brand accent. */
+  --radius: 0.875rem;
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --foreground: oklch(0.223 0.028 247.5);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.223 0.028 247.5);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.452 0.17 26.187);
+  --popover-foreground: oklch(0.223 0.028 247.5);
+  --primary: oklch(0.588 0.121 234.61);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.968 0.008 25);
-  --secondary-foreground: oklch(0.35 0.06 25);
-  --muted: oklch(0.968 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.961 0.017 25);
-  --accent-foreground: oklch(0.42 0.11 25);
+  --secondary: oklch(0.964 0.017 235);
+  --secondary-foreground: oklch(0.44 0.09 238);
+  --muted: oklch(0.968 0.006 240);
+  --muted-foreground: oklch(0.618 0.033 247);
+  --accent: oklch(0.955 0.02 235);
+  --accent-foreground: oklch(0.44 0.09 238);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.637 0.237 25.331);
-  --chart-1: oklch(0.577 0.245 27.325);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.452 0.17 26.187);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.985 0.004 25);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.452 0.17 26.187);
+  --border: oklch(0.925 0.011 241);
+  --input: oklch(0.918 0.013 241);
+  --ring: oklch(0.588 0.121 234.61);
+  --chart-1: oklch(0.588 0.121 234.61);
+  --chart-2: oklch(0.746 0.16 232.66);
+  --chart-3: oklch(0.44 0.09 244);
+  --chart-4: oklch(0.666 0.179 58.3);
+  --chart-5: oklch(0.645 0.246 16.44);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.223 0.028 247.5);
+  --sidebar-primary: oklch(0.588 0.121 234.61);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.961 0.017 25);
-  --sidebar-accent-foreground: oklch(0.42 0.11 25);
-  --sidebar-border: oklch(0.922 0.008 25);
-  --sidebar-ring: oklch(0.637 0.237 25.331);
+  --sidebar-accent: oklch(0.955 0.02 235);
+  --sidebar-accent-foreground: oklch(0.44 0.09 238);
+  --sidebar-border: oklch(0.925 0.011 241);
+  --sidebar-ring: oklch(0.588 0.121 234.61);
 }
 
 .dark {
-  /* Brand dark: neutral zinc surfaces, red-500 primary */
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.637 0.237 25.331);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.269 0.015 25);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.28 0.03 25);
-  --accent-foreground: oklch(0.808 0.114 19.569);
+  /* Cerulean Dock dark stage: deep navy #0b1621 surfaces, cards #122331,
+     accent lifted to #38b6f0 — mirrors .t17.dark in the template gallery. */
+  --background: oklch(0.21 0.028 249);
+  --foreground: oklch(0.955 0.014 237);
+  --card: oklch(0.245 0.03 248.5);
+  --card-foreground: oklch(0.955 0.014 237);
+  --popover: oklch(0.245 0.03 248.5);
+  --popover-foreground: oklch(0.955 0.014 237);
+  --primary: oklch(0.735 0.145 233);
+  --primary-foreground: oklch(0.18 0.03 249);
+  --secondary: oklch(0.29 0.032 248);
+  --secondary-foreground: oklch(0.9 0.02 238);
+  --muted: oklch(0.29 0.032 248);
+  --muted-foreground: oklch(0.7 0.028 246);
+  --accent: oklch(0.3 0.045 243);
+  --accent-foreground: oklch(0.83 0.09 233);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.637 0.237 25.331);
-  --chart-1: oklch(0.637 0.237 25.331);
-  --chart-2: oklch(0.708 0 0);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.505 0.213 27.518);
-  --chart-5: oklch(0.712 0.194 13.428);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.637 0.237 25.331);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.28 0.03 25);
-  --sidebar-accent-foreground: oklch(0.808 0.114 19.569);
+  --ring: oklch(0.735 0.145 233);
+  --chart-1: oklch(0.746 0.16 232.66);
+  --chart-2: oklch(0.828 0.111 230.3);
+  --chart-3: oklch(0.62 0.03 246);
+  --chart-4: oklch(0.769 0.188 70.08);
+  --chart-5: oklch(0.712 0.194 13.43);
+  --sidebar: oklch(0.245 0.03 248.5);
+  --sidebar-foreground: oklch(0.955 0.014 237);
+  --sidebar-primary: oklch(0.735 0.145 233);
+  --sidebar-primary-foreground: oklch(0.18 0.03 249);
+  --sidebar-accent: oklch(0.3 0.045 243);
+  --sidebar-accent-foreground: oklch(0.83 0.09 233);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.637 0.237 25.331);
+  --sidebar-ring: oklch(0.735 0.145 233);
 }
 
 @layer base {
@@ -125,10 +129,10 @@
   /* Slim scrollbars for long lists (UI_DESIGN_SYSTEM §4, PROJECT_MEMORY §9) */
   * {
     scrollbar-width: thin;
-    scrollbar-color: oklch(0.705 0.01 286) transparent; /* zinc-400 */
+    scrollbar-color: oklch(0.72 0.02 245) transparent; /* blue-gray */
   }
   .dark * {
-    scrollbar-color: oklch(0.444 0.006 286) transparent; /* zinc-700 */
+    scrollbar-color: oklch(0.44 0.03 247) transparent;
   }
   ::-webkit-scrollbar {
     width: 8px;
@@ -141,10 +145,10 @@
     border-radius: 9999px;
     border: 2px solid transparent;
     background-clip: content-box;
-    background-color: oklch(0.705 0.01 286); /* zinc-400 */
+    background-color: oklch(0.72 0.02 245);
   }
   .dark ::-webkit-scrollbar-thumb {
-    background-color: oklch(0.444 0.006 286); /* zinc-700 */
+    background-color: oklch(0.44 0.03 247);
   }
   /* Respect prefers-reduced-motion: keep only opacity-style feedback
      (UI_DESIGN_SYSTEM §7 — JS-side transitions gate on useReducedMotion) */
@@ -158,6 +162,59 @@
       scroll-behavior: auto !important;
     }
   }
+}
+
+/* ── Cerulean Dock skin utilities (mirrors .t17 in design-templates.html) ── */
+
+/* soft layered card shadow — light: blue-slate, dark: pure black */
+@utility shadow-soft {
+  box-shadow: 0 12px 30px rgba(16, 50, 80, 0.08), 0 2px 6px rgba(16, 50, 80, 0.05);
+}
+
+/* frosted-glass bottom dock */
+@utility dock-glass {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  outline: 1px solid oklch(0.925 0.011 241);
+}
+
+/* window-chrome topbar */
+@utility glass-bar {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* airy stage — two soft cerulean radial washes (top-right, bottom-left) */
+@utility cerulean-stage {
+  background-image: radial-gradient(56% 36% at 86% -4%, rgba(2, 132, 199, 0.08), transparent 60%),
+    radial-gradient(40% 30% at -4% 108%, rgba(125, 211, 252, 0.14), transparent 60%);
+}
+
+/* hide scrollbars on the horizontally-scrolling dock */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.dark .shadow-soft {
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+.dark .dock-glass {
+  background: rgba(18, 35, 49, 0.82);
+  border-color: rgba(255, 255, 255, 0.1);
+  outline-color: oklch(0.293 0.033 247);
+}
+.dark .glass-bar {
+  background: rgba(11, 22, 33, 0.85);
+}
+.dark .cerulean-stage {
+  background-image: radial-gradient(56% 36% at 86% -4%, rgba(56, 182, 240, 0.1), transparent 60%),
+    radial-gradient(40% 30% at -4% 108%, rgba(125, 211, 252, 0.07), transparent 60%);
 }
 
 /* M03 rules/NAT tables: brief neutral flash on a row whose optimistic toggle

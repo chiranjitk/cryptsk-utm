@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
     <linearGradient id="ckg" x1="12" y1="4" x2="52" y2="60" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#ef4444"/>
-      <stop offset="0.55" stop-color="#c81e1e"/>
-      <stop offset="1" stop-color="#7f1d1d"/>
+      <stop stop-color="#38bdf8"/>
+      <stop offset="0.55" stop-color="#0284c7"/>
+      <stop offset="1" stop-color="#0a4f80"/>
     </linearGradient>
   </defs>
   <path d="M32 5 L55 18 V46 L32 59 L9 46 V18 Z" fill="url(#ckg)" stroke="url(#ckg)" stroke-width="6" stroke-linejoin="round"/>

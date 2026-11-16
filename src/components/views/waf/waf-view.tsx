@@ -6,7 +6,7 @@
  * selected vhost shows its policy card (CRS badge, paranoia pills, anomaly
  * threshold sliders, learning mode, rate limit, geo-block chips, API
  * protection), exclusions table, a simulated CRS "test request" card and the
- * 24h WAF log feed + stats strip. Theme: white + enterprise red-700.
+ * 24h WAF log feed + stats strip. Theme: white + cerulean sky-600.
  */
 
 import { Fragment, useState } from "react";

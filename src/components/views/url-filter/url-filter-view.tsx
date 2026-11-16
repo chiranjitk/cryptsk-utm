@@ -5,7 +5,7 @@
  * policy cards (left) with defaults + toggles, per-policy Categories (13-row
  * replace-all table) and Custom lists (block/allow, paste import) tabs, a
  * simulated "Test URL" decision card and a 24h stats strip + recent log table.
- * Theme: allow = blue, block = rose, warn = amber (red-700 enterprise).
+ * Theme: allow = blue, block = rose, warn = amber (cerulean sky-600 enterprise).
  */
 
 import { useEffect, useMemo, useState } from "react";

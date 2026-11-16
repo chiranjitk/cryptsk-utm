@@ -5,7 +5,7 @@
  * sections: Federated IdPs (SAML2/OIDC table + create/edit/delete + simulated
  * connectivity test), RADIUS CoA profiles (table + CRUD + simulated CoA packet
  * send) and the user activity timeline (paged table, 10s polling).
- * Theme (ADR-019): red-700 enterprise accents, zinc neutrals, rose-600
+ * Theme (cerulean skin): sky-600 enterprise accents, zinc neutrals, rose-600
  * danger, amber-500 warning. Secrets are write-only — the UI never renders a
  * stored client secret, only the "•••••••• (stored)" placeholder.
  */

@@ -7,7 +7,7 @@
  * inline enabled switch, bypass-rules table with per-type validated editor.
  * "Test a connection" card runs the SIMULATED decision engine (the appliance
  * enforces for real) and appends to a mini recent-tests list; recent
- * inspection logs close the view. Theme: white + enterprise red-700.
+ * inspection logs close the view. Theme: white + cerulean sky-600.
  */
 
 import { useMemo, useRef, useState } from "react";

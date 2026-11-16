@@ -54,12 +54,12 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
+    <div className="cerulean-stage flex min-h-screen flex-col items-center justify-center bg-background p-4">
       <DesignGalleryLink />
       <div className="mb-6 flex flex-col items-center gap-2">
         <BrandLogo className="h-12 w-12 drop-shadow-lg" />
-        <h1 className="text-xl font-semibold">Cryptsk Console</h1>
-        <p className="text-sm text-zinc-500">UTM / NGFW management — real-host telemetry</p>
+        <h1 className="font-display text-xl font-bold tracking-tight">Cryptsk Console</h1>
+        <p className="text-sm text-slate-500">UTM / NGFW management — real-host telemetry</p>
       </div>
 
       <Card className="w-full max-w-sm">
@@ -99,7 +99,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
                 {error}
               </p>
             ) : null}
-            <Button type="submit" className="w-full bg-zinc-700 hover:bg-zinc-800" disabled={busy}>
+            <Button type="submit" className="w-full" disabled={busy}>
               {busy ? "Signing in…" : "Sign in"}
             </Button>
           </form>

@@ -649,6 +649,53 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-16 — T17 "Cerulean Dock" applied app-wide + GitHub upstream merged (vpn/ips/dns-dhcp OS integration)
+
+- **Trigger:** user: "Cerulean Dock i like this one, please take latest update from github before
+  change the looks" → (1) pull origin first, (2) reskin the whole console to template 17.
+- **GitHub merge (FIRST, before any design work):** `git fetch` showed origin/main +17 commits
+  (b52b9e8..264c137): vpn swanctl/wg-quick/openvpn OS integration (`src/lib/vpn/os.ts` 1006L,
+  `crypto.ts`), IPS Suricata integration (`ips-os.ts` 703L), dns-dhcp unbound/kea integration
+  (`src/lib/dns/os.ts` 723L, `src/lib/dhcp/os.ts` 827L), new API routes (`/api/v1/{vpn/{apply,
+  keygen,os-status},dns-dhcp/{apply,os-status},ips/os}`), `os-sync.tsx` panels ×3, validator
+  zod-v4 `.partial()` fix, host-collector changes. Local was 10 commits ahead (QA marathon) →
+  diverged. `git merge origin/main`: 17/18 overlapping files auto-merged; ONE conflict in
+  dhcp-view.tsx (local tab-count badges vs upstream `<DnsDhcpOsSync/>` wrapper) — resolved
+  KEEPING BOTH (OsSync panel above tabs + badges). pm2 stopped during merge, restarted after;
+  lint clean; new routes compile (401 unauth = envelope guard working).
+- **Cerulean Dock skin (T17 → app):** globals.css tokens rewritten — light: pure white bg,
+  primary `oklch(0.588 0.121 234.61)` (#0284c7), hairline border `oklch(0.925 0.011 241)`
+  (#e2eaf1), ink `#101c28`, muted `#7e91a3`; dark (mirrors .t17.dark): bg #0b1621, card #122331,
+  primary #38b6f0 (primary-foreground = dark ink for contrast), 10%-white borders.
+  `--radius: 0.875rem` (cards → 18px). Utilities: `shadow-soft` (0 12px 30px rgba(16,50,80,.08)
+  + dark .4 black), `dock-glass` (blur(12px) white .82 / dark #122331 .82), `glass-bar` (topbar),
+  `cerulean-stage` (dual radial washes), `no-scrollbar`. layout.tsx: Sora 400–800 →
+  `--font-sora` → `font-display` utility (KPI values, headings).
+- **Shell restructure (app-shell.tsx):** sidebar REMOVED → floating frosted-glass **dock**
+  (fixed bottom-3 centered, rounded-3xl, `no-scrollbar` overflow-x): [LayoutGrid "All views"
+  button → Sheet with full grouped SidebarNav] | [Dashboard] + 13 group tiles (each → group's
+  first view; active = cerulean gradient sky-500→sky-700 + white icon + 4px dot, `aria-current`).
+  44px touch targets. Topbar → window chrome: 3 traffic dots, cerulean BrandLogo, "Cryptsk /
+  SECTION / View" breadcrumb, Live badge now sky (was emerald), search pill glass, avatar sky
+  chip. Footer `mb-20` clears dock (verified: footer bottom 497 < dock top 499 @577vh). Boot
+  spinner red→sky. RT status dot stays semantic emerald/amber/rose.
+- **De-reded brand surfaces:** brand-logo.tsx + icon.svg + logo.svg gradient → #38bdf8→#0284c7
+  →#0a4f80; charts/palette.tsx PALETTE blue #0284c7 / sky #38bdf8 (was zinc!),
+  DONUT_COLORS emerald/teal → cerulean family (0 green in charts); login-view `bg-zinc-50` →
+  `cerulean-stage bg-background`, submit button → default primary; dashboard KPI numerals +
+  "29" session counter → font-display bold. 10 view files' "red-700" refs were COMMENTS only —
+  comments updated to cerulean wording; rose/emerald severity semantics untouched.
+- **Gallery pill moved bottom-4→bottom-24** (dock clearance), still opens /design-templates.html.
+- **Verification (agent-browser, 1280×800 + 390×844):** login (cerulean stage + gradient logo +
+  sky button) → dashboard (15 dock tiles, Dashboard active w/ dot, `bg` computed = pure white
+  lab(100 0 0), dock radius 24px) → dock click Network → `#/network/interfaces` + tile active +
+  breadcrumb; interfaces toggles cerulean (primary token) → footer/dock geometry OK → "All
+  views" sheet: grouped nav cerulean active, click "DNS Security" → navigates + closes → dark
+  mode: navy stage, glass dock dark variant, DNS&DHCP tile active, upstream "Apply to OS" panel
+  renders → mobile 390px: dock scrollWidth>clientWidth scrollable auto, topbar compact →
+  Ctrl+K palette cerulean highlight → 0 page errors. dev.log clean (only pre-existing
+  unauth /api/internal/events 401 noise). pm2 both online.
+
 ### 2026-11-16 — Batch 2 "Pure White Edition": T11–T20 added (white bg + non-green accents, 10 distinct LAYOUTS)
 
 - **Trigger:** user: "pure white bg and secondery color any other except green". Batch 1 (red

@@ -9,7 +9,7 @@
  * match→action table), Mail Logs (paged verdict-filtered table with
  * quarantine release) and Test (simulated Rspamd+ClamAV scan with an
  * attachment type selector). Stats + logs poll every 10 s via TanStack Query.
- * Theme: white + enterprise red-700; blue/zinc/amber/rose badges only
+ * Theme: white + cerulean sky-600; blue/zinc/amber/rose badges only
  * (delivered=blue clean, quarantined/spam=amber, phishing/malware=rose).
  */
 

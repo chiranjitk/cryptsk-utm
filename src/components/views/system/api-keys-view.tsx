@@ -8,7 +8,7 @@
  *            dialog gated behind "I have saved it" → destructive revoke.
  *   Webhooks: CRUD + events multi-select (5 locked values) + enabled switch +
  *            "Send test" simulated delivery (M11 §5.6 — no real HTTP egress).
- * Theme per ADR-019: red-700 primary; scope badges read=zinc, write=amber,
+ * Theme per ADR-019: sky-600 primary; scope badges read=zinc, write=amber,
  * admin=rose; emerald only for a genuinely-ok lastStatus.
  */
 

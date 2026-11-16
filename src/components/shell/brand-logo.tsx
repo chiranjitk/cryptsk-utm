@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * BrandLogo — the Cryptsk brand mark (v3: rounded hexagon badge + ring
- * keyhole, defense-in-depth inner outline). Single source of truth for
- * every logo surface: sidebar, login, setup wizard and the console boot
- * screen. `src/app/icon.svg` mirrors it for the favicon (Next.js file
+ * BrandLogo — the Cryptsk brand mark (v4: cerulean variant — rounded hexagon
+ * badge + ring keyhole, defense-in-depth inner outline). Single source of
+ * truth for every logo surface: topbar, login, setup wizard and the console
+ * boot screen. `src/app/icon.svg` mirrors it for the favicon (Next.js file
  * convention) and `public/logo.svg` for bookmark/og use. Sized via
  * className (h-8 w-8, h-12 w-12, …).
  *
- * Palette (LOCKED, owner-directed white/red/dark-red brand):
- *   #ef4444 → #c81e1e → #7f1d1d
+ * Palette (owner-directed cerulean skin, T17 "Cerulean Dock"):
+ *   #38bdf8 → #0284c7 → #0a4f80
  */
 
 export function BrandLogo({ className }: { className?: string }) {
@@ -23,9 +23,9 @@ export function BrandLogo({ className }: { className?: string }) {
     >
       <defs>
         <linearGradient id="ck-brand-gradient" x1="12" y1="4" x2="52" y2="60" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#ef4444" />
-          <stop offset="0.55" stopColor="#c81e1e" />
-          <stop offset="1" stopColor="#7f1d1d" />
+          <stop stopColor="#38bdf8" />
+          <stop offset="0.55" stopColor="#0284c7" />
+          <stop offset="1" stopColor="#0a4f80" />
         </linearGradient>
       </defs>
       {/* hexagon badge — stroke shares the gradient to soften the corners */}

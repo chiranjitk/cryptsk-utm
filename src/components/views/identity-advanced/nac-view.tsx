@@ -6,7 +6,7 @@
  * auth-fail VLANs, posture switches), paged device inventory with optimistic
  * quarantine/release per row plus a simulated profiling rescan, and the BYOD
  * onboarding list (enroll with one-time token, approve, revoke).
- * Theme (ADR-019): red-700 enterprise accents, zinc neutrals, rose-600
+ * Theme (cerulean skin): sky-600 enterprise accents, zinc neutrals, rose-600
  * danger (quarantine), amber-500 warning (pending).
  */
 

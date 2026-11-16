@@ -6,7 +6,7 @@
  * per-policy nDPI app rules table (inline action/bandwidth/direction editing,
  * user-group scoping), a simulated "Test app" decision card and a 24h stats
  * strip + recent decision log table. Theme: allow = blue, block = rose,
- * limited = amber (red-700 enterprise).
+ * limited = amber (cerulean sky-600 enterprise).
  */
 
 import { useMemo, useRef, useState } from "react";

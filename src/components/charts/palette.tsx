@@ -1,11 +1,10 @@
 "use client";
 
 /**
- * Chart wrappers — ADR-019 (supersedes ADR-013 palette): all charts go through
- * components/charts/ using the LOCKED brand palette. Owner-directed white/red/
- * dark-red theme, 2026-11-09 (rev 2: red is a BRAND ACCENT, not a paint job —
- * data series lead with neutral zinc and use ONE brand-red series max so red
- * keeps its alarm value. Categorical charts vary: red family + amber + neutrals).
+ * Chart wrappers — cerulean skin (T17, supersedes ADR-019 red): all charts go
+ * through components/charts/ with a cerulean-led series (rx = cerulean-600,
+ * tx = sky-400). No green series anywhere; amber/rose/violet/slate are the
+ * categorical secondaries.
  */
 
 import {
@@ -21,14 +20,14 @@ import {
 } from "recharts";
 
 export const PALETTE = {
-  /** brand series — the ONLY red series a chart should use */
-  blue: "#0ea5e9",
-  /** neutral series — upload/secondary data */
-  sky: "#71717a",
+  /** brand series — cerulean (download) */
+  blue: "#0284c7",
+  /** second series — sky-400 (upload) */
+  sky: "#38bdf8",
   amber: "#f59e0b",
   rose: "#f43f5e",
   orange: "#f97316",
-  violet: "#a1a1aa",
+  violet: "#8b5cf6",
   slate: "#64748b",
 } as const;
 
@@ -68,7 +67,7 @@ export function ThroughputAreaChart({
   );
 }
 
-const DONUT_COLORS = ["#64748b", "#0ea5e9", "#10b981", "#f59e0b", "#8b5cf6", "#f43f5e", "#14b8a6"];
+const DONUT_COLORS = ["#0284c7", "#38bdf8", "#64748b", "#f59e0b", "#8b5cf6", "#f43f5e", "#0ea5e9"];
 
 export function AppsDonut({ data, height = 220 }: { data: Array<{ app: string; bytes: number }>; height?: number }) {
   const total = data.reduce((s, d) => s + d.bytes, 0) || 1;

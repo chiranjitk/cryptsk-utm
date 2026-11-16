@@ -8,7 +8,7 @@
  * lease panel next to the dual-stack settings card (toggles + PD WAN select +
  * PD prefix-length pills + RA mode), then the NAT66 rules table (per-type
  * translation cell, deterministic "simulate traffic" hit bumps) and the
- * DHCPv6 servers table. Theme: red-700 for active/primary, amber for
+ * DHCPv6 servers table. Theme: sky-600 for active/primary, amber for
  * masquerade, zinc for DNAT/disabled.
  */
 
