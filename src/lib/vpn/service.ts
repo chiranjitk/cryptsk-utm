@@ -423,6 +423,18 @@ function slug(name: string): string {
 }
 
 async function applianceWanIp(): Promise<string> {
+  // OS truth first: the REAL address on the default-route (WAN) interface —
+  // the config plane can hold seed placeholders (203.0.113.2) that would
+  // produce useless client bundles on a live appliance
+  try {
+    const { readInterfaces } = await import("@/lib/host/proc");
+    const ifaces = await readInterfaces();
+    const wanOs = ifaces.find((i) => i.isDefaultRoute) ?? ifaces.find((i) => i.ipv4?.some((a) => a && !a.startsWith("127.")));
+    const osIp = wanOs?.ipv4?.find((a) => a && !a.startsWith("127."));
+    if (osIp) return osIp.split("/")[0];
+  } catch {
+    /* fall through to the config plane */
+  }
   const wan = await db.networkInterface.findFirst({ where: { tenantId: 1, role: "wan" }, select: { config: true } });
   const cfg = wan ? parseJson<{ ip?: string }>(wan.config, {}) : {};
   return cfg.ip ?? "203.0.113.2";
