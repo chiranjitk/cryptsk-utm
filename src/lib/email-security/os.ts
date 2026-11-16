@@ -463,8 +463,13 @@ export function renderRspamdAntivirus(policy: EmailPolicyOsShape): string {
     policy.scanArchives
       ? "# scanArchives=true — clamd archive limits keep rspamd defaults (documented in console)."
       : "# scanArchives=false — archive payload scanning is not forced by the console.",
-    "clamd {",
+    "# named scanner block; type MUST be \"clamav\" (rspamd 3.12 accepted types:",
+    "# clamav | fprot | sophos | savapi — appliance-verified via rspamadm configtest)",
+    "clamav {",
+    '    type = "clamav";',
     `    servers = "${CLAMD_SERVER}";`,
+    '    action = "reject";',
+    '    symbol = "CLAM_VIRUS";',
     "}",
     "",
   ].join("\n");

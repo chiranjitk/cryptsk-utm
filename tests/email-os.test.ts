@@ -209,10 +209,12 @@ describe("rspamd local.d renders", () => {
 
   it("antivirus.conf: clamd servers conditional on blockMalware (+ scanArchives note)", () => {
     const on = renderEmailFiles({ gateways: [gateway()], policy: policy(), rules: [] }).files.find((f) => f.path.endsWith("antivirus.conf"))?.content;
-    expect(on).toContain("clamd {");
+    expect(on).toContain("clamav {");
+    expect(on).toContain('type = "clamav";');
     expect(on).toContain('servers = "127.0.0.1:3310";');
+    expect(on).toContain('action = "reject";');
     const off = renderEmailFiles({ gateways: [gateway()], policy: policy({ blockMalware: false }), rules: [] }).files.find((f) => f.path.endsWith("antivirus.conf"))?.content;
-    expect(off).not.toContain("clamd {");
+    expect(off).not.toContain("clamav {");
     expect(off).toContain("blockMalware=false");
     const noArchives = renderEmailFiles({ gateways: [gateway()], policy: policy({ scanArchives: false }), rules: [] }).files.find((f) => f.path.endsWith("antivirus.conf"))?.content;
     expect(noArchives).toContain("scanArchives=false");
