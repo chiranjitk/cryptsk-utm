@@ -649,6 +649,47 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
 
 ## 15. SESSION LOG (append-only — newest on top)
 
+### 2026-11-16 — Batch 2: templates 11–20 (user rejected all of batch 1)
+
+- **Trigger:** user rejected the entire first batch ("i dont like any of thise looks make more 10
+  take time and build") — wanted 10 NEW templates built with real effort, not palette tweaks.
+- **Deliverable:** same gallery file (`public/design-templates.html`) extended to 20 templates.
+  Batch 2 explores different DESIGN LANGUAGES (not just hues), each with native mode + full
+  counterpart (`.tN.light` or `.tN.dark`):
+  11 Bento Studio (light-first — chunky porcelain tiles, 22px radius, floating shadows, coral
+  #ff5c4d + butter, black active pill, fnum Bricolage Grotesque);
+  12 Blueprint Draft (dark-first — drafting-blue #12386b, chalk linework, 24px grid + dashed
+  dimension frame, stencil mono caps, amber #ffce54 highlights, chalk bars);
+  13 Night Observatory (dark-first — hand-placed 12-dot starfield via stacked radial-gradients,
+  moon-gold #f5d488 Cormorant serif numerals, lilac nebula, hairline glass cards);
+  14 Riso Press (light-first — newsprint, fluoro pink #ff48b0 + royal blue #2b3fd6 inks, halftone
+  dots, misregistration text-shadows, hard pink card offsets, Space Mono);
+  15 Sumi & Vermillion (light-first — washi, sumi grays, single vermillion #d94425, ensō ring
+  logo, flat hairline cards, EB Garamond numerals, gray bars/red hl);
+  16 Budapest Pastel (light-first — dusty rose, violet bellhop #6b4a7e, double-frame cards via
+  border+outline-offset, ARCH-TOP bars, Fraunces);
+  17 Mission Control (light-first — spacecraft white, 110px panel seams, stencil caps, insignia
+  #2f5fd0 + worm red #e03c31, Archivo + Plex Mono);
+  18 Carbon & Copper (dark-first — carbon weave 45°/−45°, copper gradient numerals via
+  background-clip:text (Unbounded), metal hairlines #de8a55);
+  19 Analog Console (dark-first — walnut-grain sidebar (3-layer background-image), amber LED
+  #f5a623 numerals+glow, VU-meter SEGMENTED bars (repeating-linear-gradient), knob logodot,
+  valve-orange actions);
+  20 Salmon Press (light-first — FT-salmon paper #f6e2d3, claret #a02c3a, KPIs as ruled
+  newspaper columns (gap:0 + border-left), 2px section top rules, Playfair numerals).
+- **Chrome updates:** title/sub/how → 20 templates + "batch 2" callout; quick-nav gained a
+  "new batch" divider label (`.qlab`) + 10 color-dotted links; modenote → "11 dark-first, 9
+  light-first"; fonts URL + Bricolage Grotesque, Cormorant Garamond, EB Garamond, Space Mono,
+  Unbounded, Archivo; footer custom-invite → "Template 21"; app pill (design-gallery-link.tsx)
+  → "pick 1 of 20 templates".
+- **Verification (agent-browser):** 20/20 mocks render, 0 page errors; native computed bgs all
+  10 correct (t11 #f4f2ee … t20 #f6e2d3); Light all → 20×.light (t12 paper #eef3f9, t13 dawn,
+  t19 daylight segments), Dark all → 20×.dark (t11 #151311, t16 plum, t20 cream rules), Native
+  mix resets 0/0. Screenshots: T12 blueprint (chalk-on-blue + dashed frame), T13 starfield
+  gold/lilac, T14 riso misregistration, T19 walnut VU segments, T20 salmon columns, T11 bento
+  tiles, T16 arches/double frames. lint clean; gallery + app 200; pm2 online.
+- **Next:** user picks ONE of the 20 (or mixes) → full-app conversion; then remove pill.
+
 ### 2026-11-16 — Gallery color diversification ("always teal green" complaint)
 
 - **Trigger:** user complained the lineup was monochrome-green ("why u use always teal green,
