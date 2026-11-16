@@ -23,7 +23,7 @@
  *   /etc/rspamd/local.d/spf.conf        spfVerify → enabled true/false
  *   /etc/rspamd/local.d/dkim.conf       dkimVerify → enabled true/false
  *   /etc/rspamd/local.d/dmarc.conf      dmarcPolicy → rspamd action
- *   /etc/rspamd/local.d/utm-attach.conf blocked-extension multimap
+ *   /etc/rspamd/local.d/multimap.conf blocked-extension multimap (rules must live in a module file)
  *   /etc/rspamd/utm-attach.map          extension list (one per line)
  *
  * DETERMINISTIC POLICY MAPPINGS (documented in the rendered files too):
@@ -86,7 +86,7 @@ export const EMAIL_MANAGED_PATHS: readonly string[] = [
   `${RSPAMD_LOCAL_D}/spf.conf`,
   `${RSPAMD_LOCAL_D}/dkim.conf`,
   `${RSPAMD_LOCAL_D}/dmarc.conf`,
-  `${RSPAMD_LOCAL_D}/utm-attach.conf`,
+  `${RSPAMD_LOCAL_D}/multimap.conf`,
   RSPAMD_ATTACH_MAP,
 ];
 
@@ -441,9 +441,8 @@ export function renderRspamdPhishing(policy: EmailPolicyOsShape): string {
   return [
     RSPAMD_HEADER,
     "# blockPhishing=true — phishing detections are rejected outright.",
-    "phishing {",
-    "    action = reject;",
-    "}",
+    "# (flat option — local.d/phishing.conf lives inside the phishing module)",
+    "action = reject;",
     "",
   ].join("\n");
 }
@@ -472,7 +471,10 @@ export function renderRspamdAntivirus(policy: EmailPolicyOsShape): string {
 }
 
 function renderModuleEnabled(name: string, enabled: boolean, note: string): string {
-  return [RSPAMD_HEADER, note, `${name} {`, `    enabled = ${enabled};`, "}", ""].join("\n");
+  // local.d/<module>.conf is merged INTO the module's options table — a
+  // `module { ... }` wrapper creates an invalid nested section
+  // ("nested section: <name>", rspamadm configtest). Flat options only.
+  return [RSPAMD_HEADER, note, `enabled = ${enabled};`, ""].join("\n");
 }
 
 export function renderRspamdSpf(policy: EmailPolicyOsShape): string {
@@ -491,14 +493,13 @@ export function renderRspamdDmarc(policy: EmailPolicyOsShape): string {
     `# console dmarcPolicy=${policy.dmarcPolicy} → rspamd action ${action}`,
     "# (quarantine maps to add_header: rspamd holds no quarantine queue;",
     "#  the console mail log is the quarantine surface in v1)",
-    "dmarc {",
-    `    action = ${action};`,
-    "}",
+    "# (flat option — local.d/dmarc.conf lives inside the dmarc module)",
+    `action = ${action};`,
     "",
   ].join("\n");
 }
 
-/** utm-attach.conf — blocked-extension multimap (reject + UTM_BLOCKED_EXT symbol). */
+/** multimap.conf — blocked-extension multimap (reject + UTM_BLOCKED_EXT symbol). */
 export function renderRspamdAttachConf(policy: EmailPolicyOsShape): string {
   const exts = policy.blockedExtensions;
   if (exts.length === 0) {
@@ -599,7 +600,7 @@ export function renderEmailFiles(input: EmailRenderInput): RenderedEmail {
     [`${RSPAMD_LOCAL_D}/spf.conf`, renderRspamdSpf(input.policy)],
     [`${RSPAMD_LOCAL_D}/dkim.conf`, renderRspamdDkim(input.policy)],
     [`${RSPAMD_LOCAL_D}/dmarc.conf`, renderRspamdDmarc(input.policy)],
-    [`${RSPAMD_LOCAL_D}/utm-attach.conf`, renderRspamdAttachConf(input.policy)],
+    [`${RSPAMD_LOCAL_D}/multimap.conf`, renderRspamdAttachConf(input.policy)],
     [RSPAMD_ATTACH_MAP, renderRspamdAttachMap(input.policy)],
   ];
 
