@@ -22,6 +22,12 @@ a{color:inherit;text-decoration:none}
 .quick{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
 .quick a{font-size:12px;font-weight:700;padding:7px 13px;border-radius:999px;border:1px solid #2a2a35;color:#b9b9cc;background:#12121a;transition:border-color .15s,color .15s}
 .quick a:hover{border-color:#6a6a80;color:#fff}
+.modebar{display:flex;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap}
+.modelab{font-size:12.5px;color:#9a9ab0;font-weight:600}
+.modebtn{font-family:inherit;font-size:12px;font-weight:700;padding:8px 16px;border-radius:999px;border:1px solid #2a2a35;background:#12121a;color:#9a9ab0;cursor:pointer;transition:all .15s}
+.modebtn:hover:not(.active){border-color:#6a6a80;color:#fff}
+.modebtn.active{background:#e9e9f0;color:#0b0b10;border-color:#e9e9f0}
+.modenote{font-size:11.5px;color:#7a7a8e}
 .foot{margin-top:70px;border:1px dashed #3a3a48;border-radius:14px;padding:18px 20px;font-size:13.5px;color:#9a9ab0;line-height:1.7;text-align:center}
 .foot b{color:#e9e9f0}
 .tpl{margin-top:72px}
@@ -37,7 +43,10 @@ a{color:inherit;text-decoration:none}
 .mockroot{border-radius:16px;overflow:hidden;border:1px solid #23232e;box-shadow:0 26px 64px rgba(0,0,0,.5)}
 
 /* ============ shared mock skeleton (themed via CSS vars) ============ */
-.mock{--bg:#0b0b10;--side:#0e0e14;--panel:#12121a;--panel2:#17171f;--line:#26262f;--line2:#1e1e27;--text:#ececf2;--muted:#8f8fa6;--accent:#8f8fa6;--accent2:#b9b9cc;--accentSoft:rgba(255,255,255,.08);--accentInk:#111;--c1:#fb7185;--c2:#fbbf24;--c3:#34d399;--r:12px;--fr:12px;--fnum:inherit;
+/* fallback tokens live on :root (NOT on .mock) — declaring them on .mock would
+   self-override the theme values inherited from the .tN section (cascade bug) */
+:root{--bg:#0b0b10;--side:#0e0e14;--panel:#12121a;--panel2:#17171f;--line:#26262f;--line2:#1e1e27;--text:#ececf2;--muted:#8f8fa6;--accent:#8f8fa6;--accent2:#b9b9cc;--accentSoft:rgba(255,255,255,.08);--accentInk:#111;--c1:#fb7185;--c2:#fbbf24;--c3:#34d399;--r:12px;--fr:12px}
+.mock{
 display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:13px;position:relative;isolation:isolate;overflow:hidden}
 .m-side{width:230px;flex:0 0 230px;background:var(--side);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:3px}
 .m-logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:13px;letter-spacing:.06em;padding:6px 8px 16px;white-space:nowrap}
@@ -68,7 +77,7 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
 .m-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .m-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;position:relative}
 .k-label{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
-.k-val{font-size:27px;font-weight:800;margin-top:8px;letter-spacing:-.02em;font-family:var(--fnum)}
+.k-val{font-size:27px;font-weight:800;margin-top:8px;letter-spacing:-.02em;font-family:var(--fnum,inherit)}
 .k-val small{font-size:13px;font-weight:700;color:var(--muted)}
 .k-sub{margin-top:7px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:7px;white-space:nowrap}
 .k-delta{font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px}
@@ -264,6 +273,99 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
 .t10 .m-btn.solid{background:#fb923c;color:#2b1305}
 .t10 .m-avatar{background:#3a2a20;color:#fdba74;border-color:#57392a}
 .t10 .m-donut .hole{background:#231a17}
+
+/* ============ LIGHT MODE VARIANTS (toggle adds .light to every section) ============
+   Dark templates get a daylight reinterpretation that keeps their design language.
+   The 3 already-light templates only pick up the darker semantic chips below. */
+.light .mock{--c1:#e11d48;--c2:#d97706;--c3:#059669}
+.light .k-delta.up{color:#15803d;background:rgba(21,128,61,.1)}
+.light .k-delta.down{color:#be123c;background:rgba(190,18,60,.08)}
+.light .m-chip.live{color:#15803d;background:rgba(21,128,61,.08);border-color:rgba(21,128,61,.35)}
+.light .m-chip.live::before{background:#16a34a}
+.light .ok-dot{background:#16a34a;box-shadow:none}
+.light .sv-crit{color:#be123c;background:rgba(190,18,60,.08);border-color:rgba(190,18,60,.35)}
+.light .sv-high{color:#a16207;background:rgba(202,138,4,.12);border-color:rgba(202,138,4,.4)}
+.light .sv-med{color:#a16207;background:rgba(202,138,4,.12);border-color:rgba(202,138,4,.4)}
+.light .act.block{color:#15803d}
+.light .act.flag{color:#a16207}
+.light .act.quar{color:#a16207}
+
+/* T1 light — daylight ops: white cards on mist-blue, cyan/lime accents kept */
+.t1.light{--bg:#f2f8fb;--side:#e9f2f7;--panel:#ffffff;--panel2:#eef5f9;--line:rgba(8,145,178,.2);--line2:rgba(8,145,178,.1);--text:#0b2733;--muted:#5b7c8c;--accent:#0891b2;--accent2:#65a30d;--accentSoft:rgba(8,145,178,.1);--accentInk:#ffffff}
+.t1.light .mock::before{background-image:linear-gradient(rgba(8,145,178,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(8,145,178,.06) 1px,transparent 1px)}
+.t1.light .mock::after{display:none}
+.t1.light .k-val{text-shadow:none;color:#0e7490}
+.t1.light .m-card{box-shadow:0 1px 2px rgba(11,39,51,.06)}
+
+/* T2 light — pastel aurora: soft color clouds on porcelain glass */
+.t2.light{--bg:#f3f5fc;--side:rgba(255,255,255,.65);--panel:rgba(255,255,255,.7);--panel2:rgba(255,255,255,.55);--line:rgba(30,41,59,.12);--line2:rgba(30,41,59,.07);--text:#1e293b;--muted:#64748b;--accent:#0d9488;--accent2:#7c3aed;--accentSoft:rgba(13,148,136,.12);--accentInk:#ffffff}
+.t2.light .mock::before{background:radial-gradient(38% 32% at 16% 8%,rgba(13,148,136,.18),transparent 62%),radial-gradient(34% 30% at 84% 12%,rgba(124,58,237,.16),transparent 62%),radial-gradient(44% 38% at 62% 96%,rgba(219,39,119,.12),transparent 64%)}
+.t2.light .m-donut .hole{background:rgba(255,255,255,.85)}
+.t2.light .m-card{box-shadow:0 8px 26px rgba(30,41,59,.1)}
+
+/* T5 light — paper industrial: white cards, ink borders, amber hard shadows */
+.t5.light{--bg:#f4f4f3;--side:#ececea;--panel:#ffffff;--panel2:#efefed;--line:#171717;--line2:#d9d9d6;--text:#171717;--muted:#6b6b6b;--accent:#eab308;--accent2:#ea580c;--accentSoft:rgba(234,179,8,.18);--accentInk:#171717}
+.t5.light .m-card{border:2px solid #171717;box-shadow:5px 5px 0 rgba(202,138,4,.8)}
+.t5.light .m-top{border-bottom:2px solid #171717}
+.t5.light .m-top::before{background:repeating-linear-gradient(45deg,#eab308 0 9px,#171717 9px 18px)}
+.t5.light .k-val{color:#171717}
+.t5.light .m-item.active{background:#eab308;color:#171717}
+.t5.light .m-item.active::before{background:#171717}
+.t5.light .m-chart .bar{background:#171717}
+.t5.light .m-chart .bar.hl{background:#ea580c}
+.t5.light .m-btn.solid{background:#eab308;color:#171717}
+.t5.light .m-logodot{background:#eab308;color:#171717}
+.t5.light .m-table th{color:#171717}
+
+/* T6 light — ivory & gold: warm ivory panels with antique-gold hairlines */
+.t6.light{--bg:#faf7ee;--side:#f4efe1;--panel:#fffdf7;--panel2:#f2ecdb;--line:rgba(161,98,7,.32);--line2:rgba(161,98,7,.15);--text:#2d2416;--muted:#8a7a5c;--accent:#a16207;--accent2:#b8860b;--accentSoft:rgba(161,98,7,.1);--accentInk:#fffdf5}
+.t6.light .mock{background-image:radial-gradient(70% 46% at 50% -10%,rgba(161,98,7,.07),transparent 60%)}
+.t6.light .m-logo{color:#7a5c12}
+.t6.light .k-val{color:#8a6d1f}
+.t6.light .m-item.active{color:#4a3a10;box-shadow:inset 2px 0 0 var(--accent)}
+.t6.light .m-chart .bar{background:linear-gradient(180deg,#caa64a,#8a6d1f)}
+.t6.light .m-chart .bar.hl{background:linear-gradient(180deg,#e0c47e,#a8862c)}
+.t6.light .m-btn.solid{background:#a16207;color:#fffdf5}
+.t6.light .m-top{background:linear-gradient(180deg,rgba(161,98,7,.06),transparent)}
+.t6.light .m-donut .hole{background:#fffdf7}
+
+/* T7 light — paper printout: dark green mono on warm paper, no glow */
+.t7.light{--bg:#f2f7f0;--side:#e9f1e6;--panel:#fafdf8;--panel2:#eaf2e5;--line:rgba(21,128,61,.28);--line2:rgba(21,128,61,.13);--text:#14532d;--muted:#4e7c60;--accent:#16a34a;--accent2:#65a30d;--accentSoft:rgba(22,163,74,.1);--accentInk:#ffffff}
+.t7.light .mock::after{display:none}
+.t7.light .m-logo{color:#166534;text-shadow:none}
+.t7.light .m-item.active{color:#166534;text-shadow:none}
+.t7.light .k-val{text-shadow:none;color:#15803d}
+.t7.light .m-chart .bar{box-shadow:none;background:#16a34a}
+.t7.light .m-chart .bar.hl{background:#84cc16}
+.t7.light .c-head b::before{color:#4e7c60}
+.t7.light .m-search::before{color:#4e7c60}
+.t7.light .k-label{color:#4e7c60}
+.t7.light .m-logodot{background:#16a34a;color:#ffffff}
+
+/* T8 light — daylight violet: white cards with soft violet ambient light */
+.t8.light{--bg:#f6f4fd;--side:rgba(255,255,255,.8);--panel:#ffffff;--panel2:#f1edfb;--line:rgba(124,58,237,.22);--line2:rgba(124,58,237,.11);--text:#231a38;--muted:#6f6488;--accent:#7c3aed;--accent2:#c026d3;--accentSoft:rgba(124,58,237,.1);--accentInk:#ffffff}
+.t8.light .mock{background-image:radial-gradient(52% 40% at 82% -6%,rgba(147,51,234,.12),transparent 62%),radial-gradient(42% 34% at 2% 104%,rgba(192,38,211,.08),transparent 62%)}
+.t8.light .k-val{background:linear-gradient(92deg,#6d28d9,#a21caf);-webkit-background-clip:text;background-clip:text;color:transparent}
+.t8.light .m-item.active{background:linear-gradient(92deg,rgba(124,58,237,.12),rgba(192,38,211,.07));color:#4c1d95}
+.t8.light .m-btn.solid{background:linear-gradient(92deg,#7c3aed,#c026d3);color:#fff}
+.t8.light .m-chart .bar{background:linear-gradient(180deg,#8b5cf6,#5b21b6)}
+.t8.light .m-chart .bar.hl{background:linear-gradient(180deg,#d946ef,#a21caf)}
+.t8.light .m-avatar{border-color:rgba(124,58,237,.4)}
+.t8.light .m-chip.live{color:#a21caf;background:rgba(192,38,211,.08);border-color:rgba(192,38,211,.3)}
+.t8.light .m-chip.live::before{background:#c026d3}
+.t8.light .ok-dot{background:#c026d3}
+.t8.light .m-logodot{background:linear-gradient(135deg,#7c3aed,#c026d3);color:#fff}
+
+/* T10 light — sand & terracotta: warm sand canvas with ember accents */
+.t10.light{--bg:#faf3ea;--side:#f5ecdd;--panel:#fffaf1;--panel2:#f2e7d4;--line:rgba(194,65,12,.22);--line2:rgba(194,65,12,.11);--text:#3d2b1e;--muted:#97785c;--accent:#ea580c;--accent2:#dc2626;--accentSoft:rgba(234,88,12,.1);--accentInk:#fff7ec}
+.t10.light .mock{background-image:radial-gradient(60% 42% at 88% -8%,rgba(234,88,12,.08),transparent 60%)}
+.t10.light .k-val{color:#c2410c}
+.t10.light .m-item.active{color:#7c2d12;box-shadow:inset 2px 0 0 var(--accent)}
+.t10.light .m-chart .bar{background:linear-gradient(180deg,#fdba74,#ea580c)}
+.t10.light .m-chart .bar.hl{background:linear-gradient(180deg,#fca5a5,#dc2626)}
+.t10.light .m-btn.solid{background:#ea580c;color:#fff7ec}
+.t10.light .m-avatar{background:#fbe8d0;color:#c2410c;border-color:#f0d0b0}
+.t10.light .m-donut .hole{background:#fffaf1}
 </style>
 </head>
 <body>
@@ -276,7 +378,14 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
       <b>How to choose:</b> scroll through all ten, then reply in chat with the number — e.g. <b>&#8220;Template 7&#8221;</b>.
       You can also mix and match: <b>&#8220;Template 2, but with Template 3's density&#8221;</b>, <b>&#8220;Template 1 in light mode&#8221;</b>,
       or describe any tweak (colors, fonts, corners, light/dark). Once you pick, I will convert the entire app —
-      login screen, sidebar, all 20+ modules — to that design.
+      login screen, sidebar, all 20+ modules — to that design. <b>Tip:</b> use the Dark / Light switch below —
+      every template has both a dark and a daylight version.
+    </div>
+    <div class="modebar" role="group" aria-label="Preview mode">
+      <span class="modelab">Preview mode:</span>
+      <button type="button" id="mode-dark" class="modebtn active">Dark — original</button>
+      <button type="button" id="mode-light" class="modebtn">Light — daylight versions</button>
+      <span class="modenote">dark templates get a daylight reinterpretation; the 3 light ones just get darker text chips</span>
     </div>
     <nav class="quick" aria-label="Template quick navigation">
       <a href="#t1">01 Neon</a>
@@ -550,6 +659,24 @@ display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:1
   var roots = document.querySelectorAll('.mockroot');
   for (var r = 0; r < roots.length; r++) {
     roots[r].innerHTML = MOCK;
+  }
+
+  // dark / light preview toggle — flips every template section at once
+  var tpls = document.querySelectorAll('.tpl');
+  var btnD = document.getElementById('mode-dark');
+  var btnL = document.getElementById('mode-light');
+  function setMode(light) {
+    for (var s = 0; s < tpls.length; s++) {
+      tpls[s].classList.toggle('light', !!light);
+    }
+    if (btnD && btnL) {
+      btnD.classList.toggle('active', !light);
+      btnL.classList.toggle('active', !!light);
+    }
+  }
+  if (btnD && btnL) {
+    btnL.addEventListener('click', function () { setMode(true); });
+    btnD.addEventListener('click', function () { setMode(false); });
   }
 })();
 </script>

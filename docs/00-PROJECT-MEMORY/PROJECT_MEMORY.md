@@ -668,8 +668,22 @@ Topic docs: 01-PRODUCT (2) · 02-ARCHITECTURE (4) · 03-DATABASE (3) · 04-API (
   both states, palette icon intact); admin/admin123 golden path still works (dashboard live
   telemetry). dev.log healthy; the repeating `GET /api/internal/events 401` loop is
   pre-existing unauthenticated polling, unrelated to this change.
+- **Light-mode toggle (user follow-up, same day):** user wanted to preview every template in light
+  mode too. Added a Dark/Light segmented switch at the top of the gallery; each dark theme got a
+  daylight reinterpretation (`.tN.light` var scopes + decoration overrides: T1 mist-blue ops,
+  T2 pastel aurora glass, T5 paper industrial, T6 ivory & gold, T7 paper printout terminal,
+  T8 daylight violet, T10 sand & terracotta) plus global `.light` semantic chips (darker
+  green/amber/rose for readable deltas, severity, live chips, donut slices).
+- **Fixed cascade bug found during light work:** `.mock` declared the token FALLBACKS on itself
+  (`--bg` etc.), which self-overrode the values inherited from `.tN` sections — so all
+  section-level theme vars were dead and templates ran on defaults (T3/T4/T9 silently rendered
+  dark-ish). Fallbacks moved to `:root`; `--fnum` gets a `var(--fnum,inherit)` fallback. Verified
+  computed backgrounds per theme in both modes; toggle reverts cleanly (0 `.light` sections back
+  on Dark). Browser-verified: dark T1 true neon (cyan/lime/grid), light T1/T3/T7 correct, zero
+  page errors.
 - **Next:** convert login + shell + all module views to the user's chosen template
-  (tokens → globals.css/theme, shell chrome, per-view polish). Zero API/schema changes so far.
+  (tokens → globals.css/theme, shell chrome, per-view polish) in their preferred mode (dark,
+  light, or app-level theme toggle). Zero API/schema changes so far.
 
 ### 2026-11-13 — QA marathon Round 10 (cross-cutting regression + final polish)
 
