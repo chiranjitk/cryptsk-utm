@@ -735,7 +735,10 @@ export async function execDhcpApplyPlan(plan: DhcpOsPlan): Promise<DhcpOsApplyOu
       }
       await fs.mkdir(path.dirname(f.path), { recursive: true });
       await fs.writeFile(f.path, f.content, "utf8");
-      await fs.chmod(f.path, f.path === DHCRELAY_DEFAULTS ? 0o644 : 0o640);
+      // kea runs as user `_kea` — the conf must be world-readable (0640 root:root
+      // made the daemon fail with "Unable to open file" while root's kea-dhcp4 -t
+      // still passed; the relay defaults carry no secrets either). 0644 = Debian-safe.
+      await fs.chmod(f.path, 0o644);
       writeResults.push({ path: f.path, ok: true, changed });
     } catch (err) {
       writeResults.push({ path: f.path, ok: false, error: err instanceof Error ? err.message : "write failed" });
@@ -774,9 +777,14 @@ export async function execDhcpApplyPlan(plan: DhcpOsPlan): Promise<DhcpOsApplyOu
       // re-converge from the RESTORED conf
       await runTool(`kea-dhcp4 -t ${KEA_CONF_FILE} 2>&1`, 10000).catch(() => undefined);
       await runTool("systemctl restart kea-dhcp4-server", 12000).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 2500));
       rolledBack = true;
       break;
     }
+    // systemd restart returns when the process STARTS (Type=simple) — kea can
+    // still exit milliseconds later on a runtime error. Settle before the
+    // is-active probe so the probe sees steady state, not the startup race.
+    if (step.kind === "restart") await new Promise((resolve) => setTimeout(resolve, 2500));
   }
 
   const failed = results.filter((r) => !r.ok);
