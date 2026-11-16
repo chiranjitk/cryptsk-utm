@@ -15,8 +15,18 @@ import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
 import { parseJson, stringifyJson } from "@/lib/json";
 import { getDataPlaneMode } from "@/lib/engine";
-import { pingHost, readServiceStates } from "@/lib/host/tools";
+import { pingHost, readServiceStates, runTool, hasTool } from "@/lib/host/tools";
 import { readInterfaces } from "@/lib/host/proc";
+import {
+  KEEPALIVED_CONF,
+  haConfHash,
+  parseKeepalivedConf,
+  parseVrrpStateFromJournal,
+  computeHaDrift,
+  type HaKeepalivedInput,
+  type HaOsFacts,
+} from "@/lib/ha/os";
+import { readFile } from "fs/promises";
 import type { HaConfigInput } from "@/lib/validators/system";
 
 // ── DTOs ────────────────────────────────────────────────────────────────────
@@ -34,6 +44,12 @@ export type HaConfigDTO = {
   trackedInterfaces: string[];
   failAfterSec: number;
   holdDownSec: number;
+  vrid: number;
+  advertIntSec: number;
+  authPass: string | null;
+  preempt: boolean;
+  osConfHash: string | null;
+  osAppliedAt: string | null;
 };
 
 export type HaTrackedIfaceState = {
@@ -60,6 +76,22 @@ export type HaStatusDTO = {
   trackedInterfaces: HaTrackedIfaceState[];
   configSynced: boolean;
   sessionSynced: boolean;
+  /** real Keepalived runtime on the appliance (host mode only) */
+  os: HaOsStatus;
+};
+
+export type HaOsStatus = {
+  available: boolean;
+  serviceState: string | null;
+  vrrpState: "master" | "backup" | "fault" | null;
+  vipPresent: boolean;
+  managedByConsole: boolean;
+  inSync: boolean;
+  driftReasons: string[];
+  instanceName: string | null;
+  conntrackdState: string | null;
+  confHash: string | null;
+  osAppliedAt: string | null;
 };
 
 const fieldErr = (field: string, message: string) =>
@@ -80,6 +112,12 @@ function toConfigDTO(row: {
   trackedInterfaces: string;
   failAfterSec: number;
   holdDownSec: number;
+  vrid: number;
+  advertIntSec: number;
+  authPass: string | null;
+  preempt: boolean;
+  osConfHash: string | null;
+  osAppliedAt: Date | null;
 }): HaConfigDTO {
   return {
     id: row.id,
@@ -94,6 +132,12 @@ function toConfigDTO(row: {
     trackedInterfaces: parseJson<string[]>(row.trackedInterfaces, []),
     failAfterSec: row.failAfterSec,
     holdDownSec: row.holdDownSec,
+    vrid: row.vrid,
+    advertIntSec: row.advertIntSec,
+    authPass: row.authPass,
+    preempt: row.preempt,
+    osConfHash: row.osConfHash,
+    osAppliedAt: row.osAppliedAt ? row.osAppliedAt.toISOString() : null,
   };
 }
 
@@ -109,6 +153,9 @@ export async function getHaConfig(tenantId: number): Promise<HaConfigDTO> {
       priority: 100,
       ifaceName: "lan0",
       trackedInterfaces: "[]",
+      vrid: 51,
+      advertIntSec: 1,
+      preempt: true,
     },
   });
   return toConfigDTO(created);
@@ -169,6 +216,10 @@ export async function putHaConfig(tenantId: number, body: HaConfigInput): Promis
     trackedInterfaces: stringifyJson(body.trackedInterfaces),
     failAfterSec: body.failAfterSec,
     holdDownSec: body.holdDownSec,
+    vrid: body.vrid,
+    advertIntSec: body.advertIntSec,
+    authPass: body.authPass ?? null,
+    preempt: body.preempt,
   };
   const row = existing
     ? await db.haConfig.update({ where: { id: existing.id }, data })
@@ -232,27 +283,57 @@ export async function getHaStatus(tenantId: number): Promise<HaStatusDTO> {
       trackedInterfaces: tracked,
       configSynced: enabled && config.syncConfig,
       sessionSynced: enabled && config.sessionSync,
+      os: {
+        available: false,
+        serviceState: null,
+        vrrpState: null,
+        vipPresent: false,
+        managedByConsole: false,
+        inSync: false,
+        driftReasons: [],
+        instanceName: null,
+        conntrackdState: null,
+        confHash: null,
+        osAppliedAt: config.osAppliedAt,
+      },
     };
   }
 
   // ── HOST mode: real keepalived + VIP + peer checks ──
+  const facts = await buildHaFacts(tenantId);
   const states = await readServiceStates(["keepalived"]);
   const keepalivedActive = states?.keepalived === "active";
   const serviceObserved = states !== null;
 
-  // real VIP presence: is the configured virtualIp assigned to any live iface?
-  const vip = config.virtualIp?.split("/")[0] ?? null;
-  const vipPresent = vip !== null && realIfaces.some((i) => i.ipv4.includes(vip) || i.ipv6.includes(vip));
+  // drift between console intent and OS reality (pure, from ha/os.ts)
+  const drift = computeHaDrift(toKeepalivedInput(config), facts);
+  const osStatus: HaOsStatus = {
+    available: facts.available,
+    serviceState: facts.serviceState,
+    vrrpState: facts.vrrpState,
+    vipPresent: facts.vipPresent,
+    managedByConsole: drift.managedByConsole,
+    inSync: drift.inSync,
+    driftReasons: drift.reasons,
+    instanceName: facts.confText ? (parseKeepalivedConf(facts.confText)[0]?.name ?? null) : null,
+    conntrackdState: facts.conntrackdState,
+    confHash: facts.confHash,
+    osAppliedAt: config.osAppliedAt,
+  };
 
   const peerReachable = config.peerIp ? ((await pingHost(config.peerIp)) ?? false) : false;
 
   // honest election view: configured role is the intent, keepalived state is
-  // the reality — BACKUP on the wire maps to "standby", MASTER to "active".
+  // the reality — VRRP master (or VIP present) maps to "active", backup to
+  // "standby", and the configured role is shown when keepalived has not yet
+  // elected (initial hint).
   let localRole: "disabled" | "active" | "standby" = "disabled";
   if (serviceObserved && !keepalivedActive) {
     localRole = "disabled"; // unit installed but not running → no VRRP
   } else if (enabled) {
-    localRole = vipPresent ? "active" : (config.role as "active" | "standby");
+    if (facts.vrrpState === "master" || facts.vipPresent) localRole = "active";
+    else if (facts.vrrpState === "backup") localRole = "standby";
+    else localRole = config.role === "active" ? "active" : "standby";
   }
 
   return {
@@ -274,5 +355,73 @@ export async function getHaStatus(tenantId: number): Promise<HaStatusDTO> {
     trackedInterfaces: tracked,
     configSynced: keepalivedActive && enabled && config.syncConfig,
     sessionSynced: keepalivedActive && enabled && config.sessionSync,
+    os: osStatus,
   };
+}
+
+// ── host-mode facts + helpers ────────────────────────────────────────────
+
+/** Map the DB config row onto the keepalived-bearing slice used by ha/os.ts. */
+export function toKeepalivedInput(cfg: HaConfigDTO): HaKeepalivedInput {
+  return {
+    enabled: cfg.enabled,
+    role: cfg.role,
+    priority: cfg.priority,
+    virtualIp: cfg.virtualIp,
+    ifaceName: cfg.ifaceName,
+    peerIp: cfg.peerIp,
+    trackedInterfaces: cfg.trackedInterfaces,
+    failAfterSec: cfg.failAfterSec,
+    holdDownSec: cfg.holdDownSec,
+    vrid: cfg.vrid,
+    advertIntSec: cfg.advertIntSec,
+    authPass: cfg.authPass,
+    preempt: cfg.preempt,
+  };
+}
+
+/**
+ * REAL Keepalived facts from the appliance — every field best-effort,
+ * never simulated: service states, live conf + hash, journal-derived VRRP
+ * state, VIP presence on the live interface, conntrackd unit state.
+ */
+export async function buildHaFacts(tenantId: number): Promise<HaOsFacts & { confText: string | null }> {
+  const [available, states, confText, journal] = await Promise.all([
+    hasTool("keepalived"),
+    readServiceStates(["keepalived", "conntrackd"]),
+    readFile(KEEPALIVED_CONF, "utf8").catch(() => null),
+    readKeepalivedJournal(),
+  ]);
+
+  let realIfaces: Awaited<ReturnType<typeof readInterfaces>> = [];
+  try {
+    realIfaces = await readInterfaces();
+  } catch {
+    // sysfs unreadable — VIP detection degrades to false
+  }
+
+  const cfg = await getHaConfig(tenantId).catch(() => null);
+  const vip = cfg?.virtualIp?.split("/")[0] ?? null;
+  const ifaceName = cfg?.ifaceName ?? null;
+  const iface = ifaceName ? realIfaces.find((i) => i.name === ifaceName) : undefined;
+  const vipPresent = Boolean(vip && iface && (iface.ipv4.includes(vip) || iface.ipv6.includes(vip)));
+
+  return {
+    available,
+    serviceState: states?.keepalived ?? null,
+    conntrackdState: states?.conntrackd ?? null,
+    confText,
+    confHash: confText ? haConfHash(confText) : null,
+    osConfHash: cfg?.osConfHash ?? null,
+    vrrpState: journal ? parseVrrpStateFromJournal(journal) : null,
+    vipPresent,
+    localIfaceIp: iface?.ipv4[0] ?? null,
+  };
+}
+
+/** Last 120 keepalived journal lines — used to derive the live VRRP state. */
+async function readKeepalivedJournal(): Promise<string | null> {
+  if (!(await hasTool("journalctl"))) return null;
+  const res = await runTool("journalctl -u keepalived -n 120 --no-pager -q", 6000);
+  return res.ok ? res.stdout : null;
 }

@@ -208,9 +208,11 @@ export const ROUTE_MANIFEST: readonly RouteDef[] = [
   ["GET", "/logs/reports/export", "Report export (?range=1h|24h|7d&format=csv|json)", "Logs"],
 
   // ── HA ──────────────────────────────────────────────────────────────────
-  ["GET", "/ha/status", "Local + peer HA state (simulated)", "HA"],
+  ["GET", "/ha/status", "Local + peer HA state + real Keepalived runtime (host mode)", "HA"],
   ["GET", "/ha/config", "HA pair configuration", "HA"],
   ["PUT", "/ha/config", "Update HA pair configuration", "HA"],
+  ["POST", "/ha/validate", "Render keepalived.conf + keepalived -t on a temp file (no OS change)", "HA"],
+  ["POST", "/ha/apply", "Converge /etc/keepalived/keepalived.conf (validate-first, backup, auto-restore)", "HA"],
 
   // ── SYSTEM ──────────────────────────────────────────────────────────────
   ["GET", "/system/status", "cpu/ram/disk/temp/uptime/services", "System"],

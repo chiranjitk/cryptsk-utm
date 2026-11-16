@@ -802,6 +802,12 @@ model HaConfig {
   trackedInterfaces String  @default("[]") @map("tracked_interfaces") // JSON array of iface names — Keepalived track_interface (HA link monitoring)
   failAfterSec      Int     @default(10) @map("fail_after_sec")
   holdDownSec       Int     @default(60) @map("hold_down_sec")
+  vrid              Int     @default(51) // Keepalived virtual_router_id (1-255) — must match on both peers
+  advertIntSec      Int     @default(1) @map("advert_int_sec") // VRRP advert_int seconds — detection ≈ 3×advert + skew
+  authPass          String? // VRRP PASS shared secret (max 8 chars, VRRPv2 limit)
+  preempt           Boolean @default(true) // false → nopreempt (standby keeps MASTER after recovery)
+  osConfHash        String? @map("os_conf_hash") // fnv1a of the last console-applied keepalived.conf
+  osAppliedAt       DateTime? @map("os_applied_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
