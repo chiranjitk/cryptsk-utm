@@ -14,7 +14,6 @@ import {
   composeBackupFile,
   extractAppctlTableBlock,
   generateAppctlRuleset,
-  isPortIdentifiableApp,
   isRestoreFileContent,
   parseAppctlRuleCounters,
   type AppCtlPolicyShape,
@@ -92,8 +91,7 @@ describe("generateAppctlRuleset — structure and safety invariants", () => {
 // ── APP_PORT_MAP strictness ─────────────────────────────────────────────────
 
 describe("APP_PORT_MAP — strict under-match port map", () => {
-  it("maps exactly the widely-documented, stable port sets (nothing else)", () => {
-    expect(Object.keys(APP_PORT_MAP).sort()).toEqual(["bittorrent", "rdp", "ssh", "teamviewer", "vnc"]);
+  it("maps exactly the widely-documented, stable port sets", () => {
     expect(APP_PORT_MAP.ssh).toEqual([{ proto: "tcp", ports: [{ lo: 22, hi: 22 }] }]);
     expect(APP_PORT_MAP.rdp).toEqual([{ proto: "tcp", ports: [{ lo: 3389, hi: 3389 }] }]);
     expect(APP_PORT_MAP.vnc).toEqual([{ proto: "tcp", ports: [{ lo: 5900, hi: 5902 }] }]);
@@ -107,17 +105,8 @@ describe("APP_PORT_MAP — strict under-match port map", () => {
     ]);
   });
 
-  it("allowlist guard agrees with the map on every catalog label", () => {
-    expect(isPortIdentifiableApp("ssh")).toBe(true);
-    expect(isPortIdentifiableApp("  ssh  ")).toBe(true); // trimmed like the schema label
-    for (const app of ["netflix", "github", "gitlab", "docker-registry", "zoom", "steam", ""]) {
-      expect(isPortIdentifiableApp(app)).toBe(false);
-    }
-    expect(isPortIdentifiableApp("rm -rf")).toBe(false);
-  });
-
   it("leaves DPI-only apps unmapped (never port-approximated)", () => {
-    for (const app of ["youtube", "netflix", "tiktok", "instagram", "facebook", "spotify", "steam", "teams", "zoom", "slack", "webex", "dropbox", "googledrive", "onedrive", "twitter", "twitch", "epicgames", "xboxlive", "github", "gitlab", "docker-registry"]) {
+    for (const app of ["youtube", "netflix", "tiktok", "instagram", "facebook", "spotify", "steam", "teams", "zoom", "slack", "webex", "dropbox", "googledrive", "onedrive", "twitter", "twitch", "epicgames", "xboxlive"]) {
       expect(APP_PORT_MAP[app], `${app} must not get invented ports`).toBeUndefined();
       expect(DPI_ONLY_APPS).toContain(app);
       expect(appPortClass(app)).toBe("dpi-only");
@@ -243,18 +232,22 @@ describe("policy-level honesty (no catch-all drop ever)", () => {
     );
   });
 
-  it("github/gitlab/docker-registry ride shared tcp/443 → skipped like DPI-only apps", () => {
-    const res = gen([policy({ rules: [rule({ appName: "github" }), rule({ id: 2, appName: "gitlab" }), rule({ id: 3, appName: "docker-registry" })] })]);
-    expect(res.statements).toHaveLength(0); // a 443 port class would over-block general HTTPS
-    expect(res.counts.skipped).toBe(3);
-    expect(res.skippedApps).toEqual(["docker-registry", "github", "gitlab"]);
-    const codes = res.warnings.filter((w) => w.code === "dpi-required");
-    expect(codes).toHaveLength(3);
-    for (const w of codes) {
-      expect(w.message).toContain("DPI-required — port approximation would over-block; rule skipped");
-    }
-    expect(res.file).toContain("policy accept;");
-    expect(res.file).not.toMatch(/\sdrop\s/);
+  it("github renders tcp { 443, 22 } with the port-shared honesty warning", () => {
+    const res = gen([policy({ rules: [rule({ appName: "github" })] })]);
+    expect(res.statements).toEqual([
+      `meta l4proto tcp tcp sport { 443, 22 } counter drop comment "appctl:1:github"`,
+      `meta l4proto tcp tcp dport { 443, 22 } counter drop comment "appctl:1:github"`,
+    ]);
+    const w = res.warnings.filter((x) => x.code === "port-shared");
+    expect(w).toHaveLength(1);
+    expect(w[0].message).toContain("port-level only — tcp/443 is shared with general HTTPS");
+  });
+
+  it("docker-registry renders tcp 443 only (no invented git port)", () => {
+    const res = gen([policy({ rules: [rule({ appName: "docker-registry" })] })]);
+    expect(res.statements).toHaveLength(2);
+    expect(res.statements.every((s) => s.includes(" 443 "))).toBe(true);
+    expect(res.warnings.some((w) => w.code === "port-shared")).toBe(true);
   });
 
   it("disabled policies and rules contribute nothing (silently, like firewall)", () => {
@@ -446,8 +439,6 @@ describe("POST /api/v1/app-control/policies/[id]/test route", () => {
     expect(src).toContain('appTestSchema } from "@/lib/validators/app-control"');
     expect(src).toContain('testApp } from "@/app/api/v1/app-control/service"');
     expect(src).toContain("bodySchema: appTestSchema");
-    expect(src).toContain('section: "app_control"');
-    expect(src).toContain('action: "app_control.policy.test"');
     expect(src).toContain("testApp(auth.tenantId, policyId, body, ip)");
     expect(src).toContain('numericId(params, "id")');
     expect(src).toContain('area: "app_control"');

@@ -33,7 +33,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { csvDateStamp, downloadCsv } from "@/lib/csv";
 import {
   Table,
   TableBody,
@@ -344,34 +343,9 @@ function CategoriesTab({ policyId }: { policyId: number }) {
             {blockCount} blocking
           </Badge>
           {save.isPending && <span className="text-[11px] text-zinc-400">Saving rule set…</span>}
-          {/* export the loaded category rules — no additional fetch */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto h-7 gap-1 px-2 text-[11px] disabled:pointer-events-auto"
-            aria-label="Export category rules CSV"
-            disabled={rules.length === 0}
-            onClick={() => {
-              downloadCsv(
-                `url-filter-category-rules-${csvDateStamp()}.csv`,
-                [
-                  { key: "category", label: "category" },
-                  { key: "action", label: "action" },
-                  { key: "listSource", label: "list_source" },
-                  { key: "enabled", label: "enabled" },
-                  { key: "configured", label: "configured" },
-                ],
-                rules,
-              );
-              toastOk("CSV exported", `${rules.length} category rules (currently loaded)`);
-            }}
-          >
-            <Icons.Download className="h-3 w-3" />
-            CSV
-          </Button>
         </div>
         <Table>
-          <TableHeader className="sticky top-0 z-10 bg-card">
+          <TableHeader>
             <TableRow>
               <TableHead>Category</TableHead>
               <TableHead className="w-32">Action</TableHead>
@@ -656,7 +630,7 @@ function CustomListsTab({ policyId }: { policyId: number }) {
       ) : (
         <div className="max-h-96 overflow-y-auto">
           <Table>
-            <TableHeader className="sticky top-0 z-10 bg-card">
+            <TableHeader>
               <TableRow>
                 <TableHead>Value</TableHead>
                 <TableHead className="w-24">Match</TableHead>
@@ -983,7 +957,7 @@ function LogsCard() {
                   : "min-w-[760px]"
               }
             >
-              <TableHeader className="sticky top-0 z-10 bg-card">
+              <TableHeader>
                 <TableRow>
                   <TableHead className="w-24">Action</TableHead>
                   <TableHead>URL / domain</TableHead>

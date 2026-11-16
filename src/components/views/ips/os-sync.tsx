@@ -226,7 +226,7 @@ export function IpsOsSync() {
           <CollapsibleContent className="pt-1">
             <div className="max-h-64 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
               <Table>
-                <TableHeader className="sticky top-0 z-10 bg-card">
+                <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs">File</TableHead>
                     <TableHead className="text-right text-xs">SIDs</TableHead>

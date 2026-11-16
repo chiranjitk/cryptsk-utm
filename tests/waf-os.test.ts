@@ -96,7 +96,7 @@ const facts = (over: Partial<WafOsFacts> = {}): WafOsFacts => ({
   managedFiles: [],
   confHash: null,
   stateHash: null,
-  portsBound: null,
+  portBound: null,
   crsDir: CRS_BASE_DIR,
   ...over,
 });
@@ -109,20 +109,12 @@ describe("renderModsecVhost (engine mode + CRS layout)", () => {
   it("renders SecRuleEngine On with CRS include glob from the constant root", () => {
     const r = renderModsecVhost(vhost(), policy(), []);
     expect(r.conf).toContain("SecRuleEngine On");
+    expect(r.conf).toContain("SecRequestBodyAccess On");
+    expect(r.conf).toContain("SecResponseBodyAccess Off");
     expect(r.conf).toContain(`Include ${WAF_RULES_DIR}/7-setup.conf`);
     expect(r.conf).toContain(`Include ${CRS_BASE_DIR}/rules/*.conf`);
     expect(r.crsIncluded).toBe(true);
     expect(r.warnings).toEqual([]);
-  });
-
-  it("setup file carries SecAction id:900000 tx vars + body access directives", () => {
-    const r = renderModsecVhost(vhost(), policy(), []);
-    expect(r.setup).toContain('id:900000');
-    expect(r.setup).toContain("SecRequestBodyAccess On");
-    expect(r.setup).toContain("SecResponseBodyAccess Off");
-    // body-access directives live in the setup file, engine mode in the ruleset
-    expect(r.conf).not.toContain("SecRequestBodyAccess");
-    expect(r.conf).not.toContain("SecResponseBodyAccess");
   });
 
   it("learningMode → DetectionOnly (log-only), no downgrade warnings", () => {
@@ -157,10 +149,9 @@ describe("renderModsecSetup (tx values)", () => {
     expect(s).toContain("setvar:tx.paranoia_level=2");
     expect(s).toContain("setvar:tx.executing_paranoia_level=2");
     expect(s).toContain("setvar:tx.inbound_anomaly_score_threshold=6");
-    expect(s).toContain("setvar:tx.outbound_anomaly_score_threshold=4,");
-    // CRS 901001 500-fails without it ("CRS deployed without configuration")
-    expect(s).toContain("setvar:tx.crs_setup_version=333");
+    expect(s).toContain("setvar:tx.outbound_anomaly_score_threshold=4");
   });
+
   it("is deterministic", () => {
     expect(renderModsecSetup(policy())).toBe(renderModsecSetup(policy()));
   });
@@ -189,7 +180,7 @@ describe("exclusion rendering (rule_id / param / url)", () => {
     expect(r.warnings.some((w) => w.includes("needs a target ruleId"))).toBe(true);
   });
 
-  it("url → ctl:ruleEngine=Off bypass rule with deterministic per-vhost id (990000+vhostId+seq)", () => {
+  it("url → ctl:ruleEngine=Off bypass rule with deterministic per-vhost id", () => {
     const r = renderModsecVhost(
       vhost(),
       policy(),
@@ -198,9 +189,9 @@ describe("exclusion rendering (rule_id / param / url)", () => {
         exclusion({ id: 3, scope: "url", matchValue: '/api/"evil"' }),
       ],
     );
-    expect(r.conf).toContain(`SecRule REQUEST_URI "@beginsWith /api/login" "id:990008,phase:1,pass,nolog,ctl:ruleEngine=Off"`);
+    expect(r.conf).toContain(`SecRule REQUEST_URI "@beginsWith /api/login" "id:100071,phase:1,pass,nolog,ctl:ruleEngine=Off"`);
     // quotes stripped from the literal; seq increments
-    expect(r.conf).toContain(`"@beginsWith /api/evil" "id:990009`);
+    expect(r.conf).toContain(`"@beginsWith /api/evil" "id:100072`);
     expect(r.conf.match(/ctl:ruleEngine=Off/g)?.length).toBe(2);
   });
 
@@ -231,7 +222,7 @@ describe("renderWafManaged", () => {
     );
     expect(r.files.some((f) => f.path === WAF_MANAGED_FILE)).toBe(true);
     const main = r.mainConf;
-    expect(main).toContain(`limit_req_zone $binary_remote_addr zone=utm_waf_7:10m rate=10r/s;`);
+    expect(main).toContain(`limit_req_zone $binary_remote_addr zone=utm_waf_7:10m rate=600r/m;`);
     expect(main).toContain("geo $utm_geo_7 {");
     expect(main).toContain("\tdefault 0;");
     expect(main).toContain("\tCN 1;");
@@ -314,7 +305,7 @@ describe("renderWafManaged", () => {
 
 // ── limit_req math ──────────────────────────────────────────────────────────
 
-describe("limit_req math (rpm → r/s zone rate, burst default)", () => {
+describe("limit_req math (rpm ↔ r/s, burst default)", () => {
   it("maps rpm/60 to r/s (2 dp) and defaults burst to the per-second equivalent", () => {
     expect(rpmToRps(600)).toBe(10);
     expect(rpmToRps(90)).toBe(1.5);
@@ -344,7 +335,6 @@ describe("wafStepGuarded (command whitelist)", () => {
     expect(wafStepGuarded("ss -ltn '( sport = :443 or sport = :80 )'")).toBe(true);
     expect(wafStepGuarded(`mkdir -p ${WAF_STATE_DIR}`)).toBe(true);
     expect(wafStepGuarded(`mkdir -p ${WAF_RULES_DIR}`)).toBe(true);
-    expect(wafStepGuarded(`mkdir -p ${WAF_SSL_DIR}`)).toBe(true);
     expect(wafStepGuarded(`rmdir ${WAF_RULES_DIR}`)).toBe(true);
     expect(wafStepGuarded(`cp ${WAF_MANAGED_FILE} ${WAF_STATE_DIR}/backup-20261118T00-00-00-000Z${WAF_MANAGED_FILE}`)).toBe(true);
     expect(wafStepGuarded(`cp ${WAF_RULES_DIR}/7.conf ${WAF_STATE_DIR}/backup-x${WAF_RULES_DIR}/7.conf`)).toBe(true);

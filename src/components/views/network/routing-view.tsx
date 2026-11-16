@@ -700,7 +700,7 @@ function RouteEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create route"}
           </Button>
         </DialogFooter>
@@ -1334,7 +1334,7 @@ function PbrEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create policy route"}
           </Button>
         </DialogFooter>

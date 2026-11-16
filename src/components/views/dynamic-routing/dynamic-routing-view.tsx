@@ -17,7 +17,6 @@ import { useRealtime } from "@/lib/realtime";
 import { drApi } from "./dynamic-routing-api";
 import { BgpTab } from "./bgp-tab";
 import { OspfTab } from "./ospf-tab";
-import { OsApplyPanel } from "./os-apply";
 import { PolicyObjectsTab } from "./policy-tab";
 import { RibTab } from "./rib-tab";
 
@@ -116,9 +115,6 @@ export function DynamicRoutingView() {
       </header>
 
       <OverviewStrip />
-
-      {/* real-FRR integration panel (validate/apply/drift on the appliance) */}
-      <OsApplyPanel />
 
       <Tabs defaultValue="bgp" className="gap-6">
         <TabsList className="h-auto w-full flex-wrap justify-start sm:w-auto">

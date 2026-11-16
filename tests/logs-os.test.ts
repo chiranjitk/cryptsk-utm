@@ -8,7 +8,6 @@ import { describe, it, expect } from "vitest";
 import {
   RSYSLOG_BEGIN_MARKER,
   RSYSLOG_END_MARKER,
-  RSYSLOG_IDLE_ACTION,
   RSYSLOG_MANAGED_FILE,
   RSYSLOG_STAGE_FILE,
   SEVERITY_GATE,
@@ -119,12 +118,10 @@ describe("renderRsyslogConf", () => {
     expect(warnings.some((w) => w.includes("siem-off") && w.includes("disabled"))).toBe(true);
   });
 
-  it("renders the idle omfile action when no target is enabled (rsyslog 2103 guard)", () => {
+  it("renders an inert empty block when no target is enabled", () => {
     const { content, targets } = renderRsyslogConf([target({ enabled: false })]);
     expect(targets).toHaveLength(0);
-    expect(content).toContain(RSYSLOG_IDLE_ACTION);
-    expect(content).toContain(RSYSLOG_BEGIN_MARKER);
-    expect(content).toContain(RSYSLOG_END_MARKER);
+    expect(content.indexOf(RSYSLOG_END_MARKER) - content.indexOf(RSYSLOG_BEGIN_MARKER)).toBe(RSYSLOG_BEGIN_MARKER.length + 1);
   });
 });
 
@@ -270,10 +267,9 @@ describe("buildRsyslogApplyPlan", () => {
     expect(plan.warnings.some((w) => w.includes("self") && w.includes("refused"))).toBe(true);
   });
 
-  it("renders zero enabled targets with the idle omfile action (teardown apply)", () => {
+  it("renders zero enabled targets as an inert empty block (teardown apply)", () => {
     const plan = buildRsyslogApplyPlan({ targets: [target({ enabled: false })], managedFileExists: true, mode: "plan", ts: "t" });
     expect(plan.targets).toHaveLength(0);
-    expect(plan.content).toContain(RSYSLOG_IDLE_ACTION);
     expect(plan.content).toContain(RSYSLOG_BEGIN_MARKER);
     expect(plan.content).toContain(RSYSLOG_END_MARKER);
     expect(plan.steps.some((s) => s.kind === "restart")).toBe(true);

@@ -301,7 +301,7 @@ function ResolverForm({ initial }: { initial: ResolverSettingsDTO }) {
         </EditorSection>
 
         <div className="flex justify-end">
-          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {save.isPending ? "Saving…" : "Save resolver settings"}
           </Button>
         </div>
@@ -629,7 +629,7 @@ function PolicyEditor({
         <Button variant="outline" onClick={() => onOpenChange(false)}>
           Cancel
         </Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create policy"}
         </Button>
       </DialogFooter>
@@ -952,7 +952,7 @@ function RecordEditor({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create record"}
         </Button>
       </DialogFooter>

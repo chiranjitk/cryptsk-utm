@@ -68,7 +68,7 @@ apt-get update -y
 apt-get install -y curl git ca-certificates gnupg build-essential golang-go nftables wireguard-tools sqlite3
 $WITH_IPS  && apt-get install -y suricata || true
 $WITH_DNS  && apt-get install -y unbound || true
-$WITH_DHCP && apt-get install -y kea-dhcp4-server kea-dhcp6-server radvd nginx libnginx-mod-http-modsecurity modsecurity-crs squid rspamd clamav-daemon clamav-freshclam frr || true
+$WITH_DHCP && apt-get install -y kea-dhcp4-server || true
 
 # ── 2. runtimes: Node.js, bun, pm2 ───────────────────────────────────────────
 if ! command -v node >/dev/null || [ "$(node -v | cut -dv -f2 | cut -d. -f1)" -lt "$NODE_MAJOR" ] 2>/dev/null; then

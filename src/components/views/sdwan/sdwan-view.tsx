@@ -676,7 +676,7 @@ function PathEditor(props: { site: Pick<SiteDTO, "id" | "name">; path: PathDTO |
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={save.isPending} onClick={submit}>
+          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add path"}
           </Button>
         </DialogFooter>
@@ -1246,7 +1246,7 @@ function SitesCard(props: {
         ) : (
           <div className="max-h-96 overflow-auto">
             <Table className="min-w-[680px]">
-              <TableHeader className="sticky top-0 z-10 bg-card">
+              <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead className="w-24">Role</TableHead>
@@ -1501,7 +1501,7 @@ function PoliciesCard(props: {
                 dense && "min-w-[600px] text-xs [&_td]:px-1.5 [&_td]:py-1 [&_th]:h-9 [&_th]:px-1.5",
               )}
             >
-              <TableHeader className="sticky top-0 z-10 bg-card">
+              <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Match</TableHead>
@@ -1626,7 +1626,7 @@ function SlaProfilesCard(props: {
                 dense && "min-w-[360px] text-xs [&_td]:px-1.5 [&_td]:py-1 [&_th]:h-9 [&_th]:px-1.5",
               )}
             >
-              <TableHeader className="sticky top-0 z-10 bg-card">
+              <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead className="w-44">Budgets</TableHead>

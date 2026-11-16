@@ -324,7 +324,7 @@ function KeysTab() {
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={createMut.isPending}>
               Cancel
             </Button>
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => createMut.mutate()} disabled={createMut.isPending || !form.name.trim()}>
+            <Button className="bg-amber-700 text-white hover:bg-amber-800" onClick={() => createMut.mutate()} disabled={createMut.isPending || !form.name.trim()}>
               {createMut.isPending ? "Creating…" : "Create key"}
             </Button>
           </DialogFooter>

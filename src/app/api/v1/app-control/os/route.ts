@@ -18,8 +18,7 @@
  *           "sync-hits" — pushes kernel counters into AppControlRule.hitCount
  *
  * Audit actions: app_control.os-apply.exec | os-apply.plan | os-apply.failed |
- * os-apply.confirmed | os-apply.rolled-back (objectType app_control_policy,
- * section app_control).
+ * os-apply.confirmed | os-apply.rolled-back (objectType app_control_policy).
  */
 
 import { route } from "@/lib/api/handler";
@@ -69,7 +68,7 @@ export const GET = route({ area: "app_control" }, async ({ auth }) => {
   };
 });
 
-export const POST = route({ area: "app_control", bodySchema, section: "app_control" }, async ({ auth, body }) => {
+export const POST = route({ area: "app_control", bodySchema }, async ({ auth, body }) => {
   switch (body.action) {
     case "apply": {
       const outcome = await applyAppctlToOs(auth.tenantId, { mode: body.mode ?? "manual", confirmSec: body.confirmSec });

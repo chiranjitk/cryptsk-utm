@@ -1012,7 +1012,7 @@ export function ComplianceView() {
                     {side.label}
                   </p>
                   <Table>
-                    <TableHeader className="sticky top-0 z-10 bg-card">
+                    <TableHeader>
                       <TableRow>
                         {(PREVIEW_COLUMNS[previewDataset] ?? Object.keys(side.rows[0] ?? {})).map((c) => (
                           <TableHead key={c} className="px-2 py-1.5 text-[10px]">

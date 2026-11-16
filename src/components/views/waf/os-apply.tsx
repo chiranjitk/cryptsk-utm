@@ -62,7 +62,7 @@ function VhostOsRow({ vhost }: { vhost: WafOsVhostStatusDTO }) {
         </div>
         {vhost.policy ? (
           <span className="font-mono text-xs text-zinc-500">
-            CRS {vhost.policy.crs ? `v${vhost.policy.crsVersion}` : "off"} · PL{vhost.policy.paranoiaLevel} · in {vhost.policy.thresholds.in}/out{" "}
+            CRS {vhost.policy.crs ? `v${vhost.policy.crsVersion}` : "off"} · PL{vhost.policy.pl} · in {vhost.policy.thresholds.in}/out{" "}
             {vhost.policy.thresholds.out}
             {vhost.policy.learning ? " · learning" : ""}
             {vhost.policy.rateLimit ? ` · ${vhost.policy.rateLimit.rpm} rpm (burst ${vhost.policy.rateLimit.burst})` : ""}
@@ -259,9 +259,9 @@ export function WafOsPanel({ isAdmin }: { isAdmin: boolean }) {
         {os ? (
           <div className="flex flex-wrap items-center gap-2">
             <SyncBadge inSync={os.inSync} managedByConsole={os.managedByConsole} />
-            {os.portsBound != null ? (
+            {os.portBound != null ? (
               <Badge variant="outline" className="border-zinc-300 bg-zinc-100 font-mono text-[10px] text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800">
-                {os.portsBound ? "listener bound (:80/:443)" : "no :80/:443 listener"}
+                {os.portBound ? "listener bound (:80/:443)" : "no :80/:443 listener"}
               </Badge>
             ) : null}
             {os.gate === "off" ? (

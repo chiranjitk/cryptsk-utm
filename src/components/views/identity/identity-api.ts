@@ -128,67 +128,6 @@ export const radiusApi = {
     }),
 };
 
-// ── RADIUS OS integration (FreeRADIUS clients.conf — IMPL-8) ────────────────
-
-export interface RadiusOsProfileStatus {
-  id: number;
-  name: string;
-  serverIp: string;
-  authPort: number;
-  timeoutSec: number;
-  retries: number;
-  enabled: boolean;
-  /** client block name the renderer will emit; null when not rendered */
-  slug: string | null;
-  /** sha256-16 of the rendered client block; null when not rendered */
-  renderHash: string | null;
-}
-
-export interface RadiusOsStatusDTO {
-  available: boolean;
-  dataPlaneMode: string;
-  gate: "on" | "off";
-  note: string;
-  unitState: string | null;
-  /** udp/1812 bound probe — informational, null when the probe failed */
-  portBound: boolean | null;
-  managedFile: string;
-  inSync: boolean | null;
-  driftReasons: string[];
-  state: { confHash: string; appliedAt: string; profileIds: number[]; empty?: boolean; note?: string } | null;
-  profiles: RadiusOsProfileStatus[];
-  warnings: string[];
-}
-
-export interface RadiusApplyResultDTO {
-  applied: boolean;
-  refused?: string;
-  reason?: string;
-  /** zero-churn: live hash + unit state already matched — nothing touched */
-  skipped?: boolean;
-  rolledBack: boolean;
-  confHash?: string;
-  backupDir?: string;
-  plan: {
-    steps: { step: string; cmd: string; kind: string }[];
-    profiles: unknown;
-  };
-  results: { step: string; ok: boolean; detail?: string }[];
-}
-
-// ── RADIUS OS endpoints (GET status + POST apply/rollback) ──────────────────
-
-export const radiusOsApi = {
-  getOsStatus: () => fetchJson<RadiusOsStatusDTO>("/api/v1/identity/os"),
-  /** action "apply" converges clients.conf; "rollback" restores the newest backup */
-  applyToOs: (action: "apply" | "rollback") =>
-    fetchJson<RadiusApplyResultDTO>("/api/v1/identity/os", {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ action }),
-    }),
-};
-
 // ── directory sources (LDAP/AD) ─────────────────────────────────────────────
 
 export const directoryApi = {

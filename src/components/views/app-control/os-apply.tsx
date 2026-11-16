@@ -5,7 +5,7 @@
  *
  *   • sync badge — In sync / Drift / Not applied / Preview-only, with the OS
  *     facts on hover (nft version, data-plane mode, table presence) and the
- *     enforceability warnings (DPI-required skips, user-group L7 scoping…)
+ *     enforceability warnings (DPI-required skips, shared-443 port classes…)
  *   • Apply to Host dialog — plan preview (statement counts, warnings, skipped
  *     apps, generated file) → commit-confirm apply backed by the OS
  *     backup/rollback engine on the dedicated `inet utm_appctl` table

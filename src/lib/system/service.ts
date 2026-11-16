@@ -127,7 +127,6 @@ function serviceCatalog(cfg: {
     { name: "snmpd", label: "SNMP (snmpd)", running: cfg.snmpEnabled },
     { name: "conntrackd", label: "Session sync (conntrackd)", running: cfg.haSessionSync },
     { name: "rsyslogd", label: "Syslog (rsyslogd)", running: true },
-    { name: "frr", label: "Dynamic routing (FRR)", running: true },
   ];
 }
 

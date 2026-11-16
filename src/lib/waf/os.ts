@@ -138,7 +138,7 @@ export interface WafOsFacts {
   /** last applied hash from state.json (null = never applied) */
   stateHash: string | null;
   /** any managed listen port (:80/:443) bound — null when unprobeable */
-  portsBound: boolean | null;
+  portBound: boolean | null;
   /** detected CRS root (null = CRS bundle missing) */
   crsDir: string | null;
 }
@@ -196,13 +196,7 @@ export function renderModsecSetup(policy: WafPolicyInput): string {
   L.push(`  setvar:tx.paranoia_level=${policy.paranoiaLevel},\\`);
   L.push(`  setvar:tx.executing_paranoia_level=${policy.paranoiaLevel},\\`);
   L.push(`  setvar:tx.inbound_anomaly_score_threshold=${policy.anomalyInThreshold},\\`);
-  L.push(`  setvar:tx.outbound_anomaly_score_threshold=${policy.anomalyOutThreshold},\\`);
-  // CRS 901001 (REQUEST-901-INITIALIZATION) hard-fails (500) when
-  // tx.crs_setup_version is unset — "CRS deployed without configuration".
-  // 333 = CRS 3.3.x series (the version the appliance ships: 3.3.7).
-  L.push(`  setvar:tx.crs_setup_version=333\\"`);
-  L.push("SecRequestBodyAccess On");
-  L.push("SecResponseBodyAccess Off");
+  L.push(`  setvar:tx.outbound_anomaly_score_threshold=${policy.anomalyOutThreshold}\\"`);
   return L.join("\n") + "\n";
 }
 
@@ -243,9 +237,11 @@ export function renderModsecVhost(
   L.push(`# UTM console managed — ModSecurity ruleset for vhost ${vhost.id} (${safeToken(vhost.hostname)})`);
   L.push(`# policy: ${safeToken(policy.name, "policy")} (db id ${policy.id})`);
   L.push(`SecRuleEngine ${policy.learningMode ? "DetectionOnly" : "On"}`);
+  L.push("SecRequestBodyAccess On");
+  L.push("SecResponseBodyAccess Off");
   L.push("");
 
-  L.push(`# console-managed tx setup (paranoia level, anomaly thresholds, body access)`);
+  L.push(`# console-managed tx setup (paranoia level, anomaly thresholds)`);
   L.push(`Include ${path.join(WAF_RULES_DIR, `${vhost.id}-setup.conf`)}`);
   L.push("");
 
@@ -300,10 +296,9 @@ export function renderModsecVhost(
           continue;
         }
         urlSeq += 1;
-        // deterministic bypass id: 990000 + <vhostId> + <seq> — above the CRS
-        // rule blocks we tune (910xxx–980xxx), unique within this vhost's
-        // ruleset (vhost ids + small exclusion counts stay collision-free)
-        const bypassId = String(990000 + vhost.id + urlSeq);
+        // deterministic per-vhost bypass id: 1000<vhostId><seq> (unique inside
+        // this vhost's ruleset; CRS owns 900xxx–999xxx, we stay below 1_000_000)
+        const bypassId = `1000${vhost.id}${urlSeq}`;
         L.push(`SecRule REQUEST_URI "@beginsWith ${value}" "id:${bypassId},phase:1,pass,nolog,ctl:ruleEngine=Off"`);
       } else {
         warnings.push(`exclusion #${x.id}: unknown scope "${x.scope}" — skipped`);
@@ -346,7 +341,7 @@ export interface RenderedVhost {
 export interface WafVhostPolicySummary {
   crs: boolean;
   crsVersion: string;
-  paranoiaLevel: number;
+  pl: number;
   thresholds: { in: number; out: number };
   learning: boolean;
   rateLimit: { rpm: number; burst: number } | null;
@@ -424,7 +419,7 @@ export function renderVhostServerBlock(
       ? {
           crs: effectivePolicy.owaspCrsEnabled,
           crsVersion: effectivePolicy.crsVersion,
-          paranoiaLevel: effectivePolicy.paranoiaLevel,
+          pl: effectivePolicy.paranoiaLevel,
           thresholds: { in: effectivePolicy.anomalyInThreshold, out: effectivePolicy.anomalyOutThreshold },
           learning: effectivePolicy.learningMode,
           rateLimit:
@@ -558,7 +553,7 @@ export function renderWafManaged(
     // rate-limit zone + geo map (policy-driven; disabled policies contribute nothing)
     if (policy && policy.enabled && policy.rateLimitRpm != null) {
       zoneLines.push(
-        `limit_req_zone $binary_remote_addr zone=utm_waf_${v.id}:10m rate=${Math.ceil(policy.rateLimitRpm / 60)}r/s; # ${policy.rateLimitRpm} rpm ≈ ${rpmToRps(policy.rateLimitRpm)} r/s`,
+        `limit_req_zone $binary_remote_addr zone=utm_waf_${v.id}:10m rate=${policy.rateLimitRpm}r/m; # ≈ ${rpmToRps(policy.rateLimitRpm)} r/s`,
       );
     }
     const geoCcs = (policy?.geoBlockCountries ?? [])
@@ -584,7 +579,7 @@ export function renderWafManaged(
   L.push(`# vhosts rendered: ${managedVhostIds.length} · applied via nginx -t → systemctl reload nginx`);
   L.push("");
   if (zoneLines.length > 0) {
-    L.push("# ── rate-limit zones (rate=⌈rpm/60⌉ r/s per policy) ──");
+    L.push("# ── rate-limit zones (rate=<rpm>r/m; r/s ≈ rpm/60) ──");
     for (const z of zoneLines) L.push(z);
     L.push("");
   }
@@ -785,7 +780,6 @@ export function wafStepGuarded(cmd: string): boolean {
   if (c === "ss -ltn '( sport = :443 or sport = :80 )'") return true;
   if (c === `mkdir -p ${WAF_STATE_DIR}`) return true;
   if (c === `mkdir -p ${WAF_RULES_DIR}`) return true;
-  if (c === `mkdir -p ${WAF_SSL_DIR}`) return true;
   if (c === `rmdir ${WAF_RULES_DIR}`) return true;
   if (c === `rm -f ${WAF_MANAGED_FILE}`) return true; // rollback path only
   // backup cp: /etc/nginx/... → WAF_STATE_DIR/backup-<ts>/<same abs path>

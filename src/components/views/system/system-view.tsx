@@ -817,7 +817,7 @@ function UpgradeDialog(props: {
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            className="bg-amber-600 text-white hover:bg-amber-700 focus-visible:ring-amber-600"
             disabled={!enabled}
             onClick={(e) => {
               e.preventDefault();
@@ -1609,14 +1609,13 @@ function ConfigHistoryCard() {
             </p>
           ) : null}
           <div className="ml-auto flex items-center gap-2 text-xs text-zinc-500">
-            <Button size="icon" variant="outline" aria-label="Previous versions page" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            <Button size="icon" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
               <Icons.ChevronLeft className="h-4 w-4" />
             </Button>
             page {meta?.page ?? page} / {meta?.totalPages ?? 1}
             <Button
               size="icon"
               variant="outline"
-              aria-label="Next versions page"
               disabled={page >= (meta?.totalPages ?? 1)}
               onClick={() => setPage((p) => p + 1)}
             >
@@ -1627,8 +1626,6 @@ function ConfigHistoryCard() {
 
         {versions.isLoading ? (
           <TableSkeleton rows={4} cols={4} />
-        ) : versions.isError ? (
-          <QueryError error={versions.error} onRetry={() => void versions.refetch()} />
         ) : (versions.data?.data.length ?? 0) === 0 ? (
           <EmptyBlock icon={<Icons.History className="h-6 w-6" />} title="No versions for this section yet" description="Save a config mutation in this section to create the first snapshot." />
         ) : (

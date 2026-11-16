@@ -231,11 +231,11 @@ export async function readWafOsFacts(): Promise<WafOsFacts> {
   }
 
   // listener probe (informational)
-  let portsBound: boolean | null = null;
+  let portBound: boolean | null = null;
   if (nginx) {
     const ss = await runTool("ss -ltn '( sport = :443 or sport = :80 )'", 5000);
     if (ss.ok) {
-      portsBound = /:(443|80)\s/.test(ss.stdout);
+      portBound = /:(443|80)\s/.test(ss.stdout);
     }
   }
 
@@ -246,7 +246,7 @@ export async function readWafOsFacts(): Promise<WafOsFacts> {
     managedFiles,
     confHash: hashOnDisk(onDisk),
     stateHash: state.confHash ?? null,
-    portsBound,
+    portBound,
     crsDir,
   };
 }
@@ -262,7 +262,7 @@ export interface WafOsVhostStatus {
     id: number;
     crs: boolean;
     crsVersion: string;
-    paranoiaLevel: number;
+    pl: number;
     thresholds: { in: number; out: number };
     learning: boolean;
     rateLimit: { rpm: number; burst: number } | null;
@@ -277,7 +277,7 @@ export interface WafOsStatus {
   gate: "on" | "off";
   unitState: string | null;
   managedFiles: WafManagedFileFact[];
-  portsBound: boolean | null;
+  portBound: boolean | null;
   inSync: boolean;
   managedByConsole: boolean;
   driftReasons: string[];
@@ -317,7 +317,7 @@ export async function getWafOsStatus(tenantId: number): Promise<WafOsStatus> {
               id: policy.id,
               crs: v.policySummary.crs,
               crsVersion: v.policySummary.crsVersion,
-              paranoiaLevel: v.policySummary.paranoiaLevel,
+              pl: v.policySummary.pl,
               thresholds: v.policySummary.thresholds,
               learning: v.policySummary.learning,
               rateLimit: v.policySummary.rateLimit,
@@ -338,7 +338,7 @@ export async function getWafOsStatus(tenantId: number): Promise<WafOsStatus> {
     gate: isWafGateOn() ? "on" : "off",
     unitState: facts.unitState,
     managedFiles: facts.managedFiles,
-    portsBound: facts.portsBound,
+    portBound: facts.portBound,
     inSync: drift.inSync,
     managedByConsole: drift.managedByConsole,
     driftReasons: drift.reasons,

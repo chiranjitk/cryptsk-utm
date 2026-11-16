@@ -119,7 +119,7 @@ export interface WafOsVhostStatusDTO {
     id: number;
     crs: boolean;
     crsVersion: string;
-    paranoiaLevel: number;
+    pl: number;
     thresholds: { in: number; out: number };
     learning: boolean;
     rateLimit: { rpm: number; burst: number } | null;
@@ -134,7 +134,7 @@ export interface WafOsStatusDTO {
   gate: "on" | "off";
   unitState: string | null;
   managedFiles: WafOsManagedFileDTO[];
-  portsBound: boolean | null;
+  portBound: boolean | null;
   inSync: boolean;
   managedByConsole: boolean;
   driftReasons: string[];

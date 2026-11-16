@@ -392,7 +392,7 @@ function IdpEditor(props: { idp: IdpDTO | null; onClose: () => void }) {
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create IdP"}
           </Button>
         </DialogFooter>
@@ -575,7 +575,7 @@ function CoaEditor(props: { profile: CoaProfileDTO | null; onClose: () => void }
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create profile"}
           </Button>
         </DialogFooter>

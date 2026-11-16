@@ -391,7 +391,7 @@ function NacProfileEditor(props: { profile: NacProfileDTO | null; onClose: () =>
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={save.isPending || !name.trim()} onClick={submit}>
+          <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={save.isPending || !name.trim()} onClick={submit}>
             {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create profile"}
           </Button>
         </DialogFooter>
@@ -942,7 +942,7 @@ function EnrollDialog(props: { onClose: () => void }) {
               <Button variant="ghost" onClick={props.onClose}>
                 Cancel
               </Button>
-              <Button className="bg-primary text-primary-foreground hover:bg-primary/90" disabled={enroll.isPending || !userName.trim()} onClick={submit}>
+              <Button className="bg-amber-700 text-white hover:bg-amber-800" disabled={enroll.isPending || !userName.trim()} onClick={submit}>
                 {enroll.isPending ? "Issuing…" : "Issue token"}
               </Button>
             </DialogFooter>

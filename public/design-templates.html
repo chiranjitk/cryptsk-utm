@@ -1,0 +1,1891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cryptsk UTM — Pick Your Redesign (20 Templates · Pure White Edition)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Bricolage+Grotesque:wght@600;700;800&family=Cormorant+Garamond:wght@500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Mono:wght@500;700&family=JetBrains+Mono:wght@500;700;800&family=Manrope:wght@500;600;700;800&family=Playfair+Display:wght@600;700&family=Sora:wght@500;600;700;800&family=Space+Mono:wght@400;700&family=Unbounded:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* ============ gallery chrome ============ */
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:#0b0b10;color:#e9e9f0;font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.gal{max-width:1180px;margin:0 auto;padding:52px 22px 90px}
+.gal-head h1{font-size:30px;font-weight:800;letter-spacing:-.02em}
+.gal-head h1 span{color:#8f8fa6;font-weight:600}
+.gal-head .sub{color:#9a9ab0;margin-top:8px;font-size:14.5px;max-width:780px;line-height:1.65}
+.how{margin-top:20px;border:1px solid #2a2a35;background:#12121a;border-radius:14px;padding:15px 18px;font-size:13.5px;color:#c7c7d6;line-height:1.8}
+.how b{color:#fff}
+.quick{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.quick a{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;padding:7px 13px;border-radius:999px;border:1px solid #2a2a35;color:#b9b9cc;background:#12121a;transition:border-color .15s,color .15s}
+.quick a i{width:9px;height:9px;border-radius:3px;display:inline-block;flex-shrink:0}
+.quick a:hover{border-color:#6a6a80;color:#fff}
+.modebar{display:flex;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap}
+.modelab{font-size:12.5px;color:#9a9ab0;font-weight:600}
+.modebtn{font-family:inherit;font-size:12px;font-weight:700;padding:8px 16px;border-radius:999px;border:1px solid #2a2a35;background:#12121a;color:#9a9ab0;cursor:pointer;transition:all .15s}
+.modebtn:hover:not(.active){border-color:#6a6a80;color:#fff}
+.modebtn.active{background:#e9e9f0;color:#0b0b10;border-color:#e9e9f0}
+.modenote{font-size:11.5px;color:#7a7a8e}
+.foot{margin-top:70px;border:1px dashed #3a3a48;border-radius:14px;padding:18px 20px;font-size:13.5px;color:#9a9ab0;line-height:1.7;text-align:center}
+.foot b{color:#e9e9f0}
+.tpl{margin-top:72px}
+.tpl-head{display:flex;gap:20px;align-items:flex-start;margin-bottom:16px}
+.tpl-no{font-size:48px;font-weight:900;line-height:1;color:transparent;-webkit-text-stroke:1.2px #55556a;letter-spacing:-.02em;min-width:72px;padding-top:2px}
+.tpl-name{font-size:20px;font-weight:800;letter-spacing:-.01em}
+.tpl-desc{color:#9a9ab0;font-size:13.5px;margin-top:5px;max-width:660px;line-height:1.6}
+.tpl-tags{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.tpl-tags span{font-size:11px;font-weight:600;color:#b9b9cc;background:#17171f;border:1px solid #2a2a35;padding:3px 10px;border-radius:999px}
+.pal{display:flex;gap:6px;margin-top:12px;align-items:center}
+.pal i{width:16px;height:16px;border-radius:5px;display:block;border:1px solid rgba(255,255,255,.18)}
+.pick{margin-left:auto;flex-shrink:0;font-family:ui-monospace,'JetBrains Mono',Menlo,monospace;font-size:12px;color:#d8d8e6;border:1px dashed #55556a;border-radius:10px;padding:11px 15px;white-space:nowrap;align-self:center}
+.mockroot{border-radius:16px;overflow:hidden;border:1px solid #23232e;box-shadow:0 26px 64px rgba(0,0,0,.5)}
+
+/* ============ shared mock skeleton (themed via CSS vars) ============ */
+:root{--bg:#0b0b10;--side:#0e0e14;--panel:#12121a;--panel2:#17171f;--line:#26262f;--line2:#1e1e27;--text:#ececf2;--muted:#8f8fa6;--accent:#8f8fa6;--accent2:#b9b9cc;--accentSoft:rgba(255,255,255,.08);--accentInk:#111;--c1:#fb7185;--c2:#fbbf24;--c3:#a78bfa;--r:12px;--fr:12px}
+.mock{
+display:flex;min-height:660px;background:var(--bg);color:var(--text);font-size:13px;position:relative;isolation:isolate;overflow:hidden}
+.m-side{width:230px;flex:0 0 230px;background:var(--side);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:3px}
+.m-logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:13px;letter-spacing:.06em;padding:6px 8px 16px;white-space:nowrap}
+.m-logodot{width:26px;height:26px;border-radius:8px;background:var(--accent);color:var(--accentInk);display:grid;place-items:center;font-size:12px;font-weight:900;flex-shrink:0}
+.m-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--fr);font-size:12.5px;color:var(--muted);font-weight:500}
+.m-item::before{content:"";width:6px;height:6px;border-radius:2px;background:currentColor;opacity:.5;flex-shrink:0}
+.m-item.active{background:var(--accentSoft);color:var(--text);font-weight:700}
+.m-item.active::before{background:var(--accent);opacity:1}
+.m-spacer{flex:1}
+.m-sysbox{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:10px 12px;font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+.m-sysbox .sysrow{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.m-sysbox b{color:var(--text);font-weight:700}
+.ok-dot{width:8px;height:8px;border-radius:99px;background:#fbbf24;box-shadow:0 0 8px rgba(251,191,36,.7);flex-shrink:0}
+.m-main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative;z-index:1}
+.m-top{height:58px;flex-shrink:0;display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--top,transparent)}
+.m-title{font-size:15px;font-weight:800;letter-spacing:-.01em;white-space:nowrap}
+.m-chip{font-size:10px;font-weight:800;letter-spacing:.08em;padding:3px 9px;border-radius:999px;text-transform:uppercase;white-space:nowrap}
+.m-chip.live{color:#b45309;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.4);display:inline-flex;align-items:center;gap:6px}
+.m-chip.live::before{content:"";width:6px;height:6px;border-radius:99px;background:#d97706;animation:pulseDot 1.6s infinite}
+.m-search{margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:7px 12px;font-size:11.5px;color:var(--muted);min-width:225px;white-space:nowrap}
+.kbd{font-size:10px;border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--muted);background:var(--panel);flex-shrink:0}
+.m-btn{font-size:11.5px;font-weight:700;padding:7px 13px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.m-btn.solid{background:var(--accent);color:var(--accentInk);border-color:transparent}
+.m-bell{position:relative;width:32px;height:32px;border-radius:10px;border:1px solid var(--line);display:grid;place-items:center;color:var(--muted);font-weight:800;font-size:12px;flex-shrink:0}
+.m-bell::after{content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:99px;background:#fb7185;border:2px solid var(--bg)}
+.m-avatar{width:32px;height:32px;border-radius:99px;background:var(--accentSoft);color:var(--text);display:grid;place-items:center;font-size:11px;font-weight:800;border:1px solid var(--line);flex-shrink:0}
+.m-body{padding:18px;display:flex;flex-direction:column;gap:14px}
+.m-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.m-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;position:relative}
+.k-label{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.k-val{font-size:27px;font-weight:800;margin-top:8px;letter-spacing:-.02em;font-family:var(--fnum,inherit)}
+.k-val small{font-size:13px;font-weight:700;color:var(--muted)}
+.k-sub{margin-top:7px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:7px;white-space:nowrap}
+.k-delta{font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px}
+.k-delta.up{color:#b45309;background:rgba(251,191,36,.14)}
+.k-delta.down{color:#fb7185;background:rgba(251,113,133,.12)}
+.m-row2{display:grid;grid-template-columns:1.7fr 1fr;gap:12px}
+.m-row3{display:grid;grid-template-columns:1.7fr 1fr;gap:12px}
+.c-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.c-head b{font-size:13.5px;font-weight:800;letter-spacing:-.01em;white-space:nowrap}
+.m-legend{display:flex;gap:12px;font-size:11px;color:var(--muted)}
+.m-legend .lg{display:inline-flex;align-items:center;gap:6px}
+.sw{width:8px;height:8px;border-radius:3px;display:inline-block;flex-shrink:0}
+.sw.a{background:var(--accent)}
+.sw.b{background:var(--accent2)}
+.m-chart{display:flex;align-items:flex-end;gap:6px;height:186px;padding-top:8px}
+.m-chart .bar{flex:1;border-radius:5px 5px 2px 2px;background:linear-gradient(180deg,var(--accent),var(--accentSoft));min-height:5px}
+.m-chart .bar.hl{background:linear-gradient(180deg,var(--accent2),var(--accentSoft))}
+.m-axis{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:8px;letter-spacing:.06em}
+.m-donut{width:148px;height:148px;border-radius:50%;margin:10px auto 14px;display:grid;place-items:center;flex-shrink:0}
+.m-donut .hole{width:94px;height:94px;border-radius:50%;background:var(--panel);display:grid;place-items:center;text-align:center;border:1px solid var(--line)}
+.m-donut .hole b{font-size:18px;font-weight:800}
+.m-donut .hole span{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.m-ll{display:flex;flex-direction:column;gap:8px;font-size:11.5px}
+.m-ll .row{display:flex;align-items:center;gap:8px;color:var(--muted)}
+.m-ll .row b{margin-left:auto;color:var(--text)}
+.m-table{width:100%;border-collapse:collapse;font-size:12px}
+.m-table th{font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);text-align:left;padding:7px 10px;border-bottom:1px solid var(--line)}
+.m-table td{padding:9px 10px;border-bottom:1px solid var(--line2);color:var(--text)}
+.m-table tr:last-child td{border-bottom:none}
+.m-table .mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--muted)}
+.sev{font-size:9.5px;font-weight:800;padding:2.5px 8px;border-radius:999px;letter-spacing:.05em;white-space:nowrap}
+.sv-crit{color:#fb7185;background:rgba(251,113,133,.12);border:1px solid rgba(251,113,133,.35)}
+.sv-high{color:#fbbf24;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3)}
+.sv-med{color:#eab308;background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.3)}
+.sv-low{color:var(--muted);background:var(--panel2);border:1px solid var(--line)}
+.act{font-size:11px;font-weight:700;white-space:nowrap}
+.act.block{color:#1d4ed8}
+.act.flag{color:#fbbf24}
+.act.quar{color:#eab308}
+.act.log{color:var(--muted)}
+.m-health{display:flex;flex-direction:column;gap:13px}
+.m-health .hrow{display:flex;flex-direction:column;gap:6px}
+.m-health .hlab{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted)}
+.m-health .hlab b{color:var(--text);font-weight:700}
+.meter{height:6px;border-radius:99px;background:var(--panel2);border:1px solid var(--line2);overflow:hidden}
+.meter i{display:block;height:100%;border-radius:99px;background:var(--accent)}
+.meter i.alt{background:var(--accent2)}
+.m-note{margin-top:14px;font-size:11px;color:var(--muted);border-top:1px dashed var(--line);padding-top:10px;line-height:1.6}
+@keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+@keyframes drift{0%{transform:translate(0,0) scale(1)}100%{transform:translate(-3%,4%) scale(1.06)}}
+@media (max-width:920px){
+  .m-side{display:none}
+  .m-kpis{grid-template-columns:repeat(2,1fr)}
+  .m-row2,.m-row3{grid-template-columns:1fr}
+  .m-search{display:none}
+  .tpl-head{flex-wrap:wrap}
+  .pick{margin-left:0}
+}
+
+/* ============ T1 Crimson Studio (light-first) ============ */
+.t1{--bg:#f7f5f3;--side:#efedeb;--panel:#ffffff;--panel2:#f1efec;--line:#e6e3de;--line2:#eeece9;--text:#1d1a18;--muted:#8e8880;--accent:#d92d3a;--accent2:#1d1a18;--accentSoft:rgba(217,45,58,.09);--accentInk:#ffffff;--r:14px;--fr:10px;--fnum:'Bricolage Grotesque',ui-sans-serif,system-ui;--top:#f7f5f3}
+.t1 .mock{font-family:ui-sans-serif,system-ui;--c1:#c21f31;--c2:#ef97a1;--c3:#3f3a37}
+.t1 .m-item.active{background:var(--accentSoft);color:#8f1523;box-shadow:inset 2px 0 0 #d92d3a}
+.t1 .m-item.active::before{background:#d92d3a}
+.t1 .m-chart .bar{border-radius:6px;background:linear-gradient(180deg,#e6455a,#b01e30)}
+.t1 .m-chart .bar.hl{background:linear-gradient(180deg,#3f3a37,#1d1a18)}
+.t1 .m-card{box-shadow:0 1px 2px rgba(29,26,24,.05)}
+.t1 .m-logodot{border-radius:10px}
+.t1 .k-val{color:#b01e30}
+.t1.dark{--bg:#171314;--side:#1c1718;--panel:#201a1b;--panel2:#282122;--line:#352b2d;--line2:#2b2325;--text:#f4efe9;--muted:#9c9294;--accent:#e6455a;--accent2:#f4efe9;--accentSoft:rgba(230,69,90,.14);--accentInk:#2a0508;--top:#1c1718}
+.t1.dark .k-val{color:#ef6b7d}
+.t1.dark .m-item.active{color:#f8e3e6;box-shadow:inset 2px 0 0 #e6455a}
+.t1.dark .m-chart .bar{background:linear-gradient(180deg,#e6455a,#8f1729)}
+.t1.dark .m-chart .bar.hl{background:linear-gradient(180deg,#f4efe9,#c9c2bd)}
+.t1.dark .m-card{box-shadow:0 8px 22px rgba(0,0,0,.3)}
+
+/* ============ T2 Scarlet Editorial (light-first) ============ */
+.t2{--bg:#fdfcfa;--side:#faf8f5;--panel:#fdfcfa;--panel2:#f4f1ec;--line:#e7e2da;--line2:#efebe4;--text:#1b1816;--muted:#918a80;--accent:#c8102e;--accent2:#1b1816;--accentSoft:rgba(200,16,46,.08);--accentInk:#fdfcfa;--r:2px;--fr:2px;--fnum:'Playfair Display',Georgia,serif;--top:#fdfcfa}
+.t2 .mock{font-family:ui-sans-serif,system-ui;--c1:#c8102e;--c2:#1b1816;--c3:#d9a05b}
+.t2 .m-logo,.t2 .m-title{font-family:'Playfair Display',Georgia,serif}
+.t2 .m-title{font-size:16px}
+.t2 .m-logodot{background:#1b1816;color:#fdfcfa;border-radius:50%}
+.t2 .m-card{background:transparent;border:none;border-top:2px solid #1b1816;border-radius:0;box-shadow:none}
+.t2 .m-kpis{gap:0}
+.t2 .m-kpis .m-card{border-top:none;border-left:1px solid #e7e2da;padding:14px 18px}
+.t2 .m-kpis .m-card:first-child{border-left:none;padding-left:6px}
+.t2 .k-val{font-size:30px}
+.t2 .m-item.active{background:transparent;color:#1b1816;box-shadow:inset 2px 0 0 #c8102e}
+.t2 .m-item.active::before{background:#c8102e}
+.t2 .m-search,.t2 .m-btn,.t2 .m-bell,.t2 .m-avatar{border-radius:2px}
+.t2 .m-btn.solid{background:#c8102e;color:#fdfcfa}
+.t2 .m-chart .bar{border-radius:0;background:#1b1816}
+.t2 .m-chart .bar.hl{background:#c8102e}
+.t2 .m-table th{border-bottom:1px solid #1b1816;color:#1b1816}
+.t2 .m-donut .hole{background:#fdfcfa}
+.t2.dark{--bg:#181412;--side:#1e1916;--panel:#241e1b;--panel2:#2d2622;--line:#453a34;--line2:#382f2a;--text:#f5ede4;--muted:#a99c90;--accent:#e0304a;--accent2:#f5ede4;--accentSoft:rgba(224,48,74,.13);--accentInk:#2a0a10;--top:#241e1b}
+.t2.dark .m-card{border-top-color:#f5ede4}
+.t2.dark .m-kpis .m-card{border-left-color:#453a34}
+.t2.dark .m-kpis .m-card:first-child{border-left:none}
+.t2.dark .k-val{color:#f5ede4}
+.t2.dark .m-item.active{background:transparent;color:#f5ede4;box-shadow:inset 2px 0 0 #e0304a}
+.t2.dark .m-btn.solid{background:#e0304a;color:#fff5f2}
+.t2.dark .m-chart .bar{background:#f5ede4}
+.t2.dark .m-chart .bar.hl{background:#e0304a}
+.t2.dark .m-table th{border-bottom-color:#f5ede4;color:#f5ede4}
+.t2.dark .m-donut .hole{background:#241e1b}
+
+/* ============ T3 Red Brutal (light-first) ============ */
+.t3{--bg:#fcfbf8;--side:#f5f3ee;--panel:#ffffff;--panel2:#f2f0ea;--line:#1d1a18;--line2:#e5e1d8;--text:#1d1a18;--muted:#7f786e;--accent:#e63946;--accent2:#1d1a18;--accentSoft:rgba(230,57,70,.1);--accentInk:#ffffff;--r:0px;--fr:0px;--fnum:'Space Mono',ui-monospace,monospace;--top:#fcfbf8}
+.t3 .mock{font-family:'Space Mono',ui-monospace,monospace;--c1:#e63946;--c2:#1d1a18;--c3:#d9a05b}
+.t3 .m-card{border:2px solid #1d1a18;box-shadow:5px 5px 0 rgba(230,57,70,.85)}
+.t3 .m-top{position:relative;border-bottom:2px solid #1d1a18}
+.t3 .m-title,.t3 .c-head b,.t3 .k-label{text-transform:uppercase;letter-spacing:.1em}
+.t3 .k-val{color:#e63946}
+.t3 .m-item.active{background:#e63946;color:#ffffff}
+.t3 .m-item.active::before{background:#ffffff}
+.t3 .m-search,.t3 .m-btn,.t3 .m-bell,.t3 .m-logodot,.t3 .m-avatar{border-radius:0}
+.t3 .m-btn.solid{background:#1d1a18;color:#ffffff}
+.t3 .m-logodot{background:#e63946;color:#ffffff}
+.t3 .m-chart .bar{border-radius:0;background:#1d1a18}
+.t3 .m-chart .bar.hl{background:#e63946}
+.t3 .m-table th{color:#e63946}
+.t3.dark{--bg:#131010;--side:#181515;--panel:#1c1919;--panel2:#242021;--line:#f4efe9;--line2:#2c2728;--text:#f4efe9;--muted:#a29a94;--accent:#ff4d5e;--accent2:#f4efe9;--accentSoft:rgba(255,77,94,.14);--accentInk:#1d0709;--top:#1c1919}
+.t3.dark .m-card{border-color:#f4efe9;box-shadow:5px 5px 0 rgba(255,77,94,.55)}
+.t3.dark .m-top{border-bottom-color:#f4efe9}
+.t3.dark .k-val{color:#ff4d5e}
+.t3.dark .m-item.active{background:#ff4d5e;color:#1d0709}
+.t3.dark .m-item.active::before{background:#1d0709}
+.t3.dark .m-btn.solid{background:#f4efe9;color:#131010}
+.t3.dark .m-logodot{background:#ff4d5e;color:#1d0709}
+.t3.dark .m-chart .bar{background:#f4efe9}
+.t3.dark .m-chart .bar.hl{background:#ff4d5e}
+.t3.dark .m-table th{color:#ff4d5e}
+
+/* ============ T4 Blush Cloud (light-first) ============ */
+.t4{--bg:#faf0ee;--side:#f6e7e3;--panel:#ffffff;--panel2:#f7ebe7;--line:#efdcd6;--line2:#f4e6e1;--text:#33201d;--muted:#a88f8a;--accent:#e05262;--accent2:#8f2d3c;--accentSoft:#fae2e2;--accentInk:#ffffff;--r:20px;--fr:12px;--fnum:'Manrope',ui-sans-serif,system-ui;--top:#faf0ee}
+.t4 .mock{font-family:'Manrope',ui-sans-serif,system-ui;--c1:#e05262;--c2:#f2a3ad;--c3:#8f2d3c}
+.t4 .m-card{border:none;box-shadow:0 10px 28px rgba(96,42,42,.09),0 2px 6px rgba(96,42,42,.05)}
+.t4 .m-chart .bar{border-radius:7px;background:linear-gradient(180deg,#ef8b97,#e05262)}
+.t4 .m-chart .bar.hl{background:linear-gradient(180deg,#c76a79,#8f2d3c)}
+.t4 .m-item.active{color:#8f2d3c;font-weight:800}
+.t4 .m-item.active::before{background:#e05262}
+.t4 .m-avatar{background:#fbdedb;color:#b03a4a;border-color:#f6c8ca}
+.t4 .m-bell{border-radius:12px}
+.t4 .m-btn.solid{background:#e05262;color:#ffffff}
+.t4 .k-val{color:#c23a4c}
+.t4.dark{--bg:#1f0f13;--side:#261217;--panel:#2b161b;--panel2:#341c22;--line:#4a2830;--line2:#3d2128;--text:#f8e9e7;--muted:#b18e8f;--accent:#ef6b7d;--accent2:#f2a3ad;--accentSoft:rgba(239,107,125,.14);--accentInk:#33060c;--top:#261217}
+.t4.dark .m-card{border-color:#4a2830;box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.t4.dark .m-chart .bar{background:linear-gradient(180deg,#f296a1,#e05262)}
+.t4.dark .m-chart .bar.hl{background:linear-gradient(180deg,#c76a79,#8f2d3c)}
+.t4.dark .m-item.active{color:#f6b7c0}
+.t4.dark .m-avatar{background:#3d2027;color:#f2a3ad;border-color:#57292f}
+.t4.dark .m-btn.solid{background:#ef6b7d;color:#33060c}
+.t4.dark .k-val{color:#f296a1}
+.t4.dark .m-donut .hole{background:#2b161b}
+
+/* ============ T5 Signal Enterprise (light-first) ============ */
+.t5{--bg:#f4f5f6;--side:#ffffff;--panel:#ffffff;--panel2:#eef1f3;--line:#dfe3e7;--line2:#e9edf0;--text:#1b2228;--muted:#7b8894;--accent:#dc2626;--accent2:#1b2228;--accentSoft:rgba(220,38,38,.08);--accentInk:#ffffff;--r:8px;--fr:6px;--fnum:'IBM Plex Mono',ui-monospace,monospace;--top:#ffffff}
+.t5 .mock{font-family:ui-sans-serif,system-ui;--c1:#dc2626;--c2:#1b2228;--c3:#d97706}
+.t5 .m-item.active{color:#b91c1c;font-weight:700;box-shadow:inset 2px 0 0 #dc2626}
+.t5 .m-chart .bar{background:#dc2626;border-radius:3px 3px 1px 1px}
+.t5 .m-chart .bar.hl{background:#1b2228}
+.t5 .m-table tbody tr:nth-child(even) td{background:#f7f9fa}
+.t5 .m-avatar{background:#fee2e2;color:#b91c1c;border-color:#fecaca}
+.t5 .m-btn.solid{background:#dc2626;color:#ffffff}
+.t5 .m-card{box-shadow:0 1px 2px rgba(27,34,40,.06)}
+.t5.dark{--bg:#121417;--side:#161a1e;--panel:#1a1f24;--panel2:#212830;--line:#2b333c;--line2:#232b32;--text:#e8edf1;--muted:#8a99a8;--accent:#ef4444;--accent2:#e8edf1;--accentSoft:rgba(239,68,68,.13);--accentInk:#fff5f5;--top:#1a1f24}
+.t5.dark .m-item.active{color:#fca5a5;box-shadow:inset 2px 0 0 #ef4444}
+.t5.dark .m-chart .bar{background:#ef4444}
+.t5.dark .m-chart .bar.hl{background:#e8edf1}
+.t5.dark .m-table tbody tr:nth-child(even) td{background:#161b21}
+.t5.dark .m-avatar{background:#3d1d20;color:#fca5a5;border-color:#57282c}
+.t5.dark .m-btn.solid{background:#ef4444;color:#ffffff}
+.t5.dark .m-card{box-shadow:0 8px 20px rgba(0,0,0,.3)}
+
+/* ============ T6 Oxblood Lounge (dark-first) ============ */
+.t6{--bg:#230d11;--side:#2a1015;--panel:#31151b;--panel2:#3a1a21;--line:rgba(232,180,171,.22);--line2:rgba(232,180,171,.1);--text:#f7ece7;--muted:#b48f8a;--accent:#e6455a;--accent2:#f2959f;--accentSoft:rgba(230,69,90,.11);--accentInk:#2b060b;--r:10px;--fr:8px;--fnum:'Fraunces',Georgia,serif;--top:#2a1015}
+.t6 .mock{font-family:ui-sans-serif,system-ui;background-image:radial-gradient(70% 46% at 50% -10%,rgba(230,69,90,.1),transparent 62%);--c1:#e6455a;--c2:#9e2a3c;--c3:#ecc2bb}
+.t6 .m-logo,.t6 .m-title,.t6 .c-head b{font-family:'Fraunces',Georgia,serif;letter-spacing:.02em}
+.t6 .c-head b{font-size:15px}
+.t6 .k-val{color:#f2959f;font-weight:700}
+.t6 .m-item.active{background:var(--accentSoft);box-shadow:inset 2px 0 0 var(--accent);color:#fbe9e4}
+.t6 .m-chart .bar{background:linear-gradient(180deg,#e6455a,#5e1420)}
+.t6 .m-chart .bar.hl{background:linear-gradient(180deg,#f6b3bb,#a1283a)}
+.t6 .m-btn.solid{background:#e6455a;color:#fff5f2}
+.t6 .m-donut .hole{background:#31151b}
+.t6.light{--bg:#f9f1ea;--side:#f3e7dd;--panel:#fffbf6;--panel2:#f2e6da;--line:rgba(143,31,48,.3);--line2:rgba(143,31,48,.13);--text:#2f1216;--muted:#9c7f76;--accent:#8f1f30;--accent2:#b73346;--accentSoft:rgba(143,31,48,.09);--accentInk:#fffbf6;--top:#fffbf6}
+.t6.light .mock{background-image:radial-gradient(70% 46% at 50% -10%,rgba(143,31,48,.06),transparent 62%)}
+.t6.light .m-logo{color:#7a1626}
+.t6.light .k-val{color:#a1283a}
+.t6.light .m-item.active{color:#57101d;box-shadow:inset 2px 0 0 #8f1f30}
+.t6.light .m-chart .bar{background:linear-gradient(180deg,#c14b5c,#8f1f30)}
+.t6.light .m-chart .bar.hl{background:linear-gradient(180deg,#db8c98,#b73346)}
+.t6.light .m-btn.solid{background:#8f1f30;color:#fffbf6}
+.t6.light .m-donut .hole{background:#fffbf6}
+
+/* ============ T7 Cherry Noir (dark-first) ============ */
+.t7{--bg:#120a0d;--side:#160c0f;--panel:rgba(255,46,76,.05);--panel2:rgba(255,46,76,.08);--line:rgba(255,80,100,.2);--line2:rgba(255,80,100,.09);--text:#fbe9ec;--muted:#a97f88;--accent:#ff2e4c;--accent2:#ff8c9c;--accentSoft:rgba(255,46,76,.12);--accentInk:#2b0308;--r:12px;--fr:9px;--fnum:'Sora',ui-sans-serif,system-ui;--top:rgba(22,12,15,.8)}
+.t7 .mock{font-family:'Sora',ui-sans-serif,system-ui;background-image:radial-gradient(52% 40% at 82% -6%,rgba(255,46,76,.14),transparent 62%),radial-gradient(42% 34% at 2% 104%,rgba(255,140,156,.1),transparent 62%);--c1:#ff4d5e;--c2:#9e2a3c;--c3:#ecc2bb}
+.t7 .k-val{text-shadow:0 0 16px rgba(255,46,76,.45);color:#ff8c9c}
+.t7 .m-item.active{background:rgba(255,46,76,.1);color:#ffd9df;box-shadow:inset 2px 0 0 #ff2e4c}
+.t7 .m-btn.solid{background:#ff2e4c;color:#ffffff}
+.t7 .m-chart .bar{border-radius:4px;background:linear-gradient(180deg,#ff4d5e,#5e0e18)}
+.t7 .m-chart .bar.hl{background:linear-gradient(180deg,#ff8c9c,#a12536)}
+.t7 .m-chip.live{color:#ff8c9c;background:rgba(255,46,76,.09);border-color:rgba(255,46,76,.32)}
+.t7 .m-chip.live::before{background:#ff8c9c}
+.t7 .ok-dot{background:#ff8c9c;box-shadow:0 0 8px rgba(255,140,156,.7)}
+.t7 .m-logodot{background:#ff2e4c;color:#ffffff}
+.t7.light{--bg:#fdf1f3;--side:#fbe6ea;--panel:#ffffff;--panel2:#fae8eb;--line:rgba(190,24,44,.22);--line2:rgba(190,24,44,.1);--text:#3d0d16;--muted:#a3767e;--accent:#c8102e;--accent2:#e6455a;--accentSoft:rgba(200,16,46,.09);--accentInk:#ffffff;--top:#ffffff}
+.t7.light .mock{background-image:radial-gradient(52% 40% at 82% -6%,rgba(200,16,46,.07),transparent 62%)}
+.t7.light .k-val{text-shadow:none;color:#b01e30}
+.t7.light .m-item.active{background:rgba(200,16,46,.08);color:#57101d;box-shadow:inset 2px 0 0 #c8102e}
+.t7.light .m-btn.solid{background:#c8102e;color:#ffffff}
+.t7.light .m-chart .bar{background:linear-gradient(180deg,#e6455a,#8f1729)}
+.t7.light .m-chart .bar.hl{background:linear-gradient(180deg,#f2959f,#c14b5c)}
+.t7.light .m-logodot{background:#c8102e;color:#ffffff}
+.t7.light .m-card{box-shadow:0 8px 24px rgba(61,13,22,.07)}
+
+/* ============ T8 Crimson Glass (dark-first) ============ */
+.t8{--bg:#170b12;--side:rgba(26,12,20,.55);--panel:rgba(255,255,255,.06);--panel2:rgba(255,255,255,.04);--line:rgba(255,255,255,.14);--line2:rgba(255,255,255,.06);--text:#fbeef1;--muted:#bb9aa4;--accent:#f43f5e;--accent2:#fb9a8d;--accentSoft:rgba(244,63,94,.15);--accentInk:#3d0410;--r:18px;--fr:12px;--fnum:'Manrope',ui-sans-serif,system-ui;--top:rgba(23,11,18,.5)}
+.t8 .mock{font-family:'Manrope',ui-sans-serif,system-ui;--c1:#f43f5e;--c2:#a12536;--c3:#ecc2bb}
+.t8 .mock::before{content:"";position:absolute;inset:-25%;z-index:0;background:radial-gradient(38% 32% at 16% 8%,rgba(244,63,94,.4),transparent 62%),radial-gradient(34% 30% at 84% 12%,rgba(251,154,141,.34),transparent 62%),radial-gradient(44% 38% at 62% 96%,rgba(161,37,54,.32),transparent 64%);filter:blur(34px);animation:drift 16s ease-in-out infinite alternate}
+.t8 .m-side{position:relative;z-index:1;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.t8 .m-top{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.t8 .m-card{backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 10px 34px rgba(10,2,6,.4)}
+.t8 .m-donut .hole{background:rgba(26,12,20,.75);backdrop-filter:blur(8px)}
+.t8 .m-btn.solid{background:#f43f5e;color:#ffffff}
+.t8.light{--bg:#faf2f2;--side:rgba(255,255,255,.65);--panel:rgba(255,255,255,.72);--panel2:rgba(255,255,255,.55);--line:rgba(61,13,22,.12);--line2:rgba(61,13,22,.07);--text:#331418;--muted:#96707a;--accent:#c8102e;--accent2:#e6455a;--accentSoft:rgba(200,16,46,.1);--accentInk:#ffffff;--top:rgba(255,255,255,.6)}
+.t8.light .mock::before{background:radial-gradient(38% 32% at 16% 8%,rgba(200,16,46,.16),transparent 62%),radial-gradient(34% 30% at 84% 12%,rgba(230,69,90,.15),transparent 62%),radial-gradient(44% 38% at 62% 96%,rgba(161,37,54,.11),transparent 64%)}
+.t8.light .m-card{box-shadow:0 8px 26px rgba(51,20,24,.1)}
+.t8.light .m-donut .hole{background:rgba(255,255,255,.88)}
+.t8.light .m-btn.solid{background:#c8102e;color:#ffffff}
+
+/* ============ T9 Garnet Metal (dark-first) ============ */
+.t9{--bg:#121114;--side:#161519;--panel:#1a191e;--panel2:#201f25;--line:rgba(224,82,106,.24);--line2:rgba(224,82,106,.11);--text:#f2eaec;--muted:#9c939b;--accent:#e0526a;--accent2:#f0a3b1;--accentSoft:rgba(224,82,106,.11);--accentInk:#22050b;--r:12px;--fr:9px;--fnum:'Unbounded','Sora',ui-sans-serif,system-ui;--top:#161519}
+.t9 .mock{font-family:ui-sans-serif,system-ui;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.012) 0 2px,transparent 2px 4px),repeating-linear-gradient(-45deg,rgba(255,255,255,.012) 0 2px,transparent 2px 4px);--c1:#e0526a;--c2:#8f2233;--c3:#ecc2bb}
+.t9 .k-val{background:linear-gradient(180deg,#f0a3b1,#93212f);-webkit-background-clip:text;background-clip:text;color:transparent;font-size:24px}
+.t9 .m-card{border:1px solid rgba(255,255,255,.07);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.t9 .m-item.active{background:rgba(224,82,106,.1);color:#f8dde2;box-shadow:inset 2px 0 0 #e0526a}
+.t9 .m-btn.solid{background:linear-gradient(135deg,#e0526a,#a12536);color:#ffffff;border-color:transparent}
+.t9 .m-chart .bar{border-radius:4px;background:linear-gradient(180deg,#f0a3b1,#7e1626)}
+.t9 .m-chart .bar.hl{background:linear-gradient(180deg,#f8ccd3,#b1283c)}
+.t9 .m-logo{letter-spacing:.18em}
+.t9.light{--bg:#f5f3f4;--side:#eceaec;--panel:#ffffff;--panel2:#efedee;--line:rgba(147,33,47,.26);--line2:rgba(147,33,47,.12);--text:#2a1a1e;--muted:#8d8188;--accent:#a12536;--accent2:#e0526a;--accentSoft:rgba(161,37,54,.09);--accentInk:#ffffff;--top:#ffffff}
+.t9.light .mock{background-image:repeating-linear-gradient(45deg,rgba(42,26,30,.02) 0 2px,transparent 2px 4px),repeating-linear-gradient(-45deg,rgba(42,26,30,.02) 0 2px,transparent 2px 4px)}
+.t9.light .k-val{background:linear-gradient(180deg,#c14b5c,#7e1626);-webkit-background-clip:text;background-clip:text;color:transparent}
+.t9.light .m-card{box-shadow:0 1px 2px rgba(42,26,30,.06)}
+.t9.light .m-btn.solid{background:linear-gradient(135deg,#c14b5c,#8f2233);color:#ffffff;border-color:transparent}
+.t9.light .m-chart .bar{background:linear-gradient(180deg,#e0526a,#8f2233)}
+.t9.light .m-chart .bar.hl{background:linear-gradient(180deg,#f0a3b1,#b1283c)}
+
+/* ============ T10 Ember Mono (dark-first) ============ */
+.t10{--bg:#0c0507;--side:#100609;--panel:#140709;--panel2:#1b0a0d;--line:rgba(255,70,90,.24);--line2:rgba(255,70,90,.11);--text:#ffd0d6;--muted:#a16a72;--accent:#ff3b52;--accent2:#ff8c9c;--accentSoft:rgba(255,59,82,.1);--accentInk:#1c0205;--r:0px;--fr:0px;--fnum:'JetBrains Mono',ui-monospace,monospace;--top:#140709}
+.t10 .mock{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;--c1:#ff4d5e;--c2:#8f2233;--c3:#ecc2bb}
+.t10 .mock::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:3;background:repeating-linear-gradient(0deg,rgba(255,59,82,.03) 0 2px,transparent 2px 4px)}
+.t10 .m-logo{color:#ff3b52;text-shadow:0 0 10px rgba(255,59,82,.5)}
+.t10 .m-logo::after{content:"_";animation:blink 1.1s steps(1) infinite}
+.t10 .m-item{text-transform:lowercase}
+.t10 .m-item::before{content:"> ";width:auto;height:auto;background:transparent;border-radius:0;opacity:1;font-weight:700}
+.t10 .m-item.active{color:#ff3b52;text-shadow:0 0 8px rgba(255,59,82,.4)}
+.t10 .k-val{text-shadow:0 0 14px rgba(255,59,82,.5);color:#ff5c6e}
+.t10 .m-chart .bar{border-radius:0;background:#ff3b52;box-shadow:0 0 9px rgba(255,59,82,.35)}
+.t10 .m-chart .bar.hl{background:#ff8c9c}
+.t10 .c-head b::before{content:"// ";color:#a16a72}
+.t10 .m-search,.t10 .m-btn,.t10 .m-bell,.t10 .m-avatar,.t10 .m-logodot{border-radius:0}
+.t10 .s-txt{display:none}
+.t10 .m-search::before{content:"grep -i 'threat' /var/log/utm.log";font-size:10.5px;color:#a16a72}
+.t10 .m-logodot{background:#ff3b52;color:#1c0205}
+.t10 .k-label{color:#a16a72}
+.t10.light{--bg:#fbf1ec;--side:#f4e5dc;--panel:#fdf6f0;--panel2:#f2e4db;--line:rgba(176,20,36,.3);--line2:rgba(176,20,36,.13);--text:#4a0c14;--muted:#a06a72;--accent:#c8102e;--accent2:#e6455a;--accentSoft:rgba(200,16,46,.09);--accentInk:#ffffff}
+.t10.light .mock::after{display:none}
+.t10.light .m-logo{color:#b01e30;text-shadow:none}
+.t10.light .m-item.active{color:#8f1220;text-shadow:none}
+.t10.light .k-val{text-shadow:none;color:#b01e30}
+.t10.light .m-chart .bar{box-shadow:none;background:#c8102e}
+.t10.light .m-chart .bar.hl{background:#e6455a}
+.t10.light .c-head b::before{color:#a06a72}
+.t10.light .m-search::before{color:#a06a72}
+.t10.light .m-logodot{background:#c8102e;color:#ffffff}
+
+/* ============ generic light-mode semantic chips ============ */
+.light .mock{--c1:#c21f31;--c2:#d97706;--c3:#7c3aed}
+.light .k-delta.up{color:#b45309;background:rgba(180,83,9,.1)}
+.light .k-delta.down{color:#be123c;background:rgba(190,18,60,.08)}
+.light .m-chip.live{color:#b45309;background:rgba(180,83,9,.08);border-color:rgba(180,83,9,.35)}
+.light .m-chip.live::before{background:#d97706}
+.light .ok-dot{background:#d97706;box-shadow:none}
+.light .sv-crit{color:#be123c;background:rgba(190,18,60,.08);border-color:rgba(190,18,60,.35)}
+.light .sv-high{color:#a16207;background:rgba(202,138,4,.12);border-color:rgba(202,138,4,.4)}
+.light .sv-med{color:#a16207;background:rgba(202,138,4,.12);border-color:rgba(202,138,4,.4)}
+.light .act.block{color:#1d4ed8}
+.light .act.flag{color:#a16207}
+.light .act.quar{color:#a16207}
+
+/* ================================================================
+   BATCH 2 — PURE WHITE EDITION (T11–T20)
+   Spec: pure #FFFFFF canvas + ONE confident secondary color each.
+   Zero green anywhere. Each template is a DIFFERENT LAYOUT,
+   not a recolor of a shared skeleton.
+   ================================================================ */
+
+/* ---- light gallery chrome (presents white templates honestly) ---- */
+body{background:#eef0f4;color:#181b22}
+.gal-head h1 span{color:#8a90a0}
+.gal-head .sub{color:#5c6373}
+.gal-head .sub b{color:#181b22}
+.how{border-color:#dde1e8;background:#ffffff;color:#4a5162}
+.how b{color:#181b22}
+.quick a{border-color:#dde1e8;background:#fff;color:#4a5162}
+.quick a:hover{border-color:#9aa2b2;color:#111318}
+.modebtn{border-color:#dde1e8;background:#fff;color:#5c6373}
+.modebtn:hover:not(.active){border-color:#9aa2b2;color:#111318}
+.modebtn.active{background:#181b22;color:#fff;border-color:#181b22}
+.modelab,.modenote{color:#8a90a0}
+.foot{border-color:#c9cfda;color:#5c6373}
+.foot b{color:#181b22}
+.tpl-no{-webkit-text-stroke-color:#b6bdc9}
+.tpl-desc{color:#5c6373}
+.tpl-tags span{color:#4a5162;background:#fff;border-color:#dde1e8}
+.pal i{border-color:rgba(20,26,40,.16)}
+.pick{color:#4a5162;border-color:#b6bdc9}
+.mockroot{border-color:#dcdee4;box-shadow:0 26px 64px rgba(24,32,54,.14)}
+.batch-div{margin:84px 0 -30px;border:1px solid #dde1e8;background:#fff;border-radius:16px;padding:24px 26px;box-shadow:0 14px 40px rgba(24,32,54,.07)}
+.batch-div .bd-chip{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#fff;background:#181b22;border-radius:999px;padding:4px 11px;margin-bottom:10px}
+.batch-div h2{font-size:21px;font-weight:800;letter-spacing:-.01em}
+.batch-div p{color:#5c6373;font-size:13.5px;line-height:1.65;margin-top:8px;max-width:880px}
+.qgl{font-size:10.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#9aa2b2;align-self:center;padding:0 4px}
+
+/* ---- batch-2 shared component base (styled by per-template vars) ---- */
+.b2{background:var(--bw,#fff);color:var(--ink,#181a20);font-family:'Manrope',ui-sans-serif,system-ui;font-size:13px;border-radius:16px;overflow:hidden;border:1px solid #dcdee4;box-shadow:0 26px 64px rgba(24,32,54,.13);position:relative;isolation:isolate}
+.t11,.t12,.t13,.t14,.t15,.t16,.t17,.t18,.t19,.t20{--bw:#ffffff;--card:#ffffff}
+.b2 .lv{display:inline-flex;align-items:center;gap:7px;font-size:10px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--acc);background:var(--accSoft);border:1px solid var(--accBr);border-radius:999px;padding:5px 11px;white-space:nowrap}
+.b2 .lv::before{content:"";width:6px;height:6px;border-radius:99px;background:var(--acc);animation:pulseDot 1.6s infinite}
+.b2 .up{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;color:var(--acc);background:var(--accSoft)}
+.b2 .down{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;color:#be123c;background:#fbe9ef}
+.b2 [data-bars]{display:flex;align-items:flex-end;gap:5px;min-width:0}
+.b2 [data-bars] i{flex:1;min-height:3px;border-radius:4px 4px 2px 2px;background:var(--acc);opacity:.82}
+.b2 [data-bars] i.hl{opacity:1;background:var(--acc2)}
+.b2 .ev{display:grid;grid-template-columns:62px 66px 104px 1fr 82px;gap:9px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--hair);font-size:11.5px;min-width:0}
+.b2 .ev:last-child{border-bottom:none}
+.b2 .ev-t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:var(--mut)}
+.b2 .ev-s{font-size:9.5px;font-weight:800;padding:2.5px 8px;border-radius:999px;letter-spacing:.04em;text-align:center;white-space:nowrap;justify-self:start}
+.b2 .ev-src{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:var(--mut);white-space:nowrap}
+.b2 .ev-x{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.b2 .ev-a{font-size:10.5px;font-weight:800;text-align:right;color:var(--acc);white-space:nowrap}
+.b2 .sv-crit{color:#be123c;background:#fdeaef;border:1px solid rgba(190,18,60,.35)}
+.b2 .sv-high{color:#b45309;background:#fdf3e3;border:1px solid rgba(180,83,9,.4)}
+.b2 .sv-med{color:#8a6a10;background:#faf4dd;border:1px solid rgba(161,98,7,.4)}
+.b2 .sv-low{color:#5f6673;background:#eef0f4;border:1px solid rgba(95,102,115,.28)}
+.b2 .hrow{display:flex;flex-direction:column;gap:6px}
+.b2 .hl2{display:flex;justify-content:space-between;font-size:11.5px;color:var(--mut);font-weight:600}
+.b2 .hl2 b{color:var(--ink);font-weight:800}
+.b2 .hbar{height:6px;border-radius:99px;background:var(--accSoft);overflow:hidden}
+.b2 .hbar i{display:block;height:100%;border-radius:99px;background:var(--acc)}
+.b2 .donut{border-radius:50%;display:grid;place-items:center;flex-shrink:0}
+.b2 .donut .hole{border-radius:50%;background:var(--card);display:grid;place-items:center;text-align:center}
+.b2 .donut .hole b{font-size:17px;font-weight:800;letter-spacing:-.01em}
+.b2 .donut .hole span{font-size:8.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.12em;font-weight:700}
+.b2 .lgd{display:flex;flex-direction:column;gap:7px;font-size:10.5px;font-weight:600;color:var(--mut)}
+.b2 .lgd .lr{display:flex;align-items:center;gap:8px}
+.b2 .lgd .lr b{margin-left:auto;color:var(--ink);font-weight:800}
+.b2 .lgd .lr i{width:8px;height:8px;border-radius:3px;flex-shrink:0}
+
+/* ============ T11 Cobalt Ledger — broadsheet editorial ============ */
+.t11{--acc:#1e4fd8;--acc2:#0f2a80;--accBr:rgba(30,79,216,.32);--accSoft:#edf2fe;--ink:#111526;--mut:#70778c;--hair:#e5e8f0}
+.t11 .b2{font-family:ui-sans-serif,system-ui}
+.t11 .ed-mast{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px 28px;border-bottom:2.5px solid var(--ink)}
+.t11 .ed-brand{font-family:'Playfair Display',Georgia,serif;font-weight:700;font-size:20px;letter-spacing:.01em}
+.t11 .ed-brand em{font-style:italic;color:var(--acc)}
+.t11 .ed-date{font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--mut)}
+.t11 .ed-head{display:flex;justify-content:space-between;align-items:flex-end;gap:26px;padding:24px 28px 20px;border-bottom:1px solid var(--hair)}
+.t11 .ed-h1{font-family:'Playfair Display',Georgia,serif;font-size:31px;line-height:1.12;font-weight:700;letter-spacing:-.01em;max-width:660px}
+.t11 .ed-h1 u{text-decoration:none;border-bottom:3px solid var(--acc)}
+.t11 .ed-deck{font-size:12.5px;color:var(--mut);line-height:1.65;max-width:330px;border-left:3px solid var(--acc);padding-left:14px}
+.t11 .ed-grid{display:grid;grid-template-columns:1.3fr .9fr 1.05fr;min-height:430px}
+.t11 .ed-col{padding:18px 24px 22px;border-right:1px solid var(--hair);min-width:0}
+.t11 .ed-col:last-child{border-right:none}
+.t11 .ed-sec{display:flex;align-items:center;gap:10px;font-size:9.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--acc);margin-bottom:14px}
+.t11 .ed-sec::after{content:"";flex:1;height:1px;background:var(--hair)}
+.t11 .ed-big{font-family:'Playfair Display',Georgia,serif;font-size:46px;font-weight:700;color:var(--acc);line-height:1;letter-spacing:-.01em}
+.t11 .ed-big small{font-size:17px;color:var(--ink);font-weight:600}
+.t11 .ed-cap{font-size:10.5px;color:var(--mut);margin-top:7px}
+.t11 .ed-stat{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:11px 0;border-bottom:1px solid var(--hair)}
+.t11 .ed-stat:last-child{border-bottom:none}
+.t11 .ed-stat .l{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.t11 .ed-stat .v{font-family:'Playfair Display',Georgia,serif;font-size:22px;font-weight:700;color:var(--ink)}
+.t11 .ed-stat .v.c{color:var(--acc)}
+.t11 .ev{grid-template-columns:1fr auto;gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--hair)}
+.t11 .ev-t{grid-row:1;grid-column:1}
+.t11 .ev-s{grid-row:1;grid-column:2;justify-self:end}
+.t11 .ev-src{display:none}
+.t11 .ev-x{grid-row:2;grid-column:1;font-weight:700;font-size:12px;white-space:normal}
+.t11 .ev-a{grid-row:2;grid-column:2}
+.t11 .ed-foot{display:flex;justify-content:space-between;gap:14px;padding:13px 28px;border-top:2.5px solid var(--ink);font-size:9.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--mut)}
+.t11.dark{--bw:#0d1120;--card:#131a30;--acc:#7d9bff;--acc2:#b9c9ff;--accSoft:rgba(125,155,255,.12);--accBr:rgba(125,155,255,.3);--ink:#eef1fb;--mut:#8e97b5;--hair:#232c4a}
+.t11.dark .ed-mast,.t11.dark .ed-foot{border-color:#eef1fb}
+.t11.dark .ed-deck{border-left-color:var(--acc)}
+.t11.dark .ed-h1 u{border-color:var(--acc)}
+
+/* ============ T12 Violet Bento — floating pill nav + bento grid ============ */
+.t12{--acc:#7c3aed;--acc2:#4c1d95;--accBr:rgba(124,58,237,.3);--accSoft:#f3eeff;--ink:#1c1530;--mut:#857da3;--hair:#eae6f4}
+.t12 .bt-wrap{padding:18px 22px 24px}
+.t12 .bt-nav{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--hair);border-radius:999px;padding:8px 12px;box-shadow:0 12px 34px rgba(30,18,70,.09);margin-bottom:18px}
+.t12 .bt-logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:12.5px;padding:0 8px 0 0;white-space:nowrap}
+.t12 .bt-dot{width:26px;height:26px;border-radius:9px;background:var(--acc);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:900}
+.t12 .bt-tab{font-size:12px;font-weight:700;color:var(--mut);padding:7px 15px;border-radius:999px;white-space:nowrap}
+.t12 .bt-tab.on{background:var(--acc);color:#fff}
+.t12 .bt-sp{flex:1}
+.t12 .bt-ic{width:32px;height:32px;border-radius:99px;border:1px solid var(--hair);display:grid;place-items:center;font-size:11px;font-weight:800;color:var(--mut);background:var(--card)}
+.t12 .bt-ic.hot{background:var(--accSoft);color:var(--acc);border-color:transparent;position:relative}
+.t12 .bt-ic.hot::after{content:"";position:absolute;top:6px;right:6px;width:6px;height:6px;border-radius:99px;background:#be123c;border:1.5px solid #fff}
+.t12 .bt-grid{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:104px;gap:12px}
+.t12 .bt-tile{background:var(--card);border:1px solid var(--hair);border-radius:20px;padding:15px 17px;box-shadow:0 8px 22px rgba(30,18,70,.05);position:relative;overflow:hidden;min-width:0}
+.t12 .bt-lab{font-size:9px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:var(--mut);white-space:nowrap}
+.t12 .bt-num{font-size:25px;font-weight:800;letter-spacing:-.02em;margin-top:7px;font-family:'Sora',ui-sans-serif,system-ui}
+.t12 .bt-num small{font-size:12px;color:var(--mut);font-weight:600}
+.t12 .bt-sub{margin-top:6px;font-size:10.5px;color:var(--mut);display:flex;align-items:center;gap:7px}
+.t12 .bt-hero{grid-column:span 2;grid-row:span 2;background:linear-gradient(140deg,#7c3aed 0%,#5b21b6 78%);border:none;color:#fff;display:flex;flex-direction:column}
+.t12 .bt-hero .bt-lab{color:rgba(255,255,255,.72)}
+.t12 .bt-hero .bt-num{font-size:44px;margin-top:auto}
+.t12 .bt-hero .bt-sub{color:rgba(255,255,255,.85)}
+.t12 .bt-hero .up{background:rgba(255,255,255,.18);color:#fff}
+.t12 .bt-hero [data-bars]{margin-top:14px}
+.t12 .bt-hero [data-bars] i{background:rgba(255,255,255,.92);opacity:.65}
+.t12 .bt-hero [data-bars] i.hl{opacity:1;background:#fbbf24}
+.t12 .bt-tall{grid-row:span 2;display:flex;flex-direction:column}
+.t12 .bt-t2{grid-row:span 2}
+.t12 .bt-wide{grid-column:span 2}
+.t12 .bt-donut{width:100px;height:100px;margin:6px auto 8px}
+.t12 .bt-donut .hole{width:62px;height:62px}
+.t12 .bt-donut .hole b{font-size:13px}
+.t12 .bt-donut .hole span{font-size:7px}
+.t12 .lgd{gap:5px;font-size:10px}
+.t12 .ev{padding:6px 0;font-size:11px}
+.t12 .bt-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;margin-top:6px}
+.t12.dark{--bw:#110c1f;--card:#1a1230;--acc:#a78bfa;--acc2:#c4b5fd;--accSoft:rgba(167,139,250,.13);--accBr:rgba(167,139,250,.3);--ink:#efeaf9;--mut:#9c92bd;--hair:#2c2148}
+.t12.dark .bt-hero{background:linear-gradient(140deg,#6d28d9 0%,#4c1d95 78%)}
+.t12.dark .bt-nav{box-shadow:0 12px 34px rgba(0,0,0,.5)}
+.t12.dark .bt-tile{box-shadow:none}
+
+/* ============ T13 Tuxedo Index — mono Swiss ledger, thin rail ============ */
+.t13{--acc:#141414;--acc2:#8a8a8a;--accBr:rgba(20,20,20,.24);--accSoft:#f1f1f1;--ink:#121212;--mut:#8f8f8f;--hair:#e7e7e7}
+.t13 .b2{font-family:'JetBrains Mono',ui-monospace,monospace}
+.t13 .tx-app{display:grid;grid-template-columns:54px 1fr;min-height:640px}
+.t13 .tx-rail{border-right:1px solid var(--hair);display:flex;flex-direction:column;align-items:center;gap:7px;padding:14px 0}
+.t13 .tx-sq{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-size:11px;font-weight:800;color:#a5a5a5}
+.t13 .tx-sq.on{background:#121212;color:#fff}
+.t13 .tx-flex{flex:1}
+.t13 .tx-top{display:flex;justify-content:space-between;align-items:center;padding:16px 26px;border-bottom:1px solid var(--hair)}
+.t13 .tx-title{font-size:11px;font-weight:800;letter-spacing:.24em;text-transform:uppercase}
+.t13 .tx-meta{font-size:10px;color:var(--mut);letter-spacing:.06em;display:flex;align-items:center;gap:8px}
+.t13 .tx-meta i{width:7px;height:7px;border-radius:99px;background:#d97706;display:inline-block;animation:pulseDot 1.6s infinite}
+.t13 .tx-body{padding:6px 26px 22px}
+.t13 .tx-row{display:grid;grid-template-columns:200px 1fr 190px;gap:20px;align-items:center;padding:17px 0;border-bottom:1px solid var(--hair)}
+.t13 .tx-k{font-size:9.5px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--mut)}
+.t13 .tx-k small{display:block;font-size:9px;color:#b8b8b8;letter-spacing:.1em;margin-top:4px;font-weight:500}
+.t13 .tx-v{font-size:42px;font-weight:800;letter-spacing:-.04em;line-height:1;white-space:nowrap}
+.t13 .tx-v small{font-size:15px;font-weight:500;color:var(--mut);letter-spacing:0}
+.t13 .tx-side{font-size:9.5px;color:var(--mut);line-height:1.75;text-align:right}
+.t13 .tx-side b{color:#b45309;font-weight:700}
+.t13 .tx-mini{margin-top:10px}
+.t13 .tx-mini [data-bars] i{border-radius:1px;background:#dcdcdc}
+.t13 .tx-mini [data-bars] i.hl{background:#121212}
+.t13 .tx-evs{padding-top:6px}
+.t13 .ev{grid-template-columns:64px 70px 108px 1fr 84px;border-bottom:1px solid var(--hair);padding:9px 0;font-size:10.5px}
+.t13 .ev-s{border-radius:2px}
+.t13 .ev-a{color:#121212}
+.t13 .tx-foot{display:flex;justify-content:space-between;padding:14px 26px;border-top:1px solid var(--hair);font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--mut)}
+.t13.dark{--bw:#0c0c0c;--card:#141414;--acc:#f5f5f5;--acc2:#8a8a8a;--accSoft:#1e1e1e;--accBr:rgba(245,245,245,.22);--ink:#f2f2f2;--mut:#9a9a9a;--hair:#262626}
+.t13.dark .tx-sq.on{background:#f2f2f2;color:#0c0c0c}
+.t13.dark .tx-mini [data-bars] i{background:#2e2e2e}
+.t13.dark .tx-mini [data-bars] i.hl{background:#f2f2f2}
+.t13.dark .ev-a{color:#f2f2f2}
+
+/* ============ T14 Rose Clay — claymorphism, floating capsule nav ============ */
+.t14{--acc:#e0478b;--acc2:#8f5fc4;--accBr:rgba(224,71,139,.3);--accSoft:#fdeef5;--ink:#2c1a28;--mut:#a6899e;--hair:#f3e3ee}
+.t14 .cl-wrap{padding:20px 24px 26px;background:radial-gradient(50% 34% at 90% -6%,rgba(224,71,139,.07),transparent 62%),radial-gradient(42% 30% at 0% 100%,rgba(143,95,196,.07),transparent 62%)}
+.t14 .cl-nav{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:20px}
+.t14 .cl-brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:14px}
+.t14 .cl-dot{width:30px;height:30px;border-radius:11px;background:linear-gradient(135deg,#f27ab3,#d63d84);box-shadow:inset 0 2px 0 rgba(255,255,255,.4),0 6px 14px rgba(214,61,132,.3);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:900}
+.t14 .cl-search{display:flex;align-items:center;gap:9px;background:var(--card);border-radius:999px;padding:9px 16px;font-size:11.5px;font-weight:600;color:var(--mut);min-width:230px;box-shadow:0 10px 26px rgba(160,70,120,.13),inset 0 2px 0 rgba(255,255,255,.85)}
+.t14 .cl-navr{display:flex;align-items:center;gap:10px}
+.t14 .cl-pill{width:37px;height:37px;border-radius:15px;border:none;background:var(--card);box-shadow:0 8px 20px rgba(160,70,120,.14),inset 0 2px 0 rgba(255,255,255,.85);display:grid;place-items:center;font-size:12px;font-weight:800;color:var(--mut);position:relative}
+.t14 .cl-pill::after{content:"";position:absolute;top:9px;right:9px;width:6px;height:6px;border-radius:99px;background:#be123c}
+.t14 .cl-ava{width:37px;height:37px;border-radius:15px;background:linear-gradient(135deg,#c4b5fd,#8f5fc4);box-shadow:inset 0 2px 0 rgba(255,255,255,.4),0 6px 14px rgba(143,95,196,.3);display:grid;place-items:center;color:#fff;font-size:11px;font-weight:900}
+.t14 .cl-hi{font-size:24px;font-weight:800;letter-spacing:-.02em;margin-bottom:18px}
+.t14 .cl-hi em{font-style:normal;color:var(--acc)}
+.t14 .cl-blobs{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:20px}
+.t14 .cl-blob{display:flex;align-items:center;gap:13px;background:var(--card);border-radius:26px;padding:15px 22px 15px 15px;box-shadow:0 16px 34px rgba(160,70,120,.13),inset 0 2px 0 rgba(255,255,255,.85);min-width:186px}
+.t14 .cl-bico{width:46px;height:46px;border-radius:19px;display:grid;place-items:center;font-size:15px;font-weight:900;color:#fff;background:linear-gradient(135deg,#f27ab3,#d63d84);box-shadow:inset 0 2px 0 rgba(255,255,255,.35),0 8px 16px rgba(214,61,132,.28);flex-shrink:0}
+.t14 .cl-bico.v{background:linear-gradient(135deg,#c4b5fd,#8f5fc4);box-shadow:inset 0 2px 0 rgba(255,255,255,.35),0 8px 16px rgba(143,95,196,.28)}
+.t14 .cl-bico.a{background:linear-gradient(135deg,#fbd38d,#e8912f);box-shadow:inset 0 2px 0 rgba(255,255,255,.35),0 8px 16px rgba(232,145,47,.28)}
+.t14 .cl-bl{font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.t14 .cl-bn{font-size:21px;font-weight:800;letter-spacing:-.02em;margin-top:3px}
+.t14 .cl-bn small{font-size:11px;color:var(--mut);font-weight:600}
+.t14 .cl-panels{display:grid;grid-template-columns:1.55fr 1fr;gap:16px}
+.t14 .cl-card{background:var(--card);border-radius:26px;padding:18px 20px;box-shadow:0 16px 36px rgba(160,70,120,.12),inset 0 2px 0 rgba(255,255,255,.85)}
+.t14 .cl-chead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.t14 .cl-chead b{font-size:13.5px;font-weight:800}
+.t14 .cl-bars{height:148px}
+.t14 .cl-bars [data-bars] i{border-radius:8px 8px 4px 4px;background:linear-gradient(180deg,#f27ab3,#d63d84)}
+.t14 .cl-bars [data-bars] i.hl{background:linear-gradient(180deg,#c4b5fd,#8f5fc4)}
+.t14 .cl-donut{width:126px;height:126px;margin:6px auto 12px}
+.t14 .cl-donut .hole{width:78px;height:78px}
+.t14 .cl-wide{grid-column:1 / -1}
+.t14 .cl-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px}
+.t14.dark{--bw:#1e1220;--card:#2a1830;--acc:#f06ba8;--acc2:#b993f5;--accSoft:rgba(240,107,168,.12);--accBr:rgba(240,107,168,.28);--ink:#f7e9f3;--mut:#b291a8;--hair:#3d2440}
+.t14.dark .cl-wrap{background:radial-gradient(50% 34% at 90% -6%,rgba(240,107,168,.1),transparent 62%),radial-gradient(42% 30% at 0% 100%,rgba(185,147,245,.09),transparent 62%)}
+.t14.dark .cl-blob,.t14.dark .cl-card,.t14.dark .cl-search,.t14.dark .cl-pill{box-shadow:0 16px 36px rgba(0,0,0,.45),inset 0 2px 0 rgba(255,255,255,.07)}
+.t14.dark .cl-dot,.t14.dark .cl-bico,.t14.dark .cl-ava{box-shadow:inset 0 2px 0 rgba(255,255,255,.2),0 8px 16px rgba(0,0,0,.35)}
+.t14.dark .cl-bars [data-bars] i{background:linear-gradient(180deg,#f27ab3,#c23a75)}
+.t14.dark .cl-bars [data-bars] i.hl{background:linear-gradient(180deg,#c4b5fd,#8f5fc4)}
+
+/* ============ T15 Tangerine Rail — icon-only left rail, warm gradient hero ============ */
+.t15{--acc:#ea580c;--acc2:#c2410c;--accBr:rgba(234,88,12,.3);--accSoft:#fff1e8;--ink:#2e1c10;--mut:#a28872;--hair:#f1e5d7}
+.t15 .rl-app{display:grid;grid-template-columns:66px 1fr;min-height:640px}
+.t15 .rl-rail{border-right:1px solid var(--hair);display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 0}
+.t15 .rl-logo{width:36px;height:36px;border-radius:13px;background:linear-gradient(135deg,#f97316,#c2410c);color:#fff;display:grid;place-items:center;font-weight:900;font-size:14px;box-shadow:0 8px 18px rgba(234,88,12,.35);margin-bottom:10px}
+.t15 .rl-ic{width:40px;height:40px;border-radius:14px;display:grid;place-items:center;font-size:12px;font-weight:800;color:var(--mut)}
+.t15 .rl-ic.on{background:var(--acc);color:#fff;box-shadow:0 8px 18px rgba(234,88,12,.35)}
+.t15 .rl-flex{flex:1}
+.t15 .rl-top{display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid var(--hair)}
+.t15 .rl-h{font-size:16px;font-weight:800;letter-spacing:-.01em}
+.t15 .rl-topr{margin-left:auto;display:flex;align-items:center;gap:10px}
+.t15 .rl-pill{font-size:11px;font-weight:700;color:var(--mut);border:1px solid var(--hair);border-radius:999px;padding:7px 13px;background:var(--card);white-space:nowrap}
+.t15 .rl-pill.solid{background:var(--acc);border-color:transparent;color:#fff}
+.t15 .rl-body{padding:20px 24px;display:grid;grid-template-columns:1.55fr 1fr;gap:16px}
+.t15 .rl-card{background:var(--card);border:1px solid var(--hair);border-radius:20px;padding:16px 18px;box-shadow:0 6px 16px rgba(190,100,30,.06);min-width:0}
+.t15 .rl-hero{background:linear-gradient(140deg,#f97316 0%,#c2410c 80%);border:none;color:#fff;display:flex;flex-direction:column;box-shadow:0 14px 30px rgba(234,88,12,.3)}
+.t15 .rl-ch{font-size:9.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.t15 .rl-hero .rl-ch{color:rgba(255,255,255,.75)}
+.t15 .rl-bignum{font-size:40px;font-weight:800;letter-spacing:-.02em;margin-top:auto}
+.t15 .rl-bignum small{font-size:14px;font-weight:600;color:rgba(255,255,255,.8)}
+.t15 .rl-hero .up{background:rgba(255,255,255,.18);color:#fff}
+.t15 .rl-hero [data-bars]{margin-top:14px}
+.t15 .rl-hero [data-bars] i{background:rgba(255,255,255,.92);opacity:.6}
+.t15 .rl-hero [data-bars] i.hl{opacity:1;background:#fde047}
+.t15 .rl-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.t15 .ev{grid-template-columns:56px 66px 1fr 76px}
+.t15 .ev-src{display:none}
+.t15 .rl-donut{width:102px;height:102px;margin:2px auto 10px}
+.t15 .rl-donut .hole{width:62px;height:62px}
+.t15.dark{--bw:#1c1209;--card:#271a0e;--acc:#fb8b3c;--acc2:#fbbf24;--accSoft:rgba(251,139,60,.13);--accBr:rgba(251,139,60,.28);--ink:#f7ecdf;--mut:#b39b82;--hair:#3d2c18}
+.t15.dark .rl-hero{background:linear-gradient(140deg,#ea580c 0%,#9a3412 80%)}
+.t15.dark .rl-card{box-shadow:none}
+
+/* ============ T16 Magenta Pop — neo-brutalist comic panels + halftone ============ */
+.t16{--acc:#d9036b;--acc2:#2563eb;--accY:#f0a500;--accBr:rgba(217,3,107,.35);--accSoft:#ffe4f1;--ink:#141414;--mut:#777779;--hair:#e4e4e8;--ln:#141414}
+.t16 .b2{font-family:'Space Mono',ui-monospace,monospace}
+.t16 .pp-banner{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 24px;border-bottom:3px solid var(--ln);background:radial-gradient(circle at 8px 8px,#ffd6ea 2px,transparent 2.6px);background-size:16px 16px}
+.t16 .pp-logo{font-family:'Archivo Black','Arial Black',sans-serif;font-size:27px;letter-spacing:-.02em;text-transform:uppercase;line-height:1}
+.t16 .pp-logo em{font-style:normal;color:var(--acc)}
+.t16 .pp-live{font-size:10.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#fff;background:var(--acc);border:3px solid var(--ln);padding:8px 15px;box-shadow:5px 5px 0 var(--ln);white-space:nowrap}
+.t16 .pp-tick{overflow:hidden;white-space:nowrap;background:#141414;color:#fff;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:9px 0}
+.t16 .pp-tick span{display:inline-block;animation:ppm 26s linear infinite}
+@keyframes ppm{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.t16 .pp-grid{display:grid;grid-template-columns:repeat(3,1fr)}
+.t16 .pp-cell{border-right:3px solid var(--ln);border-bottom:3px solid var(--ln);padding:17px 20px 19px;position:relative;min-width:0}
+.t16 .pp-cell:nth-child(3n){border-right:none}
+.t16 .pp-lab{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--mut)}
+.t16 .pp-num{font-family:'Archivo Black','Arial Black',sans-serif;font-size:36px;letter-spacing:-.01em;margin-top:9px;line-height:1}
+.t16 .pp-num em{font-style:normal;color:var(--acc)}
+.t16 .pp-sub{margin-top:8px;font-size:10.5px;font-weight:700;color:var(--mut);display:flex;gap:8px;align-items:center}
+.t16 .up{border-radius:0;border:2px solid var(--ln);background:#fff;color:#141414}
+.t16 .down{border-radius:0;border:2px solid var(--ln);background:#fff;color:#141414}
+.t16 .pp-kick{position:absolute;top:14px;right:16px;width:30px;height:30px;border-radius:50%;background-image:radial-gradient(var(--acc) 1.4px,transparent 1.9px);background-size:6.5px 6.5px}
+.t16 .pp-kick.b{background-image:radial-gradient(#2563eb 1.4px,transparent 1.9px)}
+.t16 .pp-kick.y{background-image:radial-gradient(#f0a500 1.4px,transparent 1.9px)}
+.t16 .pp-chartwrap{margin-top:12px}
+.t16 .pp-chartwrap [data-bars]{height:96px;gap:6px}
+.t16 .pp-chartwrap [data-bars] i{border-radius:0;background:var(--ln);opacity:1}
+.t16 .pp-chartwrap [data-bars] i.hl{background:var(--acc)}
+.t16 .pp-donut{width:108px;height:108px;margin:10px auto 8px;border:3px solid var(--ln)}
+.t16 .pp-donut .hole{width:62px;height:62px;border:3px solid var(--ln);background:#fff}
+.t16 .pp-donut .hole b{font-size:14px}
+.t16 .pp-donut .hole span{font-size:7.5px}
+.t16 .pp-tablewrap{border-bottom:3px solid var(--ln)}
+.t16 .pp-table{width:100%;border-collapse:collapse;font-size:11px}
+.t16 .pp-table th{background:var(--ln);color:#fff;text-align:left;padding:9px 16px;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:700}
+.t16 .pp-table td{padding:0 0 0 0;font-weight:700}
+.t16 .pp-evwrap{padding:2px 16px}
+.t16 .ev{border-bottom:2px solid var(--ln);padding:10px 0;font-weight:700;font-size:11px;grid-template-columns:64px 76px 112px 1fr 84px}
+.t16 .ev-s{border-radius:0;border:2px solid var(--ln);background:#fff;color:#141414}
+.t16 .sv-crit{background:var(--acc);color:#fff}
+.t16 .sv-high{background:var(--accY);color:#141414}
+.t16 .sv-med{background:#fff}
+.t16 .pp-foot{display:flex;justify-content:space-between;gap:12px;padding:12px 24px;font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.t16.dark{--bw:#0f0f12;--card:#16161b;--ink:#f2f2f4;--mut:#9a9aa4;--hair:#26262c;--ln:#f2f2f4}
+.t16.dark .pp-banner{background:radial-gradient(circle at 8px 8px,rgba(217,3,107,.3) 2px,transparent 2.6px);background-size:16px 16px}
+.t16.dark .pp-tick{background:#f2f2f4;color:#0f0f12}
+.t16.dark .pp-donut .hole{background:#16161b}
+.t16.dark .up,.t16.dark .down{background:#16161b;color:#f2f2f4}
+.t16.dark .ev-s{background:#16161b;color:#f2f2f4}
+.t16.dark .sv-crit{background:#d9036b;color:#fff}
+.t16.dark .sv-high{background:#f0a500;color:#141414}
+
+/* ============ T17 Cerulean Dock — window chrome + floating glass dock ============ */
+.t17{--acc:#0284c7;--acc2:#0a4f80;--accBr:rgba(2,132,199,.3);--accSoft:#e9f5fc;--ink:#101c28;--mut:#7e91a3;--hair:#e2eaf1}
+.t17 .dk-stage{display:flex;flex-direction:column;min-height:660px;background:radial-gradient(56% 36% at 86% -4%,rgba(2,132,199,.08),transparent 60%),radial-gradient(40% 30% at -4% 108%,rgba(125,211,252,.14),transparent 60%)}
+.t17 .dk-bar{display:flex;align-items:center;gap:10px;padding:13px 22px;border-bottom:1px solid var(--hair)}
+.t17 .dk-dots{display:flex;gap:6px}
+.t17 .dk-dots i{width:10px;height:10px;border-radius:99px;background:#dfe5ea}
+.t17 .dk-wtitle{font-size:12px;font-weight:800;color:var(--mut)}
+.t17 .dk-actions{margin-left:auto;display:flex;gap:8px}
+.t17 .dk-act{font-size:11px;font-weight:700;color:var(--mut);border:1px solid var(--hair);background:var(--card);border-radius:10px;padding:6px 12px;white-space:nowrap}
+.t17 .dk-act.solid{background:var(--acc);color:#fff;border-color:transparent}
+.t17 .dk-body{flex:1;display:flex;flex-direction:column;gap:16px;padding:22px 26px 14px}
+.t17 .dk-hello{display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.t17 .dk-hello h3{font-size:21px;font-weight:800;letter-spacing:-.02em;font-family:'Sora',ui-sans-serif,system-ui}
+.t17 .dk-hello p{font-size:12px;color:var(--mut);font-weight:600}
+.t17 .dk-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.t17 .dk-card{background:var(--card);border-radius:18px;padding:16px 18px;box-shadow:0 12px 30px rgba(16,50,80,.08),0 2px 6px rgba(16,50,80,.05);min-width:0}
+.t17 .dk-k{font-size:9.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.t17 .dk-v{font-size:29px;font-weight:800;letter-spacing:-.02em;margin-top:8px;font-family:'Sora',ui-sans-serif,system-ui}
+.t17 .dk-v small{font-size:13px;color:var(--mut);font-weight:600}
+.t17 .dk-sub{margin-top:6px;font-size:10.5px;color:var(--mut);font-weight:600;display:flex;gap:8px;align-items:center}
+.t17 .dk-mid{display:grid;grid-template-columns:1.6fr 1fr;gap:16px}
+.t17 .dk-chart{height:168px}
+.t17 .dk-chart [data-bars] i{border-radius:8px 8px 3px 3px;background:linear-gradient(180deg,#38b6f0,#0284c7)}
+.t17 .dk-chart [data-bars] i.hl{background:linear-gradient(180deg,#0c6aa8,#0a4f80)}
+.t17 .dk-evwrap{margin-top:4px}
+.t17 .dk-dockwrap{display:flex;justify-content:center;padding:6px 0 20px}
+.t17 .dk-dock{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.65);outline:1px solid var(--hair);border-radius:24px;padding:11px 15px;box-shadow:0 22px 44px rgba(16,50,80,.18)}
+.t17 .dk-di{width:42px;height:42px;border-radius:15px;display:grid;place-items:center;font-size:12px;font-weight:800;background:#eef4f8;color:var(--mut);position:relative}
+.t17 .dk-di.on{background:linear-gradient(135deg,#0ea5e9,#026aa8);color:#fff;box-shadow:0 10px 20px rgba(2,132,199,.42)}
+.t17 .dk-di.on::after{content:"";position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:99px;background:var(--acc)}
+.t17.dark{--bw:#0b1621;--card:#122331;--acc:#38b6f0;--acc2:#7dd3fc;--accSoft:rgba(56,182,240,.13);--accBr:rgba(56,182,240,.3);--ink:#eaf4fb;--mut:#8fa6b8;--hair:#1e3446}
+.t17.dark .dk-stage{background:radial-gradient(56% 36% at 86% -4%,rgba(56,182,240,.1),transparent 60%),radial-gradient(40% 30% at -4% 108%,rgba(125,211,252,.07),transparent 60%)}
+.t17.dark .dk-card{box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.t17.dark .dk-dock{background:rgba(18,35,49,.82);border-color:rgba(255,255,255,.1);outline-color:#1e3446;box-shadow:0 22px 44px rgba(0,0,0,.5)}
+.t17.dark .dk-di{background:#182c3d}
+.t17.dark .dk-chart [data-bars] i{background:linear-gradient(180deg,#38b6f0,#0c6aa8)}
+.t17.dark .dk-chart [data-bars] i.hl{background:#7dd3fc}
+
+/* ============ T18 Gilt Deco — art-deco symmetry, gold + ink on white ============ */
+.t18{--acc:#9a6b16;--acc2:#c9a038;--accBr:rgba(154,107,22,.32);--accSoft:#f8f1de;--ink:#1c170f;--mut:#8e8570;--hair:#e7dfc9}
+.t18 .b2{font-family:'Cormorant Garamond',Georgia,serif}
+.t18 .dc-frame{margin:16px;border:1.5px solid var(--ink);padding:5px}
+.t18 .dc-in{border:1px solid var(--acc);padding:0 26px 18px;position:relative}
+.t18 .dc-corner{position:absolute;width:11px;height:11px;transform:rotate(45deg);background:var(--acc2)}
+.t18 .dc-corner.a{top:-6px;left:-6px}
+.t18 .dc-corner.b{top:-6px;right:-6px}
+.t18 .dc-corner.c{bottom:-6px;left:-6px}
+.t18 .dc-corner.d{bottom:-6px;right:-6px}
+.t18 .dc-orn{display:flex;align-items:center;gap:12px;justify-content:center;padding:20px 0 2px;color:var(--acc);font-size:13px}
+.t18 .dc-orn::before,.t18 .dc-orn::after{content:"";height:1px;width:130px;background:linear-gradient(90deg,transparent,var(--acc))}
+.t18 .dc-orn::after{background:linear-gradient(90deg,var(--acc),transparent)}
+.t18 .dc-brand{font-size:23px;font-weight:700;letter-spacing:.3em;text-transform:uppercase;text-indent:.3em;text-align:center}
+.t18 .dc-tag{font-size:9px;letter-spacing:.34em;text-transform:uppercase;color:var(--mut);text-align:center;margin-top:7px;font-weight:700;font-family:ui-sans-serif,system-ui}
+.t18 .dc-cols{display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:26px;padding:20px 6px 6px}
+.t18 .dc-stack{display:flex;flex-direction:column;justify-content:space-between;gap:9px;min-width:0}
+.t18 .dc-stat{border-top:1px solid var(--hair);padding:11px 2px 9px;display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.t18 .dc-stat .n{font-size:29px;font-weight:700;color:var(--ink);line-height:1;white-space:nowrap}
+.t18 .dc-stat .n.g{color:var(--acc)}
+.t18 .dc-stat .l{font-size:8.5px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--mut);font-family:ui-sans-serif,system-ui;text-align:right}
+.t18 .dc-center{display:flex;flex-direction:column;align-items:center;gap:11px;padding:2px 0;min-width:0}
+.t18 .dc-sun{width:126px;height:126px;border-radius:50%;display:grid;place-items:center;background:repeating-conic-gradient(var(--accSoft) 0 5deg,#fff 5deg 15deg);border:1.5px solid var(--acc);position:relative;flex-shrink:0}
+.t18 .dc-sun::before{content:"";position:absolute;inset:10px;border-radius:50%;border:1px solid var(--acc2)}
+.t18 .dc-emblem{width:60px;height:60px;border-radius:50%;background:var(--ink);color:#e9c76a;display:grid;place-items:center;font-size:24px;font-weight:700;position:relative;z-index:1}
+.t18 .dc-centnum{font-size:38px;font-weight:700;color:var(--acc);line-height:1}
+.t18 .dc-centlab{font-size:8.5px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;color:var(--mut);font-family:ui-sans-serif,system-ui}
+.t18 .dc-bars{width:100%}
+.t18 .dc-bars [data-bars]{height:88px;gap:4px}
+.t18 .dc-bars [data-bars] i{border-radius:0;background:var(--acc2);opacity:.85}
+.t18 .dc-bars [data-bars] i.hl{background:var(--ink);opacity:1}
+.t18 .dc-wire{border-top:1px solid var(--acc);margin-top:10px;padding-top:8px}
+.t18 .dc-wire .ev{grid-template-columns:70px 1fr 92px;border-bottom:1px solid var(--hair);padding:8px 2px}
+.t18 .dc-wire .ev-src{display:none}
+.t18 .dc-wire .ev-s{display:none}
+.t18 .dc-wire .ev-x{font-family:'Cormorant Garamond',Georgia,serif;font-size:14.5px;font-weight:600;white-space:normal}
+.t18 .dc-wire .ev-t{font-size:11px}
+.t18 .dc-frieze{height:13px;margin:14px 2px 8px;background:repeating-linear-gradient(90deg,var(--acc2) 0 1.5px,transparent 1.5px 11px);position:relative}
+.t18 .dc-frieze::before,.t18 .dc-frieze::after{content:"";position:absolute;left:0;right:0;height:1px;background:var(--acc)}
+.t18 .dc-frieze::before{top:0}
+.t18 .dc-frieze::after{bottom:0}
+.t18 .dc-foot{display:flex;justify-content:space-between;gap:12px;padding:6px 2px 4px;font-size:8.5px;font-weight:700;letter-spacing:.3em;text-transform:uppercase;color:var(--mut);font-family:ui-sans-serif,system-ui}
+.t18.dark{--bw:#0e0b06;--card:#14100a;--acc:#d4a53c;--acc2:#8a6b26;--accSoft:rgba(212,165,60,.1);--accBr:rgba(212,165,60,.3);--ink:#efe6cf;--mut:#a2987f;--hair:#2e2617}
+.t18.dark .dc-frame{border-color:#efe6cf}
+.t18.dark .dc-emblem{background:#d4a53c;color:#14100a}
+.t18.dark .dc-sun{background:repeating-conic-gradient(rgba(212,165,60,.14) 0 5deg,#14100a 5deg 15deg)}
+
+/* ============ T19 Blueprint Sheet — engineering drawing on white grid paper ============ */
+.t19{--acc:#1a3fb0;--acc2:#5c7fe0;--accBr:rgba(26,63,176,.35);--accSoft:#e9eeff;--ink:#10182a;--mut:#6c7a94;--hair:#d5dcf0}
+.t19 .b2{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.t19 .bp-app{background-image:linear-gradient(rgba(26,63,176,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(26,63,176,.06) 1px,transparent 1px);background-size:22px 22px}
+.t19 .bp-bar{display:flex;align-items:stretch;border-bottom:2px solid var(--acc);background:rgba(255,255,255,.85)}
+.t19 .bp-tab{font-size:10.5px;font-weight:700;letter-spacing:.1em;padding:13px 18px;color:var(--mut);border-right:2px solid var(--acc);text-transform:uppercase;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.t19 .bp-tab.on{background:var(--acc);color:#fff}
+.t19 .bp-rev{margin-left:auto;align-self:center;font-size:9.5px;color:var(--acc);letter-spacing:.12em;padding:0 18px;font-weight:700;white-space:nowrap}
+.t19 .bp-body{display:grid;grid-template-columns:1fr 316px;min-height:560px}
+.t19 .bp-sheet{padding:20px 22px 100px;border-right:2px dashed var(--acc);position:relative;min-width:0}
+.t19 .bp-fig{font-size:9.5px;font-weight:700;letter-spacing:.14em;color:var(--acc);text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between;gap:10px}
+.t19 .bp-chart{position:relative;height:226px;border-left:2px solid var(--acc);border-bottom:2px solid var(--acc);display:flex;align-items:flex-end;gap:7px;padding:0 8px}
+.t19 .bp-chart::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(26,63,176,.1) 0 1px,transparent 1px 28px);pointer-events:none}
+.t19 .bp-chart i{flex:1;background:var(--accSoft);border:1.5px solid var(--acc);border-bottom:none;border-radius:2px 2px 0 0;position:relative;z-index:1;min-height:4px}
+.t19 .bp-chart i.hl{background:var(--acc)}
+.t19 .bp-axis{display:flex;justify-content:space-between;font-size:8.5px;color:var(--mut);letter-spacing:.08em;margin-top:8px}
+.t19 .bp-note{margin-top:14px;font-size:9.5px;color:var(--mut);line-height:1.7;max-width:520px}
+.t19 .bp-note b{color:var(--acc)}
+.t19 .bp-title{position:absolute;bottom:16px;right:18px;background:var(--bw);border:2px solid var(--ink);display:grid;grid-template-columns:auto auto;font-size:8.5px;letter-spacing:.06em}
+.t19 .bp-title div{padding:5px 10px;border-top:1px solid var(--ink);color:var(--mut);white-space:nowrap}
+.t19 .bp-title div b{color:var(--ink);font-weight:700}
+.t19 .bp-title div:nth-child(-n+2){border-top:none}
+.t19 .bp-title div:nth-child(odd){border-right:1px solid var(--ink)}
+.t19 .bp-side{padding:20px 22px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.t19 .bp-block{border:1.5px solid var(--acc);background:var(--bw)}
+.t19 .bp-block h4{font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;background:var(--accSoft);color:var(--acc);padding:8px 12px;border-bottom:1.5px solid var(--acc)}
+.t19 .bp-bin{padding:11px 12px;display:flex;flex-direction:column;gap:8px}
+.t19 .bp-kv{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mut);gap:10px}
+.t19 .bp-kv b{color:var(--ink);font-weight:700;white-space:nowrap}
+.t19 .bp-kv b.a{color:var(--acc)}
+.t19 .bp-ev .ev{grid-template-columns:56px 64px 1fr 74px;font-size:9.5px;padding:7px 0}
+.t19 .bp-ev .ev-src{display:none}
+.t19 .bp-stamp{align-self:flex-start;font-size:11px;font-weight:800;letter-spacing:.24em;color:var(--acc);border:2.5px solid var(--acc);border-radius:4px;padding:8px 14px 8px 18px;transform:rotate(-5deg);text-transform:uppercase;white-space:nowrap}
+.t19 .up{border-radius:2px;border:1px solid var(--acc)}
+.t19.dark{--bw:#0a1638;--card:#10204e;--acc:#9db8ff;--acc2:#5c7fe0;--accSoft:rgba(157,184,255,.12);--accBr:rgba(157,184,255,.35);--ink:#dce6ff;--mut:#8fa0c9;--hair:#24407c}
+.t19.dark .bp-app{background-image:linear-gradient(rgba(157,184,255,.09) 1px,transparent 1px),linear-gradient(90deg,rgba(157,184,255,.09) 1px,transparent 1px)}
+.t19.dark .bp-chart::before{background:repeating-linear-gradient(0deg,rgba(157,184,255,.12) 0 1px,transparent 1px 28px)}
+.t19.dark .bp-bar{background:rgba(10,22,56,.85)}
+
+/* ============ T20 Cocoa Split — master/detail split view ============ */
+.t20{--acc:#8a4b24;--acc2:#5f3013;--accBr:rgba(138,75,36,.3);--accSoft:#f8efe6;--ink:#26160c;--mut:#9c8471;--hair:#efe2d3;--msbg:#fbf7f1}
+.t20 .sp-app{display:grid;grid-template-columns:296px 1fr;min-height:640px}
+.t20 .sp-master{border-right:1px solid var(--hair);display:flex;flex-direction:column;background:var(--msbg);min-width:0}
+.t20 .sp-mhead{padding:16px 18px 12px;border-bottom:1px solid var(--hair)}
+.t20 .sp-brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:13.5px}
+.t20 .sp-dot{width:26px;height:26px;border-radius:9px;background:linear-gradient(135deg,#a9602f,#7c3f1c);color:#fff;display:grid;place-items:center;font-size:11.5px;font-weight:900}
+.t20 .sp-search{margin-top:12px;display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--hair);border-radius:12px;padding:8px 12px;font-size:11px;font-weight:600;color:var(--mut)}
+.t20 .sp-list{flex:1;overflow:auto;max-height:540px}
+.t20 .sp-camp{padding:13px 18px;border-bottom:1px solid var(--hair);display:flex;align-items:center;gap:10px;position:relative;min-width:0}
+.t20 .sp-camp.on{background:var(--accSoft)}
+.t20 .sp-camp.on::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--acc)}
+.t20 .sp-cwrap{min-width:0}
+.t20 .sp-cname{font-weight:700;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t20 .sp-cmeta{font-size:10px;color:var(--mut);margin-top:3px;white-space:nowrap}
+.t20 .sp-cval{margin-left:auto;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;font-weight:700;color:var(--acc);white-space:nowrap}
+.t20 .sp-badge{font-size:8.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;background:var(--acc);color:#fff;border-radius:999px;padding:2.5px 8px;white-space:nowrap;flex-shrink:0}
+.t20 .sp-badge.dim{background:#e8e2d9;color:#7d7264}
+.t20 .sp-detail{padding:20px 26px 24px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.t20 .sp-dh{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.t20 .sp-dt{font-size:21px;font-weight:800;letter-spacing:-.02em}
+.t20 .sp-ds{font-size:12px;color:var(--mut);margin-top:5px;font-weight:600}
+.t20 .sp-dbtns{display:flex;gap:9px;flex-shrink:0}
+.t20 .sp-btn{font-size:11px;font-weight:700;border:1px solid var(--hair);background:var(--card);border-radius:11px;padding:8px 14px;color:var(--mut);white-space:nowrap}
+.t20 .sp-btn.solid{background:var(--acc);color:#fff;border-color:transparent}
+.t20 .sp-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.t20 .sp-kpi{background:var(--card);border:1px solid var(--hair);border-radius:16px;padding:13px 15px;min-width:0}
+.t20 .sp-k{font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--mut);white-space:nowrap}
+.t20 .sp-v{font-size:23px;font-weight:800;letter-spacing:-.02em;margin-top:7px;white-space:nowrap}
+.t20 .sp-v small{font-size:12px;color:var(--mut);font-weight:600}
+.t20 .sp-s{margin-top:6px;font-size:10.5px;color:var(--mut);font-weight:600;display:flex;gap:8px;align-items:center}
+.t20 .sp-cols{display:grid;grid-template-columns:1.55fr 1fr;gap:16px}
+.t20 .sp-card{background:var(--card);border:1px solid var(--hair);border-radius:18px;padding:16px 18px;min-width:0}
+.t20 .sp-chead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+.t20 .sp-chead b{font-size:13px;font-weight:800}
+.t20 .sp-bars{height:148px}
+.t20 .sp-bars [data-bars] i{border-radius:6px 6px 2px 2px;background:linear-gradient(180deg,#c98d5e,#8a4b24)}
+.t20 .sp-bars [data-bars] i.hl{background:linear-gradient(180deg,#8a4b24,#5f3013)}
+.t20 .sp-ev{min-width:0}
+.t20 .sp-ev .ev{grid-template-columns:56px 66px 1fr 74px;font-size:10.5px}
+.t20 .sp-ev .ev-src{display:none}
+.t20.dark{--bw:#18100a;--card:#221710;--msbg:#1d130c;--acc:#d08a54;--acc2:#e9b98c;--accSoft:rgba(208,138,84,.13);--accBr:rgba(208,138,84,.3);--ink:#f4e9dd;--mut:#b09a85;--hair:#3a281a}
+.t20.dark .sp-badge.dim{background:#3a2d20;color:#b09a85}
+.t20.dark .sp-bars [data-bars] i{background:linear-gradient(180deg,#c98d5e,#935327)}
+.t20.dark .sp-bars [data-bars] i.hl{background:linear-gradient(180deg,#e9b98c,#c98d5e)}
+
+/* ---- batch-2 responsive ---- */
+@media (max-width:920px){
+  .t11 .ed-grid{grid-template-columns:1fr}
+  .t11 .ed-col{border-right:none;border-bottom:1px solid var(--hair)}
+  .t11 .ed-head{flex-direction:column;align-items:flex-start}
+  .t12 .bt-grid{grid-template-columns:repeat(2,1fr)}
+  .t12 .bt-hero{grid-column:span 2}
+  .t12 .bt-wide{grid-column:span 2}
+  .t12 .bt-tab{display:none}
+  .t13 .tx-row{grid-template-columns:1fr;gap:10px}
+  .t13 .tx-side{text-align:left}
+  .t14 .cl-panels{grid-template-columns:1fr}
+  .t14 .cl-search{display:none}
+  .t15 .rl-body{grid-template-columns:1fr}
+  .t15 .rl-app{grid-template-columns:56px 1fr}
+  .t16 .pp-grid{grid-template-columns:1fr}
+  .t16 .pp-cell{border-right:none}
+  .t17 .dk-cards{grid-template-columns:1fr}
+  .t17 .dk-mid{grid-template-columns:1fr}
+  .t18 .dc-cols{grid-template-columns:1fr;gap:14px}
+  .t18 .dc-center{border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);padding:16px 0}
+  .t19 .bp-body{grid-template-columns:1fr}
+  .t19 .bp-sheet{border-right:none;border-bottom:2px dashed var(--acc)}
+  .t20 .sp-app{grid-template-columns:1fr}
+  .t20 .sp-master{display:none}
+}
+</style>
+</head>
+<body>
+<div class="gal">
+
+  <header class="gal-head">
+    <h1>Cryptsk UTM <span>· design gallery</span></h1>
+    <p class="sub"><b>Batch 2 (11–20) is built to your spec:</b> pure <b>#FFFFFF</b> canvas on every template, one confident secondary color each — cobalt, violet, ink, rose, tangerine, magenta, cerulean, gold, blueprint-blue, cocoa — and <b>zero green anywhere</b>. Every Batch-2 template is also a <b>different layout</b>, not a recolor: broadsheet editorial, bento grid, Swiss mono index, claymorphism, icon rail, pop-art panels, floating dock, art-deco gilt, engineering blueprint and a master–detail split. Batch 1 (01–10, red edition) stays below for comparison — same dashboard data in all 20, so compare fairly. All real CSS: what you see is what your app becomes.</p>
+    <div class="how">
+      <b>How to choose:</b> scroll through all twenty, then reply in chat with the number — e.g. <b>&#8220;Template 14&#8221;</b>.
+      You can also mix and match: <b>&#8220;Template 12, but with Template 19's mono font&#8221;</b>, <b>&#8220;Template 17 in dark mode&#8221;</b>,
+      or describe any tweak (color, font, corners, density). Once you pick, I will convert the entire app —
+      login screen, sidebar/topbar, all 20+ modules — to that design. <b>Tip:</b> every template ships in light AND dark —
+      flip the whole gallery with the mode buttons below.
+    </div>
+    <div class="modebar" role="group" aria-label="Preview mode">
+      <span class="modelab">Preview mode:</span>
+      <button type="button" id="mode-native" class="modebtn active">Native mix</button>
+      <button type="button" id="mode-dark" class="modebtn">Dark all</button>
+      <button type="button" id="mode-light" class="modebtn">Light all</button>
+      <span class="modenote">Batch 1 mixes dark- and light-first · Batch 2 is pure-white-first — every template also ships a dark variant, flip all 20 at once</span>
+    </div>
+    <nav class="quick" aria-label="Template quick navigation">
+      <a href="#t1"><i style="background:#d92d3a"></i>01 Crimson Studio</a>
+      <a href="#t2"><i style="background:#c8102e"></i>02 Scarlet Editorial</a>
+      <a href="#t3"><i style="background:#e63946"></i>03 Red Brutal</a>
+      <a href="#t4"><i style="background:#e05262"></i>04 Blush Cloud</a>
+      <a href="#t5"><i style="background:#dc2626"></i>05 Signal Enterprise</a>
+      <a href="#t6"><i style="background:#8f1f30"></i>06 Oxblood Lounge</a>
+      <a href="#t7"><i style="background:#ff2e4c"></i>07 Cherry Noir</a>
+      <a href="#t8"><i style="background:#f43f5e"></i>08 Crimson Glass</a>
+      <a href="#t9"><i style="background:#e0526a"></i>09 Garnet Metal</a>
+      <a href="#t10"><i style="background:#ff3b52"></i>10 Ember Mono</a>
+      <span class="qgl">Batch 2 · pure white</span>
+      <a href="#t11"><i style="background:#1e4fd8"></i>11 Cobalt Ledger</a>
+      <a href="#t12"><i style="background:#7c3aed"></i>12 Violet Bento</a>
+      <a href="#t13"><i style="background:#141414"></i>13 Tuxedo Index</a>
+      <a href="#t14"><i style="background:#e0478b"></i>14 Rose Clay</a>
+      <a href="#t15"><i style="background:#ea580c"></i>15 Tangerine Rail</a>
+      <a href="#t16"><i style="background:#d9036b"></i>16 Magenta Pop</a>
+      <a href="#t17"><i style="background:#0284c7"></i>17 Cerulean Dock</a>
+      <a href="#t18"><i style="background:#9a6b16"></i>18 Gilt Deco</a>
+      <a href="#t19"><i style="background:#1a3fb0"></i>19 Blueprint Sheet</a>
+      <a href="#t20"><i style="background:#8a4b24"></i>20 Cocoa Split</a>
+    </nav>
+    <noscript><p style="margin-top:16px;color:#fb7185">JavaScript is disabled — the dashboard previews below need JavaScript to render.</p></noscript>
+  </header>
+
+  <!-- ==================== T1 ==================== -->
+  <section class="tpl t1" id="t1">
+    <div class="tpl-head">
+      <div class="tpl-no">01</div>
+      <div>
+        <div class="tpl-name">Crimson Studio</div>
+        <p class="tpl-desc">Clean white canvas with confident crimson: soft modern cards, red-gradient bars with ink highlights, deep-red numerals, rounded squircle chrome. The friendly professional red — works equally hard in light or dark.</p>
+        <div class="tpl-tags"><span>Light</span><span>Crimson</span><span>Clean</span></div>
+        <div class="pal"><i style="background:#d92d3a"></i><i style="background:#b01e30"></i><i style="background:#f7f5f3"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 1&#8221;</div>
+    </div>
+    <div class="mockroot"></div>
+  </section>
+
+  <!-- ==================== T2 ==================== -->
+  <section class="tpl t2" id="t2">
+    <div class="tpl-head">
+      <div class="tpl-no">02</div>
+      <div>
+        <div class="tpl-name">Scarlet Editorial</div>
+        <p class="tpl-desc">White paper, serif numerals, ink rules and scarlet accents — KPIs set as ruled newspaper columns, heavy section rules above every card. Threat intelligence as a front page, in pure red and ink.</p>
+        <div class="tpl-tags"><span>Light</span><span>Editorial</span><span>Scarlet</span></div>
+        <div class="pal"><i style="background:#c8102e"></i><i style="background:#1b1816"></i><i style="background:#fdfcfa"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 2&#8221;</div>
+    </div>
+    <div class="mockroot"></div>
+  </section>
+
+  <!-- ==================== T3 ==================== -->
+  <section class="tpl t3" id="t3">
+    <div class="tpl-head">
+      <div class="tpl-no">03</div>
+      <div>
+        <div class="tpl-name">Red Brutal</div>
+        <p class="tpl-desc">Zero radius, thick ink borders, hard red drop-shadows, all-caps monospace labels. White paper plus pure physical force — loud, confident, impossible to confuse with any other firewall UI.</p>
+        <div class="tpl-tags"><span>Light</span><span>Bold</span><span>Mono</span></div>
+        <div class="pal"><i style="background:#e63946"></i><i style="background:#1d1a18"></i><i style="background:#fcfbf8"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 3&#8221;</div>
+    </div>
+    <div class="mockroot"></div>
+  </section>
+
+  <!-- ==================== T4 ==================== -->
+  <section class="tpl t4" id="t4">
+    <div class="tpl-head">
+      <div class="tpl-no">04</div>
+      <div>
+        <div class="tpl-name">Blush Cloud</div>
+        <p class="tpl-desc">The soft side of red: blush-pink canvas, floating rose cards with cozy layered shadows, big rounded corners, deep-wine highlights. Security that feels warm and approachable instead of alarming.</p>
+        <div class="tpl-tags"><span>Light</span><span>Soft</span><span>Rose</span></div>
+        <div class="pal"><i style="background:#e05262"></i><i style="background:#8f2d3c"></i><i style="background:#faf0ee"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 4&#8221;</div>
+    </div>
+    <div class="mockroot"></div>
+  </section>
+
+  <!-- ==================== T5 ==================== -->
+  <section class="tpl t5" id="t5">
+    <div class="tpl-head">
+      <div class="tpl-no">05</div>
+      <div>
+        <div class="tpl-name">Signal Enterprise</div>
+        <p class="tpl-desc">Crisp light console with signal-red telemetry: monospace KPIs, zebra-striped tables, compact spacing, red action buttons. The disciplined operations room — safe, fast, familiar, but in your colors.</p>
+        <div class="tpl-tags"><span>Light</span><span>Enterprise</span><span>Signal</span></div>
+        <div class="pal"><i style="background:#dc2626"></i><i style="background:#1b2228"></i><i style="background:#f4f5f6"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 5&#8221;</div>
+    </div>
+    <div class="mockroot"></div>
+  </section>
+
+  <!-- ==================== T6 ==================== -->
+  <section class="tpl t6" id="t6">
+    <div class="tpl-head">
+      <div class="tpl-no">06</div>
+      <div>
+        <div class="tpl-name">Oxblood Lounge</div>
+        <p class="tpl-desc">Deep oxblood lacquer panels, warm ivory serif type, rose-glow numerals and crimson buttons under a soft red ambient wash. A private members' club for your firewall — dark, expensive, calm.</p>
+        <div class="tpl-tags"><span>Dark</span><span>Luxury</span><span>Dark-red</span></div>
+        <div class="pal"><i style="background:#e6455a"></i><i style="background:#8f1f30"></i><i style="background:#230d11"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 6&#8221;</div>
+    </div>
+    <div class="mockroot"></div>
+  </section>
+
+  <!-- ==================== T7 ==================== -->
+  <section class="tpl t7" id="t7">
+    <div class="tpl-head">
+      <div class="tpl-no">07</div>
+      <div>
+        <div class="tpl-name">Cherry Noir</div>
+        <p class="tpl-desc">Near-black cherry with glowing red neon numerals, red-tinted glass panels and rose accent lights. Moody, cinematic, after-hours SOC — the darkest possible take on red.</p>
+        <div class="tpl-tags"><span>Dark</span><span>Neon</span><span>Noir</span></div>
+        <div class="pal"><i style="background:#ff2e4c"></i><i style="background:#ff8c9c"></i><i style="background:#120a0d"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 7&#8221;</div>
+    </div>
+    <div class="mockroot"></div>
+  </section>
+
+  <!-- ==================== T8 ==================== -->
+  <section class="tpl t8" id="t8">
+    <div class="tpl-head">
+      <div class="tpl-no">08</div>
+      <div>
+        <div class="tpl-name">Crimson Glass</div>
+        <p class="tpl-desc">Frosted translucent panels floating over drifting crimson, rose and ember light clouds (animated). Soft, expensive, alive — the &#8220;show it off to investors&#8221; look, entirely in red.</p>
+        <div class="tpl-tags"><span>Dark</span><span>Glass</span><span>Animated</span></div>
+        <div class="pal"><i style="background:#f43f5e"></i><i style="background:#fb9a8d"></i><i style="background:#170b12"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 8&#8221;</div>
+    </div>
+    <div class="mockroot"></div>
+  </section>
+
+  <!-- ==================== T9 ==================== -->
+  <section class="tpl t9" id="t9">
+    <div class="tpl-head">
+      <div class="tpl-no">09</div>
+      <div>
+        <div class="tpl-name">Garnet Metal</div>
+        <p class="tpl-desc">Graphite carbon-weave texture, garnet-red gradient numerals and buttons, hairline metal panels. Machined dark-red hardware — engineering luxury in your palette.</p>
+        <div class="tpl-tags"><span>Dark</span><span>Metallic</span><span>Garnet</span></div>
+        <div class="pal"><i style="background:#e0526a"></i><i style="background:#f0a3b1"></i><i style="background:#121114"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 9&#8221;</div>
+    </div>
+    <div class="mockroot"></div>
+  </section>
+
+  <!-- ==================== T10 ==================== -->
+  <section class="tpl t10" id="t10">
+    <div class="tpl-head">
+      <div class="tpl-no">10</div>
+      <div>
+        <div class="tpl-name">Ember Mono</div>
+        <p class="tpl-desc">Red-phosphor terminal: pure black, glowing red monospace numerals, blinking cursor, grep-style search box, scanlines. The 1980s mainframe — rebuilt in your color.</p>
+        <div class="tpl-tags"><span>Dark</span><span>Terminal</span><span>Retro</span></div>
+        <div class="pal"><i style="background:#ff3b52"></i><i style="background:#ff8c9c"></i><i style="background:#0c0507"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 10&#8221;</div>
+    </div>
+    <div class="mockroot"></div>
+  </section>
+
+  <!-- ==================== BATCH 2 · PURE WHITE EDITION ==================== -->
+  <div class="batch-div" id="batch2">
+    <span class="bd-chip">Batch 2 · New</span>
+    <h2>Pure White Edition — Templates 11–20</h2>
+    <p>Pure #FFFFFF canvas, one confident secondary color each, <b>no green anywhere</b> — and unlike Batch 1, every template here is a <b>completely different layout</b>: a newspaper broadsheet, a bento grid, a Swiss mono ledger, claymorphism blobs, an icon rail, pop-art comic panels, a floating glass dock, an art-deco plate, an engineering blueprint and a master–detail split view.</p>
+  </div>
+
+  <!-- ==================== T11 ==================== -->
+  <section class="tpl t11" id="t11">
+    <div class="tpl-head">
+      <div class="tpl-no">11</div>
+      <div>
+        <div class="tpl-name">Cobalt Ledger</div>
+        <p class="tpl-desc">A pure-white broadsheet. Serif masthead, ink rules, hairline columns and cobalt underlines — your security data typeset like a serious morning paper. No dashboard chrome at all: masthead, headline deck, then three ruled columns (traffic figure, by-the-numbers index, dispatches wire) and a newspaper folio footer.</p>
+        <div class="tpl-tags"><span>Pure white</span><span>Editorial</span><span>Cobalt</span><span>Serif</span></div>
+        <div class="pal"><i style="background:#1e4fd8"></i><i style="background:#111526"></i><i style="background:#edf2fe"></i><i style="background:#ffffff"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 11&#8221;</div>
+    </div>
+    <div class="b2">
+      <div class="ed-mast">
+        <div class="ed-brand">Cryptsk <em>Ledger</em></div>
+        <div class="ed-date">Thursday · Edition No. 447 · Security Desk</div>
+        <span class="ed-live lv">Live</span>
+      </div>
+      <div class="ed-head">
+        <div class="ed-h1">The network held firm: <u>1,284 threats</u> stopped before breakfast</div>
+        <div class="ed-deck">Overnight the UTM filtered 8,921 firewall events at a 1.24 Gbps peak — the quietest morning this week, by the numbers below the fold.</div>
+      </div>
+      <div class="ed-grid">
+        <div class="ed-col">
+          <div class="ed-sec">Traffic · past 24 hours</div>
+          <div class="ed-big">1.24 <small>Gbps</small></div>
+          <div class="ed-cap">Peak throughput 2.10 Gbps, recorded 14:02 — capacity ceiling never touched.</div>
+          <div data-bars style="height:150px;margin-top:18px"></div>
+          <div class="ed-cap" style="display:flex;justify-content:space-between"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+        </div>
+        <div class="ed-col">
+          <div class="ed-sec">By the numbers</div>
+          <div class="ed-stats">
+            <div class="ed-stat"><span class="l">Threats blocked</span><span class="v c">1,284</span></div>
+            <div class="ed-stat"><span class="l">Firewall events</span><span class="v">8,921</span></div>
+            <div class="ed-stat"><span class="l">Active tunnels</span><span class="v">47</span></div>
+            <div class="ed-stat"><span class="l">Uptime</span><span class="v">42d 06h</span></div>
+            <div class="ed-stat"><span class="l">Rules enforced</span><span class="v c">216</span></div>
+            <div class="ed-stat"><span class="l">Nodes healthy</span><span class="v">3 / 3</span></div>
+          </div>
+        </div>
+        <div class="ed-col">
+          <div class="ed-sec">Dispatches</div>
+          <div data-events></div>
+          <div class="ed-sec" style="margin-top:18px">System ledger</div>
+          <div data-health style="display:flex;flex-direction:column;gap:10px"></div>
+        </div>
+      </div>
+      <div class="ed-foot"><span>Cryptsk UTM — security desk</span><span>GW-01 · edge · all nodes healthy</span><span>Next edition 14:00</span></div>
+    </div>
+  </section>
+
+  <!-- ==================== T12 ==================== -->
+  <section class="tpl t12" id="t12">
+    <div class="tpl-head">
+      <div class="tpl-no">12</div>
+      <div>
+        <div class="tpl-name">Violet Bento</div>
+        <p class="tpl-desc">Pure white canvas, floating pill navigation and a bento grid: one deep-violet hero tile carrying the headline number, surrounded by white tiles of different sizes — donut, sparkline, wide event feed, two-column health. Rounded, friendly, contemporary; nothing teal about it.</p>
+        <div class="tpl-tags"><span>Pure white</span><span>Bento grid</span><span>Violet</span><span>Pill nav</span></div>
+        <div class="pal"><i style="background:#7c3aed"></i><i style="background:#5b21b6"></i><i style="background:#f3eeff"></i><i style="background:#ffffff"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 12&#8221;</div>
+    </div>
+    <div class="b2">
+      <div class="bt-wrap">
+        <div class="bt-nav">
+          <div class="bt-logo"><span class="bt-dot">C</span>CRYPTSK UTM</div>
+          <span class="bt-tab">Overview</span>
+          <span class="bt-tab on">Dashboard</span>
+          <span class="bt-tab">Firewall</span>
+          <span class="bt-tab">Threats</span>
+          <span class="bt-tab">Logs</span>
+          <span class="bt-sp"></span>
+          <span class="bt-ic hot">3</span>
+          <span class="bt-ic">AD</span>
+        </div>
+        <div class="bt-grid">
+          <div class="bt-tile bt-hero">
+            <div class="bt-lab">Threats blocked · 24h</div>
+            <div class="bt-num">1,284</div>
+            <div class="bt-sub"><span class="up">+12.4%</span> vs yesterday</div>
+            <div data-bars style="height:64px"></div>
+          </div>
+          <div class="bt-tile bt-tall">
+            <div class="bt-lab">Threat mix · 24h</div>
+            <div class="bt-donut donut" style="background:conic-gradient(#7c3aed 0 38%,#fbbf24 38% 65%,#ec4899 65% 84%,#0ea5e9 84% 100%)"><div class="hole"><div><b>1,284</b><span>events</span></div></div></div>
+            <div class="lgd">
+              <div class="lr"><i style="background:#7c3aed"></i>Malware<b>38%</b></div>
+              <div class="lr"><i style="background:#fbbf24"></i>Intrusion<b>27%</b></div>
+              <div class="lr"><i style="background:#ec4899"></i>Spam<b>19%</b></div>
+              <div class="lr"><i style="background:#0ea5e9"></i>Web abuse<b>16%</b></div>
+            </div>
+          </div>
+          <div class="bt-tile">
+            <div class="bt-lab">Throughput</div>
+            <div class="bt-num">1.24<small> Gbps</small></div>
+            <div class="bt-sub"><span class="up">+8.1%</span> peak 2.10</div>
+          </div>
+          <div class="bt-tile">
+            <div class="bt-lab">Active tunnels</div>
+            <div class="bt-num">47</div>
+            <div class="bt-sub"><span class="down">-2</span> degraded links</div>
+          </div>
+          <div class="bt-tile bt-wide bt-t2">
+            <div class="bt-lab" style="margin-bottom:10px;display:flex;justify-content:space-between;gap:10px"><span>Live security events</span><span class="lv">Streaming</span></div>
+            <div data-events style="display:flex;flex-direction:column"></div>
+          </div>
+          <div class="bt-tile bt-wide bt-t2">
+            <div class="bt-lab" style="margin-bottom:10px;display:flex;justify-content:space-between;gap:10px"><span>System health</span><span style="color:#b45309;font-weight:800">3/3 nodes</span></div>
+            <div class="bt-2col"><div data-health></div><div data-health></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== T13 ==================== -->
+  <section class="tpl t13" id="t13">
+    <div class="tpl-head">
+      <div class="tpl-no">13</div>
+      <div>
+        <div class="tpl-name">Tuxedo Index</div>
+        <p class="tpl-desc">Pure white, pure ink, pure discipline. A 54px square glyph rail, tabular mono numerals the size of headlines, hairline rows — the whole dashboard set like a Swiss statistical yearbook. The secondary color here is black itself; the dark variant inverts to chalk on slate.</p>
+        <div class="tpl-tags"><span>Pure white</span><span>Swiss mono</span><span>Ink</span><span>Minimal</span></div>
+        <div class="pal"><i style="background:#121212"></i><i style="background:#8f8f8f"></i><i style="background:#e7e7e7"></i><i style="background:#ffffff"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 13&#8221;</div>
+    </div>
+    <div class="b2">
+      <div class="tx-app">
+        <aside class="tx-rail">
+          <div class="tx-sq on">C</div>
+          <div class="tx-sq">F</div>
+          <div class="tx-sq">I</div>
+          <div class="tx-sq">T</div>
+          <div class="tx-sq">V</div>
+          <div class="tx-sq">L</div>
+          <div class="tx-flex"></div>
+          <div class="tx-sq">?</div>
+        </aside>
+        <div class="tx-main">
+          <div class="tx-top">
+            <div class="tx-title">Threat Index — Overview</div>
+            <div class="tx-meta">GW-01 · 42d 06h uptime <i></i> live</div>
+          </div>
+          <div class="tx-body">
+            <div class="tx-row">
+              <div class="tx-k">Threats blocked<small>last 24 hours</small></div>
+              <div class="tx-v">1,284</div>
+              <div class="tx-side"><b>+12.4%</b> vs yesterday · peak 214/hr<br><div class="tx-mini" data-bars style="height:34px"></div></div>
+            </div>
+            <div class="tx-row">
+              <div class="tx-k">Firewall events<small>allowed + blocked</small></div>
+              <div class="tx-v">8,921</div>
+              <div class="tx-side"><b>+3.1%</b> vs yesterday · peak 612/hr</div>
+            </div>
+            <div class="tx-row">
+              <div class="tx-k">Throughput<small>edge average</small></div>
+              <div class="tx-v">1.24<small> Gbps</small></div>
+              <div class="tx-side">peak 2.10 · ceiling never touched<br><b>+8.1%</b> week over week</div>
+            </div>
+            <div class="tx-row">
+              <div class="tx-k">Active tunnels<small>site-to-site + mobile</small></div>
+              <div class="tx-v">47</div>
+              <div class="tx-side"><b>-2</b> degraded links<br>HA failover drill RTO 41s</div>
+            </div>
+            <div class="tx-k" style="margin-top:16px">Live security events</div>
+            <div class="tx-evs" data-events></div>
+          </div>
+          <div class="tx-foot"><span>Cryptsk UTM — tuxedo index</span><span>rev 447</span><span>all nodes nominal</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== T14 ==================== -->
+  <section class="tpl t14" id="t14">
+    <div class="tpl-head">
+      <div class="tpl-no">14</div>
+      <div>
+        <div class="tpl-name">Rose Clay</div>
+        <p class="tpl-desc">Claymorphism on pure white: puffy rounded blobs with double soft shadows and inner highlights, a floating capsule search, squishy gradient icon chips in rose, lilac and peach. Security statistics that feel soft and friendly — the anti-intimidation console.</p>
+        <div class="tpl-tags"><span>Pure white</span><span>Claymorphism</span><span>Rose</span><span>Soft 3D</span></div>
+        <div class="pal"><i style="background:#e0478b"></i><i style="background:#8f5fc4"></i><i style="background:#fdeef5"></i><i style="background:#ffffff"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 14&#8221;</div>
+    </div>
+    <div class="b2">
+      <div class="cl-wrap">
+        <div class="cl-nav">
+          <div class="cl-brand"><span class="cl-dot">C</span>CRYPTSK UTM</div>
+          <div class="cl-search"><span>&#9906;</span>Search threats, rules, users…</div>
+          <div class="cl-navr">
+            <span class="cl-pill">&#9993;</span>
+            <span class="cl-ava">AD</span>
+          </div>
+        </div>
+        <div class="cl-hi">Good evening, Admin — <em>everything is calm.</em></div>
+        <div class="cl-blobs">
+          <div class="cl-blob"><span class="cl-bico">&#9679;</span><div><div class="cl-bl">Threats blocked</div><div class="cl-bn">1,284</div></div></div>
+          <div class="cl-blob"><span class="cl-bico v">&#9670;</span><div><div class="cl-bl">Firewall events</div><div class="cl-bn">8,921</div></div></div>
+          <div class="cl-blob"><span class="cl-bico a">&#9650;</span><div><div class="cl-bl">Throughput</div><div class="cl-bn">1.24<small> Gbps</small></div></div></div>
+          <div class="cl-blob"><span class="cl-bico">&#9679;</span><div><div class="cl-bl">Active tunnels</div><div class="cl-bn">47</div></div></div>
+        </div>
+        <div class="cl-panels">
+          <div class="cl-card">
+            <div class="cl-chead"><b>Threat flow · 24h</b><span class="lv">Live</span></div>
+            <div class="cl-bars" data-bars></div>
+          </div>
+          <div class="cl-card">
+            <div class="cl-chead"><b>Threat mix</b></div>
+            <div class="cl-donut donut" style="background:conic-gradient(#e0478b 0 38%,#c4b5fd 38% 65%,#fbd38d 65% 84%,#93c5fd 84% 100%)"><div class="hole"><div><b>1,284</b><span>events</span></div></div></div>
+            <div class="lgd">
+              <div class="lr"><i style="background:#e0478b"></i>Malware<b>38%</b></div>
+              <div class="lr"><i style="background:#c4b5fd"></i>Intrusion<b>27%</b></div>
+              <div class="lr"><i style="background:#fbd38d"></i>Spam<b>19%</b></div>
+              <div class="lr"><i style="background:#93c5fd"></i>Web abuse<b>16%</b></div>
+            </div>
+          </div>
+          <div class="cl-card cl-wide">
+            <div class="cl-chead"><b>System health</b><span style="color:#b45309;font-weight:800;font-size:12px">3/3 nodes</span></div>
+            <div class="cl-2col"><div data-health></div><div data-health></div></div>
+          </div>
+          <div class="cl-card cl-wide">
+            <div class="cl-chead"><b>Live security events</b><span class="lv">Streaming</span></div>
+            <div data-events style="display:flex;flex-direction:column"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== T15 ==================== -->
+  <section class="tpl t15" id="t15">
+    <div class="tpl-head">
+      <div class="tpl-no">15</div>
+      <div>
+        <div class="tpl-name">Tangerine Rail</div>
+        <p class="tpl-desc">Pure white warmed by tangerine. A 66px icon-only rail down the left edge (active stop glows tangerine), then a big warm-gradient hero card with the day's flow, white-on-orange bars and a soft card system around it. Friendly, energetic, unmistakably not green.</p>
+        <div class="tpl-tags"><span>Pure white</span><span>Icon rail</span><span>Tangerine</span><span>Warm</span></div>
+        <div class="pal"><i style="background:#ea580c"></i><i style="background:#c2410c"></i><i style="background:#fff1e8"></i><i style="background:#ffffff"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 15&#8221;</div>
+    </div>
+    <div class="b2">
+      <div class="rl-app">
+        <aside class="rl-rail">
+          <div class="rl-logo">C</div>
+          <div class="rl-ic on">&#9636;</div>
+          <div class="rl-ic">&#9635;</div>
+          <div class="rl-ic">&#9670;</div>
+          <div class="rl-ic">&#8981;</div>
+          <div class="rl-ic">&#9776;</div>
+          <div class="rl-flex"></div>
+          <div class="rl-ic">&#9881;</div>
+        </aside>
+        <div class="rl-main">
+          <div class="rl-top">
+            <div class="rl-h">Good evening, Admin</div>
+            <span class="lv">Live</span>
+            <div class="rl-topr">
+              <span class="rl-pill">7d</span>
+              <span class="rl-pill">GW-01 · edge</span>
+              <span class="rl-pill solid">Export</span>
+            </div>
+          </div>
+          <div class="rl-body">
+            <div class="rl-card rl-hero">
+              <div class="rl-ch"><span>Today's flow</span><span>24h window</span></div>
+              <div class="rl-bignum">1.24<small> Gbps avg</small></div>
+              <div class="rl-ch" style="color:rgba(255,255,255,.85);margin-top:8px;margin-bottom:0"><span><span class="up">+12.4%</span> threats blocked</span><span>peak 2.10</span></div>
+              <div data-bars style="height:110px"></div>
+            </div>
+            <div class="rl-col">
+              <div class="rl-card">
+                <div class="rl-ch"><span>Live events</span><span class="lv">Streaming</span></div>
+                <div data-events style="display:flex;flex-direction:column"></div>
+              </div>
+            </div>
+            <div class="rl-card">
+              <div class="rl-ch"><span>Threat mix · 24h</span><span>1,284 events</span></div>
+              <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+                <div class="rl-donut donut" style="background:conic-gradient(#ea580c 0 38%,#fbbf24 38% 65%,#ec4899 65% 84%,#38bdf8 84% 100%)"><div class="hole"><div><b>1,284</b><span>events</span></div></div></div>
+                <div class="lgd" style="flex:1;min-width:150px">
+                  <div class="lr"><i style="background:#ea580c"></i>Malware<b>38%</b></div>
+                  <div class="lr"><i style="background:#fbbf24"></i>Intrusion<b>27%</b></div>
+                  <div class="lr"><i style="background:#ec4899"></i>Spam<b>19%</b></div>
+                  <div class="lr"><i style="background:#38bdf8"></i>Web abuse<b>16%</b></div>
+                </div>
+              </div>
+            </div>
+            <div class="rl-card">
+              <div class="rl-ch"><span>System health</span><span style="color:#b45309;font-weight:800">3/3 nodes</span></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 18px"><div data-health></div><div data-health></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== T16 ==================== -->
+  <section class="tpl t16" id="t16">
+    <div class="tpl-head">
+      <div class="tpl-no">16</div>
+      <div>
+        <div class="tpl-name">Magenta Pop</div>
+        <p class="tpl-desc">Neo-brutalist pop art on pure white: 3px ink borders, hard offset shadows, halftone dot bursts, Archivo Black numerals, a scrolling ticker strip and thick-ruled comic-panel cells. Magenta is the hero, with cobalt and gold pops. Loud, printed, unapologetic — impossible to confuse with any SaaS template.</p>
+        <div class="tpl-tags"><span>Pure white</span><span>Neo-brutal</span><span>Magenta</span><span>Halftone</span></div>
+        <div class="pal"><i style="background:#d9036b"></i><i style="background:#2563eb"></i><i style="background:#f0a500"></i><i style="background:#ffffff"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 16&#8221;</div>
+    </div>
+    <div class="b2">
+      <div class="pp-banner">
+        <div class="pp-logo">Cryptsk <em>Daily</em> Pulse</div>
+        <span class="pp-live">Live feed</span>
+      </div>
+      <div class="pp-tick"><span>CRYPTSK DAILY PULSE &#9670; THREATS BLOCKED 1,284 &#9670; FIREWALL EVENTS 8,921 &#9670; THROUGHPUT 1.24 GBPS &#9670; TUNNELS 47 &#9670; ALL NODES HEALTHY &#9670;&nbsp;CRYPTSK DAILY PULSE &#9670; THREATS BLOCKED 1,284 &#9670; FIREWALL EVENTS 8,921 &#9670; THROUGHPUT 1.24 GBPS &#9670; TUNNELS 47 &#9670; ALL NODES HEALTHY &#9670;&nbsp;</span></div>
+      <div class="pp-grid">
+        <div class="pp-cell">
+          <div class="pp-lab">Threats blocked · 24h</div>
+          <div class="pp-num"><em>1,284</em></div>
+          <div class="pp-sub"><span class="up">+12.4%</span> vs yesterday</div>
+          <div class="pp-kick"></div>
+        </div>
+        <div class="pp-cell">
+          <div class="pp-lab">Firewall events</div>
+          <div class="pp-num">8,921</div>
+          <div class="pp-sub"><span class="up">+3.1%</span> peak 612/hr</div>
+          <div class="pp-kick b"></div>
+        </div>
+        <div class="pp-cell">
+          <div class="pp-lab">Hourly volume</div>
+          <div class="pp-chartwrap"><div data-bars></div></div>
+          <div class="pp-kick y"></div>
+        </div>
+        <div class="pp-cell">
+          <div class="pp-lab">Throughput</div>
+          <div class="pp-num">1.24<small style="font-size:15px"> GB</small></div>
+          <div class="pp-sub"><span class="up">+8.1%</span> peak 2.10</div>
+          <div class="pp-kick b"></div>
+        </div>
+        <div class="pp-cell">
+          <div class="pp-lab">Active tunnels</div>
+          <div class="pp-num">47</div>
+          <div class="pp-sub"><span class="down">-2</span> degraded links</div>
+          <div class="pp-kick"></div>
+        </div>
+        <div class="pp-cell">
+          <div class="pp-lab">Threat mix · 24h</div>
+          <div class="pp-donut donut" style="background:conic-gradient(#d9036b 0 38%,#2563eb 38% 65%,#f0a500 65% 84%,#141414 84% 100%)"><div class="hole"><div><b>1,284</b><span>events</span></div></div></div>
+          <div class="pp-sub" style="justify-content:center"><span style="color:#d9036b">&#9632;</span> Malware 38&nbsp;&nbsp;<span style="color:#2563eb">&#9632;</span> Intrusion 27&nbsp;&nbsp;<span style="color:#f0a500">&#9632;</span> Spam 19&nbsp;&nbsp;<span>&#9632;</span> Abuse 16</div>
+        </div>
+      </div>
+      <div class="pp-tablewrap">
+        <table class="pp-table">
+          <thead><tr><th>Time</th><th>Severity</th><th>Source</th><th>Event</th><th>Action</th></tr></thead>
+        </table>
+        <div class="pp-evwrap" data-events></div>
+      </div>
+      <div class="pp-foot"><span>Cryptsk UTM · GW-01 edge</span><span>issue no. 447</span><span>all nodes healthy</span></div>
+    </div>
+  </section>
+
+  <!-- ==================== T17 ==================== -->
+  <section class="tpl t17" id="t17">
+    <div class="tpl-head">
+      <div class="tpl-no">17</div>
+      <div>
+        <div class="tpl-name">Cerulean Dock</div>
+        <p class="tpl-desc">Pure white with sky-blue accents and a floating frosted-glass dock pinned to the bottom — navigation lives at your thumb, not in a sidebar. Airy window chrome, soft-shadow stat cards, smooth rounded bars. Calm, modern, desktop-app polish.</p>
+        <div class="tpl-tags"><span>Pure white</span><span>Dock nav</span><span>Cerulean</span><span>Glass</span></div>
+        <div class="pal"><i style="background:#0284c7"></i><i style="background:#38b6f0"></i><i style="background:#e9f5fc"></i><i style="background:#ffffff"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 17&#8221;</div>
+    </div>
+    <div class="b2">
+      <div class="dk-stage">
+        <div class="dk-bar">
+          <div class="dk-dots"><i></i><i></i><i></i></div>
+          <span class="dk-wtitle">Cryptsk UTM — Threat Overview</span>
+          <div class="dk-actions">
+            <span class="dk-act">7d</span>
+            <span class="dk-act">Search…</span>
+            <span class="dk-act solid">Export</span>
+          </div>
+        </div>
+        <div class="dk-body">
+          <div class="dk-hello">
+            <h3>Good evening, Admin — the network is calm.</h3>
+            <p>GW-01 · edge · 42d 06h uptime</p>
+          </div>
+          <div class="dk-cards">
+            <div class="dk-card">
+              <div class="dk-k">Threats blocked · 24h</div>
+              <div class="dk-v">1,284</div>
+              <div class="dk-sub"><span class="up">+12.4%</span> vs yesterday</div>
+            </div>
+            <div class="dk-card">
+              <div class="dk-k">Throughput</div>
+              <div class="dk-v">1.24<small> Gbps</small></div>
+              <div class="dk-sub"><span class="up">+8.1%</span> peak 2.10</div>
+            </div>
+            <div class="dk-card">
+              <div class="dk-k">Active tunnels</div>
+              <div class="dk-v">47</div>
+              <div class="dk-sub"><span class="down">-2</span> degraded links</div>
+            </div>
+          </div>
+          <div class="dk-mid">
+            <div class="dk-card">
+              <div class="cl2" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:13.5px;font-weight:800">Network traffic · 24h</b><span class="lv">Live</span></div>
+              <div class="dk-chart" data-bars></div>
+              <div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--mut);font-weight:600;margin-top:8px"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+            </div>
+            <div class="dk-card">
+              <div class="cl2" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-size:13.5px;font-weight:800">System health</b><span style="color:#b45309;font-weight:800;font-size:12px">3/3 nodes</span></div>
+              <div data-health style="display:flex;flex-direction:column;gap:12px"></div>
+            </div>
+          </div>
+          <div class="dk-card dk-evwrap">
+            <div class="cl2" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:13.5px;font-weight:800">Live security events</b><span class="lv">Streaming</span></div>
+            <div data-events style="display:flex;flex-direction:column"></div>
+          </div>
+        </div>
+        <div class="dk-dockwrap">
+          <div class="dk-dock">
+            <span class="dk-di on">&#9636;</span>
+            <span class="dk-di">&#9635;</span>
+            <span class="dk-di">&#9670;</span>
+            <span class="dk-di">&#8981;</span>
+            <span class="dk-di">&#9776;</span>
+            <span class="dk-di">&#9881;</span>
+            <span class="dk-di">AD</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== T18 ==================== -->
+  <section class="tpl t18" id="t18">
+    <div class="tpl-head">
+      <div class="tpl-no">18</div>
+      <div>
+        <div class="tpl-name">Gilt Deco</div>
+        <p class="tpl-desc">Art deco on pure white: double-ruled plate frame with diamond corner studs, a repeating-ray sunburst medallion, flanked stat columns, Cormorant Garamond numerals, wire dispatches in italic serif and a golden frieze. Your firewall as a Gatsby-era engraved plate — symmetrical, ceremonial, gilt.</p>
+        <div class="tpl-tags"><span>Pure white</span><span>Art deco</span><span>Gold</span><span>Serif</span></div>
+        <div class="pal"><i style="background:#9a6b16"></i><i style="background:#c9a038"></i><i style="background:#f8f1de"></i><i style="background:#ffffff"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 18&#8221;</div>
+    </div>
+    <div class="b2">
+      <div class="dc-frame">
+        <div class="dc-in">
+          <span class="dc-corner a"></span><span class="dc-corner b"></span><span class="dc-corner c"></span><span class="dc-corner d"></span>
+          <div class="dc-orn">&#9670;</div>
+          <div class="dc-brand">Cryptsk Utm</div>
+          <div class="dc-tag">Unified Threat Management · Established MMXXIV</div>
+          <div class="dc-cols">
+            <div class="dc-stack">
+              <div class="dc-stat"><span class="n g">1,284</span><span class="l">Threats<br>blocked</span></div>
+              <div class="dc-stat"><span class="n">8,921</span><span class="l">Firewall<br>events</span></div>
+              <div class="dc-stat"><span class="n">47</span><span class="l">Active<br>tunnels</span></div>
+            </div>
+            <div class="dc-center">
+              <div class="dc-sun"><span class="dc-emblem">C</span></div>
+              <div class="dc-centnum">1.24<small style="font-size:15px"> Gbps</small></div>
+              <div class="dc-centlab">Average throughput · 24h</div>
+              <div class="dc-bars"><div data-bars></div></div>
+              <div class="dc-centlab" style="display:flex;justify-content:space-between;width:100%"><span>00:00</span><span>12:00</span><span>24:00</span></div>
+            </div>
+            <div class="dc-stack">
+              <div class="dc-stat"><span class="n">42d 06h</span><span class="l">Gateway<br>uptime</span></div>
+              <div class="dc-stat"><span class="n g">216</span><span class="l">Rules<br>enforced</span></div>
+              <div class="dc-stat"><span class="n">3 / 3</span><span class="l">Nodes<br>healthy</span></div>
+            </div>
+          </div>
+          <div class="dc-wire">
+            <div data-events></div>
+          </div>
+          <div class="dc-frieze"></div>
+          <div class="dc-foot"><span>GW-01 · Edge</span><span>All nodes healthy</span><span>Edition 447</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== T19 ==================== -->
+  <section class="tpl t19" id="t19">
+    <div class="tpl-head">
+      <div class="tpl-no">19</div>
+      <div>
+        <div class="tpl-name">Blueprint Sheet</div>
+        <p class="tpl-desc">An engineering drawing on pure white grid paper: fine blueprint-blue ruling, drawing-sheet tabs, a dashed margin, bordered chart with gridlines and ink-stamped approval, spec blocks, mono annotations — and a proper title block (project / scale / date / sheet) pinned bottom-right. Dark mode inverts into a true cyanotype.</p>
+        <div class="tpl-tags"><span>Pure white</span><span>Technical</span><span>Blueprint</span><span>Mono</span></div>
+        <div class="pal"><i style="background:#1a3fb0"></i><i style="background:#5c7fe0"></i><i style="background:#e9eeff"></i><i style="background:#ffffff"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 19&#8221;</div>
+    </div>
+    <div class="b2">
+      <div class="bp-app">
+        <div class="bp-bar">
+          <span class="bp-tab on">Sheet 01 — Overview</span>
+          <span class="bp-tab">Sheet 02 — Firewall</span>
+          <span class="bp-tab">Sheet 03 — Logs</span>
+          <span class="bp-rev">REV C · APPROVED FOR CONSTRUCTION</span>
+        </div>
+        <div class="bp-body">
+          <div class="bp-sheet">
+            <div class="bp-fig"><span>Fig. 1.0 — Hourly allowed / blocked volume</span><span>UNITS: Gbps</span></div>
+            <div class="bp-chart" data-bars></div>
+            <div class="bp-axis"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>24:00</span></div>
+            <div class="bp-note"><b>NOTE —</b> hatched columns mark peak intervals; average flow 1.24 Gbps, recorded peak 2.10 at 14:02. All measurements taken at GW-01 edge interface. Tolerances per RFC 447 rev C.</div>
+            <div class="bp-title">
+              <div>PROJECT<br><b>CRYPTSK UTM</b></div>
+              <div>SCALE<br><b>1 : 1</b></div>
+              <div>DATE<br><b>THU · ED 447</b></div>
+              <div>SHEET<br><b>01 OF 03</b></div>
+            </div>
+          </div>
+          <div class="bp-side">
+            <div class="bp-block">
+              <h4>Specification</h4>
+              <div class="bp-bin">
+                <div class="bp-kv"><span>NODE</span><b class="a">GW-01 · EDGE</b></div>
+                <div class="bp-kv"><span>UPTIME</span><b>42d 06h</b></div>
+                <div class="bp-kv"><span>RULES</span><b>216</b></div>
+                <div class="bp-kv"><span>NODES</span><b>3 / 3 NOMINAL</b></div>
+                <div class="bp-kv"><span>THREATS 24H</span><b class="a">1,284 (+12.4%)</b></div>
+              </div>
+            </div>
+            <div class="bp-block">
+              <h4>Event log</h4>
+              <div class="bp-bin bp-ev">
+                <div data-events style="display:flex;flex-direction:column"></div>
+              </div>
+            </div>
+            <span class="bp-stamp">Approved</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== T20 ==================== -->
+  <section class="tpl t20" id="t20">
+    <div class="tpl-head">
+      <div class="tpl-no">20</div>
+      <div>
+        <div class="tpl-name">Cocoa Split</div>
+        <p class="tpl-desc">Pure white with warm cocoa accents, arranged as a classic master–detail split: a cream campaign list on the left (scrollable, active row tints and gets a cocoa spine), and a full detail pane on the right — KPI cards, a caramel-gradient chart and a live event feed. Cozy, productive, zero green.</p>
+        <div class="tpl-tags"><span>Pure white</span><span>Master–detail</span><span>Cocoa</span><span>Split view</span></div>
+        <div class="pal"><i style="background:#8a4b24"></i><i style="background:#c98d5e"></i><i style="background:#f8efe6"></i><i style="background:#ffffff"></i></div>
+      </div>
+      <div class="pick">reply &#8220;Template 20&#8221;</div>
+    </div>
+    <div class="b2">
+      <div class="sp-app">
+        <aside class="sp-master">
+          <div class="sp-mhead">
+            <div class="sp-brand"><span class="sp-dot">C</span>CRYPTSK UTM<span class="sp-badge" style="margin-left:auto">Live</span></div>
+            <div class="sp-search">&#9906;&nbsp;Search campaigns…</div>
+          </div>
+          <div class="sp-list">
+            <div class="sp-camp on">
+              <div class="sp-cwrap"><div class="sp-cname">Airdrop Blast</div><div class="sp-cmeta">12,408 clicks · 1,912 conv</div></div>
+              <span class="sp-cval">12.4k</span>
+            </div>
+            <div class="sp-camp">
+              <div class="sp-cwrap"><div class="sp-cname">Whitelist Push</div><div class="sp-cmeta">8,120 clicks · 1,204 conv</div></div>
+              <span class="sp-cval">8.1k</span>
+            </div>
+            <div class="sp-camp">
+              <div class="sp-cwrap"><div class="sp-cname">Staking Promo</div><div class="sp-cmeta">6,355 clicks · 890 conv</div></div>
+              <span class="sp-cval">6.4k</span>
+            </div>
+            <div class="sp-camp">
+              <div class="sp-cwrap"><div class="sp-cname">Referral Boost</div><div class="sp-cmeta">4,208 clicks · 631 conv</div></div>
+              <span class="sp-cval">4.2k</span>
+            </div>
+            <div class="sp-camp">
+              <div class="sp-cwrap"><div class="sp-cname">AMA Replay</div><div class="sp-cmeta">2,671 clicks · 402 conv</div></div>
+              <span class="sp-cval">2.7k</span>
+            </div>
+            <div class="sp-camp">
+              <div class="sp-cwrap"><div class="sp-cname">Meme Week</div><div class="sp-cmeta">1,934 clicks · 218 conv</div></div>
+              <span class="sp-badge dim">Paused</span>
+            </div>
+          </div>
+        </aside>
+        <div class="sp-detail">
+          <div class="sp-dh">
+            <div>
+              <div class="sp-dt">Airdrop Blast</div>
+              <div class="sp-ds">Campaign · UTM-linked · created 12 Feb · 14 live placements</div>
+            </div>
+            <div class="sp-dbtns">
+              <span class="sp-btn">7d</span>
+              <span class="sp-btn">Share</span>
+              <span class="sp-btn solid">Export</span>
+            </div>
+          </div>
+          <div class="sp-kpis">
+            <div class="sp-kpi">
+              <div class="sp-k">Clicks · 24h</div>
+              <div class="sp-v">12,408</div>
+              <div class="sp-s"><span class="up">+8.2%</span> vs yesterday</div>
+            </div>
+            <div class="sp-kpi">
+              <div class="sp-k">Conversions</div>
+              <div class="sp-v">1,912</div>
+              <div class="sp-s">15.4% CVR</div>
+            </div>
+            <div class="sp-kpi">
+              <div class="sp-k">Revenue</div>
+              <div class="sp-v">$48.2k</div>
+              <div class="sp-s"><span class="up">+5.1%</span> attributed</div>
+            </div>
+            <div class="sp-kpi">
+              <div class="sp-k">Threats blocked</div>
+              <div class="sp-v">37</div>
+              <div class="sp-s"><span class="down">-4</span> bot clicks filtered</div>
+            </div>
+          </div>
+          <div class="sp-cols">
+            <div class="sp-card">
+              <div class="sp-chead"><b>Click flow · 24h</b><span class="lv">Live</span></div>
+              <div class="sp-bars" data-bars></div>
+            </div>
+            <div class="sp-card sp-ev">
+              <div class="sp-chead"><b>Placement events</b><span class="lv">Streaming</span></div>
+              <div data-events style="display:flex;flex-direction:column"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    None of these feel right? <b>Describe your dream look</b> — colors, mood, a product you admire, light or dark — and I will design a custom <b>Template 21</b> just for you.
+  </div>
+</div>
+
+<script>
+(function () {
+  // deterministic sample data shared by every template so comparison is apples-to-apples
+  var H = [38, 62, 45, 71, 55, 82, 60, 90, 68, 75, 52, 84, 64, 48, 78, 92, 58, 70];
+  function bars() {
+    var s = '';
+    for (var i = 0; i < 18; i++) {
+      var hl = (i === 7 || i === 15);
+      s += '<div class="bar' + (hl ? ' hl' : '') + '" style="height:' + H[i] + '%"></div>';
+    }
+    return s;
+  }
+  var events = [
+    ['14:02:11', 'crit', '203.0.113.7', 'IPS — SQLi pattern /admin', 'block', 'Blocked'],
+    ['13:58:40', 'high', '198.51.100.4', 'Auth — geo-anomaly login', 'flag', 'Flagged'],
+    ['13:51:02', 'med', '10.0.4.12', 'C2 — DGA callback attempt', 'quar', 'Quarantined'],
+    ['13:44:33', 'high', '203.0.113.99', 'Recon — port scan (1,024 ports)', 'block', 'Blocked'],
+    ['13:39:17', 'low', '192.168.1.24', 'Policy change — admin', 'log', 'Logged']
+  ];
+  var sev = { crit: 'Critical', high: 'High', med: 'Medium', low: 'Low' };
+  var rows = '';
+  for (var i = 0; i < events.length; i++) {
+    var e = events[i];
+    rows += '<tr><td class="mono">' + e[0] + '</td><td><span class="sev sv-' + e[1] + '">' + sev[e[1]] + '</span></td><td class="mono">' + e[2] + '</td><td>' + e[3] + '</td><td><span class="act ' + e[4] + '">' + e[5] + '</span></td></tr>';
+  }
+  var health = [['CPU load', '34%', 34, 0], ['Memory', '61%', 61, 0], ['Disk /var', '47%', 47, 1], ['Sessions', '12.4k', 78, 1]];
+  var hRows = '';
+  for (var j = 0; j < health.length; j++) {
+    var h = health[j];
+    hRows += '<div class="hrow"><div class="hlab"><span>' + h[0] + '</span><b>' + h[1] + '</b></div><div class="meter"><i class="' + (h[3] ? 'alt' : '') + '" style="width:' + h[2] + '%"></i></div></div>';
+  }
+  var legend = [['Malware', 38, 'var(--c1)'], ['Intrusion', 27, 'var(--c2)'], ['Spam', 19, 'var(--c3)'], ['Web abuse', 16, 'var(--accent)']];
+  var lRows = '';
+  for (var k = 0; k < legend.length; k++) {
+    var l = legend[k];
+    lRows += '<div class="row"><span class="sw" style="background:' + l[2] + '"></span>' + l[0] + '<b>' + l[1] + '%</b></div>';
+  }
+  var nav = ['Dashboard', 'Firewall', 'IPS', 'Threat Intel', 'VPN', 'Logs', 'Network', 'System'];
+  var navHtml = '';
+  for (var n = 0; n < nav.length; n++) {
+    navHtml += '<a class="m-item' + (n === 0 ? ' active' : '') + '">' + nav[n] + '</a>';
+  }
+
+  var MOCK =
+    '<div class="mock">' +
+      '<aside class="m-side">' +
+        '<div class="m-logo"><span class="m-logodot">C</span>CRYPTSK UTM</div>' +
+        navHtml +
+        '<div class="m-spacer"></div>' +
+        '<div class="m-sysbox">' +
+          '<div class="sysrow"><span>GW-01 · edge</span><span class="ok-dot"></span></div>' +
+          '<div class="sysrow"><span>Firewall rules</span><b>216</b></div>' +
+          '<div class="sysrow"><span>Uptime</span><b>42d 06h</b></div>' +
+        '</div>' +
+      '</aside>' +
+      '<div class="m-main">' +
+        '<div class="m-top">' +
+          '<div class="m-title">Threat Overview</div>' +
+          '<span class="m-chip live">Live</span>' +
+          '<div class="m-search"><span class="s-txt">Search threats, rules, users…</span><span class="kbd">Ctrl K</span></div>' +
+          '<div class="m-btn">7d</div>' +
+          '<div class="m-btn solid">Export</div>' +
+          '<div class="m-bell">3</div>' +
+          '<div class="m-avatar">AD</div>' +
+        '</div>' +
+        '<div class="m-body">' +
+          '<div class="m-kpis">' +
+            '<div class="m-card"><div class="k-label">Threats blocked · 24h</div><div class="k-val">1,284</div><div class="k-sub"><span class="k-delta up">+12.4%</span>vs yesterday</div></div>' +
+            '<div class="m-card"><div class="k-label">Firewall events</div><div class="k-val">8,921</div><div class="k-sub"><span class="k-delta up">+3.1%</span>vs yesterday</div></div>' +
+            '<div class="m-card"><div class="k-label">Throughput</div><div class="k-val">1.24<small> Gbps</small></div><div class="k-sub"><span class="k-delta up">+8.1%</span>peak 2.10</div></div>' +
+            '<div class="m-card"><div class="k-label">Active tunnels</div><div class="k-val">47</div><div class="k-sub"><span class="k-delta down">-2</span>degraded links</div></div>' +
+          '</div>' +
+          '<div class="m-row2">' +
+            '<div class="m-card">' +
+              '<div class="c-head"><b>Network traffic</b><div class="m-legend"><span class="lg"><i class="sw a"></i>Allowed</span><span class="lg"><i class="sw b"></i>Blocked</span></div></div>' +
+              '<div class="m-chart">' + bars() + '</div>' +
+              '<div class="m-axis"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span></div>' +
+            '</div>' +
+            '<div class="m-card">' +
+              '<div class="c-head"><b>Threat mix · 24h</b></div>' +
+              '<div class="m-donut" style="background:conic-gradient(var(--c1) 0 38%, var(--c2) 38% 65%, var(--c3) 65% 84%, var(--accent) 84% 100%)"><div class="hole"><div><b>1,284</b><br><span>events</span></div></div></div>' +
+              '<div class="m-ll">' + lRows + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="m-row3">' +
+            '<div class="m-card">' +
+              '<div class="c-head"><b>Live security events</b><span class="m-chip live">Streaming</span></div>' +
+              '<table class="m-table"><thead><tr><th>Time</th><th>Severity</th><th>Source</th><th>Event</th><th>Action</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+            '</div>' +
+            '<div class="m-card">' +
+              '<div class="c-head"><b>System health</b></div>' +
+              '<div class="m-health">' + hRows + '</div>' +
+              '<div class="m-note">All 3 gateway nodes healthy. Last HA failover drill completed 6h ago — RTO 41s, zero drops.</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  var roots = document.querySelectorAll('.mockroot');
+  for (var r = 0; r < roots.length; r++) {
+    roots[r].innerHTML = MOCK;
+  }
+
+  // ---------- Batch 2 (T11-T20): custom-layout pure-white templates ----------
+  // bars, event rows and health meters are stamped into every [data-*] host
+  var BH = [38, 62, 45, 71, 55, 82, 60, 90, 68, 75, 52, 84, 64, 48, 78, 92, 58, 70];
+  var barHosts = document.querySelectorAll('[data-bars]');
+  for (var bi = 0; bi < barHosts.length; bi++) {
+    var bs = '';
+    for (var bj = 0; bj < BH.length; bj++) {
+      bs += '<i class="' + (bj === 7 || bj === 15 ? 'hl' : '') + '" style="height:' + BH[bj] + '%"></i>';
+    }
+    barHosts[bi].innerHTML = bs;
+  }
+  var EVS = [
+    ['14:02:11', 'crit', '203.0.113.7', 'IPS — SQLi pattern /admin', 'Blocked'],
+    ['13:58:40', 'high', '198.51.100.4', 'Auth — geo-anomaly login', 'Flagged'],
+    ['13:51:02', 'med', '10.0.4.12', 'C2 — DGA callback attempt', 'Quarantined'],
+    ['13:44:33', 'high', '203.0.113.99', 'Recon — port scan (1,024 ports)', 'Blocked'],
+    ['13:39:17', 'low', '192.168.1.24', 'Policy change — admin', 'Logged']
+  ];
+  var SEVN = { crit: 'Critical', high: 'High', med: 'Medium', low: 'Low' };
+  var evHosts = document.querySelectorAll('[data-events]');
+  for (var ei = 0; ei < evHosts.length; ei++) {
+    var es = '';
+    for (var ej = 0; ej < EVS.length; ej++) {
+      var e = EVS[ej];
+      es += '<div class="ev"><span class="ev-t">' + e[0] + '</span><span class="ev-s sv-' + e[1] + '">' + SEVN[e[1]] + '</span><span class="ev-src">' + e[2] + '</span><span class="ev-x">' + e[3] + '</span><span class="ev-a">' + e[4] + '</span></div>';
+    }
+    evHosts[ei].innerHTML = es;
+  }
+  var HLT = [['CPU load', '34%', 34], ['Memory', '61%', 61], ['Disk /var', '47%', 47], ['Sessions', '12.4k', 78]];
+  var hlHosts = document.querySelectorAll('[data-health]');
+  for (var hi = 0; hi < hlHosts.length; hi++) {
+    var hs = '';
+    for (var hj = 0; hj < HLT.length; hj++) {
+      var h = HLT[hj];
+      hs += '<div class="hrow"><div class="hl2"><span>' + h[0] + '</span><b>' + h[1] + '</b></div><div class="hbar"><i style="width:' + h[2] + '%"></i></div></div>';
+    }
+    hlHosts[hi].innerHTML = hs;
+  }
+
+  // preview mode toggle: native mix / dark all / light all — flips every template at once
+  var tpls = document.querySelectorAll('.tpl');
+  var btnN = document.getElementById('mode-native');
+  var btnD = document.getElementById('mode-dark');
+  var btnL = document.getElementById('mode-light');
+  var btns = [btnN, btnD, btnL];
+  function setMode(mode) {
+    for (var s = 0; s < tpls.length; s++) {
+      tpls[s].classList.toggle('light', mode === 'light');
+      tpls[s].classList.toggle('dark', mode === 'dark');
+    }
+    for (var b = 0; b < btns.length; b++) {
+      if (btns[b]) btns[b].classList.toggle('active', btns[b].id === 'mode-' + mode);
+    }
+  }
+  if (btnN && btnD && btnL) {
+    btnN.addEventListener('click', function () { setMode('native'); });
+    btnD.addEventListener('click', function () { setMode('dark'); });
+    btnL.addEventListener('click', function () { setMode('light'); });
+  }
+})();
+</script>
+</body>
+</html>

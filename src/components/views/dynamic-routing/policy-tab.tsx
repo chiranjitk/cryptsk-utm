@@ -306,7 +306,7 @@ export function PolicyObjectsTab() {
           ) : (
             <div className="max-h-96 overflow-y-auto">
               <Table>
-                <TableHeader className="sticky top-0 z-10 bg-card">
+                <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Family</TableHead>
@@ -391,7 +391,7 @@ export function PolicyObjectsTab() {
           ) : (
             <div className="max-h-96 overflow-y-auto">
               <Table>
-                <TableHeader className="sticky top-0 z-10 bg-card">
+                <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Entries</TableHead>

@@ -17,12 +17,14 @@
  *    NEVER dropped by this table (no catch-all verdict of any kind).
  *  • STRICT UNDER-MATCHING (firewall convention) — only port-identifiable
  *    apps reach the kernel. DPI-only apps (netflix, tiktok, instagram,
- *    facebook, spotify, youtube, github, gitlab, docker-registry — content
- *    and code hosting ride tcp/443 + QUIC shared with general HTTPS…) have
- *    no stable L4 signature: a port approximation would over-block collateral
+ *    facebook, spotify, steam, streaming/chat content over 443/QUIC…) have no
+ *    stable L4 signature: a port approximation would over-block collateral
  *    traffic, so the rule is EXCLUDED with a loud warning
  *    ("DPI-required — port approximation would over-block; rule skipped").
  *    Never silently pretend enforcement.
+ *  • PORT-SHARED honesty — github/gitlab/docker-registry ride tcp/443 which
+ *    is shared with general HTTPS. The port class IS rendered (the operator
+ *    asked for it) but a `port-shared` warning states the collateral risk.
  *  • DIRECTION — upload → `tcp sport <ports>`, download → `tcp dport`,
  *    both → two statements (nft cannot OR sport/dport in one rule).
  *  • `limit` is counter-only at this layer (tc/HTB owns shaping) →
@@ -68,12 +70,13 @@ export interface AppPortEntry {
   note?: string;
 }
 
+const SHARED_HTTPS_NOTE =
+  "port-level only — tcp/443 is shared with general HTTPS traffic; nftables cannot distinguish this app from generic TLS";
+
 /**
  * Port-identifiable catalog apps ONLY (strict under-match convention).
  * Everything in the 26-app catalog WITHOUT an entry here is DPI-required and
- * is excluded from kernel enforcement with a `dpi-required` warning —
- * including github/gitlab/docker-registry: their traffic rides tcp/443 which
- * is shared with general HTTPS, so a port class would over-block.
+ * is excluded from kernel enforcement with a `dpi-required` warning.
  *
  * Sources: IANA/well-known registrations, widely documented and stable.
  * Invented/elastic ranges (zoom 8801, epicgames, teams, slack…) are
@@ -91,20 +94,31 @@ export const APP_PORT_MAP: Record<string, AppPortEntry[]> = {
     { proto: "tcp", ports: [{ lo: 6881, hi: 6889 }] },
     { proto: "udp", ports: [{ lo: 6881, hi: 6889 }] },
   ],
+  github: [
+    {
+      proto: "tcp",
+      ports: [
+        { lo: 443, hi: 443 },
+        { lo: 22, hi: 22 },
+      ],
+      note: SHARED_HTTPS_NOTE,
+    },
+  ],
+  gitlab: [
+    {
+      proto: "tcp",
+      ports: [
+        { lo: 443, hi: 443 },
+        { lo: 22, hi: 22 },
+      ],
+      note: SHARED_HTTPS_NOTE,
+    },
+  ],
+  "docker-registry": [{ proto: "tcp", ports: [{ lo: 443, hi: 443 }], note: SHARED_HTTPS_NOTE }],
 };
 
 /** Catalog apps with no port mapping — DPI-required, never port-approximated. */
 export const DPI_ONLY_APPS: string[] = APP_CATALOG.map((a) => a.name).filter((n) => !APP_PORT_MAP[n]);
-
-/**
- * Guard for the strict under-match contract: the port map may never grow an
- * entry outside the reviewed, widely-documented set. A future catalog app
- * needs an explicit addition here AND a unit-test line.
- */
-const PORT_IDENTIFIABLE_ALLOWLIST = new Set(["ssh", "rdp", "vnc", "teamviewer", "bittorrent"]);
-export function isPortIdentifiableApp(appName: string): boolean {
-  return PORT_IDENTIFIABLE_ALLOWLIST.has(appName.trim().toLowerCase());
-}
 
 /** "ports" (enforceable) or "dpi-only" (skipped with warning) for a label. */
 export function appPortClass(appName: string): "ports" | "dpi-only" {
@@ -237,10 +251,9 @@ export function generateAppctlRuleset(input: { policies: AppCtlPolicyShape[]; ge
     for (const rule of [...policy.rules].filter((r) => r.enabled).sort((a, b) => a.id - b.id)) {
       rulesCount += 1;
 
-      // WHITELIST GUARD + strict under-match: only the reviewed allowlist may
-      // reach the kernel — no map entry, no kernel rule, loud warning
-      const l4 = isPortIdentifiableApp(rule.appName) ? APP_PORT_MAP[rule.appName] : undefined;
+      const l4 = APP_PORT_MAP[rule.appName];
       if (!l4) {
+        // STRICT UNDER-MATCH: no stable ports → no kernel rule, loud warning
         skipped += 1;
         skippedApps.add(rule.appName);
         warnings.push({

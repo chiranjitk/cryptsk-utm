@@ -954,7 +954,7 @@ export function SslInspectionView() {
                                 : "min-w-[420px]"
                             }
                           >
-                            <TableHeader className="sticky top-0 z-10 bg-card">
+                            <TableHeader>
                               <TableRow>
                                 <TableHead className="h-9 text-xs">Type</TableHead>
                                 <TableHead className="h-9 text-xs">Value</TableHead>
@@ -1058,7 +1058,7 @@ export function SslInspectionView() {
                     : "min-w-[680px]"
                 }
               >
-                <TableHeader className="sticky top-0 z-10 bg-card">
+                <TableHeader>
                   <TableRow>
                     <TableHead className="h-9 text-xs">Decision</TableHead>
                     <TableHead className="h-9 text-xs">Reason</TableHead>

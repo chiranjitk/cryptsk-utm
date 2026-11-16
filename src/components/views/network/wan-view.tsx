@@ -811,7 +811,7 @@ function WanPolicyEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending || (!isEdit && props.candidates.length === 0)} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button onClick={submit} disabled={mut.isPending || (!isEdit && props.candidates.length === 0)} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Saving…" : isEdit ? "Save changes" : "Create policy"}
           </Button>
         </DialogFooter>

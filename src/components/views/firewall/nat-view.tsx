@@ -1152,7 +1152,7 @@ function NatEditor(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={() => void submit()} disabled={saveMut.isPending || validateMut.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button onClick={() => void submit()} disabled={saveMut.isPending || validateMut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {saveMut.isPending ? "Saving…" : validateMut.isPending ? "Validating…" : editing ? "Save changes" : "Create NAT rule"}
           </Button>
         </DialogFooter>
@@ -1236,7 +1236,7 @@ function OneToOneDialog(props: { open: boolean; onOpenChange: (open: boolean) =>
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Creating…" : "Create 1:1 pair"}
           </Button>
         </DialogFooter>
@@ -1408,7 +1408,7 @@ function PortForwardDialog(props: {
           <Button variant="ghost" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={mut.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button onClick={submit} disabled={mut.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {mut.isPending ? "Creating…" : "Create forward"}
           </Button>
         </DialogFooter>

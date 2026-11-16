@@ -303,7 +303,7 @@ export function TagInput(props: {
   const pendingSuggestions = (props.suggestions ?? []).filter((s) => !props.values.includes(s)).slice(0, 6);
   return (
     <div className="space-y-1.5">
-      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-zinc-200 p-2 has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-ring/60 dark:border-zinc-800">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
         {props.values.map((v) => (
           <Badge key={v} variant="outline" className="gap-1 border-zinc-500/30 bg-zinc-500/10 pr-1 text-zinc-600 dark:text-zinc-300">
             {v}

@@ -464,7 +464,7 @@ export function computeDhcpDrift(
   const hashMatches = renderedText != null && facts.confHash === fnv1aHash(renderedText);
   for (const s of subnets) {
     if (s.family !== "ipv4") {
-      entries.push({ id: s.id, name: `${s.subnetCidr} (${s.interfaceName})`, kind: "subnet", osState: "unsupported", detail: "DHCPv6 handled by ipv6 module (kea-dhcp6) — this is not a kea-dhcp4 managed subnet" });
+      entries.push({ id: s.id, name: `${s.subnetCidr} (${s.interfaceName})`, kind: "subnet", osState: "unsupported", detail: "DHCPv6 OS apply is a phase-2 item — Kea DHCPv6 not managed yet" });
       continue;
     }
     if (!s.enabled) {
@@ -608,7 +608,7 @@ export async function buildDhcpApplyPlan(
   // (the merge already drops them — the restart converges kea)
   for (const s of input.subnets) {
     if (s.family !== "ipv4") {
-      skipped.push({ name: `${s.subnetCidr} (${s.interfaceName})`, reason: "DHCPv6 handled by ipv6 module (kea-dhcp6) — this v6 subnet is saved only" });
+      skipped.push({ name: `${s.subnetCidr} (${s.interfaceName})`, reason: "DHCPv6 server (kea-dhcp6) OS apply is phase-2 — subnet saved only" });
     } else if (!s.enabled) {
       skipped.push({ name: `${s.subnetCidr} (${s.interfaceName})`, reason: "disabled — managed entry removed from kea conf on apply" });
     }

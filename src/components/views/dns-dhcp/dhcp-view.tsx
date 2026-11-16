@@ -462,7 +462,7 @@ function SubnetEditor({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create subnet"}
         </Button>
       </DialogFooter>
@@ -723,7 +723,7 @@ function ReservationEditor({
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+        <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
           {save.isPending ? "Saving…" : editing ? "Save changes" : "Create reservation"}
         </Button>
       </DialogFooter>
@@ -1029,7 +1029,7 @@ function RelayForm({
         </EditorSection>
 
         <div className="flex justify-end">
-          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
             {save.isPending ? "Saving…" : "Save relay config"}
           </Button>
         </div>

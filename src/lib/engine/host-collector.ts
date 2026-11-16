@@ -1028,7 +1028,7 @@ class HostCollector {
     if (disk) this.diskPct = disk.usedPct;
     this.tempC = await readThermalC();
 
-    const catalogUnits = ["nftables", "suricata", "sshd", "strongswan", "dnsmasq", "chronyd", "snmpd", "conntrackd", "rsyslogd", "unbound", "kea-dhcp4-server", "keepalived", "frr"];
+    const catalogUnits = ["nftables", "suricata", "sshd", "strongswan", "dnsmasq", "chronyd", "snmpd", "conntrackd", "rsyslogd", "unbound", "kea-dhcp4-server", "keepalived"];
     const states = await readServiceStates(catalogUnits);
     this.servicesAvailable = states !== null;
     if (states && (this.slowRunNo <= 5 || this.slowRunNo % 10 === 0)) {

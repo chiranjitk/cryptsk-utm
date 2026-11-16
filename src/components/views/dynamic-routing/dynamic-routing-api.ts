@@ -104,18 +104,6 @@ export interface CommunityListDTO {
   createdAt: string;
 }
 
-export interface BgpSettingsDTO {
-  id: number;
-  tenantId: number;
-  localAs: number;
-  routerId: string;
-  gracefulRestart: boolean;
-  enabled: boolean;
-  osConfHash: string | null;
-  osAppliedAt: string | null;
-  createdAt: string;
-}
-
 export interface BfdProfileDTO {
   id: number;
   tenantId: number;
@@ -148,8 +136,6 @@ export interface RibRefreshResult {
   removed: number;
   total: number;
   byProtocol: { bgp: number; ospf: number; static: number; connected: number };
-  /** "live-frr" = synced from a real `vtysh show ip route json` read */
-  source?: "live-frr" | "simulated";
 }
 
 export interface DrOverview {
@@ -157,77 +143,6 @@ export interface DrOverview {
   ospf: { enabled: boolean; fullAdjacencies: number };
   rib: { bgp: number; ospf: number; static: number; connected: number };
   bfd: { profiles: number; neighborsUsing: number };
-}
-
-// ── OS layer (FRR appliance) ──────────────────────────────────────────────────
-
-export interface DrPlanStepDTO {
-  step: string;
-  cmd: string;
-  kind: string;
-}
-
-export interface DrStepResultDTO {
-  step: string;
-  ok: boolean;
-  detail?: string;
-}
-
-export interface DrOsStatusDTO {
-  available: boolean;
-  dataPlaneMode: string;
-  gateOn: boolean;
-  note: string;
-  serviceState: string | null;
-  confPath: string;
-  daemonsPath: string;
-  liveConfHash: string | null;
-  expectedConfHash: string;
-  osConfHash: string | null;
-  managedByConsole: boolean;
-  inSync: boolean | null;
-  driftReasons: string[];
-  daemonSet: Record<string, boolean>;
-  liveDaemonSet: Record<string, boolean> | null;
-  daemonsChanged: boolean | null;
-  state: { confHash: string; daemonSet: Record<string, boolean>; appliedAt: string } | null;
-  neighbors: Array<{
-    id: number;
-    name: string;
-    peerIp: string;
-    remoteAs: number;
-    liveState: string | null;
-    liveUptimeSec: number | null;
-    livePrefixesReceived: number | null;
-  }>;
-  confPreview: string;
-  warnings: string[];
-  simulatedSessionNote: string;
-}
-
-export interface DrValidateResultDTO {
-  available: boolean;
-  ok: boolean | null;
-  confText: string;
-  confHash: string;
-  daemonsText: string;
-  daemonSet: Record<string, boolean>;
-  detail: string;
-  warnings: string[];
-}
-
-export interface DrApplyOutcomeDTO {
-  applied: boolean;
-  refused?: string;
-  reason?: string;
-  skipped?: boolean;
-  rolledBack: boolean;
-  confHash?: string;
-  backupConf?: string;
-  backupDaemons?: string;
-  daemonsChanged?: boolean;
-  plan: { steps: DrPlanStepDTO[]; confText: string; daemonsText: string };
-  results: DrStepResultDTO[];
 }
 
 // ── envelope unwrapping (keeps zod details, like logs-api.ts) ────────────────
@@ -319,11 +234,6 @@ export const drApi = {
   bgpSession: (id: number, action: "start" | "stop") =>
     fetchJson<BgpNeighborDTO>(`/api/v1/dynamic-routing/bgp/neighbors/${id}/session`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ action }) }),
 
-  // ── BGP global settings (OS layer) ──────────────────────────────────────
-  getBgpSettings: () => fetchJson<BgpSettingsDTO>("/api/v1/dynamic-routing/bgp/settings"),
-  updateBgpSettings: (body: Record<string, unknown>) =>
-    fetchJson<BgpSettingsDTO>("/api/v1/dynamic-routing/bgp/settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) }),
-
   // ── OSPF ────────────────────────────────────────────────────────────────
   getOspfSettings: () => fetchJson<OspfSettingsDTO>("/api/v1/dynamic-routing/ospf/settings"),
   updateOspfSettings: (body: Record<string, unknown>) =>
@@ -381,11 +291,4 @@ export const drApi = {
   refreshRib: () =>
     fetchJson<RibRefreshResult>("/api/v1/dynamic-routing/rib/refresh", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
   getOverview: () => fetchJson<DrOverview>("/api/v1/dynamic-routing/overview"),
-
-  // ── OS layer (FRR appliance) ────────────────────────────────────────────
-  getOsStatus: () => fetchJson<DrOsStatusDTO>("/api/v1/dynamic-routing/os"),
-  validateOs: () =>
-    fetchJson<DrValidateResultDTO>("/api/v1/dynamic-routing/validate", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
-  applyOs: () =>
-    fetchJson<DrApplyOutcomeDTO>("/api/v1/dynamic-routing/apply", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
 };

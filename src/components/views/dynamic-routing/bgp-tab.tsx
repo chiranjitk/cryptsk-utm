@@ -10,7 +10,6 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Icons from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -45,7 +44,6 @@ import {
   fieldErrorsOf,
   humanizeUptime,
   type BgpNeighborDTO,
-  type BgpSettingsDTO,
 } from "./dynamic-routing-api";
 import { BfdFlagChip, BgpStateBadge, FieldError } from "./dr-ui";
 
@@ -230,54 +228,6 @@ export function BgpTab() {
     onError: (err) => toastErr(err, "Update failed"),
   });
 
-  // ── BGP global settings (local AS / router-id / graceful restart / enabled) ─
-  const settingsQ = useQuery({ queryKey: ["dynamic-routing", "bgp-settings"], queryFn: drApi.getBgpSettings });
-  const settings: BgpSettingsDTO | undefined = settingsQ.data;
-  const [localAs, setLocalAs] = useState("");
-  const [routerId, setRouterId] = useState("");
-  const [settingsHydrated, setSettingsHydrated] = useState<BgpSettingsDTO | null>(null);
-  const [settingsErrors, setSettingsErrors] = useState<Record<string, string[]>>({});
-  if (settings && settingsHydrated?.id !== settings.id) {
-    // hydrate local inputs once per loaded row (keeps typing responsive)
-    setSettingsHydrated(settings);
-    setLocalAs(String(settings.localAs));
-    setRouterId(settings.routerId);
-  }
-
-  const saveSettings = useMutation({
-    mutationFn: () =>
-      drApi.updateBgpSettings({
-        localAs: Number(localAs),
-        routerId: routerId.trim(),
-        gracefulRestart: settings?.gracefulRestart ?? false,
-        enabled: settings?.enabled ?? false,
-      }),
-    onSuccess: (s) => {
-      invalidate();
-      setSettingsErrors({});
-      toastOk("BGP settings saved", `local AS ${s.localAs} · router-id ${s.routerId}`);
-    },
-    onError: (err) => setSettingsErrors(fieldErrorsOf(err)),
-  });
-
-  const toggleProcess = useMutation({
-    mutationFn: (patch: { gracefulRestart?: boolean; enabled?: boolean }) =>
-      drApi.updateBgpSettings({
-        localAs: settings?.localAs ?? 65000,
-        routerId: settings?.routerId ?? "10.10.0.1",
-        gracefulRestart: patch.gracefulRestart ?? settings?.gracefulRestart ?? false,
-        enabled: patch.enabled ?? settings?.enabled ?? false,
-      }),
-    onSuccess: (s) => {
-      invalidate();
-      toastOk(
-        s.enabled ? "BGP process enabled" : s.gracefulRestart ? "Graceful restart on" : "BGP process disabled",
-        `local AS ${s.localAs}`,
-      );
-    },
-    onError: (err) => toastErr(err, "Update failed"),
-  });
-
   const neighbors = neighborsQ.data ?? [];
   const bfdProfiles = bfdQ.data ?? [];
   const ipv4PrefixLists = (prefixListsQ.data ?? []).filter((pl) => pl.family === "ipv4");
@@ -289,75 +239,6 @@ export function BgpTab() {
 
   return (
     <div className="space-y-4">
-      {/* ── BGP process settings card ───────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Icons.Cog className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
-            BGP process
-          </CardTitle>
-          <CardDescription>
-            One local AS per appliance — rendered into `router bgp` on Apply (FRR OS layer).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {settingsQ.isError ? (
-            <QueryError error={settingsQ.error} onRetry={() => void settingsQ.refetch()} />
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <FieldLabel hint="1–4294967295">Local AS</FieldLabel>
-                <Input
-                  value={localAs}
-                  onChange={(e) => setLocalAs(e.target.value)}
-                  inputMode="numeric"
-                  placeholder="65000"
-                  className="font-mono"
-                  disabled={settingsQ.isLoading}
-                />
-                <FieldError errors={settingsErrors} field="localAs" />
-              </div>
-              <div>
-                <FieldLabel hint="IPv4">Router ID</FieldLabel>
-                <Input
-                  value={routerId}
-                  onChange={(e) => setRouterId(e.target.value)}
-                  placeholder="10.10.0.1"
-                  className="font-mono"
-                  disabled={settingsQ.isLoading}
-                />
-                <FieldError errors={settingsErrors} field="routerId" />
-              </div>
-              <label className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-                <span className="text-sm font-medium">Graceful restart</span>
-                <Switch
-                  checked={settings?.gracefulRestart ?? false}
-                  onCheckedChange={(v) => toggleProcess.mutate({ gracefulRestart: v })}
-                  disabled={settingsQ.isLoading || toggleProcess.isPending}
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-                <span className="text-sm font-medium">BGP enabled</span>
-                <Switch
-                  checked={settings?.enabled ?? false}
-                  onCheckedChange={(v) => toggleProcess.mutate({ enabled: v })}
-                  disabled={settingsQ.isLoading || toggleProcess.isPending}
-                />
-              </label>
-              <div className="sm:col-span-2 lg:col-span-4">
-                <Button
-                  className="bg-zinc-700 text-white hover:bg-zinc-800"
-                  disabled={settingsQ.isLoading || saveSettings.isPending}
-                  onClick={() => saveSettings.mutate()}
-                >
-                  {saveSettings.isPending ? "Saving…" : "Save settings"}
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-zinc-500">
           eBGP/iBGP peering sessions — filters, route-maps and BFD attach per neighbor.
@@ -386,7 +267,7 @@ export function BgpTab() {
       ) : (
         <div className="max-h-96 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-300 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700">
           <Table>
-            <TableHeader className="sticky top-0 z-10 bg-card">
+            <TableHeader>
               <TableRow>
                 <TableHead>Neighbor</TableHead>
                 <TableHead>Peer IP</TableHead>
