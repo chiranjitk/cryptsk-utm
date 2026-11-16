@@ -14,6 +14,7 @@ export interface QosRuleRuntime {
   priority: number; // 0 highest .. 7 lowest
   guaranteedKbps: number | null;
   maxKbps: number | null;
+  dscpMark: number | null;
   hardLimit: boolean;
   matchApps: string[];
   matchUsers: string[];
@@ -64,6 +65,7 @@ export async function loadQosRuntime(tenantId: number): Promise<QosRuntime> {
         priority: true,
         guaranteedKbps: true,
         maxKbps: true,
+        dscpMark: true,
         matchApps: true,
         matchUsers: true,
         matchAddresses: true,
@@ -81,6 +83,7 @@ export async function loadQosRuntime(tenantId: number): Promise<QosRuntime> {
       priority: r.priority,
       guaranteedKbps: r.guaranteedKbps,
       maxKbps: r.maxKbps,
+      dscpMark: r.dscpMark ?? null,
       hardLimit: isHardLimit(matchApps, matchUsers, matchAddresses, r.guaranteedKbps, r.maxKbps),
       matchApps,
       matchUsers,

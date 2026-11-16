@@ -103,10 +103,13 @@ import {
   TemplateExplanationTable,
   useQosConfigInvalidation,
 } from "./qos-ui";
+import { QosOsPanel } from "./qos-os-panel";
+import { usePermissions } from "../system/system-ui";
 
 export function QosView() {
   useQosConfigInvalidation();
   const queryClient = useQueryClient();
+  const { canWrite } = usePermissions();
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["qos"] });
   const policies = useQuery({ queryKey: ["qos", "policies"], queryFn: qosApi.listPolicies });
   const ifaces = useQuery({ queryKey: ["qos", "ifaces"], queryFn: listInterfaceNames, staleTime: 30_000 });
@@ -241,6 +244,8 @@ export function QosView() {
           </div>
         </div>
       )}
+
+      <QosOsPanel isAdmin={canWrite("qos")} />
 
       <PolicyDialog
         open={editorOpen}

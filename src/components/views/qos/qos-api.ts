@@ -89,7 +89,47 @@ export const qosApi = {
   updateRule: (id: number, body: Record<string, unknown>) =>
     fetchJson<QosRuleDTO>(`/api/v1/qos/rules/${id}`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) }),
   deleteRule: (id: number) => fetchJson<{ ok: boolean }>(`/api/v1/qos/rules/${id}`, { method: "DELETE" }),
+
+  getOsStatus: () => fetchJson<QosOsStatusDTO>("/api/v1/qos/status"),
+  applyToOs: () => fetchJson<QosApplyResultDTO>("/api/v1/qos/apply", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
 };
+
+// ── OS enforcement DTOs (mirror /api/v1/qos/status + /apply payloads) ───────
+
+export interface QosOsPolicyStatus {
+  id: number;
+  name: string;
+  ifaceName: string;
+  classesExpected: number;
+  filtersExpected: number;
+  unclassifiableApps: string[];
+  inSync: boolean | null;
+  driftReasons: string[];
+  live: { qdiscKind: string | null; defaultClassid: string | null; classes: number; filters: number } | null;
+}
+
+export interface QosOsStatusDTO {
+  available: boolean;
+  dataPlaneMode: string;
+  note: string;
+  state: { hash: string; appliedAt: string; managedIfaces: string[] } | null;
+  policies: QosOsPolicyStatus[];
+  warnings: string[];
+}
+
+export interface QosApplyResultDTO {
+  applied: boolean;
+  refused?: string;
+  reason?: string;
+  rolledBack: boolean;
+  confHash?: string;
+  backupFile?: string;
+  plan: {
+    steps: { step: string; cmd: string; kind: string }[];
+    expected: Record<string, unknown>;
+  };
+  results: { step: string; ok: boolean; detail?: string }[];
+}
 
 // ── picker meta (apps / users / addresses / ifaces) ─────────────────────────
 
