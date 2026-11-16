@@ -134,10 +134,12 @@ export function fnv1aHash(s: string): string {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-/** Owner name inside a zone: name already ends with zone → as-is, else name.zone */
+/** Owner name inside a zone: name already ends with zone → as-is, else name.zone.
+ *  "@" (zone-file shorthand) and "" mean the zone APEX itself. */
 export function recordOwner(zone: string, name: string): string {
   const z = zone.replace(/\.$/, "");
   const n = name.replace(/\.$/, "");
+  if (n === "@" || n === "") return z;
   if (n === z || n.endsWith(`.${z}`)) return n;
   return `${n}.${z}`;
 }

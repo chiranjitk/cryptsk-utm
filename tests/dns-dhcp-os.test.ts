@@ -196,10 +196,12 @@ describe("renderUnboundManaged", () => {
 // ── record helpers ──────────────────────────────────────────────────────────
 
 describe("recordOwner / recordRdata", () => {
-  it("appends zone when the name is bare, keeps qualified names", () => {
+  it("appends zone when the name is bare, keeps qualified names, apex for @", () => {
     expect(recordOwner("corp.local", "nas")).toBe("nas.corp.local");
     expect(recordOwner("corp.local", "nas.corp.local")).toBe("nas.corp.local");
     expect(recordOwner("corp.local", "_sip._tcp")).toBe("_sip._tcp.corp.local");
+    expect(recordOwner("corp.local", "@")).toBe("corp.local");
+    expect(recordOwner("corp.local", "")).toBe("corp.local");
   });
 
   it("rdata per type", () => {
