@@ -382,7 +382,6 @@ export async function readDhcpOsFacts(): Promise<DhcpOsFacts> {
   facts.running = isRunning(svcStates?.["kea-dhcp4-server"]);
 
   const [portsRes] = await Promise.all([runTool("ss -ulnp 2>/dev/null", 5000)]);
-  facts.port67Bound = /kea/.test(portsRes.stdout) && /:67\s/.test(portsRes.stdout);
 
   if (keaBin) {
     const ver = await runTool("kea-dhcp4 -v 2>/dev/null", 6000);
@@ -392,6 +391,12 @@ export async function readDhcpOsFacts(): Promise<DhcpOsFacts> {
       facts.configValid = chk.ok;
     }
   }
+
+  // kea binds DHCP via AF_PACKET raw sockets by default (socket-type raw) —
+  // UDP :67 never appears in ss -ulnp. Serving truth = running + valid config.
+  facts.port67Bound =
+    (/kea/.test(portsRes.stdout) && /:67\s/.test(portsRes.stdout)) ||
+    (facts.running && facts.configValid === true);
 
   // live conf truth
   let liveText: string | null = null;

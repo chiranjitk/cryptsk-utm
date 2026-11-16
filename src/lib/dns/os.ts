@@ -161,6 +161,18 @@ export function recordRdata(rec: Pick<DnsRecordInput, "type" | "value" | "priori
   }
 }
 
+/** One `local-data:` directive line. TXT rdata carries double quotes → the
+ *  whole line must use SINGLE quotes (verified empirically: unbound-checkconf
+ *  rejects nested double quotes with "unknown keyword 'v=spf1'"). */
+export function renderLocalDataLine(
+  rec: Pick<DnsRecordInput, "type" | "zone" | "name" | "ttl">,
+  rdata: string,
+): string {
+  const owner = `${recordOwner(rec.zone, rec.name)}. ${rec.ttl} IN ${rec.type}`;
+  if (rdata.includes('"')) return `\tlocal-data: '${owner} ${rdata}'`;
+  return `\tlocal-data: "${owner} ${rdata}"`;
+}
+
 // ── renderer (pure — unit tested) ───────────────────────────────────────────
 
 interface RenderUnboundInput {
@@ -261,7 +273,7 @@ export function renderUnboundManaged(input: RenderUnboundInput): string {
     if (!r.enabled) continue;
     const rdata = recordRdata(r);
     if (!rdata) continue;
-    localData.push(`\tlocal-data: "${recordOwner(r.zone, r.name)}. ${r.ttl} IN ${r.type} ${rdata}"`);
+    localData.push(renderLocalDataLine(r, rdata));
   }
   if (localData.length > 0) {
     L.push(`# sinkhole records + custom DNS records (server-scoped local-data)`);

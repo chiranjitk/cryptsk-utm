@@ -154,7 +154,9 @@ describe("renderUnboundManaged", () => {
     expect(out).toContain('local-data: "nas.corp.local. 3600 IN A 10.99.99.5"');
     expect(out).toContain('local-data: "mail.corp.local. 3600 IN MX 10 mx.corp.local"');
     expect(out).toContain('local-data: "_sip._tcp.corp.local. 3600 IN SRV 20 10 60 5060 sip.corp.local"');
-    expect(out).toContain('local-data: "dkim.corp.local. 3600 IN TXT "v=DKIM1; \\"quoted\\"""');
+    // TXT value carries double quotes → the local-data line uses SINGLE quotes
+    // (verified empirically: unbound-checkconf rejects nested double quotes)
+    expect(out).toContain(`local-data: 'dkim.corp.local. 3600 IN TXT "v=DKIM1; \\"quoted\\""'`);
     expect(out).toContain('local-data: "nas.99.99.10.in-addr.arpa. 3600 IN PTR nas.corp.local"');
   });
 
