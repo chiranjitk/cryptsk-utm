@@ -53,7 +53,14 @@ export const NAT66_INCLUDE_LINE = `include "${NAT66_ETC_FILE}"`;
 export const FORWARDING_SYSCTL_FILE =
   process.env.CONSOLE_IPV6_SYSCTL_FILE || "/etc/sysctl.d/90-console-ipv6-forwarding.conf";
 
-export const KEA6_STAGE_FILE = `${IPV6_STATE_DIR}/kea-dhcp6.conf.staged`;
+/**
+ * Kea stage file MUST live in /etc/kea: the appliance's AppArmor profile
+ * (usr.sbin.kea-dhcp6, enforcing) confines the daemon to /etc/kea — a stage
+ * under /var/lib/console passes as root but kea-dhcp6 -t fails with
+ * "Unable to open file" (appliance-verified). Mirror of dhcp4's live-file
+ * validate-then-install flow.
+ */
+export const KEA6_STAGE_FILE = `${KEA6_CONF_FILE}.staged`;
 export const RADVD_STAGE_FILE = `${IPV6_STATE_DIR}/radvd.conf.staged`;
 
 export const KEA6_SERVICE = "kea-dhcp6-server";
@@ -874,7 +881,11 @@ export function ipv6StepGuarded(cmd: string): boolean {
   if (c === `mkdir -p ${IPV6_STATE_DIR}`) return true;
   if (c.startsWith("kea-dhcp6 -t ")) {
     const p = c.slice("kea-dhcp6 -t ".length).trim();
-    return p === KEA6_CONF_FILE || (p.startsWith(`${IPV6_STATE_DIR}/`) && !p.includes(".."));
+    return (
+      p === KEA6_CONF_FILE ||
+      p === KEA6_STAGE_FILE ||
+      (p.startsWith(`${IPV6_STATE_DIR}/`) && !p.includes(".."))
+    );
   }
   if (c.startsWith("radvd -c ")) {
     const p = c.slice("radvd -c ".length).trim();
@@ -888,7 +899,9 @@ export function ipv6StepGuarded(cmd: string): boolean {
     const parts = c.slice("install -m 0644 ".length).trim().split(/\s+/);
     if (parts.length !== 2) return false;
     const [src, dst] = parts as [string, string];
-    const srcOk = (src.startsWith(`${IPV6_STATE_DIR}/`) || src === "/dev/null") && !src.includes("..");
+    const srcOk =
+      (src.startsWith(`${IPV6_STATE_DIR}/`) || src === KEA6_STAGE_FILE || src === "/dev/null") &&
+      !src.includes("..");
     const dstOk =
       dst === KEA6_CONF_FILE ||
       dst === RADVD_CONF_FILE ||
@@ -903,6 +916,7 @@ export function ipv6StepGuarded(cmd: string): boolean {
     return c.slice(`cp ${RADVD_CONF_FILE} `.length).trim().startsWith(`${IPV6_STATE_DIR}/`);
   }
   if (c.startsWith(`rm -f ${IPV6_STATE_DIR}/`)) return !c.includes("..");
+  if (c === `rm -f ${KEA6_STAGE_FILE}`) return true;
   return false;
 }
 

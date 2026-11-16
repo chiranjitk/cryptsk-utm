@@ -54,6 +54,16 @@ export const RSYSLOG_BACKUP_DIR_RE = /^backup-[\w.-]+$/;
 export const RSYSLOG_BEGIN_MARKER = "# BEGIN UTM-managed (Cryptsk Console)";
 export const RSYSLOG_END_MARKER = "# END UTM-managed";
 
+/**
+ * Idle-state action (zero enabled targets): an omfile writing only emerg+
+ * messages to a console-owned log file. Harmless (does not stop rule
+ * evaluation, discards nothing from other outputs) and satisfies rsyslog's
+ * "must have at least one active action" validation (error 2103).
+ */
+export const RSYSLOG_IDLE_ACTION =
+  'if $syslogseverity <= 2 then { action(type="omfile" file="/var/lib/console/rsyslog/idle.log" template="RSYSLOG_TraditionalFileFormat") }';
+const IDLE_ACTION_LINE = RSYSLOG_IDLE_ACTION;
+
 // ── shapes (resolved by os-service, consumed here purely) ──────────────────
 
 export type SyslogProtocol = "udp" | "tcp" | "tls";
@@ -199,10 +209,17 @@ export function renderRsyslogConf(targets: SyslogTargetShape[]): RenderedRsyslog
     }
   }
   const targetsRendered = enabled.map(renderTargetLine);
+  // rsyslog 8.25 refuses a config with zero outputs ("no active actions
+  // configured", error 2103) — the idle fragment keeps a harmless omfile
+  // action so validation passes and a fully-disabled state still applies.
+  const bodyLines =
+    targetsRendered.length > 0
+      ? targetsRendered.map((r) => r.line)
+      : [IDLE_ACTION_LINE];
   const content = [
     FILE_HEADER,
     RSYSLOG_BEGIN_MARKER,
-    ...targetsRendered.map((r) => r.line),
+    ...bodyLines,
     RSYSLOG_END_MARKER,
     "",
   ].join("\n");

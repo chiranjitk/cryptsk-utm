@@ -31,6 +31,7 @@ import {
   renderFrrConf,
   renderFrrDaemons,
   DR_STAGE_CONF,
+  DR_STAGE_DAEMONS,
   DR_STATE_DIR,
   DR_STATE_FILE,
   FRR_CONF,

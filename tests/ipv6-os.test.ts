@@ -33,6 +33,7 @@ import {
   sysctlNeededFor,
   validateIpv6Inputs,
   KEA6_CONF_FILE,
+  KEA6_STAGE_FILE,
   MANAGED_HEADER,
   type Dhcpv6ServerInput,
   type Ipv6OsFacts,
@@ -362,8 +363,8 @@ describe("buildIpv6ApplyPlan", () => {
     const idx = (c: string) => cmds.findIndex((x) => x.includes(c));
     expect(cmds[0]).toBe("mkdir -p /var/lib/console/ipv6");
     expect(idx("kea-dhcp6 -t")).toBeGreaterThan(idx("write-file"));
-    expect(idx("install -m 0644 /var/lib/console/ipv6/kea-dhcp6.conf.staged")).toBeGreaterThan(idx("kea-dhcp6 -t"));
-    expect(idx("systemctl restart kea-dhcp6-server")).toBeGreaterThan(idx("install -m 0644 /var/lib/console/ipv6/kea-dhcp6.conf.staged"));
+    expect(idx("install -m 0644 /etc/kea/kea-dhcp6.conf.staged")).toBeGreaterThan(idx("kea-dhcp6 -t"));
+    expect(idx("systemctl restart kea-dhcp6-server")).toBeGreaterThan(idx("install -m 0644 /etc/kea/kea-dhcp6.conf.staged"));
     expect(idx("systemctl is-active kea-dhcp6-server")).toBeGreaterThan(idx("systemctl restart kea-dhcp6-server"));
     expect(idx("radvd -c")).toBeGreaterThan(idx("write-file /var/lib/console/ipv6/radvd.conf.staged"));
     expect(idx("nft -c -f")).toBeGreaterThan(idx("write-file /var/lib/console/ipv6/nat66-"));
@@ -373,7 +374,7 @@ describe("buildIpv6ApplyPlan", () => {
     expect(plan.guarded).toBe(true);
     expect(plan.refused).toBeNull();
     // kea conf install mode is 0644 (_kea uid must read the conf)
-    expect(cmds).toContain(`install -m 0644 /var/lib/console/ipv6/kea-dhcp6.conf.staged ${KEA6_CONF_FILE}`);
+    expect(cmds).toContain(`install -m 0644 ${KEA6_STAGE_FILE} ${KEA6_CONF_FILE}`);
   });
 
   it("carries the rendered files for staging (kea6 + radvd + nat66)", () => {

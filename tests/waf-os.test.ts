@@ -157,7 +157,9 @@ describe("renderModsecSetup (tx values)", () => {
     expect(s).toContain("setvar:tx.paranoia_level=2");
     expect(s).toContain("setvar:tx.executing_paranoia_level=2");
     expect(s).toContain("setvar:tx.inbound_anomaly_score_threshold=6");
-    expect(s).toContain("setvar:tx.outbound_anomaly_score_threshold=4");
+    expect(s).toContain("setvar:tx.outbound_anomaly_score_threshold=4,");
+    // CRS 901001 500-fails without it ("CRS deployed without configuration")
+    expect(s).toContain("setvar:tx.crs_setup_version=333");
   });
   it("is deterministic", () => {
     expect(renderModsecSetup(policy())).toBe(renderModsecSetup(policy()));

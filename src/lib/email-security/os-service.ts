@@ -523,6 +523,15 @@ export async function applyEmailToOs(tenantId: number): Promise<EmailApplyOutcom
       // skip sources that vanished since planning (cp would fail)
       const src = s.cmd.split(/\s+/)[1];
       if (src && !existsSync(src)) continue;
+      // full-path mirror: cp targets <backupDir>/etc/postfix/main.cf etc. —
+      // the nested directories must exist before cp (mirrors dns-dhcp exec)
+      const dest = s.cmd.split(/\s+/)[2];
+      if (dest) {
+        const destDir = dest.split("/").slice(0, -1).join("/");
+        if (destDir.startsWith(plan.backupDir)) {
+          await fs.mkdir(destDir, { recursive: true }).catch(() => undefined);
+        }
+      }
       const r = await runTool(s.cmd, 10000);
       results.push({ step: s.step, ok: r.ok, detail: r.ok ? src : (r.stderr || r.error || "cp failed").slice(0, 200) });
       if (!r.ok) {
