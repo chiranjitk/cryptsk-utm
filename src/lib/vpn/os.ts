@@ -441,7 +441,8 @@ export async function readVpnOsFacts(slugs: string[]): Promise<VpnOsFacts> {
     }
   }
 
-  // wireguard plane
+  // wireguard plane — only REAL wg ifaces (an openvpn tun device also lands
+  // in the utm- namespace; distinguish by asking wg itself)
   if (wgQuick && wg) {
     const linkRes = await runTool("ip -o link show 2>/dev/null", 5000);
     const managedLinks = linkRes.stdout
@@ -451,6 +452,8 @@ export async function readVpnOsFacts(slugs: string[]): Promise<VpnOsFacts> {
       .map((m) => m![1]);
     const peers = await readWgPeers();
     for (const iface of managedLinks) {
+      const isWg = await runTool(`wg show ${iface} public-key 2>/dev/null`, 4000);
+      if (!isWg.ok) continue; // not a wireguard device (openvpn tun, etc.)
       const ifacePeers = (peers ?? []).filter((p) => p.iface === iface);
       const portRes = await runTool(`wg show ${iface} listen-port 2>/dev/null`, 4000);
       facts.wgIfaces.push({

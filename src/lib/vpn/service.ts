@@ -517,7 +517,9 @@ export async function clientBundle(tenantId: number, id: number, peerName?: stri
   // openvpn — REAL PKI material once the tunnel is applied to the OS
   const c = cfg as OpenVpnConfig;
   const wan = await applianceWanIp();
-  const vpnSlug = slug(row.name);
+  // the OS dir follows the IFNAMSIZ-truncated conn name (utm-<slug> ≤ 15),
+  // NOT the plain name slug — they diverge for names longer than 11 chars
+  const vpnSlug = connName(row.name).slice(4);
   const ca = await readOpenVpnCaCert(vpnSlug);
   const ta = c.tls ? await readOpenVpnTaKey(vpnSlug) : null;
   const content = [
