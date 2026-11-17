@@ -464,7 +464,10 @@ export function computeQosDrift(rendered: RenderedIface, qdisc: ParsedQdisc | nu
   for (const c of extra) reasons.push(`unexpected class ${c.classid} under ${ROOT_CLASS}`);
 
   const parsedCount: Record<string, number> = {};
-  for (const f of filters) parsedCount[f.flowid] = (parsedCount[f.flowid] ?? 0) + 1;
+  for (const f of filters) {
+    if (f.flowid == null) continue; // parsed filter without flowid — cannot map to a rendered class
+    parsedCount[f.flowid] = (parsedCount[f.flowid] ?? 0) + 1;
+  }
   for (const [flowid, want] of Object.entries(rendered.filtersByFlowid)) {
     if ((parsedCount[flowid] ?? 0) !== want) {
       reasons.push(`filters → ${flowid}: ${parsedCount[flowid] ?? 0} — expected ${want}`);

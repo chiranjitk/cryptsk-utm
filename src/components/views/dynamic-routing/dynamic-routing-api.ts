@@ -291,4 +291,82 @@ export const drApi = {
   refreshRib: () =>
     fetchJson<RibRefreshResult>("/api/v1/dynamic-routing/rib/refresh", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
   getOverview: () => fetchJson<DrOverview>("/api/v1/dynamic-routing/overview"),
+
+  // ── OS integration (FRR) — plan preview when the CONSOLE_OS_APPLY gate is
+  //    off; shapes mirror src/lib/dynamic-routing/os-service.ts ────────────
+  getOsStatus: () => fetchJson<DrOsStatusDTO>("/api/v1/dynamic-routing/os"),
+  validateOs: () =>
+    fetchJson<DrValidateResultDTO>("/api/v1/dynamic-routing/validate", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
+  applyOs: () =>
+    fetchJson<DrApplyOutcomeDTO>("/api/v1/dynamic-routing/apply", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
 };
+
+// ── OS integration (FRR) — plan preview when the CONSOLE_OS_APPLY gate is
+//    off; shapes mirror src/lib/dynamic-routing/os-service.ts ───────────────
+
+export interface DrNeighborOsStatusDTO {
+  id: number;
+  name: string;
+  peerIp: string;
+  remoteAs: number;
+  liveState: string | null;
+  liveUptimeSec: number | null;
+  livePrefixesReceived: number | null;
+}
+
+export interface DrStateFileDTO {
+  confHash: string;
+  daemonsHash?: string;
+  appliedAt: string;
+  empty?: boolean;
+  note?: string;
+}
+
+export interface DrOsStatusDTO {
+  available: boolean;
+  dataPlaneMode: string;
+  gateOn: boolean;
+  note: string;
+  serviceState: string | null;
+  confPath: string;
+  daemonsPath: string;
+  liveConfHash: string | null;
+  expectedConfHash: string;
+  osConfHash: string | null;
+  managedByConsole: boolean;
+  inSync: boolean | null;
+  driftReasons: string[];
+  daemonSet: Record<string, boolean>;
+  liveDaemonSet: Record<string, boolean> | null;
+  daemonsChanged: boolean | null;
+  state: DrStateFileDTO | null;
+  neighbors: DrNeighborOsStatusDTO[];
+  confPreview: string;
+  warnings: string[];
+  simulatedSessionNote: string;
+}
+
+export interface DrValidateResultDTO {
+  available: boolean;
+  ok: boolean | null;
+  confText: string;
+  confHash: string;
+  daemonsText: string;
+  daemonSet: Record<string, boolean>;
+  detail: string;
+  warnings: string[];
+}
+
+export interface DrApplyOutcomeDTO {
+  applied: boolean;
+  refused?: string;
+  reason?: string;
+  skipped?: boolean;
+  rolledBack: boolean;
+  confHash?: string;
+  backupConf?: string;
+  backupDaemons?: string;
+  daemonsChanged?: boolean;
+  plan: { steps: { step: string; cmd: string; kind: string }[]; confText: string; daemonsText: string };
+  results: { step: string; ok: boolean; detail?: string }[];
+}

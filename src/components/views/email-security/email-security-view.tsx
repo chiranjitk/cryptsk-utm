@@ -61,6 +61,7 @@ import {
   type AuthResult,
   type DmarcPolicy,
   type EmailGatewayDTO,
+  type EmailLogDTO,
   type EmailPolicyDTO,
   type EmailRoutingRuleDTO,
   type EmailVerdict,

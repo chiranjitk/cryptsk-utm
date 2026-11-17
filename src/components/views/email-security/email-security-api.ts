@@ -208,6 +208,16 @@ export const emailSecurityApi = {
 
   // stats
   getStats: () => fetchJson<EmailStatsDTO>("/api/v1/email-security/stats"),
+
+  // OS enforcement (postfix + rspamd + clamav) — plan preview when the
+  // CONSOLE_OS_APPLY gate is off; shapes mirror email-security/os-service.ts
+  getOsStatus: () => fetchJson<EmailOsStatusDTO>("/api/v1/email-security/os"),
+  applyToOs: (action: "apply" | "rollback") =>
+    fetchJson<EmailOsApplyResultDTO>("/api/v1/email-security/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action }),
+    }),
 };
 
 // ── shared param builder (skips empty values — keeps query keys stable) ─────
@@ -252,3 +262,93 @@ export const COMMON_EXTENSIONS: string[] = ["exe", "js", "vbs", "scr", "bat", "c
 
 /** Scale max of the simulated Rspamd score (engine.ts). */
 export const SPAM_SCORE_MAX = 12;
+
+// ── OS integration (postfix/rspamd/clamav) — plan preview when the
+//    CONSOLE_OS_APPLY gate is off; shapes mirror email-security/os-service.ts
+
+export interface EmailOsGatewayStatus {
+  id: number;
+  name: string;
+  mode: string;
+  listenPort: number;
+  relayDomains: string[];
+  upstreamHost: string | null;
+  tlsMode: string;
+  enabled: boolean;
+  renderHash: string;
+  transportLines: string[];
+}
+
+export interface EmailOsStateFile {
+  confHash: string;
+  appliedAt: string;
+  gatewayIds: number[];
+  empty?: boolean;
+  note?: string;
+}
+
+export interface EmailOsStatusDTO {
+  available: boolean;
+  dataPlaneMode: string;
+  gate: "on" | "off";
+  note: string;
+  postfixState: string | null;
+  rspamdState: string | null;
+  clamdReachable: boolean | null;
+  portsBound: { p25: boolean | null; p11332: boolean | null; p11334: boolean | null };
+  managedFiles: Array<{ path: string; kind: string; onDisk: boolean; hashMatches: boolean | null }>;
+  confHash: string | null;
+  inSync: boolean | null;
+  managedByConsole: boolean;
+  driftReasons: string[];
+  state: EmailOsStateFile | null;
+  gateways: EmailOsGatewayStatus[];
+  policy: {
+    spamThreshold: number;
+    blockPhishing: boolean;
+    blockMalware: boolean;
+    scanArchives: boolean;
+    maxMessageSizeMb: number;
+    blockedExtensions: string[];
+    spfVerify: boolean;
+    dkimVerify: boolean;
+    dmarcPolicy: string;
+    quarantineRetentionDays: number;
+    enabled: boolean;
+  };
+  rules: Array<{
+    id: number;
+    name: string;
+    matchDomain: string;
+    action: string;
+    targetHost: string | null;
+    priority: number;
+    enabled: boolean;
+  }>;
+  plan: { confHash: string | null; gatewayIds: number[]; files: Array<{ path: string; bytes: number; kind: string }> };
+  warnings: string[];
+}
+
+export interface EmailOsApplyResultDTO {
+  gate: "on" | "off";
+  applied: boolean;
+  refused?: string;
+  reason: string;
+  skipped?: boolean;
+  rolledBack: boolean;
+  confHash?: string | null;
+  backupDir?: string;
+  plan: {
+    steps: Array<{ step: string; cmd: string; kind: string; optional?: boolean }>;
+    files: Array<{ path: string; bytes: number; kind: string }>;
+    gatewayIds: number[];
+    warnings: string[];
+  };
+  results: Array<{ step: string; ok: boolean; detail?: string }>;
+  // rollback branch shape (union of EmailRollbackResult)
+  restored?: number;
+  postmapped?: boolean;
+  restarted?: boolean;
+  detail?: string;
+}
+

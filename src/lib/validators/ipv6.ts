@@ -168,7 +168,7 @@ function applyNat66Issues(ctx: z.RefinementCtx, v: Nat66Cross): void {
 
 /** Partial-aware cross-field check — only compares keys present in the patch;
  *  the service re-runs the FULL check after merging with the stored row. */
-function applyNat66PartialIssues(ctx: z.RefinementCtx, v: Partial<Nat66Cross>): void {
+function applyNat66PartialIssues(v: Partial<Nat66Cross>, ctx: z.RefinementCtx): void {
   if (
     v.type === "nptv6" &&
     v.sourcePrefix &&

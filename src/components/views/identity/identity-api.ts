@@ -6,7 +6,6 @@
  */
 
 import type {
-  AuthSettings,
   CaptivePortalDTO,
   DirectorySourceDTO,
   IdentitySessionDTO,
@@ -15,6 +14,7 @@ import type {
   TotpEnrollResult,
   UserGroupDTO,
 } from "@/lib/identity/service";
+import type { AuthSettings } from "@/lib/validators/identity";
 import type { VoucherDTO } from "@/lib/identity/vouchers";
 
 export type {
@@ -160,6 +160,66 @@ export const portalApi = {
       body: JSON.stringify(body),
     }),
   revokeVoucher: (id: number) => fetchJson<{ ok: boolean }>(`/api/v1/captive-portal/vouchers/${id}`, { method: "DELETE" }),
+};
+
+// ── identity OS integration (FreeRADIUS) — plan preview when the
+//    CONSOLE_OS_APPLY gate is off; mirrors url-filter-api.ts OS client ──────
+
+export interface RadiusOsProfileStatus {
+  id: number;
+  name: string;
+  serverIp: string;
+  authPort: number;
+  timeoutSec: number;
+  retries: number;
+  enabled: boolean;
+  slug: string | null;
+  renderHash: string | null;
+}
+
+export interface RadiusOsStateFile {
+  confHash: string;
+  appliedAt: string;
+  profileIds: number[];
+  empty?: boolean;
+  note?: string;
+}
+
+export interface RadiusOsStatusDTO {
+  available: boolean;
+  dataPlaneMode: string;
+  gate: "on" | "off";
+  note: string;
+  unitState: string | null;
+  portBound: boolean | null;
+  managedFile: string;
+  inSync: boolean | null;
+  driftReasons: string[];
+  state: RadiusOsStateFile | null;
+  profiles: RadiusOsProfileStatus[];
+  warnings: string[];
+}
+
+export interface RadiusApplyResultDTO {
+  applied: boolean;
+  refused?: string;
+  reason?: string;
+  skipped?: boolean;
+  rolledBack: boolean;
+  confHash?: string;
+  backupDir?: string;
+  plan: { steps: { step: string; cmd: string; kind: string }[]; profiles: unknown };
+  results: { step: string; ok: boolean; detail?: string }[];
+}
+
+export const radiusOsApi = {
+  getOsStatus: () => fetchJson<RadiusOsStatusDTO>("/api/v1/identity/os"),
+  applyToOs: (action: "apply" | "rollback") =>
+    fetchJson<RadiusApplyResultDTO>("/api/v1/identity/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action }),
+    }),
 };
 
 // ── identity sessions ───────────────────────────────────────────────────────

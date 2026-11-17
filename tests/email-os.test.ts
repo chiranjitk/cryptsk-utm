@@ -387,7 +387,7 @@ describe("buildEmailApplyPlan", () => {
     const plan = buildEmailApplyPlan(input);
     const kinds = plan.steps.map((s) => s.kind);
     expect(kinds[0]).toBe("dir");
-    const idx = (k: string) => kinds.indexOf(k);
+    const idx = (k: string) => (kinds as string[]).indexOf(k);
     expect(idx("backup")).toBeGreaterThan(idx("dir"));
     expect(idx("stage")).toBeGreaterThan(idx("backup"));
     expect(idx("install")).toBeGreaterThan(idx("stage"));

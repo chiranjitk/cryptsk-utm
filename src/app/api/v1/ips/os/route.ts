@@ -24,6 +24,7 @@ import {
   applyIpsOs,
   rollbackIpsOs,
   runOsRuleUpdate,
+  type IpsApplyOutcome,
 } from "@/lib/ips/ips-os";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +56,14 @@ export const GET = route({ area: "ips_policies" }, async ({ auth }) => {
   };
 });
 
-export const POST = route({ area: "ips_policies", bodySchema, section: "ips" }, async ({ auth, body }) => {
+type IpsPostResult =
+  | IpsApplyOutcome
+  | Awaited<ReturnType<typeof rollbackIpsOs>>
+  | Awaited<ReturnType<typeof runOsRuleUpdate>>;
+
+export const POST = route<z.infer<typeof bodySchema>, undefined, IpsPostResult>(
+  { area: "ips_policies", bodySchema, section: "ips" },
+  async ({ auth, body }) => {
   switch (body.action) {
     case "apply": {
       const outcome = await applyIpsOs(auth.tenantId);

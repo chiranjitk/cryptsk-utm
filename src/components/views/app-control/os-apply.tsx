@@ -70,7 +70,7 @@ export function AppControlOsApply() {
   });
 
   // write-capable roles only — the panel mirrors the RBAC matrix
-  const me = useQuery<{ role?: string }>({
+  const me = useQuery({
     queryKey: ME_KEY,
     queryFn: async () => {
       const res = await fetch("/api/v1/auth/me", { credentials: "same-origin" });

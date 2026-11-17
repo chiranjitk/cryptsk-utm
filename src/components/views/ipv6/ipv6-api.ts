@@ -142,7 +142,98 @@ export const ipv6Api = {
       return FALLBACK_INTERFACES;
     }
   },
+
+  // OS enforcement (kea-dhcp6 + radvd + nat66 + sysctl) — plan preview when
+  // the CONSOLE_OS_APPLY gate is off; shapes mirror ipv6/os-service.ts
+  getOsStatus: () => fetchJson<Ipv6OsStatusDTO>("/api/v1/ipv6/os-status"),
+  applyToOs: () =>
+    fetchJson<Ipv6ApplyResultDTO>("/api/v1/ipv6/apply", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
 };
+
+// ── OS integration DTOs (mirror src/lib/ipv6/os-service.ts) ─────────────────
+
+export interface Ipv6DriftEntryDTO {
+  id: number;
+  name: string;
+  kind: "kea6" | "radvd" | "nat66" | "sysctl";
+  osState: "in-sync" | "drift" | "missing" | "disabled" | "unsupported";
+  detail: string | null;
+}
+
+export interface Ipv6OsStateFileDTO {
+  confHash?: string;
+  radvdHash?: string;
+  nat66Hash?: string;
+  sysctlForwarding?: boolean;
+  appliedAt?: string;
+  lastApply?: { at: string; backupDir: string | null; applied: boolean; reason: string };
+  steps?: number;
+  results?: Array<{ step: string; cmd: string; ok: boolean; detail?: string }>;
+}
+
+export interface Ipv6OsStatusDTO {
+  gate: "on" | "off";
+  available: boolean;
+  keaAvailable: boolean;
+  radvdAvailable: boolean;
+  nftAvailable: boolean;
+  dataPlaneMode: string;
+  kea: {
+    running: boolean;
+    confPresent: boolean;
+    confHash: string | null;
+    version: string | null;
+    renderedHash: string;
+    inSync: boolean | null;
+    managedSubnetIds: number[];
+  };
+  radvd: {
+    running: boolean;
+    confPresent: boolean;
+    confHash: string | null;
+    version: string | null;
+    renderedHash: string;
+    inSync: boolean | null;
+    ifaces: Array<{ iface: string; prefix: string; mode: string }>;
+  };
+  nat66: {
+    tablePresent: boolean;
+    inSync: boolean | null;
+    statements: number;
+    etcPresent: boolean;
+  };
+  sysctlForwarding: boolean | null;
+  sysctlExpected: boolean;
+  udp547Bound: boolean | null;
+  lastApply: Ipv6OsStateFileDTO | null;
+  drift: Ipv6DriftEntryDTO[];
+  summary: { total: number; inSync: number; driftCount: number; unsupported: number };
+  preview: { keaConf: string; radvdConf: string; nat66Nft: string };
+  warnings: string[];
+}
+
+export interface Ipv6ApplyResultDTO {
+  gate: "on" | "off";
+  applied: boolean;
+  refused?: string;
+  reason: string;
+  rolledBack: boolean;
+  backupDir?: string;
+  confHash?: string;
+  radvdHash?: string;
+  nat66Hash?: string;
+  plan: {
+    steps: Array<{ step: string; cmd: string; kind: string; optional?: boolean }>;
+    files: Array<{ path: string; kind: string; bytes: number }>;
+    keaSubnets: Array<Record<string, unknown>>;
+    radvdIfaces: Array<Record<string, unknown>>;
+    nat66Statements: Array<Record<string, unknown>>;
+    skipped: Array<{ name: string; reason: string }>;
+    warnings: string[];
+    refused: string | null;
+  };
+  results: Array<{ step: string; cmd: string; ok: boolean; detail?: string }>;
+}
 
 // ── formatting helpers ──────────────────────────────────────────────────────
 

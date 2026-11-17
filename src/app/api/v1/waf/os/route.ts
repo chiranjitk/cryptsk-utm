@@ -21,7 +21,13 @@
 
 import { route } from "@/lib/api/handler";
 import { z } from "zod";
-import { applyWafOs, getWafOsStatus, rollbackWafOs } from "@/lib/waf/os-service";
+import {
+  applyWafOs,
+  getWafOsStatus,
+  rollbackWafOs,
+  type WafApplyOutcome,
+  type WafRollbackResult,
+} from "@/lib/waf/os-service";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +39,11 @@ export const GET = route({ area: "waf" }, async ({ auth }) => {
   return { data: await getWafOsStatus(auth.tenantId) };
 });
 
-export const POST = route({ area: "waf", bodySchema, section: "waf" }, async ({ auth, body }) => {
+type WafPostResult = WafApplyOutcome | WafRollbackResult;
+
+export const POST = route<z.infer<typeof bodySchema>, undefined, WafPostResult>(
+  { area: "waf", bodySchema, section: "waf" },
+  async ({ auth, body }) => {
   switch (body.action) {
     case "apply": {
       const outcome = await applyWafOs(auth.tenantId);

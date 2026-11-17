@@ -28,7 +28,13 @@
 
 import { route } from "@/lib/api/handler";
 import { z } from "zod";
-import { applyEmailToOs, getEmailOsStatus, rollbackEmailOs } from "@/lib/email-security/os-service";
+import {
+  applyEmailToOs,
+  getEmailOsStatus,
+  rollbackEmailOs,
+  type EmailApplyOutcome,
+  type EmailRollbackResult,
+} from "@/lib/email-security/os-service";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +46,11 @@ export const GET = route({ area: "email_security" }, async ({ auth }) => {
   return { data: await getEmailOsStatus(auth.tenantId) };
 });
 
-export const POST = route({ area: "email_security", bodySchema, section: "email_security" }, async ({ auth, body }) => {
+type EmailPostResult = EmailApplyOutcome | EmailRollbackResult;
+
+export const POST = route<z.infer<typeof bodySchema>, undefined, EmailPostResult>(
+  { area: "email_security", bodySchema, section: "email_security" },
+  async ({ auth, body }) => {
   switch (body.action) {
     case "rollback": {
       const r = await rollbackEmailOs();

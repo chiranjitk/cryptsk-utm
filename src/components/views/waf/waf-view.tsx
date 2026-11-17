@@ -647,7 +647,7 @@ function ExclusionEditor(props: { policyId: number; onClose: () => void }) {
     }
     setFieldErrors(errs);
     if (Object.keys(errs).length > 0) {
-      const first = document.getElementById<HTMLElement>(errs.matchValue ? "waf-excl-match" : "waf-excl-ruleid");
+      const first = document.getElementById(errs.matchValue ? "waf-excl-match" : "waf-excl-ruleid");
       first?.focus();
       return;
     }

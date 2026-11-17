@@ -379,7 +379,7 @@ export async function readApplyState(): Promise<ApplyState | null> {
   }
 }
 
-function assertOwnPath(p: string, prefix: string): string {
+function assertOwnPath(p: string, prefix: RegExp): string {
   const resolved = path.resolve(p);
   if (!resolved.startsWith(path.resolve(NFT_DIR)) || resolved.includes("..")) {
     throw new Error(`refusing path outside the console nft directory: ${p}`);

@@ -33,6 +33,7 @@ import {
   type UfCategoryRuleInput,
   type UfCustomListInput,
   type UfPlanStep,
+  type UfPolicyInput,
   type UfRenderInput,
 } from "./os";
 
@@ -401,7 +402,7 @@ export async function execUrlFilterApplyPlan(tenantId: number, gateOn: boolean):
 
   const results: UfStepResult[] = await writePlanFiles(plan);
   if (results.some((r) => !r.ok)) {
-    await rm(plan.files.map((f) => f.path), { force: true }).catch(() => {});
+    await Promise.all(plan.files.map((f) => rm(f.path, { force: true }).catch(() => {})));
     return {
       action: "apply",
       applied: false,

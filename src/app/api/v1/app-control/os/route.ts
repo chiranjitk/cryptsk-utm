@@ -32,6 +32,7 @@ import {
   confirmAppctlApply,
   rollbackAppctl,
   syncAppctlHitsFromKernel,
+  type AppctlApplyOutcome,
 } from "@/lib/app-control/os-service";
 import { parseAppctlRuleCounters } from "@/lib/app-control/os";
 
@@ -68,7 +69,15 @@ export const GET = route({ area: "app_control" }, async ({ auth }) => {
   };
 });
 
-export const POST = route({ area: "app_control", bodySchema }, async ({ auth, body }) => {
+type AppctlPostResult =
+  | AppctlApplyOutcome
+  | Awaited<ReturnType<typeof confirmAppctlApply>>
+  | Awaited<ReturnType<typeof rollbackAppctl>>
+  | Awaited<ReturnType<typeof syncAppctlHitsFromKernel>>;
+
+export const POST = route<z.infer<typeof bodySchema>, undefined, AppctlPostResult>(
+  { area: "app_control", bodySchema },
+  async ({ auth, body }) => {
   switch (body.action) {
     case "apply": {
       const outcome = await applyAppctlToOs(auth.tenantId, { mode: body.mode ?? "manual", confirmSec: body.confirmSec });

@@ -207,7 +207,7 @@ describe("recordOwner / recordRdata", () => {
   it("rdata per type", () => {
     expect(recordRdata({ type: "A", value: "1.2.3.4", priority: null })).toBe("1.2.3.4");
     expect(recordRdata({ type: "MX", value: "mx.x", priority: 10 })).toBe("10 mx.x");
-    expect(recordRdata({ type: "TXT", value: 'a"b' })).toBe('"a\\"b"');
+    expect(recordRdata({ type: "TXT", value: 'a"b', priority: null })).toBe('"a\\"b"');
     expect(recordRdata({ type: "SRV", value: "1 2 t", priority: 15 })).toBe("15 1 2 t");
     expect(recordRdata({ type: "BOGUS", value: "x", priority: null })).toBeNull();
   });

@@ -426,6 +426,9 @@ export async function execWafApplyPlan(
       managedVhostIds: plan.managedVhostIds,
       warnings: plan.warnings,
     },
+    // early returns (gate off / refused / missing tool) carry no executed steps;
+    // later returns override this with the real results array
+    results: [] as WafApplyOutcome["results"],
   };
 
   if (!isWafGateOn()) {
