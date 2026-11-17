@@ -196,7 +196,11 @@ export function renderModsecSetup(policy: WafPolicyInput): string {
   L.push(`  setvar:tx.paranoia_level=${policy.paranoiaLevel},\\`);
   L.push(`  setvar:tx.executing_paranoia_level=${policy.paranoiaLevel},\\`);
   L.push(`  setvar:tx.inbound_anomaly_score_threshold=${policy.anomalyInThreshold},\\`);
-  L.push(`  setvar:tx.outbound_anomaly_score_threshold=${policy.anomalyOutThreshold}\\"`);
+  L.push(`  setvar:tx.outbound_anomaly_score_threshold=${policy.anomalyOutThreshold},\\`);
+  // CRS 901001 (REQUEST-901-INITIALIZATION) hard-fails (500) when
+  // tx.crs_setup_version is unset — "CRS deployed without configuration".
+  // 333 = CRS 3.3.x series (the version the appliance ships: 3.3.7).
+  L.push(`  setvar:tx.crs_setup_version=333\\"`);
   return L.join("\n") + "\n";
 }
 
