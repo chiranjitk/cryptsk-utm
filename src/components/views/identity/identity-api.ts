@@ -9,6 +9,7 @@ import type {
   CaptivePortalDTO,
   DirectorySourceDTO,
   IdentitySessionDTO,
+  PortalSessionDTO,
   RadiusProfileDTO,
   UserDTO,
   TotpEnrollResult,
@@ -22,6 +23,7 @@ export type {
   CaptivePortalDTO,
   DirectorySourceDTO,
   IdentitySessionDTO,
+  PortalSessionDTO,
   RadiusProfileDTO,
   UserDTO,
   TotpEnrollResult,
@@ -160,6 +162,16 @@ export const portalApi = {
       body: JSON.stringify(body),
     }),
   revokeVoucher: (id: number) => fetchJson<{ ok: boolean }>(`/api/v1/captive-portal/vouchers/${id}`, { method: "DELETE" }),
+
+  /** recent portal auth sessions (spec §7) — pass "?state=active" etc. to filter */
+  listPortalSessions: (params = "") =>
+    fetchJson<PortalSessionDTO[]>(`/api/v1/captive-portal/sessions${params ? `?${params}` : ""}`),
+  terminatePortalSession: (id: number) =>
+    fetchJson<PortalSessionDTO>(`/api/v1/captive-portal/sessions/${id}/terminate`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: "{}",
+    }),
 };
 
 // ── identity OS integration (FreeRADIUS) — plan preview when the

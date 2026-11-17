@@ -1,12 +1,24 @@
 /**
- * Guest vouchers — MockEngine in-memory store (SCHEMA.md §6 Pseudo-Resources;
- * M07 §5.4). Volatile across process restarts BY DESIGN (Phase 1) — the UI
- * labels the card "Volatile in sandbox". Codes `cks-XXXX-XXXX` (Crockford
- * base32), unique among live vouchers. Store lives on globalThis so HMR
- * doesn't wipe it mid-demo (same trick as the MockEngine singleton).
+ * Guest vouchers (M07 §3/§5.4; spec §1.10) — Prisma-backed persistent store
+ * (`captive_portal_vouchers`, schema §7). T1-d: the MockEngine in-memory
+ * store was replaced — vouchers survive process restarts now.
+ *
+ * Codes: 16 chars from a crypto-random, unambiguous alphabet (A-Z minus I/O,
+ * digits 2-9 — no 0/O/1/I), grouped `XXXX-XXXX-XXXX-XXXX`. The PLAIN code is
+ * stored (it must be revealable/downloadable by admins) and unique per tenant
+ * (@@unique([tenantId, code])); the one-time-reveal rule (M07 §4) stays a
+ * route-layer concern — GET returns masked codes, POST is the only response
+ * that ever carries the full codes.
+ *
+ * Redeem marks a voucher `redeemed` and opens a CaptivePortalSession row
+ * (spec §7) whose `sessionId` column holds sha256(token) — the plaintext
+ * token is returned once to the guest, never stored.
  */
 
-export type VoucherState = "unused" | "used" | "expired";
+import { createHash, randomBytes } from "crypto";
+import { db } from "@/lib/db";
+
+export type VoucherState = "unused" | "redeemed" | "expired" | "revoked";
 
 export interface Voucher {
   id: number;
@@ -14,95 +26,77 @@ export interface Voucher {
   state: VoucherState;
   createdAt: string;
   expiresAt: string;
+  /** redemption timestamp (legacy field name — maps to the row's redeemedAt) */
   usedAt: string | null;
+  /**
+   * MockEngine-era per-voucher QoS cap. The persisted schema has no
+   * per-voucher column — the ACTIVE portal profile's bandwidthKbps applies,
+   * so this is always null and kept only for DTO-shape compatibility.
+   */
   bandwidthKbps: number | null;
 }
 
-/** Crockford base32 (no I, L, O, U) — human-transcribable voucher codes. */
-const B32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+export type VoucherDTO = Omit<Voucher, "code"> & { codeMasked: string };
 
-function randomCode(rand: () => number): string {
-  const pick = () => B32[Math.floor(rand() * B32.length)];
-  const seg = () => Array.from({ length: 4 }, pick).join("");
-  return `cks-${seg()}-${seg()}`;
+/** Guest-facing session grant — the token is shown/returned exactly once. */
+export interface PortalSessionGrant {
+  token: string;
+  expiresAt: string;
 }
 
-interface Store {
-  vouchers: Voucher[];
-  nextId: number;
+export interface RedeemResult {
+  voucher: Voucher;
+  session: PortalSessionGrant;
 }
 
-const g = globalThis as unknown as { __cryptskVoucherStore?: Store };
-const store: Store = g.__cryptskVoucherStore ?? { vouchers: [], nextId: 1 };
-g.__cryptskVoucherStore = store;
+// ── code generation (crypto randomness — unbiased) ──────────────────────────
 
-/** Deterministic PRNG for code generation (MOCK_SEED aligned with the engine). */
-function voucherRand(): () => number {
-  let a = (Number(process.env.MOCK_SEED ?? 1337) ^ Date.now()) >>> 0;
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 15)) >>> 0) / 4294967296;
+/** 32-symbol alphabet (no I, O, 0, 1) — a power of two, so byte-mapping is unbiased. */
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const CODE_GROUP_LEN = 4;
+const CODE_GROUPS = 4;
+
+function randomVoucherCode(): string {
+  const bytes = randomBytes(CODE_GROUP_LEN * CODE_GROUPS);
+  const chars = Array.from(bytes, (b) => CODE_ALPHABET[b & (CODE_ALPHABET.length - 1)]);
+  const groups: string[] = [];
+  for (let g = 0; g < CODE_GROUPS; g++) {
+    groups.push(chars.slice(g * CODE_GROUP_LEN, (g + 1) * CODE_GROUP_LEN).join(""));
+  }
+  return groups.join("-");
+}
+
+/** Opaque guest session token — plaintext lives only in the API response. */
+export function newPortalSessionToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+/** At-rest form of a session token (captive_portal_sessions.session_id). */
+export function hashSessionToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+// ── row mapping ──────────────────────────────────────────────────────────────
+
+interface VoucherRow {
+  id: number;
+  code: string;
+  state: string;
+  createdAt: Date;
+  expiresAt: Date;
+  redeemedAt: Date | null;
+}
+
+function toVoucher(row: VoucherRow): Voucher {
+  return {
+    id: row.id,
+    code: row.code,
+    state: row.state as VoucherState,
+    createdAt: row.createdAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+    usedAt: row.redeemedAt ? row.redeemedAt.toISOString() : null,
+    bandwidthKbps: null,
   };
-}
-
-/** Age out unused vouchers whose TTL elapsed; returns the live list. */
-function sweep(): Voucher[] {
-  const now = Date.now();
-  for (const v of store.vouchers) {
-    if (v.state === "unused" && Date.parse(v.expiresAt) <= now) v.state = "expired";
-  }
-  return store.vouchers;
-}
-
-/** Batch-create N codes. The full codes are returned ONCE, here only. */
-export function generateVouchers(count: number, ttlHours: number, bandwidthKbps?: number): Voucher[] {
-  sweep();
-  const rand = voucherRand();
-  const live = new Set(store.vouchers.filter((v) => v.state === "unused").map((v) => v.code));
-  const created: Voucher[] = [];
-  for (let i = 0; i < count; i++) {
-    let code = randomCode(rand);
-    let guard = 0;
-    while (live.has(code) && guard++ < 50) code = randomCode(rand);
-    live.add(code);
-    const nowIso = new Date().toISOString();
-    const voucher: Voucher = {
-      id: store.nextId++,
-      code,
-      state: "unused",
-      createdAt: nowIso,
-      expiresAt: new Date(Date.now() + ttlHours * 3_600_000).toISOString(),
-      usedAt: null,
-      bandwidthKbps: bandwidthKbps ?? null,
-    };
-    store.vouchers.push(voucher);
-    created.push(voucher);
-  }
-  return created;
-}
-
-export function listVouchers(): Voucher[] {
-  return [...sweep()].sort((a, b) => b.id - a.id);
-}
-
-export function revokeVoucher(id: number): boolean {
-  const v = store.vouchers.find((x) => x.id === id);
-  if (!v) return false;
-  store.vouchers = store.vouchers.filter((x) => x.id !== id);
-  return true;
-}
-
-/** Simulated portal login consumes the FIRST unused voucher; null if none. */
-export function consumeVoucher(): Voucher | null {
-  sweep();
-  const v = store.vouchers.find((x) => x.state === "unused");
-  if (!v) return null;
-  v.state = "used";
-  v.usedAt = new Date().toISOString();
-  return v;
 }
 
 /** Masked form for every read AFTER creation — `…` + last 4 chars (M07 §4). */
@@ -110,15 +104,146 @@ export function maskVoucherCode(code: string): string {
   return `…${code.slice(-4)}`;
 }
 
-export type VoucherDTO = Omit<Voucher, "code"> & { codeMasked: string };
-
 export function toVoucherDTO(v: Voucher): VoucherDTO {
   const { code, ...rest } = v;
   return { ...rest, codeMasked: maskVoucherCode(code) };
 }
 
+// ── sweep (spec §7 retention) ────────────────────────────────────────────────
+
+/**
+ * Age out stale rows: unused vouchers past `expiresAt` → expired, active
+ * portal sessions past `expiresAt` → expired. Cheap updateMany — safe to
+ * call on every read.
+ */
+export async function expireSweep(tenantId = 1): Promise<{ vouchersExpired: number; sessionsExpired: number }> {
+  const now = new Date();
+  const vouchers = await db.captivePortalVoucher.updateMany({
+    where: { tenantId, state: "unused", expiresAt: { lte: now } },
+    data: { state: "expired" },
+  });
+  const sessions = await db.captivePortalSession.updateMany({
+    where: { tenantId, state: "active", expiresAt: { lte: now } },
+    data: { state: "expired" },
+  });
+  return { vouchersExpired: vouchers.count, sessionsExpired: sessions.count };
+}
+
+// ── CRUD ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Batch-create N codes. The full codes are returned ONCE, here only.
+ * `bandwidthKbps` is accepted for caller compatibility; the persisted schema
+ * carries no per-voucher cap (the portal profile's cap applies).
+ */
+export async function generateVouchers(
+  count: number,
+  ttlHours: number,
+  _bandwidthKbps?: number,
+  tenantId = 1,
+): Promise<Voucher[]> {
+  const created: Voucher[] = [];
+  const expiresAt = new Date(Date.now() + ttlHours * 3_600_000);
+  for (let i = 0; i < count; i++) {
+    // @@unique([tenantId, code]) — crypto codes make collisions vanishingly
+    // rare, but retry a few times instead of failing the whole batch.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const row = await db.captivePortalVoucher.create({
+          data: { tenantId, code: randomVoucherCode(), state: "unused", ttlHours, expiresAt },
+        });
+        created.push(toVoucher(row));
+        break;
+      } catch (err) {
+        const code = (err as { code?: string }).code;
+        if (code !== "P2002" || attempt === 4) throw err;
+      }
+    }
+  }
+  return created;
+}
+
+/** Live list, newest first — unused vouchers past their TTL age out on read. */
+export async function listVouchers(tenantId = 1): Promise<Voucher[]> {
+  await expireSweep(tenantId);
+  const rows = await db.captivePortalVoucher.findMany({ where: { tenantId }, orderBy: { id: "desc" } });
+  return rows.map(toVoucher);
+}
+
+/** Revoke an UNUSED voucher (redeemed/expired codes are terminal already). */
+export async function revokeVoucher(id: number, tenantId = 1): Promise<boolean> {
+  const row = await db.captivePortalVoucher.findFirst({ where: { tenantId, id } });
+  if (!row || row.state !== "unused") return false;
+  await db.captivePortalVoucher.update({ where: { id: row.id }, data: { state: "revoked" } });
+  return true;
+}
+
 /** Live-voucher count for the engine's churn decision (cheap). */
-export function unusedVoucherCount(): number {
-  sweep();
-  return store.vouchers.filter((v) => v.state === "unused").length;
+export async function unusedVoucherCount(tenantId = 1): Promise<number> {
+  await expireSweep(tenantId);
+  return db.captivePortalVoucher.count({ where: { tenantId, state: "unused" } });
+}
+
+/**
+ * Simulated portal login consumes the FIRST unused voucher (engine churn,
+ * M07 §5.4); null if none. No session row — the engine has no client IP/MAC.
+ */
+export async function consumeVoucher(tenantId = 1): Promise<Voucher | null> {
+  await expireSweep(tenantId);
+  const row = await db.captivePortalVoucher.findFirst({ where: { tenantId, state: "unused" }, orderBy: { id: "asc" } });
+  if (!row) return null;
+  const updated = await db.captivePortalVoucher.update({
+    where: { id: row.id },
+    data: { state: "redeemed", redeemedAt: new Date() },
+  });
+  return toVoucher(updated);
+}
+
+/**
+ * Guest redeems a voucher code at the portal (spec §1.10): the voucher flips
+ * to `redeemed` and an ACTIVE CaptivePortalSession opens for (ip, mac), with
+ * `expiresAt` = now + the active profile's sessionTimeoutMin. Returns null
+ * when the code is unknown, expired, revoked or already redeemed.
+ */
+export async function redeem(
+  rawCode: string,
+  clientIp: string,
+  clientMac?: string,
+  tenantId = 1,
+): Promise<RedeemResult | null> {
+  await expireSweep(tenantId);
+  const code = rawCode.trim().toUpperCase();
+  const row = await db.captivePortalVoucher.findFirst({ where: { tenantId, code } });
+  if (!row || row.state !== "unused") return null;
+
+  const profile = await db.captivePortalProfile.findFirst({ where: { tenantId }, orderBy: { id: "asc" } });
+  const timeoutMin = profile?.sessionTimeoutMin ?? 240;
+  const now = new Date();
+  const token = newPortalSessionToken();
+  const sessionExpiresAt = new Date(now.getTime() + timeoutMin * 60_000);
+
+  const [updated] = await Promise.all([
+    db.captivePortalVoucher.update({
+      where: { id: row.id },
+      data: { state: "redeemed", redeemedBy: clientMac ?? null, redeemedIp: clientIp, redeemedAt: now },
+    }),
+    db.captivePortalSession.create({
+      data: {
+        tenantId,
+        portalId: profile?.id ?? 0,
+        sessionId: hashSessionToken(token),
+        kind: "voucher",
+        clientMac: clientMac ?? null,
+        clientIp,
+        userName: null,
+        state: "active",
+        startedAt: now,
+        expiresAt: sessionExpiresAt,
+      },
+    }),
+  ]);
+  return {
+    voucher: toVoucher(updated),
+    session: { token, expiresAt: sessionExpiresAt.toISOString() },
+  };
 }

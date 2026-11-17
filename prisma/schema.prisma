@@ -106,6 +106,15 @@ model Tenant {
   emailPolicies     EmailPolicy[]
   emailRoutingRules EmailRoutingRule[]
   emailLogs         EmailLog[]
+  // Feature-completion batch (2026-11-08)
+  portalVouchers    CaptivePortalVoucher[]
+  portalSessions    CaptivePortalSession[]
+  geoipSources      GeoipSource[]
+  dlpPatterns       DlpPattern[]
+  dlpPolicies       DlpPolicy[]
+  dlpIncidents      DlpIncident[]
+  incidents         Incident[]
+  dnsTunnelFindings DnsTunnelFinding[]
   federatedIdps     FederatedIdp[]
   radiusCoaProfiles RadiusCoaProfile[]
   nacProfiles       NacProfile[]
@@ -260,6 +269,8 @@ model AddressObject {
   type        String   // ip | range | subnet | fqdn | geo | wildcard
   value       String   // "10.0.0.5" | "10.0.0.5-10.0.0.20" | "10.0.0.0/24" | "example.com" | "DE" | "10.0.0.0 255.0.0.0"
   description String?
+  resolvedIps String   @default("[]") @map("resolved_ips") // JSON array — fqdn objects: last resolver snapshot (spec §1.4 FQDN rules)
+  resolvedAt  DateTime? @map("resolved_at") // fqdn objects: last refresh time
   createdAt   DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
@@ -1991,4 +2002,184 @@ model WebhookDelivery {
 
   @@index([tenantId, webhookId, createdAt])
   @@map("webhook_deliveries")
+}
+
+// ───────────────────────── Feature-completion batch (2026-11-08) ─────────────────────────
+
+/// Spec §1.10 + §7 captive_portal_vouchers — persistent voucher store (was in-memory).
+model CaptivePortalVoucher {
+  id         Int       @id @default(autoincrement())
+  tenantId   Int       @default(1) @map("tenant_id")
+  code       String    // one-time secret code (revealed once, stored hashed for audit)
+  state      String    @default("unused") // unused | redeemed | expired | revoked
+  note       String?   // optional label ("front-desk batch 3")
+  ttlHours   Int       @default(24) @map("ttl_hours")
+  redeemedBy String?   @map("redeemed_by") // MAC / self-reg name at redeem time
+  redeemedIp String?   @map("redeemed_ip")
+  redeemedAt DateTime? @map("redeemed_at")
+  expiresAt  DateTime  @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, code])
+  @@index([tenantId, state])
+  @@map("captive_portal_vouchers")
+}
+
+/// Spec §7 captive_portal_sessions — portal auth sessions (clickthrough / credentials / voucher).
+model CaptivePortalSession {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  portalId  Int      @map("portal_id") // logical ref → captive_portal_profiles
+  sessionId String   @map("session_id") // opaque token (hashed at rest)
+  kind      String   @default("voucher") // voucher | credentials | clickthrough | self-registration
+  clientMac String?  @map("client_mac")
+  clientIp  String   @map("client_ip")
+  userName  String?  @map("user_name") // credentials/self-reg identity
+  state     String   @default("active") // active | expired | terminated
+  bytesIn   Int      @default(0) @map("bytes_in")
+  bytesOut  Int      @default(0) @map("bytes_out")
+  startedAt DateTime @default(now()) @map("started_at")
+  expiresAt DateTime @map("expires_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, sessionId])
+  @@index([tenantId, state, startedAt])
+  @@map("captive_portal_sessions")
+}
+
+/// Spec §1.4/§2.11 GeoIP — country CIDR set sources feeding nftables named sets.
+model GeoipSource {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int      @default(1) @map("tenant_id")
+  name        String   @default("GeoLite2 CSV")
+  kind        String   @default("csv") // csv (country,cidr) | mmdb (future)
+  filePath    String   @map("file_path") // console-managed data dir path
+  countries   String   @default("[]") @map("countries") // JSON array of ISO codes present
+  prefixCount Int      @default(0) @map("prefix_count")
+  status      String   @default("pending") // pending | loaded | error
+  error       String?
+  updatedAt   DateTime @default(now()) @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("geoip_sources")
+}
+
+/// Spec §3.3 DLP — detection patterns (regex / Aho-Corasick keywords).
+model DlpPattern {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int      @default(1) @map("tenant_id")
+  name        String
+  kind        String   @default("regex") // regex | keyword
+  value       String   // PCRE-style regex or comma-separated keyword list
+  severity    String   @default("medium") // low | medium | high | critical
+  category    String   @default("pii") // pii | financial | credentials | custom
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("dlp_patterns")
+}
+
+/// Spec §3.3 DLP — scan policies (protocol scope + action).
+model DlpPolicy {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int      @default(1) @map("tenant_id")
+  name        String
+  protocols   String   @default("[\"http\",\"https\",\"smtp\",\"ftp\"]") @map("protocols") // JSON array
+  patternIds  String   @default("[]") @map("pattern_ids") // JSON array of dlp_patterns.id
+  fileTypes   String   @default("[]") @map("file_types") // JSON array of blocked extensions
+  action      String   @default("alert") // alert | block | quarantine
+  notifyUser  Boolean  @default(false) @map("notify_user") // spec §3.3 block-page/warning
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("dlp_policies")
+}
+
+/// Spec §3.3 DLP — incidents (alert → review → resolve workflow).
+model DlpIncident {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  policyId  Int      @map("policy_id") // logical ref → dlp_policies
+  patternId Int      @map("pattern_id") // logical ref → dlp_patterns
+  severity  String   @default("medium") // low | medium | high | critical
+  protocol  String   // http | smtp | ftp | dns
+  sourceIp  String   @map("source_ip")
+  userName  String?  @map("user_name")
+  excerpt   String   @default("") // redacted match excerpt (first 32 chars masked)
+  status    String   @default("new") // new | reviewing | resolved | false_positive
+  detail    String   @default("{}") // JSON {matchedPattern, offset, action}
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status, createdAt])
+  @@map("dlp_incidents")
+}
+
+/// Spec §3.5 Incident Response — incidents (new → investigating → resolved).
+model Incident {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int      @default(1) @map("tenant_id")
+  ref        String   // INC-0001 style human ref
+  title      String
+  source     String   @default("manual") // manual | ips_event | dlp_incident | dns_tunnel | threat_intel | ai
+  sourceRef  String?  @map("source_ref") // JSON pointer to the originating alert
+  severity   String   @default("medium") // info | low | medium | high | critical
+  status     String   @default("new") // new | investigating | contained | resolved
+  assignedTo String?  @map("assigned_to")
+  detail     String   @default("{}") // JSON {description, srcIps[], tags[]}
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, ref])
+  @@index([tenantId, status, createdAt])
+  @@map("incidents")
+}
+
+/// Spec §3.5 — append-only incident timeline (all actions on an incident).
+model IncidentTimelineEntry {
+  id         Int      @id @default(autoincrement())
+  incidentId Int      @map("incident_id") // logical ref → incidents
+  actor      String   // username or "system"
+  action     String   // created | status_change | assigned | blocked | quarantine | note | resolved
+  detail     String   @default("")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([incidentId, createdAt])
+  @@map("incident_timeline_entries")
+}
+
+/// Spec §3.4 DNS tunneling detection — entropy + volume/frequency findings (rule-based, pre-AI).
+model DnsTunnelFinding {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1) @map("tenant_id")
+  clientIp       String   @map("client_ip")
+  windowStart    DateTime @map("window_start")
+  windowEnd      DateTime @map("window_end")
+  queryCount     Int      @default(0) @map("query_count")
+  uniqueDomains  Int      @default(0) @map("unique_domains")
+  maxLabelLength Int      @default(0) @map("max_label_length")
+  entropyScore   Float    @default(0) @map("entropy_score")
+  verdict        String   @default("suspicious") // suspicious | likely_tunnel
+  status         String   @default("open") // open | acknowledged | resolved
+  detail         String   @default("{}") // JSON {topDomains[], longestLabels[]}
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status, createdAt])
+  @@map("dns_tunnel_findings")
 }

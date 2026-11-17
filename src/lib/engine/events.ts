@@ -86,16 +86,37 @@ const MAX_EVENTS = 1000;
  */
 const g = globalThis as unknown as {
   __cryptskEventRing?: { events: EngineEvent[]; cursor: number };
+  __cryptskEventHooks?: EngineEventHook[];
 };
 
 const state = g.__cryptskEventRing ?? { events: [] as EngineEvent[], cursor: 0 };
 g.__cryptskEventRing = state;
+
+// ── side-effect hooks (T1-e webhooks) ───────────────────────────────────────
+// Fire-and-forget observers invoked for every emitted event (webhook fan-out
+// lives in lib/webhooks/triggers.ts). Stored on globalThis like the ring so
+// instrumentation- and route-graph module instances share one hook list.
+export type EngineEventHook = (evt: EngineEvent) => void;
+
+const hooks = g.__cryptskEventHooks ?? (g.__cryptskEventHooks = []);
+
+/** Register a side-effect observer — hook bodies must guard their own throws. */
+export function addEngineEventHook(hook: EngineEventHook): void {
+  if (!hooks.includes(hook)) hooks.push(hook);
+}
 
 export function emitEvent(evt: Omit<EngineEvent, "seq">): EngineEvent {
   state.cursor += 1;
   const full = { ...evt, seq: state.cursor } as EngineEvent;
   state.events.push(full);
   if (state.events.length > MAX_EVENTS) state.events.splice(0, state.events.length - MAX_EVENTS);
+  for (const hook of hooks) {
+    try {
+      hook(full); // fire-and-forget — must never break the event bus
+    } catch {
+      // ignore hook errors
+    }
+  }
   return full;
 }
 

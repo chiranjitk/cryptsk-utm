@@ -47,6 +47,8 @@ import {
 } from "./threat-intel-api";
 import { ActionChip, DirectionChip, HitActionChip, SeverityDot, SourceBadge, TypeBadge } from "./ti-ui";
 import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, ROW_FLASH_CLASS, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import { usePermissions } from "../system/system-ui";
+import { TiOsPanel } from "./os-apply";
 import { cn } from "@/lib/utils";
 
 const RULES_KEY = ["threat-intel", "auto-block-rules"] as const;
@@ -234,6 +236,7 @@ function RecentMatches() {
 
 export function AutoBlockView() {
   const queryClient = useQueryClient();
+  const { canWrite } = usePermissions();
   const rulesQuery = useQuery({ queryKey: RULES_KEY, queryFn: threatIntelApi.listAutoBlockRules });
   const rules = rulesQuery.data ?? [];
 
@@ -399,6 +402,9 @@ export function AutoBlockView() {
 
       {/* ── recent matches (10s polling) ───────────────────────────────── */}
       <RecentMatches />
+
+      {/* ── OS enforcement (real nftables convergence, §2.11 feed → firewall) ── */}
+      <TiOsPanel isAdmin={canWrite("threat_intel")} />
 
       {addOpen && <RuleEditor onClose={() => setAddOpen(false)} />}
       <ConfirmDialog

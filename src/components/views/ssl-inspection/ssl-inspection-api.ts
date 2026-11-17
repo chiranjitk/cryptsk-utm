@@ -76,6 +76,80 @@ export interface SslStatsDTO {
   };
 }
 
+// ── OS integration DTOs (mirror lib/ssl-inspection/os-service.ts) ───────────
+
+export interface SslOsStepDTO {
+  step: string;
+  cmd: string;
+  kind: string;
+  optional?: boolean;
+}
+
+export interface SslOsStatusDTO {
+  available: boolean;
+  dataPlaneMode: string;
+  gate: "on" | "off";
+  note: string;
+  unitState: string | null;
+  running: boolean;
+  version: string | null;
+  /** false → Apply refuses with install/compile guidance (no ssl-crtd build) */
+  sslCrtdSupported: boolean;
+  sslCrtdMethod: "configure-flag" | "binary-present" | null;
+  managedFile: string;
+  fragmentPresent: boolean;
+  fragmentByConsole: boolean;
+  liveHash: string | null;
+  port3129Bound: boolean | null;
+  inSync: boolean | null;
+  driftReasons: string[];
+  state: { confHash: string; appliedAt: string; backupDir: string | null; applied: boolean } | null;
+  policy: { id: number; name: string; mode: string; enabled: boolean; bypassRuleCount: number; signingCaId: number | null } | null;
+  ca: { id: number; name: string; status: string; notAfter: string | null; hasKey: boolean } | null;
+  plan: {
+    steps: SslOsStepDTO[];
+    warnings: string[];
+    skipped: Array<{ name: string; reason: string }>;
+    confText: string;
+    confHash: string;
+    guarded: boolean;
+    refused: string | null;
+    empty: boolean;
+  };
+  warnings: string[];
+}
+
+export interface SslOsApplyResultDTO {
+  action: "apply" | "rollback";
+  applied: boolean;
+  refused?: string;
+  reason: string;
+  gate: "on" | "off";
+  rolledBack: boolean;
+  confHash?: string;
+  backupDir?: string | null;
+  plan: {
+    steps: SslOsStepDTO[];
+    warnings: string[];
+    skipped: Array<{ name: string; reason: string }>;
+    confText: string;
+    guarded: boolean;
+    empty: boolean;
+    policyId: number | null;
+  };
+  results: Array<{ step: string; ok: boolean; detail?: string }>;
+}
+
+export interface SslOsRollbackResultDTO {
+  action: "rollback";
+  rolledBack: boolean;
+  backupDir: string | null;
+  revalidated: boolean;
+  reloaded: boolean;
+  detail: string;
+  gate: "on" | "off";
+}
+
 // ── display constants ───────────────────────────────────────────────────────
 
 export const SSL_MODES: SslMode[] = ["none", "selective", "full"];
@@ -168,6 +242,21 @@ export const sslInspectionApi = {
   listLogs: (params: string) =>
     fetchJson<SslInspectionLogDTO[]>(`/api/v1/ssl-inspection/logs${params ? `?${params}` : ""}`),
   getStats: () => fetchJson<SslStatsDTO>("/api/v1/ssl-inspection/stats"),
+
+  // OS integration (conf.d fragment — ssl-bump MITM via the host squid)
+  getOsStatus: () => fetchJson<SslOsStatusDTO>("/api/v1/ssl-inspection/os"),
+  applyToOs: () =>
+    fetchJson<SslOsApplyResultDTO>("/api/v1/ssl-inspection/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action: "apply" }),
+    }),
+  rollbackOs: () =>
+    fetchJson<SslOsRollbackResultDTO>("/api/v1/ssl-inspection/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action: "rollback" }),
+    }),
 };
 
 // ── shared param builder ────────────────────────────────────────────────────

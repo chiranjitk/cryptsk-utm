@@ -987,7 +987,7 @@ class MockEngine {
     // without an unused voucher the login is refused (dropped from the plan)
     if (this.identityCfg.portalEnabled && this.identityCfg.portalMode === "voucher") {
       for (const _ of plan.logins.filter((l) => l.method === "captive_portal")) {
-        if (!consumeVoucher()) {
+        if (!(await consumeVoucher())) {
           const idx = plan.logins.findIndex((l) => l.method === "captive_portal");
           if (idx >= 0) plan.logins.splice(idx, 1);
         }

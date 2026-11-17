@@ -26,6 +26,7 @@ export function useIdentityConfigInvalidation(): void {
         void queryClient.invalidateQueries({ queryKey: ["radius"] });
         void queryClient.invalidateQueries({ queryKey: ["directory"] });
         void queryClient.invalidateQueries({ queryKey: ["portal"] });
+        void queryClient.invalidateQueries({ queryKey: ["portal-sessions"] });
         void queryClient.invalidateQueries({ queryKey: ["auth-settings"] });
       }
     },
@@ -69,34 +70,47 @@ export function MethodBadge({ method }: { method: string }) {
   );
 }
 
-/** Session state: active emerald / expired zinc (M07 §4). */
+/** Session state: active emerald / expired zinc / terminated rose (M07 §4). */
 export function SessionStateBadge({ state }: { state: string }) {
-  const active = state === "active";
+  const map: Record<string, string> = {
+    active: "border-transparent bg-emerald-600 text-white",
+    expired: "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400",
+    terminated: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  };
   return (
-    <Badge
-      variant="outline"
-      className={cn(
-        "px-1.5 py-0 text-[10px]",
-        active
-          ? "border-transparent bg-emerald-600 text-white"
-          : "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400",
-      )}
-    >
+    <Badge variant="outline" className={cn("px-1.5 py-0 text-[10px]", map[state] ?? map.expired)}>
       {state}
     </Badge>
   );
 }
 
-/** Voucher state: unused emerald / used zinc / expired amber (M07 §4). */
+/** Voucher state: unused emerald / redeemed teal / expired amber / revoked rose (M07 §4). */
 export function VoucherStateBadge({ state }: { state: string }) {
   const map: Record<string, string> = {
     unused: "border-transparent bg-emerald-600 text-white",
+    redeemed: "border-teal-500/40 bg-teal-500/10 text-teal-600 dark:text-teal-400",
     used: "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400",
     expired: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    revoked: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
   };
   return (
     <Badge variant="outline" className={cn("px-1.5 py-0 text-[10px]", map[state] ?? map.used)}>
       {state}
+    </Badge>
+  );
+}
+
+/** Portal session kind: voucher teal / credentials emerald / clickthrough zinc / self-registration amber (spec §7). */
+export function PortalSessionKindBadge({ kind }: { kind: string }) {
+  const map: Record<string, string> = {
+    voucher: "border-teal-500/40 bg-teal-500/10 text-teal-600 dark:text-teal-400",
+    credentials: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    clickthrough: "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400",
+    "self-registration": "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  };
+  return (
+    <Badge variant="outline" className={cn("px-1.5 py-0 text-[10px]", map[kind] ?? map.clickthrough)}>
+      {kind}
     </Badge>
   );
 }

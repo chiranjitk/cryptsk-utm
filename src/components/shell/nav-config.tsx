@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * View registry + sidebar navigation — LOCKED to PROJECT_MEMORY §8 (29 hash views).
+ * View registry + sidebar navigation — LOCKED to PROJECT_MEMORY §8 (44 hash views).
  * The ONLY Next.js route is `/`; all navigation is client-side via window.location.hash.
  */
 

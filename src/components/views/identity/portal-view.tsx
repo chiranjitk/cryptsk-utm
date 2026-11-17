@@ -6,7 +6,9 @@
  * captions, interface, session timeout, bandwidth cap, redirect URL, voucher
  * TTL; (2) guest vouchers — generation dialog (N codes, one-time full reveal,
  * Copy all + CSV), masked list with state badges + revoke. Vouchers are
- * volatile in sandbox (MockEngine in-memory, SCHEMA.md §6) — labeled.
+ * persistent DB rows (spec §1.10, T1-d). (3) portal sessions (spec §7) —
+ * recent guest sessions with kind/state badges + terminate, and the public
+ * guest self-registration endpoint usage (display only).
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -42,8 +44,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "@/components/views/firewall/fw-ui";
-import { fieldErrorsOf, fmtDateTime, portalApi, type CaptivePortalDTO } from "./identity-api";
-import { InfoNote, VoucherStateBadge } from "./identity-ui";
+import { fieldErrorsOf, fmtDateTime, portalApi, type CaptivePortalDTO, type PortalSessionDTO } from "./identity-api";
+import { InfoNote, PortalSessionKindBadge, SessionStateBadge, VoucherStateBadge } from "./identity-ui";
 import { cn } from "@/lib/utils";
 
 const MODE_CAPTIONS: Record<string, string> = {
@@ -52,7 +54,9 @@ const MODE_CAPTIONS: Record<string, string> = {
   voucher: "Guests redeem a time-limited voucher code (generated below).",
 };
 
-type VoucherStateFilter = "all" | "unused" | "used" | "expired";
+type VoucherStateFilter = "all" | "unused" | "redeemed" | "expired" | "revoked";
+
+const VOUCHER_STATE_FILTERS: VoucherStateFilter[] = ["all", "unused", "redeemed", "expired", "revoked"];
 
 /** Rose ring applied to an invalid input (§5.16 recipe — same as the R2 rule-editor). */
 const INVALID_CLS = "border-rose-500 ring-1 ring-rose-500/40 focus-visible:ring-rose-500";
@@ -95,6 +99,7 @@ export function PortalView() {
       )}
       <PortalForm initial={q.data} />
       <VouchersCard mode={q.data.mode} voucherTtlHours={q.data.voucherTtlHours} />
+      <PortalSessionsCard enabled={q.data.enabled} />
     </div>
   );
 }
@@ -305,9 +310,6 @@ function VouchersCard({ mode, voucherTtlHours }: { mode: string; voucherTtlHours
         <CardTitle className="flex items-center gap-2 text-base">
           <Icons.Ticket className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
           Guest Vouchers
-          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 px-1.5 py-0 text-[10px] text-amber-600 dark:text-amber-400">
-            volatile in sandbox
-          </Badge>
         </CardTitle>
         <Button size="sm" className="h-9" disabled={mode !== "voucher"} onClick={() => setGenOpen(true)}>
           <Icons.TicketPlus className="mr-1 h-3.5 w-3.5" /> Generate vouchers
@@ -341,7 +343,7 @@ function VouchersCard({ mode, voucherTtlHours }: { mode: string; voucherTtlHours
         ) : (
           <>
             <div className="mb-2 flex flex-wrap items-center gap-1.5 px-6">
-              {(["all", "unused", "used", "expired"] as VoucherStateFilter[]).map((f) => (
+              {VOUCHER_STATE_FILTERS.map((f) => (
                 <button
                   key={f}
                   type="button"
@@ -379,7 +381,7 @@ function VouchersCard({ mode, voucherTtlHours }: { mode: string; voucherTtlHours
                     <TableHead>State</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Expires</TableHead>
-                    <TableHead>Used</TableHead>
+                    <TableHead>Redeemed</TableHead>
                     <TableHead className="w-10" />
                   </TableRow>
                 </TableHeader>
@@ -581,7 +583,9 @@ function GenerateForm(props: {
     <>
       <DialogHeader>
         <DialogTitle>Generate vouchers</DialogTitle>
-        <DialogDescription>Codes are Crockford base32, unique among live vouchers, and revealed once.</DialogDescription>
+        <DialogDescription>
+          16-char codes from a crypto-random unambiguous alphabet (no 0/O/1/I) — unique among live vouchers, revealed once.
+        </DialogDescription>
       </DialogHeader>
         <div className="space-y-3">
           <div>
@@ -643,5 +647,123 @@ function GenerateForm(props: {
         </Button>
       </DialogFooter>
     </>
+  );
+}
+
+// ── portal sessions (spec §7) + guest self-registration info ────────────────
+
+function PortalSessionsCard({ enabled }: { enabled: boolean }) {
+  const queryClient = useQueryClient();
+  const [term, setTerm] = useState<PortalSessionDTO | null>(null);
+
+  const listQ = useQuery({
+    queryKey: ["portal", "sessions"],
+    queryFn: () => portalApi.listPortalSessions("limit=25"),
+    refetchInterval: 20_000,
+  });
+
+  const termMut = useMutation({
+    mutationFn: (id: number) => portalApi.terminatePortalSession(id),
+    onSuccess: () => {
+      toastOk("Portal session terminated");
+      void queryClient.invalidateQueries({ queryKey: ["portal", "sessions"] });
+      setTerm(null);
+    },
+    onError: (e) => toastErr(e, "Terminate failed"),
+  });
+
+  const rows = listQ.data ?? [];
+
+  return (
+    <Card className="gap-4">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Icons.Users className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+          Portal Sessions
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 px-0">
+        <div className="px-6">
+          <InfoNote>
+            Guest self-registration link — the splash page POSTs to{" "}
+            <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px] text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+              /api/v1/captive-portal/register
+            </code>{" "}
+            with <code className="font-mono text-[10px]">{`{ "name": "guest", "agree": true, "clientMac?": "aa:bb:cc:dd:ee:ff" }`}</code>{" "}
+            — no console sign-in required. Public endpoint, 5 requests/min per source IP; the response carries a one-time session
+            token. {enabled ? "Available while the portal is enabled." : "Refused while the portal is disabled."}
+          </InfoNote>
+        </div>
+        {listQ.isLoading ? (
+          <div className="px-6">
+            <TableSkeleton rows={3} cols={6} />
+          </div>
+        ) : listQ.isError ? (
+          <QueryError error={listQ.error} onRetry={() => void listQ.refetch()} />
+        ) : rows.length === 0 ? (
+          <EmptyBlock
+            icon={<Icons.Users className="h-6 w-6" />}
+            title="No portal sessions yet"
+            description="Guest sessions appear here as vouchers are redeemed and guests self-register."
+          />
+        ) : (
+          <div className="max-h-96 overflow-x-auto overflow-y-auto">
+            <Table>
+              <TableHeader className="sticky top-0 bg-card">
+                <TableRow>
+                  <TableHead>Kind</TableHead>
+                  <TableHead>Guest</TableHead>
+                  <TableHead>IP / MAC</TableHead>
+                  <TableHead>State</TableHead>
+                  <TableHead>Expires</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((s) => (
+                  <TableRow key={s.id}>
+                    <TableCell>
+                      <PortalSessionKindBadge kind={s.kind} />
+                    </TableCell>
+                    <TableCell className="text-xs">{s.userName ?? "—"}</TableCell>
+                    <TableCell className="font-mono text-xs text-zinc-500">
+                      {s.clientIp}
+                      {s.clientMac ? <span className="ml-2 text-zinc-400">{s.clientMac}</span> : null}
+                    </TableCell>
+                    <TableCell>
+                      <SessionStateBadge state={s.state} />
+                    </TableCell>
+                    <TableCell className="text-xs text-zinc-500">{fmtDateTime(s.expiresAt)}</TableCell>
+                    <TableCell>
+                      {s.state === "active" && (
+                        <>
+                          <ConfirmDialog
+                            open={term?.id === s.id}
+                            onOpenChange={(o) => !o && setTerm(null)}
+                            title={`Terminate session for ${s.userName ?? s.clientIp}?`}
+                            description="The guest loses network access immediately. This cannot be undone."
+                            loading={termMut.isPending}
+                            onConfirm={() => void termMut.mutateAsync(s.id)}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-11 w-11 lg:h-8 lg:w-8 text-zinc-400 hover:text-rose-500"
+                            aria-label={`Terminate session ${s.id}`}
+                            onClick={() => setTerm(s)}
+                          >
+                            <Icons.PowerOff className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

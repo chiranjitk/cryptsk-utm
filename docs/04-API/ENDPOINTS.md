@@ -848,15 +848,19 @@ listing is `tenant_admin`).
 | POST | `/api/v1/webhooks` | Register webhook `{name, url, events, secret?}` | security_admin | yes |
 | PUT | `/api/v1/webhooks/{id}` | Update (omit `secret` to keep) | security_admin | yes |
 | DELETE | `/api/v1/webhooks/{id}` | Delete registration | security_admin | yes |
-| POST | `/api/v1/webhooks/{id}/test` | Simulated delivery → `{ok, status, latencyMs}`; updates `lastDeliveryAt`/`lastStatus` | security_admin | yes |
+| POST | `/api/v1/webhooks/{id}/test` | REAL signed test delivery (event `webhook.test`, 3-attempt retry) → `{ok, statusCode, durationMs, attempts, error, signaturePrefix, deliveryId}`; updates `lastDeliveryAt`/`lastStatus` | security_admin | yes |
+| GET | `/api/v1/webhooks/{id}/test` | Delivery ledger — recent `WebhookDelivery` rows (`?limit=` 1–100, default 50) | security_admin | no |
 | GET | `/api/v1/openapi.json` | OpenAPI 3.1 artifact generated from the zod validators + §7.2 route table | helpdesk | no |
 
 Webhook registrations (spec §1.15, custom engineering) subscribe to the event names in the locked
 `webhooks.events` enum (PROJECT_MEMORY §6: `alerts.new`, `config.updated`, `wan.status`, `vpn.status`,
 `sessions.update` — dot-form of the realtime events; `logs.tail` is deliberately excluded to protect
-log volume). Delivery is **simulated** in sandbox: the realtime-service marks deliveries
-(`lastDeliveryAt`, `lastStatus`, `failureCount`) instead of performing real HTTP calls; the appliance
-sender signs payloads with the HMAC `secret`.
+log volume). Delivery is **real** console-side HTTPS since T1-e (REVIEW-4B divergence closed): the
+dispatcher (`src/lib/webhooks/dispatcher.ts`) POSTs `{event, tenantId, ts, data}` with
+`X-Cryptsk-Event` + `X-Cryptsk-Signature: sha256=<HMAC>` headers, up to 3 attempts (500 ms/2 s
+backoff) on transient failures, and writes one `WebhookDelivery` ledger row per outcome. `audit.*`
+mutations and the realtime bus (`alerts.new`, `config.updated`, `wan.status`, `vpn.status`,
+`sessions.update`) fan out via `src/lib/webhooks/triggers.ts`.
 
 `GET /api/v1/openapi.json` — machine-readable API docs (spec §1.15 "OpenAPI/Swagger docs"): generated
 at build time from `src/lib/validators/*` + the LOCKED route table (M11 §4.2 strategy), served as a

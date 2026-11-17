@@ -106,6 +106,84 @@ export interface Paged<T> {
   meta: PageMeta;
 }
 
+// ── OS integration DTOs (mirror src/lib/threat-intel/os.ts + os-service.ts) ─
+
+export interface TiWarning {
+  scope: "rule" | "table";
+  ruleId: number | null;
+  name: string;
+  code: string;
+  message: string;
+}
+
+export interface TiCounts {
+  rules: number;
+  elements: number;
+  skipped: number;
+  chains: number;
+}
+
+export interface TiElementCounter {
+  address: string;
+  ruleId: number | null;
+  name: string | null;
+  packets: number;
+  bytes: number;
+}
+
+export interface TiRulePresence {
+  ruleId: number;
+  name: string;
+  matchValue: string;
+  enabled: boolean;
+  /** enabled action=block rules with a renderable value become expected */
+  expected: boolean;
+  /** element with comment ti:<ruleId> present in the live set */
+  present: boolean;
+}
+
+export interface TiOsStatus {
+  gate: "on" | "off";
+  mode: string;
+  available: boolean;
+  nftVersion: string | null;
+  tablePresent: boolean;
+  /** sha256 of the current render (comment-stripped canonical body) */
+  confHash: string;
+  /** sha256 + appliedAt of the last successful apply (state.json) */
+  stateConfHash: string | null;
+  appliedAt: string | null;
+  drift: { applied: boolean; inSync: boolean; reasons: string[] };
+  counts: TiCounts;
+  warnings: TiWarning[];
+  statements: string[];
+  perRule: TiRulePresence[];
+  dropCounters: { prerouting: { packets: number; bytes: number } | null; postrouting: { packets: number; bytes: number } | null };
+  elementCounters: TiElementCounter[];
+  /** generated nft fragment — the plan preview text */
+  file: string;
+  pendingConfirm: { ts: string; deadlineAt: string; mode: string; backupFile: string } | null;
+  tableDump: string | null;
+}
+
+export interface TiApplyOutcome {
+  gate: "on" | "off";
+  applied: boolean;
+  rolledBack: boolean;
+  rollbackReason: string | null;
+  confirmSec: number;
+  confirmDeadlineAt: string | null;
+  ts: string;
+  warnings: TiWarning[];
+  counts: TiCounts | null;
+  confHash: string;
+  file: string;
+  plan: { steps: Array<{ step: string; kind: string; cmd: string }> };
+  health: { baseline: unknown; after: unknown; postRollback: unknown };
+  results: Array<{ step: string; ok: boolean; detail?: string }>;
+  persistence: Array<{ step: string; ok: boolean; detail?: string }>;
+}
+
 export type { HitsQuery, IocQuery };
 
 // ── fetch plumbing (same shape as logs-api.ts) ──────────────────────────────
@@ -207,6 +285,32 @@ export const threatIntelApi = {
     fetchJson<AutoBlockRuleDTO>(`/api/v1/threat-intel/auto-block-rules/${id}`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) }),
   deleteAutoBlockRule: (id: number) =>
     fetchJson<{ ok: boolean }>(`/api/v1/threat-intel/auto-block-rules/${id}`, { method: "DELETE" }),
+
+  // OS integration — dedicated `inet utm_ti_block` nftables table
+  getOsStatus: () => fetchJson<TiOsStatus>("/api/v1/threat-intel/os"),
+  applyToOs: (body: Record<string, unknown>) =>
+    fetchJson<TiApplyOutcome>("/api/v1/threat-intel/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  confirmOsApply: (ts: string) =>
+    fetchJson<{ confirmed: boolean; ts: string }>("/api/v1/threat-intel/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action: "confirm", ts }),
+    }),
+  rollbackOs: (ts?: string) =>
+    fetchJson<{ rolledBack: boolean; file: string | null; detail: string }>("/api/v1/threat-intel/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action: "rollback", ...(ts ? { ts } : {}) }),
+    }),
+  syncOsHits: () =>
+    fetchJson<{ updated: number; preroutingDrops: number; postroutingDrops: number; elements: number }>(
+      "/api/v1/threat-intel/os",
+      { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ action: "sync-hits" }) },
+    ),
 
   // hits + stats
   listHits: (params: string) => fetchJson<IocHitDTO[]>(`/api/v1/threat-intel/hits${params ? `?${params}` : ""}`),

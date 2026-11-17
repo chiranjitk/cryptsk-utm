@@ -38,6 +38,14 @@ export async function writeAudit(opts: {
       result: opts.info.result ?? "success",
     },
   });
+  // T1-e — webhook fan-out for audited mutations ("audit.<object_type>", spec
+  // §1.15). Lazy import avoids cycles; fire-and-forget never blocks the write.
+  try {
+    const { auditTrigger } = await import("@/lib/webhooks/triggers");
+    auditTrigger(opts.tenantId, opts.info);
+  } catch {
+    // webhook fan-out must never break audit writes
+  }
 }
 
 /**

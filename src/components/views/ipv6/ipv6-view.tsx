@@ -69,6 +69,8 @@ import {
   type RaMode,
 } from "./ipv6-api";
 import { ConfirmDialog, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
+import { Ipv6OsPanel } from "./os-apply";
+import { usePermissions } from "../system/system-ui";
 
 function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ["ipv6"] });
@@ -1292,6 +1294,7 @@ function Dhcpv6Card(props: {
 
 export function Ipv6View() {
   const queryClient = useQueryClient();
+  const { canWrite } = usePermissions();
 
   const nat66Query = useQuery({ queryKey: ["ipv6", "nat66"], queryFn: ipv6Api.listNat66 });
   const dhcpv6Query = useQuery({ queryKey: ["ipv6", "dhcpv6"], queryFn: ipv6Api.listDhcpv6 });
@@ -1345,6 +1348,9 @@ export function Ipv6View() {
         <PrefixDelegationCard />
         <SettingsCard ifaces={ifaces} />
       </div>
+
+      {/* OS integration — kea-dhcp6 / radvd / nat66 convergence (IMPL-6) */}
+      <Ipv6OsPanel isAdmin={canWrite("ipv6")} />
 
       {/* NAT66 rules */}
       <Nat66Card

@@ -247,7 +247,8 @@ export const ROUTE_MANIFEST: readonly RouteDef[] = [
   ["POST", "/webhooks", "Register webhook {name, url, events, secret?}", "API Platform"],
   ["PUT", "/webhooks/{id}", "Update webhook (omit secret to keep stored value)", "API Platform"],
   ["DELETE", "/webhooks/{id}", "Delete webhook registration", "API Platform"],
-  ["POST", "/webhooks/{id}/test", "Simulated delivery → {ok, status, latencyMs}", "API Platform"],
+  ["POST", "/webhooks/{id}/test", "REAL signed test delivery (webhook.test, 3-attempt retry) → {ok, statusCode, durationMs, attempts, error, signaturePrefix, deliveryId}", "API Platform"],
+  ["GET", "/webhooks/{id}/test", "Delivery ledger — recent WebhookDelivery rows (?limit= 1-100, default 50)", "API Platform"],
   ["GET", "/openapi.json", "This OpenAPI 3.1 artifact (generated from the §7.2 route table)", "API Platform"],
 ] as const;
 

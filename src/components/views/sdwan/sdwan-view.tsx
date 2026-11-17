@@ -86,6 +86,8 @@ import {
   toastOk,
   useTableDensity,
 } from "../firewall/fw-ui";
+import { usePermissions } from "../system/system-ui";
+import { SdwanOsPanel } from "./os-apply";
 
 function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ["sdwan"] });
@@ -1698,6 +1700,7 @@ function SlaProfilesCard(props: {
 
 export function SdwanView() {
   const queryClient = useQueryClient();
+  const { canWrite } = usePermissions();
 
   useRealtime(["config"], {
     onConfigUpdated: (c) => {
@@ -1976,6 +1979,9 @@ export function SdwanView() {
           onDelete={(profile) => setSlaDeleting(profile)}
         />
       </div>
+
+      {/* OS integration — wg-quick overlay configs per enabled overlay */}
+      <SdwanOsPanel isAdmin={canWrite("sdwan")} />
 
       {/* dialogs */}
       {overlayAddOpen && <OverlayEditor overlay={null} onClose={() => setOverlayAddOpen(false)} />}

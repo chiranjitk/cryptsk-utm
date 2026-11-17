@@ -19,6 +19,7 @@ import { BgpTab } from "./bgp-tab";
 import { OspfTab } from "./ospf-tab";
 import { PolicyObjectsTab } from "./policy-tab";
 import { RibTab } from "./rib-tab";
+import { OsApplyPanel } from "./os-apply";
 
 const OVERVIEW_KEY = ["dynamic-routing", "overview"] as const;
 
@@ -149,6 +150,9 @@ export function DynamicRoutingView() {
           <RibTab />
         </TabsContent>
       </Tabs>
+
+      {/* FRR appliance convergence (M19) — validate-first apply with backup + auto-rollback */}
+      <OsApplyPanel />
     </div>
   );
 }

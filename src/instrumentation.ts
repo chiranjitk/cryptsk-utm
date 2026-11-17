@@ -13,6 +13,8 @@ export async function register() {
     const { getEngine, getDataPlaneMode } = await import("@/lib/engine");
     console.log(`[instrumentation] data plane: ${getDataPlaneMode()}`);
     await getEngine().start();
+    const { registerWebhookTriggers } = await import("@/lib/webhooks/triggers");
+    registerWebhookTriggers(); // T1-e — webhook fan-out off the engine event bus (once)
   } catch (err) {
     console.error("[instrumentation] engine boot deferred:", err instanceof Error ? err.message : err);
   }

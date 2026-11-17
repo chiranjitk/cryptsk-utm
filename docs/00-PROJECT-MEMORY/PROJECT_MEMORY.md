@@ -360,7 +360,8 @@ POST   /api/v1/logs/report-schedules/{id}/run  generate the report now (simulate
 GET    /api/v1/logs/reports/export             ?range=1h|24h|7d&format=csv|json
 API PLATFORM (section system)
 GET    /api/v1/webhooks                        + POST; PUT/DELETE /api/v1/webhooks/{id}
-POST   /api/v1/webhooks/{id}/test              simulated delivery → {ok, status, latencyMs}
+POST   /api/v1/webhooks/{id}/test              REAL signed test delivery (webhook.test) → outcome
+GET    /api/v1/webhooks/{id}/test              delivery ledger (recent WebhookDelivery rows)
 GET    /api/v1/openapi.json                    OpenAPI 3.1 artifact (generated from zod)
 SYSTEM (section system)
 POST   /api/v1/system/services/{name}/restart  restart a running service (audited, simulated)

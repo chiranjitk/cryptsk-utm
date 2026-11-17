@@ -1,5 +1,5 @@
 /**
- * Guest vouchers (M07 §3/§5.4) — MockEngine in-memory store.
+ * Guest vouchers (M07 §3/§5.4) — persistent Prisma store (spec §1.10, T1-d).
  * GET returns masked codes (`…last4`); POST is the ONLY response that ever
  * carries the full codes (one-time reveal, M07 §4).
  */
@@ -11,8 +11,9 @@ import { generateVouchers, listVouchers, toVoucherDTO } from "@/lib/identity/vou
 
 export const dynamic = "force-dynamic";
 
-export const GET = route({ area: "identity" }, async () => {
-  return { data: listVouchers().map(toVoucherDTO) };
+export const GET = route({ area: "identity" }, async ({ auth }) => {
+  const list = await listVouchers(auth.tenantId);
+  return { data: list.map(toVoucherDTO) };
 });
 
 export const POST = route(
@@ -20,7 +21,7 @@ export const POST = route(
   async ({ auth, body }) => {
     const portal = await getCaptivePortal(auth.tenantId);
     const ttlHours = body.ttlHours ?? portal.voucherTtlHours;
-    const created = generateVouchers(body.count, ttlHours, body.bandwidthKbps);
+    const created = await generateVouchers(body.count, ttlHours, body.bandwidthKbps, auth.tenantId);
     return {
       // full codes, exactly once — the client shows the reveal dialog
       data: created.map((v) => ({ id: v.id, code: v.code, expiresAt: v.expiresAt })),

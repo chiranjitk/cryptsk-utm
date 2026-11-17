@@ -217,7 +217,146 @@ export const sdwanApi = {
 
   // stats
   getStats: () => fetchJson<SdwanStatsDTO>("/api/v1/sdwan/stats"),
+
+  // OS integration — wg-quick overlay configs per enabled overlay
+  getOsStatus: () => fetchJson<SdwanOsStatus>("/api/v1/sdwan/os"),
+  applyOs: (body: Record<string, unknown>) =>
+    fetchJson<SdwanOsApplyOutcome | { confirmed: boolean; ts: string }>("/api/v1/sdwan/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  confirmOsApply: (ts: string) =>
+    fetchJson<{ confirmed: boolean; ts: string }>("/api/v1/sdwan/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action: "apply", ts }),
+    }),
+  rollbackOs: (ts?: string) =>
+    fetchJson<{ rolledBack: boolean; dir: string | null; restoredCount: number; detail: string }>("/api/v1/sdwan/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(ts ? { action: "rollback", ts } : { action: "rollback" }),
+    }),
+  upOs: (confirmSec: number) =>
+    fetchJson<SdwanOsUpDownOutcome>("/api/v1/sdwan/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action: "up", bringUp: true, confirmSec }),
+    }),
+  downOs: (confirmSec: number) =>
+    fetchJson<SdwanOsUpDownOutcome>("/api/v1/sdwan/os", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ action: "down", confirmSec }),
+    }),
 };
+
+// ── OS integration DTOs (mirror src/lib/sdwan/os.ts + os-service.ts) ────────
+
+export interface SdwanGenWarningDTO {
+  scope: "plan" | "overlay" | "site";
+  overlayId: number | null;
+  siteId: number | null;
+  name: string;
+  code: string;
+  message: string;
+}
+
+export interface SdwanPeerRenderDTO {
+  siteId: number;
+  siteName: string;
+  role: string;
+  publicKey: string;
+  allowedIps: string[];
+  endpoint: string;
+}
+
+export interface SdwanOverlayFileDTO {
+  overlayId: number;
+  overlayName: string;
+  topology: string;
+  iface: string;
+  slug: string;
+  fileName: string;
+  conf: string;
+  confHash: string;
+  listenPort: number;
+  localSite: { id: number; name: string; role: string } | null;
+  address: string | null;
+  overlaySubnet: string;
+  peers: SdwanPeerRenderDTO[];
+  warnings: SdwanGenWarningDTO[];
+}
+
+export interface SdwanPlanDTO {
+  generatedAt: string;
+  files: SdwanOverlayFileDTO[];
+  combinedHash: string;
+  counts: { overlays: number; rendered: number; skipped: number; peers: number };
+  skippedOverlays: Array<{ id: number; name: string; reason: string }>;
+  warnings: SdwanGenWarningDTO[];
+}
+
+export interface SdwanFileStateDTO {
+  iface: string;
+  fileName: string;
+  exists: boolean;
+  planHash: string;
+  diskHash: string | null;
+  appliedHash: string | null;
+  running: boolean;
+  liveListenPort: number | null;
+  livePeers: number | null;
+  state: string;
+  reasons: string[];
+}
+
+export interface SdwanRunningIfaceDTO {
+  iface: string;
+  listenPort: number | null;
+  peers: number;
+  publicKey: string | null;
+}
+
+export interface SdwanOsStatus {
+  gate: "on" | "off";
+  mode: string;
+  available: boolean;
+  wgVersion: string | null;
+  keepaliveSec: number;
+  keySource: "env" | "keyfile" | "absent";
+  plan: SdwanPlanDTO;
+  files: SdwanFileStateDTO[];
+  runningIfaces: SdwanRunningIfaceDTO[];
+  pendingConfirm: { ts: string; deadlineAt: string; backupDir: string } | null;
+  drift: { appliedFiles: number; inSyncFiles: number; reasons: string[] };
+}
+
+export interface SdwanOsApplyOutcome {
+  gate: "on" | "off";
+  applied: boolean;
+  rolledBack: boolean;
+  rollbackReason: string | null;
+  confirmSec: number;
+  confirmDeadlineAt: string | null;
+  ts: string;
+  keySource: "env" | "keyfile" | "absent";
+  files: Array<{ iface: string; fileName: string; confHash: string; action: string; validated: boolean }>;
+  warnings: SdwanGenWarningDTO[];
+  counts: { overlays: number; rendered: number; skipped: number; peers: number } | null;
+  results: Array<{ step: string; ok: boolean; detail?: string }>;
+}
+
+export interface SdwanOsUpDownOutcome {
+  gate: "on" | "off";
+  requested: number;
+  broughtUp?: number;
+  broughtDown?: number;
+  confirmSec?: number | null;
+  results: Array<{ step: string; ok: boolean; detail?: string }>;
+  warnings: SdwanGenWarningDTO[];
+}
 
 // ── formatting helpers ──────────────────────────────────────────────────────
 

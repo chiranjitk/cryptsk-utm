@@ -7,7 +7,7 @@
  * fixed literal MASK; totpSecret + passwordHash are NEVER serialized. Reveal is
  * an explicit, audited, role-gated endpoint (routes layer). Password strength
  * is checked against the stored auth policy here (DB state, not a zod grammar).
- * Vouchers are MockEngine in-memory state (SCHEMA.md §6 pseudo-resource).
+ * Vouchers are persistent rows (spec §1.10, T1-d) — see ./vouchers.ts.
  */
 
 import { db } from "@/lib/db";
@@ -21,6 +21,7 @@ import type {
   DirectorySourceCreate,
   DirectorySourceUpdate,
   IdentitySessionQuery,
+  PortalSessionQuery,
   RadiusProfileCreate,
   RadiusProfileUpdate,
   UserCreate,
@@ -29,6 +30,7 @@ import type {
   UserQuery,
   UserUpdate,
 } from "@/lib/validators/identity";
+import { hashSessionToken, newPortalSessionToken } from "@/lib/identity/vouchers";
 
 /** Fixed-length masked literal — never leaks real length (M07 §5.3). */
 export const MASK = "••••••••";
@@ -728,6 +730,143 @@ export async function putCaptivePortal(tenantId: number, body: CaptivePortalUpda
     redirectUrl: row.redirectUrl,
     voucherTtlHours: row.voucherTtlHours,
   };
+}
+
+// ── captive portal sessions + guest self-registration (spec §1.10 / §7, T1-d) ─
+
+export type PortalSessionDTO = {
+  id: number;
+  portalId: number;
+  /** voucher | credentials | clickthrough | self-registration */
+  kind: string;
+  clientMac: string | null;
+  clientIp: string;
+  userName: string | null;
+  /** active | expired | terminated */
+  state: string;
+  bytesIn: number;
+  bytesOut: number;
+  startedAt: string;
+  expiresAt: string;
+};
+
+/** Guest self-registration input (service layer — clientIp is server-derived). */
+export type PortalSelfRegisterInput = {
+  name: string;
+  /** accepted for future notification use — the session schema has no phone column, not persisted */
+  phone?: string;
+  agree: boolean;
+  clientIp: string;
+  clientMac?: string;
+};
+
+function toPortalSessionDTO(r: {
+  id: number;
+  portalId: number;
+  kind: string;
+  clientMac: string | null;
+  clientIp: string;
+  userName: string | null;
+  state: string;
+  bytesIn: number;
+  bytesOut: number;
+  startedAt: Date;
+  expiresAt: Date;
+}): PortalSessionDTO {
+  return {
+    id: r.id,
+    portalId: r.portalId,
+    kind: r.kind,
+    clientMac: r.clientMac,
+    clientIp: r.clientIp,
+    userName: r.userName,
+    state: r.state,
+    bytesIn: r.bytesIn,
+    bytesOut: r.bytesOut,
+    startedAt: r.startedAt.toISOString(),
+    expiresAt: r.expiresAt.toISOString(),
+  };
+}
+
+export async function listPortalSessions(
+  tenantId: number,
+  query: PortalSessionQuery,
+): Promise<{ data: PortalSessionDTO[]; meta: { page: number; limit: number; total: number; totalPages: number } }> {
+  const where = {
+    tenantId,
+    ...(query.state ? { state: query.state } : {}),
+    ...(query.kind ? { kind: query.kind } : {}),
+    ...(query.q
+      ? {
+          OR: [
+            { userName: { contains: query.q } },
+            { clientIp: { contains: query.q } },
+            { clientMac: { contains: query.q } },
+          ],
+        }
+      : {}),
+  };
+  const [total, rows] = await Promise.all([
+    db.captivePortalSession.count({ where }),
+    db.captivePortalSession.findMany({
+      where,
+      orderBy: { startedAt: "desc" },
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
+    }),
+  ]);
+  return {
+    data: rows.map(toPortalSessionDTO),
+    meta: { page: query.page, limit: query.limit, total, totalPages: Math.max(1, Math.ceil(total / query.limit)) },
+  };
+}
+
+/** Admin terminate — idempotent (already-terminated rows return unchanged). */
+export async function terminatePortalSession(tenantId: number, id: number): Promise<PortalSessionDTO> {
+  const row = await db.captivePortalSession.findFirst({ where: { tenantId, id } });
+  if (!row) throw ApiError.notFound("Portal session not found");
+  if (row.state === "terminated") return toPortalSessionDTO(row);
+  const updated = await db.captivePortalSession.update({ where: { id }, data: { state: "terminated" } });
+  return toPortalSessionDTO(updated);
+}
+
+/**
+ * Guest self-registration (spec §1.10) — PUBLIC endpoint path. Allowed for
+ * every portal mode, but ONLY while the portal profile exists and is enabled.
+ * Opens an active CaptivePortalSession (kind "self-registration") lasting
+ * sessionTimeoutMin; the session token is returned ONCE — only sha256(token)
+ * is stored (captive_portal_sessions.session_id).
+ */
+export async function selfRegister(
+  tenantId: number,
+  input: PortalSelfRegisterInput,
+): Promise<{ session: PortalSessionDTO; token: string }> {
+  if (!input.agree) {
+    throw ApiError.validation("Guest must accept the acceptable-use policy", {
+      fieldErrors: { agree: ["Acceptance is required"] },
+    });
+  }
+  const profile = await db.captivePortalProfile.findFirst({ where: { tenantId }, orderBy: { id: "asc" } });
+  if (!profile) throw ApiError.forbidden("Captive portal is not configured — guest self-registration is unavailable");
+  if (!profile.enabled) throw ApiError.forbidden("Captive portal is disabled — guest self-registration is unavailable");
+
+  const now = new Date();
+  const token = newPortalSessionToken();
+  const row = await db.captivePortalSession.create({
+    data: {
+      tenantId,
+      portalId: profile.id,
+      sessionId: hashSessionToken(token),
+      kind: "self-registration",
+      clientMac: input.clientMac ?? null,
+      clientIp: input.clientIp,
+      userName: input.name,
+      state: "active",
+      startedAt: now,
+      expiresAt: new Date(now.getTime() + profile.sessionTimeoutMin * 60_000),
+    },
+  });
+  return { session: toPortalSessionDTO(row), token };
 }
 
 // ── identity sessions (read + admin expire — M07 §5.5) ──────────────────────

@@ -83,6 +83,8 @@ import {
   type SslStatsDTO,
   type SslTestResultDTO,
 } from "./ssl-inspection-api";
+import { SslOsPanel } from "./os-apply";
+import { usePermissions } from "../system/system-ui";
 
 const SSL_KEY = ["ssl-inspection"] as const;
 
@@ -661,6 +663,7 @@ function TestConnectionCard({ policyId, policyName }: { policyId: number | null;
 
 export function SslInspectionView() {
   const queryClient = useQueryClient();
+  const { canWrite } = usePermissions();
   const policiesQuery = useQuery({ queryKey: [...SSL_KEY, "policies"], queryFn: sslInspectionApi.listPolicies });
   const rulesQuery = useQuery({ queryKey: [...SSL_KEY, "bypass-rules"], queryFn: () => sslInspectionApi.listBypassRules() });
   const statsQuery = useQuery({ queryKey: [...SSL_KEY, "stats"], queryFn: sslInspectionApi.getStats });
@@ -1091,6 +1094,9 @@ export function SslInspectionView() {
           )}
         </CardContent>
       </Card>
+
+      {/* OS enforcement (squid ssl-bump fragment) — status + admin-gated apply/rollback */}
+      <SslOsPanel isAdmin={canWrite("ssl_inspection")} />
 
       {editorOpen && <PolicyEditor key={editing?.id ?? "new"} initial={editing} onClose={() => setEditorOpen(false)} />}
       {bypassOpen && (

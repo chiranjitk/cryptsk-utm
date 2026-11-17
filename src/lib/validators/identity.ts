@@ -204,12 +204,38 @@ export const captivePortalUpdateSchema = z.object({
   voucherTtlHours: z.coerce.number().int().min(1, "Voucher TTL is 1-720 h").max(720, "Voucher TTL is 1-720 h").default(24),
 });
 
-// ── vouchers (MockEngine in-memory — SCHEMA.md §6 pseudo-resource) ──────────
+// ── vouchers (persistent — spec §1.10, captive_portal_vouchers) ─────────────
 
 export const voucherGenerateSchema = z.object({
   count: z.coerce.number({ message: "Count must be a number" }).int().min(1, "Count is 1-500").max(500, "Count is 1-500"),
   ttlHours: z.coerce.number().int().min(1, "TTL is 1-720 h").max(720, "TTL is 1-720 h").optional(),
   bandwidthKbps: z.coerce.number().int().min(64, "Bandwidth cap is 64-1048576 kbps").max(1_048_576, "Bandwidth cap is 64-1048576 kbps").optional(),
+});
+
+// ── captive portal sessions (spec §7) + guest self-registration (§1.10) ─────
+
+export const portalSessionQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  kind: z.enum(["voucher", "credentials", "clickthrough", "self-registration"]).optional(),
+  state: z.enum(["active", "expired", "terminated"]).optional(),
+  q: z.string().trim().max(64).optional(),
+});
+
+/**
+ * PUBLIC guest self-registration body (POST /api/v1/captive-portal/register).
+ * clientIp is server-derived (x-forwarded-for) — never taken from the body;
+ * the portal splash page passes the client MAC when it knows it.
+ */
+export const portalSelfRegisterSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(64, "Name is 1-64 chars"),
+  phone: z.string().trim().max(32, "Phone is up to 32 chars").optional(),
+  agree: z.boolean().refine((v) => v === true, { message: "Guest must accept the acceptable-use policy" }),
+  clientMac: z
+    .string()
+    .trim()
+    .regex(/^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/, "clientMac must be a MAC address")
+    .optional(),
 });
 
 // ── identity sessions list query ────────────────────────────────────────────
@@ -237,3 +263,5 @@ export type DirectorySourceUpdate = z.infer<typeof directorySourceUpdateSchema>;
 export type CaptivePortalUpdate = z.infer<typeof captivePortalUpdateSchema>;
 export type VoucherGenerate = z.infer<typeof voucherGenerateSchema>;
 export type IdentitySessionQuery = z.infer<typeof identitySessionQuerySchema>;
+export type PortalSessionQuery = z.infer<typeof portalSessionQuerySchema>;
+export type PortalSelfRegisterBody = z.infer<typeof portalSelfRegisterSchema>;
