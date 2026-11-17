@@ -270,3 +270,72 @@ export function clockLabel(iso: string): string {
   if (Number.isNaN(ts)) return "";
   return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
 }
+
+// ── IoT device management (Phase 3 §3.6 — additive, /api/v1/iot/*) ──────────
+
+/** Envelope meta for the paginated IoT inventory (PageMeta shape). */
+export interface IotPageMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+/** NAC device row enriched with the §3.6 rogue flag. */
+export interface IotDeviceDTO extends DeviceDTO {
+  rogue: boolean;
+}
+
+export interface IotInventoryPageDTO<T = IotDeviceDTO[]> {
+  data: T;
+  meta?: IotPageMeta;
+}
+
+export interface IotStatsDTO {
+  total: number;
+  byType: Record<DeviceType, number>;
+  iot: number;
+  cameras: number;
+  quarantined: number;
+  avgRisk: number;
+  rogues: number;
+}
+
+export interface IotRescanSummaryDTO {
+  rescanned: number;
+  created: number;
+  skipped: number;
+}
+
+/** Envelope fetch that ALSO returns meta (inventory pagination). */
+async function fetchEnvelope<T>(path: string, init?: RequestInit): Promise<IotInventoryPageDTO<T>> {
+  const res = await fetch(path, { ...init, credentials: "same-origin" });
+  let json: unknown = null;
+  try {
+    json = await res.json();
+  } catch {
+    throw new IdentityApiError("INTERNAL", `HTTP ${res.status}`);
+  }
+  const body = json as {
+    data?: T;
+    meta?: IotPageMeta;
+    error?: { code: string; message?: string; details?: unknown };
+  };
+  if (body && typeof body === "object" && "error" in body && body.error) {
+    throw new IdentityApiError(body.error.code, body.error.message || body.error.code, body.error.details);
+  }
+  return { data: (body as { data: T }).data, meta: body?.meta };
+}
+
+/** IoT endpoints — quarantine/restore intentionally REUSE the M23 device
+ *  actions above (identityApi.quarantineDevice / restoreDevice); no duplicate
+ *  lifecycle endpoints exist under /api/v1/iot. */
+export const iotApi = {
+  listInventory: (params: string) =>
+    fetchEnvelope<IotDeviceDTO[]>(`/api/v1/iot/inventory${params ? `?${params}` : ""}`),
+  rescan: () =>
+    fetchJson<IotRescanSummaryDTO>("/api/v1/iot/rescan", { method: "POST", headers: JSON_HEADERS, body: "{}" }),
+  rescore: (id: number) =>
+    fetchJson<DeviceDTO>(`/api/v1/iot/devices/${id}/rescore`, { method: "POST", headers: JSON_HEADERS, body: "{}" }),
+  stats: () => fetchJson<IotStatsDTO>("/api/v1/iot/stats"),
+};

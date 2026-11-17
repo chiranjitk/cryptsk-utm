@@ -11,7 +11,12 @@
 import { db } from "@/lib/db";
 import { parseJson } from "@/lib/json";
 import type { PageMeta } from "@/lib/api/envelope";
+import type { PdfSectionSpec } from "@/lib/reports/pdf";
 import type { ReportRangeExt, ReportSection } from "@/lib/validators/reporting";
+
+// T2-b: true server-side PDF now exists for text/tables (src/lib/reports/pdf.ts,
+// served by GET /api/v1/reports/runs/[id]/pdf) — the pdfViaPrint hint below
+// stays as the client fallback for runs without structured content.
 
 // ── range windows ───────────────────────────────────────────────────────────
 
@@ -321,44 +326,72 @@ function sectionHeading(text: string): string {
   return `<h2 style="margin:24px 0 4px;font-size:15px;color:#b91c1c;border-bottom:2px solid #fecaca;padding-bottom:4px">${esc(text)}</h2>`;
 }
 
-function countTable(title: string, headers: string[], rows: CountRow[], withBytes: boolean): string {
-  const body = rows.map((r) => [r.key, r.count, ...(withBytes ? [humanBytes(r.bytes)] : [])] as Array<string | number>);
-  const fallback = withBytes ? ["—", 0, "0 B"] : ["—", 0];
-  return `${sectionHeading(title)}${htmlTable(headers, body.length ? body : [fallback])}`;
+// ── neutral section model (single source of truth for report content) ───────
+
+function countSection(heading: string, headers: string[], rows: CountRow[], withBytes: boolean): PdfSectionSpec {
+  const body = rows.map((r) => [r.key, String(r.count), ...(withBytes ? [humanBytes(r.bytes)] : [])] as string[]);
+  const fallback = withBytes ? ["—", "0", "0 B"] : ["—", "0"];
+  return { heading, table: { headers, rows: body.length ? body : [fallback] } };
 }
 
-function renderSummarySections(summary: ReportSummary): string {
-  let html = "";
+/**
+ * Build the report sections from a summary — the SAME data the HTML renderer
+ * draws, in a renderer-neutral shape (also fed straight into renderPdf).
+ */
+export function buildReportSections(summary: ReportSummary): PdfSectionSpec[] {
+  const sections: PdfSectionSpec[] = [];
+
+  if (summary.checklist) {
+    const rows = summary.checklist.map((r) => [r.control, r.pass ? "PASS" : "FAIL", r.detail] as string[]);
+    sections.push({
+      heading: "Compliance checklist",
+      text:
+        summary.passRate !== undefined
+          ? `Pass rate: ${summary.passRate}% (${summary.framework ?? ""} controls)`
+          : undefined,
+      table: { headers: ["Control", "Result", "Detail"], rows: rows.length ? rows : [["—", "—", "—"]] },
+    });
+  }
+
   if (summary.traffic) {
-    html += sectionHeading("Traffic");
-    html += htmlTable(["Metric", "Value"], [
-      ["Total connections", summary.traffic.total],
-      ["Total bytes", humanBytes(summary.traffic.bytes)],
-    ]);
-    html += countTable("Connections by action", ["Action", "Count", "Bytes"], summary.traffic.byAction, true);
-    html += countTable("Top 5 sources", ["Source IP", "Connections", "Bytes"], summary.traffic.topSrc, true);
-    html += countTable("Top 5 destinations", ["Destination IP", "Connections", "Bytes"], summary.traffic.topDst, true);
+    sections.push({
+      heading: "Traffic",
+      table: {
+        headers: ["Metric", "Value"],
+        rows: [
+          ["Total connections", String(summary.traffic.total)],
+          ["Total bytes", humanBytes(summary.traffic.bytes)],
+        ],
+      },
+    });
+    sections.push(countSection("Connections by action", ["Action", "Count", "Bytes"], summary.traffic.byAction, true));
+    sections.push(countSection("Top 5 sources", ["Source IP", "Connections", "Bytes"], summary.traffic.topSrc, true));
+    sections.push(countSection("Top 5 destinations", ["Destination IP", "Connections", "Bytes"], summary.traffic.topDst, true));
   }
   if (summary.threats) {
-    html += sectionHeading("Threats");
-    html += countTable("IPS events by severity", ["Severity", "Count"], summary.threats.bySeverity, false);
-    html += countTable("IPS events by category", ["Category", "Count"], summary.threats.byCategory, false);
+    sections.push(countSection("Threats — IPS events by severity", ["Severity", "Count"], summary.threats.bySeverity, false));
+    sections.push(countSection("IPS events by category", ["Category", "Count"], summary.threats.byCategory, false));
   }
   if (summary.audit) {
-    html += sectionHeading("Audit");
-    html += countTable("Audit actions", ["Action", "Count"], summary.audit.byAction, false);
-    html += countTable("Top users", ["User", "Entries"], summary.audit.topUsers, false);
+    sections.push(countSection("Audit actions", ["Action", "Count"], summary.audit.byAction, false));
+    sections.push(countSection("Top users", ["User", "Entries"], summary.audit.topUsers, false));
   }
-  return html;
+  return sections;
 }
 
-function renderChecklist(checklist: ChecklistRow[]): string {
-  const rows: Array<Array<string | number>> = checklist.map((r) => [
-    r.control,
-    r.pass ? "✓ PASS" : "✗ FAIL",
-    r.detail,
-  ]);
-  return `${sectionHeading("Compliance checklist")}${htmlTable(["Control", "Result", "Detail"], rows.length ? rows : [["—", "—", "—"]])}`;
+function sectionsToHtml(sections: PdfSectionSpec[]): string {
+  return sections
+    .map((s) => {
+      let html = sectionHeading(s.heading);
+      if (s.text) {
+        for (const line of s.text.split("\n")) {
+          html += `<p style="margin:6px 0;font-size:13px;color:#52525b">${esc(line)}</p>`;
+        }
+      }
+      if (s.table) html += htmlTable(s.table.headers, s.table.rows);
+      return html;
+    })
+    .join("");
 }
 
 export function buildReportHtml(opts: {
@@ -369,11 +402,6 @@ export function buildReportHtml(opts: {
   summary: ReportSummary;
 }): string {
   const generated = `${opts.generatedAt.toISOString().replace("T", " ").slice(0, 19)} UTC`;
-  const checklist = opts.summary.checklist ? renderChecklist(opts.summary.checklist) : "";
-  const passRate =
-    opts.summary.passRate !== undefined
-      ? `<div style="margin:12px 0;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:13px;color:#991b1b"><strong>Pass rate: ${opts.summary.passRate}%</strong> (${esc(opts.summary.framework ?? "")} controls)</div>`
-      : "";
   return `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>${esc(opts.title)}</title></head>
@@ -385,9 +413,7 @@ export function buildReportHtml(opts: {
     </div>
     <div style="font-size:12px;font-weight:600;color:#b91c1c;white-space:nowrap">Cryptsk UTM Console</div>
   </header>
-  ${passRate}
-  ${checklist}
-  ${renderSummarySections(opts.summary)}
+  ${sectionsToHtml(buildReportSections(opts.summary))}
   <footer style="margin-top:28px;padding-top:10px;border-top:1px solid #e4e4e7;font-size:11px;color:#a1a1aa">Cryptsk Console — simulated data</footer>
 </body>
 </html>`;

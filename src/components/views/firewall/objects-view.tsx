@@ -50,6 +50,8 @@ import {
   referencedByOf,
   type AddressObject,
   type AddressType,
+  type FqdnRefreshSummary,
+  type GeoipSource,
   type NamedWithMembers,
   type NatRule,
   type FwRule,
@@ -330,6 +332,7 @@ export function ObjectsView() {
 
         {/* ── Address objects ── */}
         <TabsContent value="address" className="mt-4">
+          <div className="space-y-4">
           <Card className="p-0">
             <CardContent className="p-0">
               <ToolbarRow
@@ -373,6 +376,8 @@ export function ObjectsView() {
               )}
             </CardContent>
           </Card>
+          <GeoipFqdnCard />
+          </div>
         </TabsContent>
 
         {/* ── Address groups ── */}
@@ -1215,5 +1220,232 @@ function ScheduleDialog(props: { state: ScheduleDialogState; onOpenChange: (open
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ── GeoIP & FQDN info card (spec §1.4 — additive section of the Address tab) ──
+
+function sourceStatusBadge(s: GeoipSource) {
+  const cls =
+    s.status === "loaded"
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+      : s.status === "error"
+        ? "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+        : "border-zinc-300 text-zinc-500 dark:border-zinc-700 dark:text-zinc-400";
+  return (
+    <Badge variant="outline" className={cn("h-5 px-1.5 text-[10px] uppercase", cls)}>
+      {s.status}
+    </Badge>
+  );
+}
+
+function GeoipFqdnCard() {
+  const queryClient = useQueryClient();
+  const statusQuery = useQuery({ queryKey: ["firewall", "geoip", "status"], queryFn: api.geoipStatus });
+  const [sourceName, setSourceName] = useState("");
+  const [sourcePath, setSourcePath] = useState("");
+  const [lastRefresh, setLastRefresh] = useState<FqdnRefreshSummary | null>(null);
+
+  const invalidateGeo = () => void queryClient.invalidateQueries({ queryKey: ["firewall", "geoip"] });
+
+  const loadSource = useMutation({
+    mutationFn: () => api.geoipLoad({ name: sourceName.trim(), filePath: sourcePath.trim() }),
+    onSuccess: (res) => {
+      toastOk(
+        "GeoIP source loaded",
+        `${res.source.name}: ${res.source.prefixCount} prefixes across ${res.source.countries.length} countries`,
+      );
+      setSourceName("");
+      setSourcePath("");
+      invalidateGeo();
+    },
+    onError: (err) => toastErr(err, "GeoIP load failed"),
+  });
+
+  const removeSource = useMutation({
+    mutationFn: (id: number) => api.geoipRemove(id),
+    onSuccess: () => {
+      toastOk("GeoIP source removed");
+      invalidateGeo();
+    },
+    onError: (err) => toastErr(err, "GeoIP remove failed"),
+  });
+
+  const refreshFqdn = useMutation({
+    mutationFn: (force: boolean) => api.fqdnRefresh(force),
+    onSuccess: (res) => {
+      setLastRefresh(res);
+      toastOk("FQDN refresh finished", `${res.resolved} resolved, ${res.failed} failed, ${res.unchanged} unchanged`);
+      invalidateGeo();
+    },
+    onError: (err) => toastErr(err, "FQDN refresh failed"),
+  });
+
+  const status = statusQuery.data;
+  const canLoad = sourceName.trim().length > 0 && sourcePath.trim().length > 0;
+
+  return (
+    <Card className="p-0">
+      <CardContent className="space-y-3 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Icons.Globe className="h-4 w-4 text-zinc-400" />
+          <span className="text-sm font-medium">GeoIP &amp; FQDN</span>
+          <span className="text-xs text-zinc-400">country CSV sets + resolver snapshots that feed the nftables policy</span>
+          <div className="ml-auto flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              disabled={refreshFqdn.isPending}
+              onClick={() => refreshFqdn.mutate(true)}
+              aria-label="Force FQDN refresh"
+            >
+              Force refresh
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              disabled={refreshFqdn.isPending}
+              onClick={() => refreshFqdn.mutate(false)}
+              aria-label="Refresh FQDN objects"
+            >
+              Refresh FQDN
+            </Button>
+          </div>
+        </div>
+
+        {statusQuery.error ? (
+          <QueryError error={statusQuery.error} onRetry={() => void statusQuery.refetch()} />
+        ) : statusQuery.isLoading ? (
+          <TableSkeleton rows={2} cols={3} />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {/* GeoIP sources */}
+            <div className="space-y-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">GeoIP sources (admin-provided CSV, lines of ISO_CODE,prefix)</p>
+              {status && status.sources.length > 0 ? (
+                <div className="space-y-1">
+                  {status.sources.map((s) => (
+                    <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-md border border-zinc-200 px-2 py-1.5 dark:border-zinc-800">
+                      <span className="text-sm font-medium">{s.name}</span>
+                      {sourceStatusBadge(s)}
+                      <span className="text-xs text-zinc-500">
+                        {s.prefixCount} prefixes · {s.countries.length} countries
+                      </span>
+                      <span className="font-mono text-xs text-zinc-400">{s.filePath}</span>
+                      {s.error ? <span className="w-full text-xs text-rose-600 dark:text-rose-400">{s.error}</span> : null}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="ml-auto h-7 w-7 text-rose-600 hover:text-rose-700 dark:text-rose-400"
+                        aria-label={`Remove GeoIP source ${s.name}`}
+                        onClick={() => removeSource.mutate(s.id)}
+                      >
+                        <Icons.Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-400">
+                  No sources loaded — geo address objects stay config-only (apply excludes them with a warning instead of pretending enforcement).
+                </p>
+              )}
+              {status && status.sets.length > 0 ? (
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Sets:{" "}
+                  {status.sets
+                    .map((s) => `${s.country} ${s.skipped ? `skipped (${s.skipReason})` : `${s.prefixCount} prefixes`}`)
+                    .join(" · ")}
+                  {status.sha256 ? <span className="ml-1 font-mono text-zinc-400">sha256 {status.sha256.slice(0, 12)}</span> : null}
+                </p>
+              ) : null}
+              {status && status.geoObjects.length > 0 ? (
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Geo objects:{" "}
+                  {status.geoObjects
+                    .map((g) => `${g.name} (${g.value}${g.resolvable ? `, ${g.prefixCount ?? 0} prefixes` : ", not resolvable"})`)
+                    .join(" · ")}
+                </p>
+              ) : null}
+              {status && status.warnings.length > 0 ? (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  {status.warnings[0]}
+                  {status.warnings.length > 1 ? ` (+${status.warnings.length - 1} more)` : ""}
+                </p>
+              ) : null}
+              <form
+                className="flex flex-wrap items-end gap-2 pt-1"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (canLoad && !loadSource.isPending) loadSource.mutate();
+                }}
+              >
+                <div className="w-40">
+                  <Label htmlFor="geoip-source-name" className="text-xs font-medium">
+                    Source name
+                  </Label>
+                  <Input id="geoip-source-name" value={sourceName} onChange={(e) => setSourceName(e.target.value)} placeholder="GeoLite2 DE" className="h-8 text-xs" />
+                </div>
+                <div className="min-w-48 flex-1">
+                  <Label htmlFor="geoip-source-path" className="text-xs font-medium">
+                    CSV path on the console host
+                  </Label>
+                  <Input
+                    id="geoip-source-path"
+                    value={sourcePath}
+                    onChange={(e) => setSourcePath(e.target.value)}
+                    placeholder="/var/lib/console/geoip/country.csv"
+                    className="h-8 font-mono text-xs"
+                  />
+                </div>
+                <Button type="submit" size="sm" className="h-8" disabled={!canLoad || loadSource.isPending}>
+                  {loadSource.isPending ? "Loading…" : "Load source"}
+                </Button>
+              </form>
+            </div>
+
+            {/* FQDN resolver snapshots */}
+            <div className="space-y-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">FQDN objects (last resolver snapshot)</p>
+              {status && status.fqdnObjects.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {status.fqdnObjects.map((f) => (
+                    <span key={f.id} className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-800">
+                      <span className="font-medium">{f.name}</span>
+                      <span className="font-mono text-zinc-500">{f.value}</span>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "h-4 px-1 text-[10px]",
+                          f.ipCount === 0 || f.stale
+                            ? "border-amber-500/40 text-amber-700 dark:text-amber-400"
+                            : "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
+                        )}
+                      >
+                        {f.ipCount === 0 ? "unresolved" : f.stale ? "stale" : `${f.ipCount} ips`}
+                      </Badge>
+                      <span className="text-zinc-400">{fmtDateTime(f.resolvedAt)}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-400">No fqdn address objects defined.</p>
+              )}
+              {lastRefresh ? (
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Last refresh {fmtDateTime(lastRefresh.ranAt)}: {lastRefresh.resolved} resolved, {lastRefresh.failed} failed,{" "}
+                  {lastRefresh.unchanged} unchanged ({lastRefresh.durationMs} ms)
+                  {lastRefresh.failed > 0 ? ` — first error: ${lastRefresh.results.find((r) => r.error)?.error ?? "unknown"}` : ""}
+                </p>
+              ) : (
+                <p className="text-xs text-zinc-400">Refresh re-resolves every fqdn object (3s timeout per lookup); objects refreshed under 60s ago are skipped unless forced.</p>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

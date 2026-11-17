@@ -6,6 +6,9 @@
  * auth-fail VLANs, posture switches), paged device inventory with optimistic
  * quarantine/release per row plus a simulated profiling rescan, and the BYOD
  * onboarding list (enroll with one-time token, approve, revoke).
+ * Phase 3 §3.6 adds the "IoT Inventory" tab (strictly additive): stats chips,
+ * the OUI/DHCP-profiled device table with rogue flags, risk meters and
+ * quarantine/restore reusing the shared NAC device lifecycle.
  * Theme (cerulean skin): sky-600 enterprise accents, zinc neutrals, rose-600
  * danger (quarantine), amber-500 warning (pending).
  */
@@ -34,6 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -42,6 +46,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { byodCreateSchema, nacProfileCreateSchema } from "@/lib/validators/identity-advanced";
 import {
   DEVICE_TYPES,
@@ -50,11 +55,13 @@ import {
   fieldErrorsOf,
   fmtRelative,
   identityApi,
+  iotApi,
   qs,
   type ByodCreatedDTO,
   type ByodStatus,
   type DeviceDTO,
   type DeviceType,
+  type IotDeviceDTO,
   type NacMethod,
   type NacProfileDTO,
   type NacState,
@@ -65,12 +72,22 @@ const ROOT_KEY = ["identity-advanced"] as const;
 const DEVICES_KEY = [...ROOT_KEY, "devices"] as const;
 const PAGE_SIZE = 100;
 
+// IoT inventory tab (Phase 3 §3.6) — separate react-query root so NAC and IoT
+// refetches stay independent; quarantine/restore invalidate both.
+const IOT_KEY = ["iot"] as const;
+const IOT_INVENTORY_KEY = [...IOT_KEY, "inventory"] as const;
+const IOT_PAGE_SIZE = 50;
+
 /** Long-list scroll wrapper with a slim custom scrollbar. */
 const SCROLL =
   "max-h-96 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-300 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700";
 
 function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ROOT_KEY });
+}
+
+function invalidateIot(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({ queryKey: IOT_KEY });
 }
 
 function feToMap(fe: Record<string, string[]>): Record<string, string> {
@@ -1096,15 +1113,481 @@ function ByodCard() {
   );
 }
 
+// ── IoT Inventory (Phase 3 §3.6 — additive tab over the NAC device store) ───
+
+const IOT_TYPE_CLS: Record<DeviceType, string> = {
+  printer: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  phone: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  camera: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  workstation: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  mobile: "border-zinc-500/30 bg-zinc-500/10 text-zinc-600 dark:text-zinc-300",
+  iot: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  unknown: "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400",
+};
+
+function TypeBadge({ type }: { type: DeviceType }) {
+  const Icon = TYPE_ICON[type] ?? Icons.HelpCircle;
+  return (
+    <Badge variant="outline" className={`gap-1 text-[10px] font-medium ${IOT_TYPE_CLS[type]}`}>
+      <Icon className="h-3 w-3" />
+      {type}
+    </Badge>
+  );
+}
+
+/** Compact risk bar — rose ≥70, amber ≥50, zinc below (ADR-019 palette). */
+function RiskMeter({ score }: { score: number }) {
+  const bar = score >= 70 ? "bg-rose-600" : score >= 50 ? "bg-amber-500" : "bg-zinc-400";
+  const text = score >= 70 ? "text-rose-500" : score >= 50 ? "text-amber-600 dark:text-amber-400" : "text-zinc-400";
+  return (
+    <div className="flex items-center gap-1.5" title={`risk ${score}/100`}>
+      <div className="h-1.5 w-14 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+        <div className={`h-full rounded-full ${bar}`} style={{ width: `${Math.min(100, Math.max(0, score))}%` }} />
+      </div>
+      <span className={`text-[10px] font-medium tabular-nums ${text}`}>{score}</span>
+    </div>
+  );
+}
+
+/** Amber "rogue?" pill — heuristic flag, tooltip explains the criteria. */
+function RoguePill() {
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            variant="outline"
+            className="cursor-help border-amber-500/60 bg-amber-500/10 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+          >
+            <Icons.TriangleAlert className="mr-1 h-3 w-3" />
+            rogue?
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-64 text-xs">
+          MAC absent from every DHCP lease, first seen within the last 24h and still unclassified — verify this
+          endpoint before trusting or quarantining it.
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+function IotStatsChips() {
+  const statsQuery = useQuery({ queryKey: [...IOT_KEY, "stats"], queryFn: iotApi.stats });
+  const stats = statsQuery.data;
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <StatCard
+        label="Known devices"
+        value={stats ? stats.total : "—"}
+        sub="NAC inventory rows"
+        tone="text-zinc-500 dark:text-zinc-400"
+        icon={<Icons.Router className="h-4 w-4" />}
+      />
+      <StatCard
+        label="IoT class"
+        value={stats ? stats.iot : "—"}
+        sub="embedded / smart-home"
+        tone="text-zinc-500 dark:text-zinc-400"
+        icon={<Icons.Cpu className="h-4 w-4" />}
+      />
+      <StatCard
+        label="Cameras"
+        value={stats ? stats.cameras : "—"}
+        sub="IP / CCTV class"
+        tone="text-zinc-500 dark:text-zinc-400"
+        icon={<Icons.Camera className="h-4 w-4" />}
+      />
+      <StatCard
+        label="Quarantined"
+        value={stats ? stats.quarantined : "—"}
+        sub="isolated endpoints"
+        tone="text-rose-500"
+        icon={<Icons.ShieldAlert className="h-4 w-4" />}
+      />
+      <StatCard
+        label="Avg risk"
+        value={stats ? stats.avgRisk : "—"}
+        sub={`${stats ? stats.rogues : "—"} rogue candidate(s)`}
+        tone="text-zinc-500 dark:text-zinc-400"
+        icon={<Icons.Gauge className="h-4 w-4" />}
+      />
+    </div>
+  );
+}
+
+function IotInventoryCard() {
+  const queryClient = useQueryClient();
+  const [type, setType] = useState<"all" | DeviceType>("all");
+  const [quarantined, setQuarantined] = useState<"all" | "yes" | "no">("all");
+  const [vendorInput, setVendorInput] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [page, setPage] = useState(1);
+  const vendor = useDebounced(vendorInput);
+  const q = useDebounced(searchInput);
+
+  const params = useMemo(
+    () =>
+      qs({
+        deviceType: type === "all" ? undefined : type,
+        quarantined: quarantined === "all" ? undefined : quarantined === "yes" ? "true" : "false",
+        vendor: vendor || undefined,
+        q: q || undefined,
+        page,
+        limit: IOT_PAGE_SIZE,
+      }),
+    [type, quarantined, vendor, q, page],
+  );
+
+  const inventoryQuery = useQuery({
+    queryKey: [...IOT_INVENTORY_KEY, params],
+    queryFn: () => iotApi.listInventory(params),
+  });
+  const rows = inventoryQuery.data?.data ?? [];
+  const meta = inventoryQuery.data?.meta;
+
+  const [confirming, setConfirming] = useState<{ device: IotDeviceDTO; action: "quarantine" | "restore" } | null>(
+    null,
+  );
+
+  const refreshAll = () => {
+    invalidateIot(queryClient);
+    invalidateAll(queryClient);
+  };
+
+  const rescan = useMutation({
+    mutationFn: () => iotApi.rescan(),
+    onSuccess: (r) => {
+      toastOk(
+        "IoT rescan complete",
+        `${r.rescanned} device(s) re-profiled · ${r.created} onboarded from DHCP leases`,
+      );
+      refreshAll();
+    },
+    onError: (e) => toastErr(e, "Rescan failed"),
+  });
+
+  const rescore = useMutation({
+    mutationFn: (id: number) => iotApi.rescore(id),
+    onSuccess: (device) => {
+      toastOk("Risk score updated", `${device.macAddress} → risk ${device.riskScore}`);
+      refreshAll();
+    },
+    onError: (e) => toastErr(e, "Re-score failed"),
+  });
+
+  // quarantine/restore REUSE the M23 device endpoints (shared lifecycle).
+  const quarantine = useMutation({
+    mutationFn: (id: number) => identityApi.quarantineDevice(id, {}),
+    onSuccess: (device) => {
+      toastOk("Device quarantined", `${device.macAddress} moved to the quarantine VLAN`);
+      setConfirming(null);
+      refreshAll();
+    },
+    onError: (e) => {
+      toastErr(e, "Quarantine failed");
+      setConfirming(null);
+    },
+  });
+
+  const restore = useMutation({
+    mutationFn: (id: number) => identityApi.restoreDevice(id),
+    onSuccess: (device) => {
+      toastOk("Device restored", `${device.macAddress} back to authenticated access`);
+      setConfirming(null);
+      refreshAll();
+    },
+    onError: (e) => {
+      toastErr(e, "Restore failed");
+      setConfirming(null);
+    },
+  });
+
+  const resetPage = () => setPage(1);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Icons.Router className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+          IoT Inventory
+          <span className="text-xs font-normal text-zinc-400">
+            {meta ? `${meta.total} device${meta.total === 1 ? "" : "s"}` : "…"}
+          </span>
+        </CardTitle>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1 text-xs"
+          disabled={rescan.isPending}
+          onClick={() => rescan.mutate()}
+        >
+          {rescan.isPending ? (
+            <Icons.Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Icons.ScanLine className="h-3.5 w-3.5" />
+          )}
+          Rescan
+        </Button>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+          <Input
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              resetPage();
+            }}
+            placeholder="MAC, IP, hostname, vendor…"
+            aria-label="Search IoT inventory"
+            className="h-8 w-44 text-xs"
+          />
+          <Input
+            value={vendorInput}
+            onChange={(e) => {
+              setVendorInput(e.target.value);
+              resetPage();
+            }}
+            placeholder="Vendor…"
+            aria-label="Vendor filter"
+            className="h-8 w-32 text-xs"
+          />
+          <Select
+            value={type}
+            onValueChange={(v) => {
+              setType(v as "all" | DeviceType);
+              resetPage();
+            }}
+          >
+            <SelectTrigger className="h-8 w-32" aria-label="Device type filter">
+              <SelectValue placeholder="All types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              {DEVICE_TYPES.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={quarantined}
+            onValueChange={(v) => {
+              setQuarantined(v as "all" | "yes" | "no");
+              resetPage();
+            }}
+          >
+            <SelectTrigger className="h-8 w-36" aria-label="Quarantine filter">
+              <SelectValue placeholder="Any state" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any state</SelectItem>
+              <SelectItem value="yes">Quarantined</SelectItem>
+              <SelectItem value="no">Not quarantined</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {inventoryQuery.isError ? (
+          <div className="p-4">
+            <QueryError error={inventoryQuery.error} onRetry={() => void inventoryQuery.refetch()} />
+          </div>
+        ) : inventoryQuery.isLoading ? (
+          <TableSkeleton rows={6} cols={9} />
+        ) : rows.length === 0 ? (
+          <EmptyBlock
+            icon={<Icons.Router className="h-6 w-6" />}
+            title="No IoT devices match"
+            description="Inventory rows come from NAC profiling and the newest DHCP leases. Classification uses a curated OUI subset (cameras, TVs, printers, phones, NAS, smart-home) plus DHCP and nDPI signals — a full IEEE OUI CSV import is future work."
+          />
+        ) : (
+          <div className={SCROLL}>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-44">MAC</TableHead>
+                  <TableHead>Host</TableHead>
+                  <TableHead className="w-36">Vendor</TableHead>
+                  <TableHead className="w-32">Type</TableHead>
+                  <TableHead className="w-40">OS guess</TableHead>
+                  <TableHead className="w-28">Risk</TableHead>
+                  <TableHead className="w-44">Status</TableHead>
+                  <TableHead className="w-20">Rogue</TableHead>
+                  <TableHead className="w-36 text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((d) => {
+                  const quarantining = quarantine.isPending && quarantine.variables === d.id;
+                  const releasing = restore.isPending && restore.variables === d.id;
+                  const rescoring = rescore.isPending && rescore.variables === d.id;
+                  return (
+                    <TableRow key={d.id}>
+                      <TableCell className="font-mono text-xs">{d.macAddress}</TableCell>
+                      <TableCell>
+                        <span className="block truncate text-sm" title={d.hostname ?? undefined}>
+                          {d.hostname ?? "—"}
+                        </span>
+                        <span className="block font-mono text-[10px] text-zinc-400">{d.ip}</span>
+                      </TableCell>
+                      <TableCell className="truncate text-xs text-zinc-500" title={d.vendor ?? undefined}>
+                        {d.vendor ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        <TypeBadge type={d.deviceType} />
+                      </TableCell>
+                      <TableCell className="truncate text-xs text-zinc-500">{d.osGuess ?? "—"}</TableCell>
+                      <TableCell>
+                        <RiskMeter score={d.riskScore} />
+                      </TableCell>
+                      <TableCell>
+                        <StateBadge state={d.nacState} />
+                      </TableCell>
+                      <TableCell>
+                        {d.rogue ? (
+                          <RoguePill />
+                        ) : (
+                          <span className="text-[10px] text-zinc-300 dark:text-zinc-600">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-zinc-400 hover:text-zinc-600"
+                            disabled={rescoring}
+                            aria-label={`Re-score ${d.macAddress}`}
+                            onClick={() => rescore.mutate(d.id)}
+                          >
+                            {rescoring ? (
+                              <Icons.Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Icons.Gauge className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                          {d.nacState === "quarantine" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 gap-1 border-zinc-600/40 px-2 text-[11px] text-zinc-700 hover:bg-zinc-600/10 dark:text-zinc-500"
+                              disabled={releasing}
+                              aria-label={`Restore ${d.macAddress}`}
+                              onClick={() => setConfirming({ device: d, action: "restore" })}
+                            >
+                              {releasing ? (
+                                <Icons.Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Icons.ShieldCheck className="h-3 w-3" />
+                              )}
+                              Restore
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 gap-1 border-rose-600/60 px-2 text-[11px] text-rose-500 hover:bg-rose-600/10 hover:text-rose-600"
+                              disabled={quarantining}
+                              aria-label={`Quarantine ${d.macAddress}`}
+                              onClick={() => setConfirming({ device: d, action: "quarantine" })}
+                            >
+                              {quarantining ? (
+                                <Icons.Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Icons.ShieldAlert className="h-3 w-3" />
+                              )}
+                              Quarantine
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-200 px-4 py-2 dark:border-zinc-800">
+          <p className="text-[11px] text-zinc-400">
+            Rogue flags mark MACs absent from DHCP leases, first seen within 24h and still unclassified.
+            Quarantine/restore reuse the shared NAC device lifecycle.
+          </p>
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <span className="tabular-nums">
+              page {meta?.page ?? page} / {meta?.totalPages ?? 1} · {meta?.total ?? 0} total
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              disabled={(meta?.page ?? page) <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              <Icons.ChevronLeft className="h-3.5 w-3.5" /> Prev
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              disabled={meta ? page >= meta.totalPages : rows.length === 0}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next <Icons.ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+
+      <ConfirmDialog
+        open={confirming?.action === "quarantine"}
+        onOpenChange={(open) => !open && setConfirming(null)}
+        title={`Quarantine “${confirming?.device.macAddress ?? ""}”?`}
+        description="Isolates the endpoint on the quarantine VLAN until you restore it. Uses the shared NAC device lifecycle."
+        confirmLabel="Quarantine"
+        loading={quarantine.isPending}
+        onConfirm={() => confirming && quarantine.mutate(confirming.device.id)}
+      />
+      <ConfirmDialog
+        open={confirming?.action === "restore"}
+        onOpenChange={(open) => !open && setConfirming(null)}
+        title={`Restore “${confirming?.device.macAddress ?? ""}”?`}
+        description="Ends the quarantine, clears the VLAN override and returns the endpoint to authenticated access."
+        confirmLabel="Restore"
+        loading={restore.isPending}
+        onConfirm={() => confirming && restore.mutate(confirming.device.id)}
+      />
+    </Card>
+  );
+}
+
 // ── main view ───────────────────────────────────────────────────────────────
 
 export function NacView() {
   return (
-    <div className="space-y-4">
-      <StatsStrip />
-      <ProfilesCard />
-      <DevicesCard />
-      <ByodCard />
-    </div>
+    <Tabs defaultValue="nac" className="space-y-4">
+      <TabsList>
+        <TabsTrigger value="nac" className="gap-1.5">
+          <Icons.Fingerprint className="h-3.5 w-3.5" />
+          NAC &amp; Profiling
+        </TabsTrigger>
+        <TabsTrigger value="iot" className="gap-1.5">
+          <Icons.Router className="h-3.5 w-3.5" />
+          IoT Inventory
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="nac" className="mt-4 space-y-4">
+        <StatsStrip />
+        <ProfilesCard />
+        <DevicesCard />
+        <ByodCard />
+      </TabsContent>
+      <TabsContent value="iot" className="mt-4 space-y-4">
+        <IotStatsChips />
+        <IotInventoryCard />
+      </TabsContent>
+    </Tabs>
   );
 }

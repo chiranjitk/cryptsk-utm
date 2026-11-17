@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * DNS Security view (M06 §4) — hash #/dns-dhcp/dns, 4 tabs:
- * Resolver Settings | Policies | Records | Query Log.
+ * DNS Security view (M06 §4) — hash #/dns-dhcp/dns, 5 tabs:
+ * Resolver Settings | Policies | Records | Query Log | Tunnel Detection.
  * Deep links via ?tab=… in the hash. Query Log polls every 10 s (no socket
  * event exists for query rows — M06 §6); everything else invalidates on
- * config:updated {section:"dns"}.
+ * config:updated {section:"dns"}. Tunnel Detection (Phase 3 §3.4) is the
+ * rule-based entropy/volume/frequency analyzer — AI DGA deferred per spec.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -38,12 +39,15 @@ import { Label } from "@/components/ui/label";
 import { ConfirmDialog, EditorSection, EmptyBlock, FieldLabel, QueryError, TableSkeleton, toastErr, toastOk } from "../firewall/fw-ui";
 import {
   dnsApi,
+  dnsTunnelApi,
   fieldErrorsOf,
   fmtDateTime,
   humanizeSeconds,
   type DnsPolicyDTO,
   type DnsRecordDTO,
   type ResolverSettingsDTO,
+  type DnsTunnelFindingDTO,
+  type TunnelFindingStatus,
 } from "./dns-dhcp-api";
 import {
   BlockedBadge,
@@ -57,13 +61,14 @@ import {
 import { DnsDhcpOsSync } from "./os-sync";
 import { cn } from "@/lib/utils";
 
-type TabKey = "settings" | "policies" | "records" | "querylog";
+type TabKey = "settings" | "policies" | "records" | "querylog" | "tunnel";
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "settings", label: "Resolver Settings" },
   { key: "policies", label: "Policies" },
   { key: "records", label: "Records" },
   { key: "querylog", label: "Query Log" },
+  { key: "tunnel", label: "Tunnel Detection" },
 ];
 
 const BLOCK_CATEGORIES = ["ads", "malware", "phishing", "adult", "social", "gambling"] as const;
@@ -105,6 +110,9 @@ export function DnsView() {
         </TabsContent>
         <TabsContent value="querylog" className="mt-3 space-y-3">
           <QueryLogTab />
+        </TabsContent>
+        <TabsContent value="tunnel" className="mt-3 space-y-3">
+          <TunnelDetectionTab />
         </TabsContent>
       </Tabs>
     </div>
@@ -1098,6 +1106,309 @@ function QueryLogTab() {
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Tunnel Detection (Phase 3 §3.4 — rule-based) ────────────────────────────
+
+/**
+ * Rule-based DNS tunneling triage: Shannon-entropy + unique-domain volume +
+ * longest-label frequency thresholds over fixed windows of the query-log ring.
+ * AI DGA classification is explicitly deferred per spec §3.4 — the UI states
+ * that scope instead of pretending model coverage.
+ */
+
+function TunnelVerdictBadge({ verdict }: { verdict: string }) {
+  const likely = verdict === "likely_tunnel";
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "px-1.5 py-0 text-[10px]",
+        likely
+          ? "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+          : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      )}
+    >
+      {likely ? "likely tunnel" : "suspicious"}
+    </Badge>
+  );
+}
+
+function TunnelStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { cls: string; label: string }> = {
+    open: {
+      cls: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+      label: "open",
+    },
+    acknowledged: { cls: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400", label: "acknowledged" },
+    resolved: { cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", label: "resolved" },
+  };
+  const it = map[status] ?? map.open!;
+  return (
+    <Badge variant="outline" className={cn("px-1.5 py-0 text-[10px]", it.cls)}>
+      {it.label}
+    </Badge>
+  );
+}
+
+function TunnelStatChip({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="min-w-28 rounded-md border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="font-mono text-lg tabular-nums leading-none text-zinc-800 dark:text-zinc-100">{value}</p>
+      <p className="mt-1 text-[11px] text-zinc-500">{label}</p>
+    </div>
+  );
+}
+
+function fmtWindow(startIso: string, endIso: string): string {
+  const dateOpts: Intl.DateTimeFormatOptions = { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" };
+  return `${new Date(startIso).toLocaleString(undefined, dateOpts)} → ${new Date(endIso).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}
+
+const TUNNEL_WINDOW_OPTIONS = ["15", "30", "60"] as const;
+
+function TunnelDetectionTab() {
+  const queryClient = useQueryClient();
+  const [windowMin, setWindowMin] = useState<string>("15");
+  const [qInput, setQInput] = useState("");
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | TunnelFindingStatus>("all");
+  const [verdictFilter, setVerdictFilter] = useState<"all" | "suspicious" | "likely_tunnel">("all");
+  const [page, setPage] = useState(1);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQ(qInput);
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [qInput]);
+
+  const params = useMemo(() => {
+    const sp = new URLSearchParams({ page: String(page), limit: "50" });
+    if (q) sp.set("q", q);
+    if (statusFilter !== "all") sp.set("status", statusFilter);
+    if (verdictFilter !== "all") sp.set("verdict", verdictFilter);
+    return sp.toString();
+  }, [q, statusFilter, verdictFilter, page]);
+
+  const stats = useQuery({ queryKey: ["dns", "tunnel", "stats"], queryFn: dnsTunnelApi.stats });
+  const list = useQuery({
+    queryKey: ["dns", "tunnel", "findings", params],
+    queryFn: () => dnsTunnelApi.listFindings(params),
+  });
+
+  const run = useMutation({
+    mutationFn: () => dnsTunnelApi.run({ windowMinutes: Number(windowMin) || 15 }),
+    onSuccess: (res) => {
+      if (res.reason) {
+        toastOk("Nothing to analyze", res.reason);
+      } else {
+        toastOk(
+          `Detection complete — ${res.findings} finding${res.findings === 1 ? "" : "s"}`,
+          `${res.created} created, ${res.updated} updated across ${res.windowsScanned} window(s)`,
+        );
+      }
+      void queryClient.invalidateQueries({ queryKey: ["dns", "tunnel"] });
+    },
+    onError: (err) => toastErr(err, "Detection run failed"),
+  });
+
+  const setStatus = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: TunnelFindingStatus }) => dnsTunnelApi.updateStatus(id, status),
+    onSuccess: (updated) => {
+      toastOk(`Finding #${updated.id} ${updated.status}`);
+      void queryClient.invalidateQueries({ queryKey: ["dns", "tunnel"] });
+    },
+    onError: (err) => toastErr(err, "Status update failed"),
+  });
+
+  const rows = list.data?.data ?? [];
+  const meta = list.data?.meta;
+  const s = stats.data;
+
+  return (
+    <div className="space-y-3">
+      <Alert className="border-zinc-500/30 bg-zinc-500/10 text-zinc-700 dark:text-zinc-300">
+        <Icons.Info className="h-4 w-4" />
+        <AlertTitle>Rule-based detection</AlertTitle>
+        <AlertDescription>
+          Entropy, unique-domain volume and longest-label thresholds over fixed windows of the DNS query ring. Heuristic
+          only — the AI DGA classification model is deferred per spec §3.4.
+        </AlertDescription>
+      </Alert>
+
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="relative">
+          <Icons.Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+          <Input
+            className="h-9 w-48 pl-8 text-sm"
+            placeholder="Client IP…"
+            value={qInput}
+            onChange={(e) => setQInput(e.currentTarget.value)}
+            aria-label="Filter findings by client IP"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as "all" | TunnelFindingStatus); setPage(1); }}>
+          <SelectTrigger className="h-9 w-36 text-sm"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="open">Open</SelectItem>
+            <SelectItem value="acknowledged">Acknowledged</SelectItem>
+            <SelectItem value="resolved">Resolved</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={verdictFilter} onValueChange={(v) => { setVerdictFilter(v as "all" | "suspicious" | "likely_tunnel"); setPage(1); }}>
+          <SelectTrigger className="h-9 w-40 text-sm"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All verdicts</SelectItem>
+            <SelectItem value="suspicious">Suspicious</SelectItem>
+            <SelectItem value="likely_tunnel">Likely tunnel</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={windowMin} onValueChange={setWindowMin}>
+            <SelectTrigger className="h-9 w-32 text-sm" aria-label="Analysis window minutes"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {TUNNEL_WINDOW_OPTIONS.map((w) => (
+                <SelectItem key={w} value={w}>{w} min window</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button onClick={() => run.mutate()} disabled={run.isPending} className="bg-amber-700 text-white hover:bg-amber-800">
+            <Icons.Radar className="mr-1.5 h-4 w-4" />
+            {run.isPending ? "Running…" : "Run detection"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <TunnelStatChip label="Open findings" value={s ? s.openTotal : "—"} />
+        <TunnelStatChip label="Open suspicious" value={s ? s.openByVerdict.suspicious : "—"} />
+        <TunnelStatChip label="Open likely tunnels" value={s ? s.openByVerdict.likely_tunnel : "—"} />
+        <TunnelStatChip label="Created (7d)" value={s ? s.created7d : "—"} />
+        <TunnelStatChip label="Resolved" value={s ? s.resolvedTotal : "—"} />
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          {list.isLoading ? (
+            <div className="pt-6">
+              <TableSkeleton rows={6} cols={7} />
+            </div>
+          ) : list.isError ? (
+            <div className="p-4">
+              <QueryError error={list.error} onRetry={() => void list.refetch()} />
+            </div>
+          ) : rows.length === 0 ? (
+            <EmptyBlock
+              icon={<Icons.Network className="h-6 w-6" />}
+              title="No tunnel findings"
+              description="Rule-based detection (entropy + volume/frequency) runs on demand over the DNS query-log ring — press Run detection. Empty rings are reported honestly; AI DGA classification is deferred per spec §3.4."
+            />
+          ) : (
+            <ul className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
+              {rows.map((f) => (
+                <li key={f.id} className="text-xs">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                    <button
+                      type="button"
+                      aria-label={expandedId === f.id ? `Collapse detail for ${f.clientIp}` : `Expand detail for ${f.clientIp}`}
+                      className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+                      onClick={() => setExpandedId(expandedId === f.id ? null : f.id)}
+                    >
+                      {expandedId === f.id ? <Icons.ChevronDown className="h-4 w-4" /> : <Icons.ChevronRight className="h-4 w-4" />}
+                    </button>
+                    <span className="w-32 shrink-0 font-mono text-[11px] text-zinc-700 dark:text-zinc-200">{f.clientIp}</span>
+                    <span className="w-56 shrink-0 font-mono text-[11px] tabular-nums text-zinc-400">{fmtWindow(f.windowStart, f.windowEnd)}</span>
+                    <span className="w-14 shrink-0 text-right font-mono tabular-nums text-zinc-500" title="Queries in window">{f.queryCount} q</span>
+                    <span className="w-14 shrink-0 text-right font-mono tabular-nums text-zinc-500" title="Unique domains">{f.uniqueDomains} uniq</span>
+                    <span className="w-14 shrink-0 text-right font-mono tabular-nums text-zinc-500" title="Longest label (TLD excluded)">{f.maxLabelLength} lbl</span>
+                    <span className="w-16 shrink-0 text-right font-mono tabular-nums text-zinc-500" title="Mean domain entropy (bits)">{f.entropyScore.toFixed(2)} H</span>
+                    <TunnelVerdictBadge verdict={f.verdict} />
+                    <TunnelStatusBadge status={f.status} />
+                    <div className="ml-auto">
+                      <Select
+                        value={f.status}
+                        onValueChange={(v) => setStatus.mutate({ id: f.id, status: v as TunnelFindingStatus })}
+                        disabled={setStatus.isPending}
+                      >
+                        <SelectTrigger className="h-7 w-32 text-[11px]" aria-label={`Triage status for ${f.clientIp}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="open">Open</SelectItem>
+                          <SelectItem value="acknowledged">Acknowledge</SelectItem>
+                          <SelectItem value="resolved">Resolve</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {expandedId === f.id && (
+                    <div className="space-y-2 border-t border-zinc-100 bg-zinc-50/60 px-4 py-3 dark:border-zinc-800/60 dark:bg-zinc-800/30">
+                      <div>
+                        <p className="mb-1 text-[11px] font-medium text-zinc-500">Top queried domains</p>
+                        {f.detail.topDomains.length === 0 ? (
+                          <span className="text-[11px] text-zinc-400">none recorded</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {f.detail.topDomains.map((d) => (
+                              <Badge key={d.domain} variant="outline" className="max-w-64 gap-1 border-zinc-300 bg-zinc-50 px-1.5 py-0 font-mono text-[10px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
+                                <span className="truncate" title={d.domain}>{d.domain}</span>
+                                <span className="text-zinc-400">×{d.count}</span>
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="mb-1 text-[11px] font-medium text-zinc-500">Longest labels (TLD excluded)</p>
+                        {f.detail.longestLabels.length === 0 ? (
+                          <span className="text-[11px] text-zinc-400">none recorded</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {f.detail.longestLabels.map((l) => (
+                              <Badge key={`${l.domain}-${l.label}`} variant="outline" className="max-w-64 gap-1 border-zinc-300 bg-zinc-50 px-1.5 py-0 font-mono text-[10px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
+                                <span className="truncate" title={l.domain}>{l.label}</span>
+                                <span className="text-zinc-400">{l.length}</span>
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-zinc-400">Logged {fmtDateTime(f.createdAt)}</p>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {meta && meta.totalPages > 1 && (
+        <div className="flex items-center justify-end gap-2 text-xs text-zinc-500">
+          <Button variant="outline" size="sm" className="h-7" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            <Icons.ChevronLeft className="mr-1 h-3.5 w-3.5" /> Prev
+          </Button>
+          <span className="tabular-nums">{meta.page} / {meta.totalPages}</span>
+          <Button variant="outline" size="sm" className="h-7" disabled={page >= meta.totalPages} onClick={() => setPage((p) => p + 1)}>
+            Next <Icons.ChevronRight className="ml-1 h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
+      <InfoNote>
+        Thresholds (spec §3.4): suspicious when mean domain entropy ≥ 3.5, or ≥ 25 unique domains, or a label ≥ 45 chars;
+        likely tunnel when entropy ≥ 4.2 and (≥ 40 unique domains or ≥ 100 queries). Findings dedupe per client, window
+        and verdict; the ring is not persisted, so re-running after a restart re-derives from live data.
+      </InfoNote>
     </div>
   );
 }

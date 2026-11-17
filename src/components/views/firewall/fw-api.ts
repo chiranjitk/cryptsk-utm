@@ -199,6 +199,56 @@ export interface RefRow {
   ruleType: string;
 }
 
+// ── GeoIP & FQDN (spec §1.4) — additive client types ─────────────────────────
+
+export interface GeoipSource {
+  id: number;
+  name: string;
+  kind: string; // csv | mmdb (future)
+  filePath: string;
+  countries: string[];
+  prefixCount: number;
+  status: "pending" | "loaded" | "error";
+  error: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+
+export interface GeoipSetInfo {
+  country: string;
+  setName: string;
+  prefixCount: number;
+  skipped: boolean;
+  skipReason: string | null;
+}
+
+export interface GeoipStatus {
+  sources: GeoipSource[];
+  sets: GeoipSetInfo[];
+  sha256: string | null;
+  warnings: string[];
+  cap: number;
+  geoObjects: Array<{ id: number; name: string; value: string; resolvable: boolean; prefixCount: number | null; capped: boolean }>;
+  fqdnObjects: Array<{ id: number; name: string; value: string; ipCount: number; resolvedAt: string | null; stale: boolean }>;
+}
+
+export interface GeoipLoadResult {
+  source: GeoipSource;
+  countries: Array<{ country: string; prefixCount: number }>;
+  v6Count: number;
+  badLines: number;
+  warnings: string[];
+}
+
+export interface FqdnRefreshSummary {
+  ranAt: string;
+  durationMs: number;
+  resolved: number;
+  failed: number;
+  unchanged: number;
+  results: Array<{ id: number; name: string; hostname: string; status: "resolved" | "failed" | "unchanged"; ipCount: number; error?: string }>;
+}
+
 export interface ImportRowError {
   row: number;
   message: string;
@@ -376,6 +426,18 @@ export const api = {
       fwFetch<T>(path, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) }),
     remove: (path: string) => fwFetch<{ ok: boolean }>(path, { method: "DELETE" }),
   },
+
+  // ── GeoIP & FQDN (spec §1.4) — additive ──
+  geoipStatus: () => fwFetch<GeoipStatus>("/api/v1/geoip/status"),
+  geoipLoad: (body: { name: string; filePath: string }) =>
+    fwFetch<GeoipLoadResult>("/api/v1/geoip/sources", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) }),
+  geoipRemove: (id: number) => fwFetch<{ ok: boolean }>(`/api/v1/geoip/sources/${id}`, { method: "DELETE" }),
+  fqdnRefresh: (force = false) =>
+    fwFetch<FqdnRefreshSummary>("/api/v1/objects/fqdn/refresh", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ force }),
+    }),
 };
 
 // ── small client-side helpers ───────────────────────────────────────────────

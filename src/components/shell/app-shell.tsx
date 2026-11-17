@@ -66,6 +66,8 @@ import { SdwanView } from "@/components/views/sdwan/sdwan-view";
 import { Ipv6View } from "@/components/views/ipv6/ipv6-view";
 import { EmailSecurityView } from "@/components/views/email-security/email-security-view";
 import { IdentityAdvancedView } from "@/components/views/identity-advanced/identity-advanced-view";
+import { DlpView } from "@/components/views/dlp/dlp-view";
+import { IncidentsView } from "@/components/views/incidents/incidents-view";
 import { HaView } from "@/components/views/ha/ha-view";
 import { SystemView } from "@/components/views/system/system-view";
 import { BackupsView } from "@/components/views/system/backups-view";
@@ -516,6 +518,10 @@ export function AppShell() {
               <EmailSecurityView />
             ) : view.path === "/identity/federation" || view.path === "/identity/nac" ? (
               <IdentityAdvancedView />
+            ) : view.path === "/security/dlp" ? (
+              <DlpView />
+            ) : view.path === "/security/incidents" ? (
+              <IncidentsView />
             ) : view.path === "/ha" ? (
               <HaView />
             ) : view.path === "/system/settings" ? (

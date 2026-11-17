@@ -28,9 +28,16 @@
  *    chain policy to drop.
  *  • NO-NAT precedence — exempt rules are emitted before snat/hairpin rules
  *    in postrouting regardless of GUI position (real-firewall semantics).
+ *  • spec §1.4 — fqdn/geo address matchers expand into named sets
+ *    (`utm_fqdn_*` from the object's resolver snapshot, `utm_geo_*` from an
+ *    injected GeoIP callback) ONLY when that data is provided; without it the
+ *    historical contract holds: the rule stays config-only with a
+ *    match-not-expressible warning. This module remains PURE: the geo lookup
+ *    is a callback parameter, fqdn snapshots are plain input data.
  */
 
 import type { AddrMatcher, ScheduleSpec, ServiceMatcher } from "./rule-match";
+import { renderGeoSets, geoSetName, GEO_SET_MAX_PREFIXES } from "../geoip/render";
 
 export const NFT_TABLE_NAME = "console-firewall";
 export const MANAGEMENT_SSH_PORTS = [22, 22222];
@@ -87,6 +94,10 @@ export interface NftGenInput {
   /** live OS interface names — enables zone/iface coherence warnings */
   osInterfaces?: string[];
   generatedAt?: Date;
+  /** spec §1.4 — fqdn objects with their last resolver snapshot (resolvedIps). */
+  fqdnObjects?: NftGenFqdnObject[];
+  /** spec §1.4 — injected GeoIP lookup (cc → prefixes | null); null/undefined = no source loaded. */
+  geoResolver?: GeoResolver | null;
 }
 
 export interface NftGenWarning {
@@ -111,6 +122,28 @@ export interface NftGenResult {
   counts: NftGenCounts;
   forwardPolicy: "accept" | "drop";
   warnings: NftGenWarning[];
+  /** spec §1.4 — named sets materialized for fqdn/geo objects (referenced ones only) */
+  sets: NftGenSetInfo[];
+}
+
+/** spec §1.4 — one fqdn address object's resolver snapshot (generator input). */
+export interface NftGenFqdnObject {
+  /** hostname as referenced by the fqdn matcher (AddressObject.value) */
+  hostname: string;
+  /** last resolver snapshot (AddressObject.resolvedIps JSON array) */
+  ips: string[];
+  /** true when the snapshot is missing or older than the enforcement window */
+  stale?: boolean;
+}
+
+/** spec §1.4 — injected GeoIP lookup; null = no source loaded (geo stays config-only). */
+export type GeoResolver = (cc: string) => string[] | null;
+
+export interface NftGenSetInfo {
+  name: string;
+  kind: "fqdn" | "geo";
+  country?: string;
+  elements: number;
 }
 
 // ── validation helpers ──────────────────────────────────────────────────────
@@ -249,6 +282,104 @@ function natLogFragments(nat: NftGenNatRule): string[] {
   return [`limit rate 10/second burst 20 packets log prefix ${JSON.stringify(prefix)}`];
 }
 
+// ── dynamic address sets (spec §1.4: fqdn + geo) ───────────────────────────
+
+interface NftGenDynCtx {
+  fqdn: Map<string, NftGenFqdnObject>;
+  geoResolver: GeoResolver | null;
+  /** sets referenced by EMITTED rules — committed by compileFilterRule */
+  usedSets: Map<string, { kind: "fqdn" | "geo"; cc?: string; elements: string[] }>;
+}
+
+interface DynSetResult {
+  src: string[];
+  dst: string[];
+  sets: Map<string, { kind: "fqdn" | "geo"; cc?: string; elements: string[] }>;
+  /** true when the rule carries fqdn/geo matchers but none is usable */
+  excluded: boolean;
+}
+
+/** `portal.example.com` → `utm_fqdn_portal_example_com` (nft-safe identifier). */
+export function fqdnSetName(hostname: string): string {
+  const s = hostname
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return `utm_fqdn_${s.length > 0 ? s.slice(0, 48) : "host"}`;
+}
+
+function dynWarn(warn: (w: NftGenWarning) => void, rule: NftGenRule, message: string): void {
+  warn({ scope: "rule", id: rule.id, name: rule.name, code: "match-not-expressible", message });
+}
+
+/**
+ * Expand fqdn/geo matchers into named-set references using INJECTED data
+ * (generator stays pure). Empty/stale fqdn snapshots, geo without a loaded
+ * source, unknown countries and over-cap countries each warn and contribute
+ * nothing; a rule left with NO usable matcher is excluded — never widened.
+ */
+function resolveDynamicAddrs(rule: NftGenRule, dyn: NftGenDynCtx, warn: (w: NftGenWarning) => void): DynSetResult {
+  const result: DynSetResult = { src: [], dst: [], sets: new Map(), excluded: false };
+  let hasDynMatcher = false;
+  let usable = false;
+
+  const processSide = (matchers: AddrMatcher[], side: "src" | "dst") => {
+    const seen = new Set<string>();
+    for (const m of matchers) {
+      if (m.kind !== "fqdn" && m.kind !== "geo") continue;
+      hasDynMatcher = true;
+      const key = `${m.kind}:${m.value.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      if (m.kind === "fqdn") {
+        const entry = dyn.fqdn.get(m.value.toLowerCase());
+        if (!entry) {
+          dynWarn(warn, rule, `fqdn address match '${m.value}' has no resolver snapshot (refresh FQDN objects first) — matcher excluded`);
+          continue;
+        }
+        if (entry.stale) {
+          dynWarn(warn, rule, `fqdn address match '${m.value}' resolver snapshot is stale — matcher excluded`);
+          continue;
+        }
+        const ips = [...new Set(entry.ips.filter((ip) => IPV4_RE.test(ip)))].sort();
+        if (ips.length === 0) {
+          dynWarn(warn, rule, `fqdn address match '${m.value}' resolver snapshot has no usable IPv4 — matcher excluded`);
+          continue;
+        }
+        const setName = fqdnSetName(m.value);
+        result.sets.set(setName, { kind: "fqdn", elements: ips });
+        (side === "src" ? result.src : result.dst).push(`ip ${side === "src" ? "saddr" : "daddr"} @${setName}`);
+        usable = true;
+      } else {
+        const cc = m.value.toUpperCase();
+        if (!dyn.geoResolver) {
+          dynWarn(warn, rule, `geo object skipped: no GeoIP source loaded — geo address match '${cc}' excluded`);
+          continue;
+        }
+        const prefixes = dyn.geoResolver(cc);
+        if (!prefixes || prefixes.length === 0) {
+          dynWarn(warn, rule, `geo address match '${cc}' has no prefixes in any loaded GeoIP source — matcher excluded`);
+          continue;
+        }
+        if (prefixes.length > GEO_SET_MAX_PREFIXES) {
+          dynWarn(warn, rule, `geo address match '${cc}' exceeds the ${GEO_SET_MAX_PREFIXES}-prefix set cap (perf guard) — matcher excluded`);
+          continue;
+        }
+        const setName = geoSetName(cc);
+        result.sets.set(setName, { kind: "geo", cc, elements: [...new Set(prefixes)] });
+        (side === "src" ? result.src : result.dst).push(`ip ${side === "src" ? "saddr" : "daddr"} @${setName}`);
+        usable = true;
+      }
+    }
+  };
+
+  processSide(rule.srcAddrs, "src");
+  processSide(rule.dstAddrs, "dst");
+  result.excluded = hasDynMatcher && !usable;
+  return result;
+}
+
 /** A rule whose scope matches every flow (the GUI "default-deny" semantic). */
 export function isCatchAllDeny(rule: NftGenRule): boolean {
   if (!rule.enabled) return false;
@@ -277,7 +408,7 @@ interface RuleClauseSet {
  * Compile one GUI rule into nft statements for the forward and input chains.
  * Empty arrays = no enforceable statement for that hook.
  */
-function compileFilterRule(rule: NftGenRule, zones: Map<number, NftGenZone>, warn: (w: NftGenWarning) => void): RuleClauseSet {
+function compileFilterRule(rule: NftGenRule, zones: Map<number, NftGenZone>, dyn: NftGenDynCtx, warn: (w: NftGenWarning) => void): RuleClauseSet {
   const out: RuleClauseSet = { forward: [], input: [] };
 
   if (!rule.enabled) return out;
@@ -300,10 +431,12 @@ function compileFilterRule(rule: NftGenRule, zones: Map<number, NftGenZone>, war
     warn({ scope: "rule", id: rule.id, name: rule.name, code: "match-not-expressible", message: "user matches cannot be enforced by nftables — excluded" });
     return out;
   }
-  if ([...rule.srcAddrs, ...rule.dstAddrs].some((m) => m.kind === "fqdn" || m.kind === "geo")) {
-    warn({ scope: "rule", id: rule.id, name: rule.name, code: "match-not-expressible", message: "fqdn/geo address matches cannot be enforced by nftables — excluded" });
-    return out;
-  }
+  // spec §1.4 — fqdn/geo matchers expand into named sets when resolver data
+  // is injected (fqdn: AddressObject.resolvedIps snapshot; geo: GeoIP
+  // callback). Without usable data the historical contract holds: exclude
+  // with a match-not-expressible warning — never widen to match-any.
+  const dynSets = resolveDynamicAddrs(rule, dyn, warn);
+  if (dynSets.excluded) return out;
 
   // zones → interface sets
   const resolveIfaces = (ids: number[], side: "src" | "dst"): string[] | null => {
@@ -356,6 +489,11 @@ function compileFilterRule(rule: NftGenRule, zones: Map<number, NftGenZone>, war
   const addrVariants: Array<string[]> = [];
   if (srcPlain || dstPlain || !hasAddrMatch) addrVariants.push([srcPlain, dstPlain].filter(Boolean) as string[]);
   for (const w of srcWildcards) addrVariants.push([wildcardAddrClause(w, "src")]);
+  // dynamic fqdn/geo set variants — each carries the plain opposite-side
+  // constraint so a set variant can never drop an explicit restriction
+  // (under-matching by design, never over-matching)
+  for (const clause of dynSets.src) addrVariants.push(dstPlain ? [clause, dstPlain] : [clause]);
+  for (const clause of dynSets.dst) addrVariants.push(srcPlain ? [srcPlain, clause] : [clause]);
 
   // macs
   const macs = rule.srcMacs.filter((m) => MAC_RE.test(m));
@@ -373,6 +511,10 @@ function compileFilterRule(rule: NftGenRule, zones: Map<number, NftGenZone>, war
   const logParts = logFragments(rule);
   const iif = ifaceClause(srcIfaces, "in");
   const oif = ifaceClause(dstIfaces, "out");
+
+  // the rule will emit ≥1 line here (svc/addr variants non-empty) — commit its
+  // referenced sets so only USED sets are materialized in the file
+  for (const [name, s] of dynSets.sets) dyn.usedSets.set(name, s);
 
   const appliesToInput = rule.dstZoneIds.length === 0; // "any" destination includes the host itself
   const comment = sanitizeComment(`fw:${rule.id}:${rule.name}`, 60);
@@ -675,6 +817,11 @@ export function generateNftRuleset(input: NftGenInput): NftGenResult {
   const warnings: NftGenWarning[] = [];
   const warn = (w: NftGenWarning) => warnings.push(w);
   const zones = new Map(input.zones.map((z) => [z.id, z]));
+  const dyn: NftGenDynCtx = {
+    fqdn: new Map((input.fqdnObjects ?? []).map((o) => [o.hostname.toLowerCase(), o])),
+    geoResolver: input.geoResolver ?? null,
+    usedSets: new Map(),
+  };
 
   // zone coherence warnings (enterprise drift hygiene)
   for (const z of input.zones) {
@@ -697,7 +844,7 @@ export function generateNftRuleset(input: NftGenInput): NftGenResult {
   const ordered = [...input.rules].sort((a, b) => a.position - b.position);
   for (const rule of ordered) {
     if (!rule.enabled) continue;
-    const compiled = compileFilterRule(rule, zones, warn);
+    const compiled = compileFilterRule(rule, zones, dyn, warn);
     if (compiled.forward.length === 0 && compiled.input.length === 0) skipped += 1;
     forward.push(...compiled.forward);
     inputChain.push(...compiled.input);
@@ -731,6 +878,40 @@ export function generateNftRuleset(input: NftGenInput): NftGenResult {
     skipped,
   };
 
+  // ── named sets (spec §1.4) — geo via the pure renderer (sorted, capped,
+  // hashed), fqdn from resolver snapshots. Only sets referenced by emitted
+  // rules are materialized; empty result keeps the file byte-identical.
+  const setLines: string[] = [];
+  const setInfos: NftGenSetInfo[] = [];
+  const geoData: Record<string, string[]> = {};
+  const geoWanted: string[] = [];
+  const fqdnSets: Array<{ name: string; elements: string[] }> = [];
+  for (const [name, s] of dyn.usedSets) {
+    if (s.kind === "geo" && s.cc) {
+      geoData[s.cc] = s.elements;
+      geoWanted.push(s.cc);
+    } else {
+      fqdnSets.push({ name, elements: [...s.elements].sort() });
+    }
+  }
+  if (geoWanted.length > 0) {
+    const geo = renderGeoSets(geoData, geoWanted);
+    for (const w of geo.warnings) {
+      warn({ scope: "policy", id: null, name: "geoip", code: "geo-set-render", message: w });
+    }
+    if (geo.fragment) {
+      setLines.push(...geo.fragment.split("\n"));
+      for (const s of geo.sets) {
+        if (!s.skipped) setInfos.push({ name: s.setName, kind: "geo", country: s.country, elements: s.prefixCount });
+      }
+    }
+  }
+  fqdnSets.sort((a, b) => a.name.localeCompare(b.name));
+  for (const s of fqdnSets) {
+    setLines.push(`  set ${s.name} { type ipv4_addr; elements = { ${s.elements.join(", ")} } }`);
+    setInfos.push({ name: s.name, kind: "fqdn", elements: s.elements.length });
+  }
+
   const genAt = (input.generatedAt ?? new Date()).toISOString();
   const lines: string[] = [
     "#!/usr/sbin/nft -f",
@@ -745,6 +926,7 @@ export function generateNftRuleset(input: NftGenInput): NftGenResult {
     `destroy table inet ${NFT_TABLE_NAME}`,
     "",
     `table inet ${NFT_TABLE_NAME} {`,
+    ...(setLines.length > 0 ? [...setLines.map((l) => (l.startsWith("  set ") ? l : `  ${l}`)), ""] : []),
     `  chain input {`,
     `${CHAIN_INDENT}type filter hook input priority filter; policy accept;`,
     ...baselineInputRules().map((l) => `${INDENT}${l}`),
@@ -770,5 +952,5 @@ export function generateNftRuleset(input: NftGenInput): NftGenResult {
     "",
   ];
 
-  return { file: lines.join("\n"), counts, forwardPolicy, warnings };
+  return { file: lines.join("\n"), counts, forwardPolicy, warnings, sets: setInfos };
 }

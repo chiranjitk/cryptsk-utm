@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * View registry + sidebar navigation — LOCKED to PROJECT_MEMORY §8 (44 hash views).
+ * View registry + sidebar navigation — LOCKED to PROJECT_MEMORY §8 (46 hash views).
  * The ONLY Next.js route is `/`; all navigation is client-side via window.location.hash.
  */
 
@@ -58,6 +58,9 @@ export const VIEWS: ViewDef[] = [
   { path: "/email/security", title: "Email Security", icon: "MailWarning" },
   { path: "/identity/federation", title: "Federation (SSO)", icon: "BadgeCheck" },
   { path: "/identity/nac", title: "NAC & Profiling", icon: "ScanLine" },
+  // ── Phase 3 (§3.3–§3.5) — Intelligence: DLP + incident response ──
+  { path: "/security/dlp", title: "DLP", icon: "EyeOff" },
+  { path: "/security/incidents", title: "Incident Response", icon: "ShieldAlert" },
 ];
 
 export const SETUP_VIEW: ViewDef = { path: "/setup", title: "Setup Wizard", icon: "Sparkles" };
@@ -73,6 +76,7 @@ export const NAV_GROUPS: Array<{ label: string; paths: string[] }> = [
   { label: "QoS", paths: ["/qos/policies"] },
   { label: "Logs & Reports", paths: ["/logs/firewall", "/logs/ips", "/logs/audit", "/logs/live", "/logs/search", "/logs/reports", "/logs/compliance"] },
   { label: "Threat Intelligence", paths: ["/threat-intel/feeds", "/threat-intel/iocs", "/threat-intel/auto-block"] },
+  { label: "Security Operations", paths: ["/security/dlp", "/security/incidents"] },
   { label: "PKI", paths: ["/pki/authorities", "/pki/certificates"] },
   { label: "Web Security", paths: ["/web/ssl-inspection", "/web/url-filter", "/web/waf", "/web/app-control"] },
   { label: "Advanced Routing", paths: ["/routing/dynamic", "/routing/sdwan"] },

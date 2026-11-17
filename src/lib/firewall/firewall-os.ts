@@ -35,6 +35,8 @@ import { db } from "@/lib/db";
 import { hasTool, runTool, applyNftFile, readNftRuleset } from "@/lib/host/tools";
 import { probeWanHealth, pbrHealthRegressed, type PbrWanHealth } from "@/lib/network/pbr-os";
 import { loadExpansionContext, safeStrArr } from "./rule-loader";
+import { isFqdnStale } from "./fqdn-resolver";
+import { getGeoResolver } from "@/lib/geoip/service";
 import { parseIds } from "./refs";
 import {
   generateNftRuleset,
@@ -263,7 +265,20 @@ export function tableBlocksInSync(genFile: string, liveDump: string): boolean {
 }
 
 export async function buildFirewallPlan(tenantId: number): Promise<FirewallPlan> {
-  const [loaded, liveDump] = await Promise.all([loadFirewallGenInput(tenantId), readNftRuleset().then((r) => r.ruleset)]);
+  const [loaded, liveDump, fqdnRows, geoResolver] = await Promise.all([
+    loadFirewallGenInput(tenantId),
+    readNftRuleset().then((r) => r.ruleset),
+    // spec §1.4 — fqdn objects feed the generator's named-set expansion from
+    // their stored resolver snapshot (refresh via /objects/fqdn/refresh)
+    db.addressObject.findMany({
+      where: { tenantId, type: "fqdn" },
+      select: { id: true, name: true, value: true, resolvedIps: true, resolvedAt: true },
+      orderBy: { name: "asc" },
+    }),
+    // spec §1.4 — injected GeoIP callback (null when no source is loaded →
+    // the generator keeps geo rules config-only with a loud warning)
+    getGeoResolver(tenantId),
+  ]);
   const { _brokenRefRules = [], _brokenRefNats = [], ...input } = loaded as NftGenInput & {
     _brokenRefRules?: number[];
     _brokenRefNats?: number[];
@@ -272,6 +287,12 @@ export async function buildFirewallPlan(tenantId: number): Promise<FirewallPlan>
   const gen = generateNftRuleset({
     ...input,
     osInterfaces: facts.interfaces.map((i) => i.name),
+    fqdnObjects: fqdnRows.map((r) => ({
+      hostname: r.value,
+      ips: safeStrArr(r.resolvedIps),
+      stale: isFqdnStale(r.resolvedAt),
+    })),
+    ...(geoResolver ? { geoResolver } : {}),
   });
   // surface the excluded broken-ref rules as loud warnings (honesty at apply time)
   for (const id of _brokenRefRules) {

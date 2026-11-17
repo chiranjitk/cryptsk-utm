@@ -51,7 +51,9 @@ export type CapabilityArea =
   | "ipv6"
   | "email_security"
   | "nac"
-  | "federation";
+  | "federation"
+  // Phase 3 (spec §3.3)
+  | "dlp";
 
 /** Interactive roles allowed per operation. `auditor`/`api_service` are handled specially below. */
 const MATRIX: Record<CapabilityArea, { read: Role[]; write: Role[]; admin?: Role[] }> = {
@@ -93,6 +95,7 @@ const MATRIX: Record<CapabilityArea, { read: Role[]; write: Role[]; admin?: Role
   email_security: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin"] },
   nac: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin"], write: ["super_admin", "tenant_admin", "network_admin"] },
   federation: { read: ["super_admin", "tenant_admin", "security_admin"], write: ["super_admin", "tenant_admin", "security_admin"] },
+  dlp: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin", "soc_analyst"] },
 };
 
 export interface AuthContext {

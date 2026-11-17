@@ -12,6 +12,9 @@
  * v3 (QA marathon R1): relative "updated" label + manual refresh for the summary
  * feeds, and a "Top firewall rules (hits)" ranked card from the existing
  * GET /api/v1/firewall-rules payload (hitCount/lastHitAt already in the shape).
+ * v4 (T2-b, spec §1.1): admin-gated "Quick Actions" card — service restart
+ * (ConfirmDialog + toast), config backup, refresh stats. Uses the existing
+ * system-api client (systemApi.restartService / createBackup).
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -21,8 +24,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AppsDonut, ThroughputAreaChart } from "@/components/charts/palette";
 import { fetchApi, useRealtime, type MetricsTickPayload, type WanStatusPayload, type AlertNewPayload } from "@/lib/realtime";
+import { ConfirmDialog, toastErr, toastOk } from "../firewall/fw-ui";
+import { usePermissions } from "../system/system-ui";
+import { systemApi } from "../system/system-api";
 import { cn } from "@/lib/utils";
 
 type Summary = {
@@ -131,6 +138,122 @@ function vpnTone(status: string) {
   return "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400";
 }
 
+// ── Quick Actions (T2-b, spec §1.1) ─────────────────────────────────────────
+
+/** Static restartable-service list for the dashboard quick actions (M10 §3). */
+const RESTARTABLE_SERVICES = [
+  { name: "unbound", label: "unbound — DNS resolver" },
+  { name: "kea-dhcp4-server", label: "kea-dhcp4-server — DHCP" },
+  { name: "suricata", label: "suricata — IPS" },
+  { name: "rsyslogd", label: "rsyslogd — syslog" },
+  { name: "strongswan", label: "strongswan — VPN" },
+  { name: "keepalived", label: "keepalived — HA VRRP" },
+];
+
+/**
+ * Operational quick actions: restart a service (confirm + toast), create a
+ * config backup, refresh the dashboard stats feeds. Admin-gated by the parent.
+ */
+function OpsQuickActionsCard(props: { onRefreshStats: () => void; refreshing: boolean }) {
+  const [service, setService] = useState("suricata");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+
+  const doRestart = async () => {
+    setRestarting(true);
+    try {
+      const svc = await systemApi.restartService(service);
+      toastOk("Restart triggered", `${svc.name}: ${svc.state}`);
+    } catch (err) {
+      toastErr(err, "Restart failed");
+    } finally {
+      setRestarting(false);
+      setConfirmOpen(false);
+    }
+  };
+
+  const doBackup = async () => {
+    setBackingUp(true);
+    try {
+      const backup = await systemApi.createBackup({ type: "config" });
+      toastOk("Backup created", `${backup.id} (${backup.type})`);
+    } catch (err) {
+      toastErr(err, "Backup failed");
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="p-4 pb-2 md:p-6 md:pb-2">
+        <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 p-4 pt-0 md:p-6 md:pt-0">
+        <div className="flex items-center gap-2">
+          <Select value={service} onValueChange={setService}>
+            <SelectTrigger className="h-11 min-w-0 flex-1 text-xs lg:h-8" aria-label="Service to restart">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {RESTARTABLE_SERVICES.map((svc) => (
+                <SelectItem key={svc.name} value={svc.name} className="text-xs">
+                  {svc.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-11 shrink-0 gap-1.5 px-3 text-xs lg:h-8"
+            onClick={() => setConfirmOpen(true)}
+            disabled={restarting}
+          >
+            <Icons.RefreshCcw className="h-3.5 w-3.5" />
+            Restart
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-11 flex-1 gap-1.5 px-3 text-xs lg:h-8"
+            onClick={() => void doBackup()}
+            disabled={backingUp}
+          >
+            <Icons.DatabaseBackup className="h-3.5 w-3.5" />
+            {backingUp ? "Creating…" : "Create Backup"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-11 flex-1 gap-1.5 px-3 text-xs lg:h-8"
+            onClick={props.onRefreshStats}
+            disabled={props.refreshing}
+          >
+            <Icons.RefreshCw className={cn("h-3.5 w-3.5", props.refreshing && "animate-spin")} />
+            Refresh stats
+          </Button>
+        </div>
+        <p className="text-[11px] text-zinc-400">
+          Restart sends POST /api/v1/system/services/&#123;name&#125;/restart; backups snapshot the config tables. Both actions are audit-logged.
+        </p>
+      </CardContent>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={`Restart ${service}?`}
+        description={`A restart request is sent for ${service}. The service reports "restarting" for a few seconds — active sessions may be interrupted briefly.`}
+        confirmLabel="Restart"
+        loading={restarting}
+        onConfirm={() => void doRestart()}
+      />
+    </Card>
+  );
+}
+
 export function DashboardView() {
   const summaryQuery = useQuery<Summary>({
     queryKey: ["dashboard", "summary"],
@@ -159,6 +282,9 @@ export function DashboardView() {
     const id = window.setInterval(() => setClock(Date.now()), 5000);
     return () => window.clearInterval(id);
   }, []);
+
+  // RBAC gate for the Quick Actions card (admin-class ops: system + backups)
+  const perms = usePermissions();
 
   const topFwRules = useMemo(
     () =>
@@ -294,6 +420,15 @@ export function DashboardView() {
   const expiringSoon = certs.filter((c) => (c.daysUntilExpiry ?? 999) <= 30);
 
   const feedsFetching = summaryQuery.isFetching || certsQuery.isFetching;
+
+  const refreshAll = () => {
+    void summaryQuery.refetch();
+    void certsQuery.refetch();
+    void fwRulesQuery.refetch();
+  };
+
+  // Quick Actions is admin-gated: restart needs system admin, backup needs backups write
+  const opsAllowed = perms.isAdmin("system") || perms.canWrite("backups");
 
   const quickActions = [
     { label: "Firewall Rules", hash: "#/firewall/rules", icon: Icons.ShieldCheck },
@@ -760,6 +895,13 @@ export function DashboardView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── operational quick actions (admin-gated, T2-b) ─────────────── */}
+      {opsAllowed ? (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <OpsQuickActionsCard onRefreshStats={refreshAll} refreshing={feedsFetching} />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -17,8 +17,16 @@ import type {
   DhcpRelay,
 } from "@/lib/dhcp/service";
 import type { DnsQueryLogEntry } from "@/lib/engine/generators/dns-queries";
+import type {
+  DnsTunnelFindingDTO,
+  DnsTunnelStats,
+  RunDetectionResult,
+} from "@/lib/dns/tunnel-service";
 
 export type { DnsPolicyDTO, DnsRecordDTO, ResolverSettingsDTO, DhcpSubnetDTO, DhcpReservationDTO, DhcpLeaseDTO, DhcpRelay, DnsQueryLogEntry };
+export type { DnsTunnelFindingDTO, DnsTunnelStats, RunDetectionResult };
+
+export type TunnelFindingStatus = "open" | "acknowledged" | "resolved";
 
 export interface PageMeta {
   page: number;
@@ -108,6 +116,25 @@ export const dnsApi = {
   deleteRecord: (id: number) => fetchJson<{ ok: boolean }>(`/api/v1/dns/records/${id}`, { method: "DELETE" }),
 
   listQueryLogs: (params: string) => fetchJsonList<DnsQueryLogEntry>("/api/v1/dns/query-logs", params),
+};
+
+// ── DNS tunnel detection endpoints (Phase 3 §3.4, rule-based) ─────────────
+
+export const dnsTunnelApi = {
+  run: (body: { windowMinutes?: number; stepMinutes?: number; lookbackMinutes?: number }) =>
+    fetchJson<RunDetectionResult>("/api/v1/dns/tunnel-detection/run", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  listFindings: (params: string) => fetchJsonList<DnsTunnelFindingDTO>("/api/v1/dns/tunnel-detection/findings", params),
+  updateStatus: (id: number, status: TunnelFindingStatus) =>
+    fetchJson<DnsTunnelFindingDTO>(`/api/v1/dns/tunnel-detection/findings/${id}/status`, {
+      method: "PATCH",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ status }),
+    }),
+  stats: () => fetchJson<DnsTunnelStats>("/api/v1/dns/tunnel-detection/stats"),
 };
 
 // ── DHCP endpoints ──────────────────────────────────────────────────────────
