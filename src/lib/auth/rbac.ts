@@ -53,7 +53,14 @@ export type CapabilityArea =
   | "nac"
   | "federation"
   // Phase 3 (spec §3.3)
-  | "dlp";
+  | "dlp"
+  // Phase 4 — PLATFORM (spec §4.1–§4.6)
+  | "sites"
+  | "sase"
+  | "casb"
+  | "ztna"
+  | "soar"
+  | "config_anomaly";
 
 /** Interactive roles allowed per operation. `auditor`/`api_service` are handled specially below. */
 const MATRIX: Record<CapabilityArea, { read: Role[]; write: Role[]; admin?: Role[] }> = {
@@ -96,6 +103,12 @@ const MATRIX: Record<CapabilityArea, { read: Role[]; write: Role[]; admin?: Role
   nac: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin"], write: ["super_admin", "tenant_admin", "network_admin"] },
   federation: { read: ["super_admin", "tenant_admin", "security_admin"], write: ["super_admin", "tenant_admin", "security_admin"] },
   dlp: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin", "soc_analyst"] },
+  sites: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "network_admin"] },
+  sase: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "network_admin"] },
+  casb: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin"] },
+  ztna: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin"], write: ["super_admin", "tenant_admin", "security_admin"] },
+  soar: { read: ["super_admin", "tenant_admin", "security_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin", "soc_analyst"] },
+  config_anomaly: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin"] },
 };
 
 export interface AuthContext {

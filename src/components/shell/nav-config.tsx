@@ -61,6 +61,13 @@ export const VIEWS: ViewDef[] = [
   // ── Phase 3 (§3.3–§3.5) — Intelligence: DLP + incident response ──
   { path: "/security/dlp", title: "DLP", icon: "EyeOff" },
   { path: "/security/incidents", title: "Incident Response", icon: "ShieldAlert" },
+  { path: "/security/soar", title: "SOAR Playbooks", icon: "Workflow" },
+  { path: "/security/casb", title: "CASB", icon: "CloudLightning" },
+  { path: "/security/ztna", title: "ZTNA", icon: "ShieldEllipsis" },
+  { path: "/security/config-anomaly", title: "Config Anomalies", icon: "ScanSearch" },
+  // ── Phase 4 (§4.1–§4.2) — Platform: multi-site + SASE ──
+  { path: "/platform/sites", title: "Multi-Site Manager", icon: "Building" },
+  { path: "/platform/sase", title: "SASE Mesh", icon: "CloudCog" },
 ];
 
 export const SETUP_VIEW: ViewDef = { path: "/setup", title: "Setup Wizard", icon: "Sparkles" };
@@ -76,11 +83,12 @@ export const NAV_GROUPS: Array<{ label: string; paths: string[] }> = [
   { label: "QoS", paths: ["/qos/policies"] },
   { label: "Logs & Reports", paths: ["/logs/firewall", "/logs/ips", "/logs/audit", "/logs/live", "/logs/search", "/logs/reports", "/logs/compliance"] },
   { label: "Threat Intelligence", paths: ["/threat-intel/feeds", "/threat-intel/iocs", "/threat-intel/auto-block"] },
-  { label: "Security Operations", paths: ["/security/dlp", "/security/incidents"] },
+  { label: "Security Operations", paths: ["/security/dlp", "/security/incidents", "/security/soar", "/security/casb", "/security/ztna", "/security/config-anomaly"] },
   { label: "PKI", paths: ["/pki/authorities", "/pki/certificates"] },
   { label: "Web Security", paths: ["/web/ssl-inspection", "/web/url-filter", "/web/waf", "/web/app-control"] },
   { label: "Advanced Routing", paths: ["/routing/dynamic", "/routing/sdwan"] },
   { label: "System", paths: ["/ha", "/network/ipv6", "/email/security", "/system/settings", "/system/backups", "/system/api-keys"] },
+  { label: "Platform", paths: ["/platform/sites", "/platform/sase"] },
 ];
 
 export function viewFor(path: string): ViewDef | undefined {

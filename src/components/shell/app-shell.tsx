@@ -68,6 +68,13 @@ import { EmailSecurityView } from "@/components/views/email-security/email-secur
 import { IdentityAdvancedView } from "@/components/views/identity-advanced/identity-advanced-view";
 import { DlpView } from "@/components/views/dlp/dlp-view";
 import { IncidentsView } from "@/components/views/incidents/incidents-view";
+// Phase 4 views (spec §4.1–§4.6)
+import { SoarView } from "@/components/views/soar/soar-view";
+import { CasbView } from "@/components/views/casb/casb-view";
+import { ZtnaView } from "@/components/views/ztna/ztna-view";
+import { ConfigAnomalyView } from "@/components/views/system/config-anomaly-view";
+import { SitesView } from "@/components/views/sites/sites-view";
+import { SaseView } from "@/components/views/sase/sase-view";
 import { HaView } from "@/components/views/ha/ha-view";
 import { SystemView } from "@/components/views/system/system-view";
 import { BackupsView } from "@/components/views/system/backups-view";
@@ -522,6 +529,18 @@ export function AppShell() {
               <DlpView />
             ) : view.path === "/security/incidents" ? (
               <IncidentsView />
+            ) : view.path === "/security/soar" ? (
+              <SoarView />
+            ) : view.path === "/security/casb" ? (
+              <CasbView />
+            ) : view.path === "/security/ztna" ? (
+              <ZtnaView />
+            ) : view.path === "/security/config-anomaly" ? (
+              <ConfigAnomalyView />
+            ) : view.path === "/platform/sites" ? (
+              <SitesView />
+            ) : view.path === "/platform/sase" ? (
+              <SaseView />
             ) : view.path === "/ha" ? (
               <HaView />
             ) : view.path === "/system/settings" ? (

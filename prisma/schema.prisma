@@ -121,6 +121,23 @@ model Tenant {
   nacDevices        NacDevice[]
   byodEnrollments   ByodEnrollment[]
   identityActivityEvents IdentityActivityEvent[]
+  // Phase 4 — PLATFORM (spec §4.1–§4.6)
+  managedSites           ManagedSite[]
+  siteTemplates          SiteTemplate[]
+  siteDeployments        SiteDeployment[]
+  firmwareCatalog        FirmwareCatalog[]
+  saseNodes              SaseNode[]
+  saseTunnels            SaseTunnel[]
+  saasAppCatalog         SaasAppCatalog[]
+  saasDiscoveries        SaasDiscovery[]
+  casbConnectors         CasbConnector[]
+  ztnaApplications       ZtnaApplication[]
+  ztnaAccessPolicies     ZtnaAccessPolicy[]
+  postureProfiles        PostureProfile[]
+  devicePostureChecks    DevicePostureCheck[]
+  configAnomalyFindings  ConfigAnomalyFinding[]
+  soarPlaybooks          SoarPlaybook[]
+  soarPlaybookRuns       SoarPlaybookRun[]
 
   @@map("tenants")
 }
@@ -2182,4 +2199,298 @@ model DnsTunnelFinding {
 
   @@index([tenantId, status, createdAt])
   @@map("dns_tunnel_findings")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 4 — PLATFORM (spec §4.1–§4.6, console-side scope)
+//   §4.1 Multi-Site Central Manager, §4.2 SASE basics (mesh config),
+//   §4.3 CASB basics, §4.4 ZTNA basics, §4.5 rule-based config anomaly,
+//   §4.6 SOAR playbooks.  Data-gated ML models (spec §4.5 table) stay deferred.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// §4.1 — a UTM instance managed by this central console.
+model ManagedSite {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1) @map("tenant_id")
+  name           String
+  region         String   @default("")
+  role           String   @default("standalone") // hub | spoke | standalone
+  publicEndpoint String   @default("") @map("public_endpoint") // host:port of the site console
+  version        String   @default("") // console version reported by the site
+  status         String   @default("never_seen") // online | offline | degraded | never_seen
+  lastSeenAt     DateTime? @map("last_seen_at")
+  resourceLimits String   @default("{}") @map("resource_limits") // JSON {maxRules,maxCpuPct,maxTunnelCount,...}
+  notes          String   @default("")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@map("managed_sites")
+}
+
+/// §4.1 — reusable site config bundle ("deploy new site from template").
+model SiteTemplate {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int      @default(1) @map("tenant_id")
+  name        String
+  description String   @default("")
+  version     String   @default("1")
+  payload     String   @default("{}") // JSON bundle {firewallRules[], natRules[], dnsPolicies[], ...}
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("site_templates")
+}
+
+/// §4.1 — policy/template/firmware push to a remote site (plan → push → applied).
+model SiteDeployment {
+  id         Int       @id @default(autoincrement())
+  tenantId   Int       @default(1) @map("tenant_id")
+  siteId     Int       @map("site_id") // logical ref → managed_sites
+  templateId Int?      @map("template_id") // logical ref → site_templates (kind=template)
+  kind       String    @default("policy") // policy | template | firmware
+  status     String    @default("pending") // pending | pushing | applied | failed
+  payload    String    @default("{}") // JSON sent to the site
+  result     String    @default("{}") // JSON {applied[], skipped[], errors[]}
+  pushedAt   DateTime? @map("pushed_at")
+  appliedAt  DateTime? @map("applied_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, siteId, status])
+  @@map("site_deployments")
+}
+
+/// §4.1 — central firmware catalog (per-channel releases with checksums).
+model FirmwareCatalog {
+  id           Int       @id @default(autoincrement())
+  tenantId     Int       @default(1) @map("tenant_id")
+  version      String
+  channel      String    @default("stable") // stable | beta
+  sha256       String    @default("")
+  releaseNotes String    @default("") @map("release_notes")
+  releasedAt   DateTime? @map("released_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, channel, version])
+  @@map("firmware_catalog")
+}
+
+/// §4.2 — SASE node (on-prem hub or cloud edge in AWS/Azure/GCP).
+model SaseNode {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1) @map("tenant_id")
+  name           String
+  cloud          String   @default("onprem") // onprem | aws | azure | gcp
+  region         String   @default("")
+  role           String   @default("edge") // edge | gateway
+  tunnelEndpoint String   @default("") @map("tunnel_endpoint") // public host:port for WireGuard
+  publicSubnets  String   @default("[]") @map("public_subnets") // JSON ["10.10.0.0/16",...]
+  status         String   @default("planned") // planned | active | down
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("sase_nodes")
+}
+
+/// §4.2 — planned edge-to-cloud WireGuard mesh link between two nodes.
+model SaseTunnel {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int      @default(1) @map("tenant_id")
+  name          String
+  fromNodeId    Int      @map("from_node_id") // logical ref → sase_nodes
+  toNodeId      Int      @map("to_node_id") // logical ref → sase_nodes
+  state         String   @default("planned") // planned | active | down
+  pskRef        String   @default("") @map("psk_ref") // secret-store REFERENCE only — never the PSK itself
+  allowedSubnets String  @default("[]") @map("allowed_subnets") // JSON
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("sase_tunnels")
+}
+
+/// §4.3 — sanctioned SaaS catalog (top vendors; extends via admin entries).
+model SaasAppCatalog {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  name      String
+  vendor    String   @default("")
+  category  String   @default("collaboration") // collaboration | storage | crm | productivity | devops | other
+  domains   String   @default("[]") // JSON ["zoom.us", "*.zoom.us", ...]
+  riskScore Int      @default(0) @map("risk_score") // 0-100 (higher = riskier)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("saas_app_catalog")
+}
+
+/// §4.3 — observed SaaS usage per client (from app-control logs aggregation).
+model SaasDiscovery {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int      @default(1) @map("tenant_id")
+  clientIp    String   @map("client_ip")
+  appId       Int?     @map("app_id") // logical ref → saas_app_catalog (null = unknown/shadow)
+  appHint     String   @default("") @map("app_hint") // nDPI app name or SNI guess
+  verdict     String   @default("shadow") // sanctioned | shadow | unknown
+  sessions    Int      @default(0)
+  bytesIn     Int      @default(0) @map("bytes_in")
+  bytesOut    Int      @default(0) @map("bytes_out")
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, clientIp, appHint])
+  @@index([tenantId, verdict])
+  @@map("saas_discoveries")
+}
+
+/// §4.3 — vendor API connector shell (Google/Microsoft/Salesforce/Dropbox/Slack).
+model CasbConnector {
+  id         Int       @id @default(autoincrement())
+  tenantId   Int       @default(1) @map("tenant_id")
+  vendor     String    // google_workspace | microsoft_365 | salesforce | dropbox | slack
+  status     String    @default("disconnected") // disconnected | connected | error
+  configJson String    @default("{}") @map("config_json") // JSON — secrets stored as secret-store refs, never plaintext
+  lastSyncAt DateTime? @map("last_sync_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, vendor])
+  @@map("casb_connectors")
+}
+
+/// §4.4 — resource protected by ZTNA (user-to-resource access).
+model ZtnaApplication {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  name      String
+  host      String   // hostname or IP
+  port      Int      @default(443)
+  protocol  String   @default("tcp") // tcp | udp
+  group     String   @default("") // business group label
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("ztna_applications")
+}
+
+/// §4.4 — identity-based access rule (user/group/device → app, allow/deny).
+model ZtnaAccessPolicy {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int      @default(1) @map("tenant_id")
+  appId            Int      @map("app_id") // logical ref → ztna_applications
+  subjectType      String   @default("user") @map("subject_type") // user | group | device
+  subjectRef       String   @map("subject_ref") // username, group name, or device id
+  action           String   @default("allow") // allow | deny
+  postureProfileId Int?     @map("posture_profile_id") // logical ref → posture_profiles
+  schedule         String   @default("") // "Mon-Fri 09:00-17:00" style or empty = always
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, appId, enabled])
+  @@map("ztna_access_policies")
+}
+
+/// §4.4 — device posture requirement set (basic: OS patch age, AV, disk encrypt).
+model PostureProfile {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1) @map("tenant_id")
+  name      String
+  checks    String   @default("{}") // JSON {osPatchMaxAgeDays, avRequired, diskEncryptRequired, firewallRequired}
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("posture_profiles")
+}
+
+/// §4.4 — result of one posture evaluation (continuous validation snapshot).
+model DevicePostureCheck {
+  id          Int       @id @default(autoincrement())
+  tenantId    Int       @default(1) @map("tenant_id")
+  deviceId    String    @map("device_id") // MAC or agent id
+  profileId   Int       @map("profile_id") // logical ref → posture_profiles
+  results     String    @default("{}") // JSON per-check {check: pass|fail|unknown}
+  verdict     String    @default("unknown") // compliant | non_compliant | unknown
+  checkedAt   DateTime  @default(now()) @map("checked_at")
+  nextCheckAt DateTime? @map("next_check_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, deviceId, checkedAt])
+  @@map("device_posture_checks")
+}
+
+/// §4.5 (rule-based part) — firewall config anomaly finding.
+model ConfigAnomalyFinding {
+  id         Int       @id @default(autoincrement())
+  tenantId   Int       @default(1) @map("tenant_id")
+  kind       String    // any_any_rule | wan_permissive | unused_object | shadowed_rule | log_disabled | duplicate_rule
+  severity   String    @default("medium") // low | medium | high
+  subjectRef String    @map("subject_ref") // e.g. "firewall_rule:12"
+  detail     String    @default("{}") // JSON {message, ruleIds[], suggestion}
+  status     String    @default("open") // open | resolved | ignored
+  detectedAt DateTime  @default(now()) @map("detected_at")
+  resolvedAt DateTime? @map("resolved_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status, kind])
+  @@map("config_anomaly_findings")
+}
+
+/// §4.6 — automated response playbook (trigger filter + ordered actions).
+model SoarPlaybook {
+  id           Int       @id @default(autoincrement())
+  tenantId     Int       @default(1) @map("tenant_id")
+  name         String
+  enabled      Boolean   @default(true)
+  triggerKind  String    @default("incident_created") @map("trigger_kind") // incident_created | incident_severity | dlp_incident | dns_tunnel | ioc_hit
+  triggerFilter String   @default("{}") @map("trigger_filter") // JSON {severities[], sources[], kinds[]}
+  actions      String    @default("[]") // JSON [{kind: block_ip|notify|create_incident|delay|webhook, params{}}]
+  dedupeKey    String    @default("") @map("dedupe_key") // empty = always run; else skip if open run with same key
+  lastRunAt    DateTime? @map("last_run_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
+  @@map("soar_playbooks")
+}
+
+/// §4.6 — one playbook execution with per-step results.
+model SoarPlaybookRun {
+  id         Int       @id @default(autoincrement())
+  tenantId   Int       @default(1) @map("tenant_id")
+  playbookId Int       @map("playbook_id") // logical ref → soar_playbooks
+  triggerRef String    @map("trigger_ref") // e.g. "incident:INC-0007"
+  status     String    @default("running") // running | success | failed | skipped
+  steps      String    @default("[]") // JSON [{kind, status, detail}...]
+  startedAt  DateTime  @default(now()) @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, playbookId, startedAt])
+  @@map("soar_playbook_runs")
 }
