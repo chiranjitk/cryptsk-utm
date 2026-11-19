@@ -54,6 +54,7 @@
  */
 
 import { createHash } from "crypto";
+import { composeTableScopedBackup, isTableScopedRestore } from "@/lib/host/nft-restore";
 
 // ── constants ───────────────────────────────────────────────────────────────
 
@@ -69,8 +70,10 @@ export const TI_COMMENT_PREFIX = "ti:";
 /** Snapshot directory-name pattern inside the threat-intel state dir. */
 export const TI_DIR_NAME_BACKUP_RE = /^backup-[\w.-]+$/;
 
-/** Full-ruleset backup prologue — MANDATORY for a faithful restore point. */
-export const BACKUP_PROLOGUE = "#!/usr/sbin/nft -f\nflush ruleset\n";
+/** Full-ruleset backup prologue — DEPRECATED (audit fix M3): backups are now
+ *  table-scoped (see composeBackupFile). Kept as a marker so old references
+ *  fail loudly instead of silently producing a flush-ruleset restore file. */
+export const BACKUP_PROLOGUE = "#!/usr/sbin/nft -f\ntable scoped (M3) — use composeBackupFile\n";
 
 // ── input model (mirrors the Prisma AutoBlockRule rows) ─────────────────────
 
@@ -484,18 +487,19 @@ export function parseTiDropCounters(liveDump: string): TiDropCounters {
 // ── restore-point + exec whitelist guards ───────────────────────────────────
 
 /**
- * Compose the full-ruleset backup file: `flush ruleset` prologue + live dump.
- * The prologue is MANDATORY — a restore file without it would merge instead
- * of restore and leave stale blocklist state in the kernel.
+ * audit fix M3 — table-scoped restore point (see lib/host/nft-restore.ts).
+ * The backup carries ONLY the utm_ti_block table; the restore file declares
+ * the table if missing, flushes ONLY it, then merges the pre-apply dump.
+ * Replaying a `flush ruleset` backup here used to destroy every other
+ * module's kernel table on rollback.
  */
 export function composeBackupFile(liveRuleset: string): string {
-  const body = liveRuleset.trim().length > 0 ? liveRuleset : "# empty ruleset at backup time";
-  return `${BACKUP_PROLOGUE}\n${body}\n`;
+  return composeTableScopedBackup(liveRuleset, TI_TABLE_NAME);
 }
 
-/** A file is a faithful restore point ONLY when it carries the flush prologue. */
+/** A file is a faithful restore point ONLY with the table-scoped prologue. */
 export function isRestoreFileContent(content: string): boolean {
-  return content.startsWith(BACKUP_PROLOGUE);
+  return isTableScopedRestore(content, TI_TABLE_NAME);
 }
 
 /**

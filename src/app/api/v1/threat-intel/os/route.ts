@@ -90,7 +90,9 @@ type TiPostResult =
   | Awaited<ReturnType<typeof syncTiHitsFromKernel>>;
 
 export const POST = route<z.infer<typeof bodySchema>, undefined, TiPostResult>(
-  { area: "threat_intel", bodySchema },
+  // audit fix L8 — kernel-mutating OS actions snapshot a config version like
+  // every other mutation route (audit contract "every mutation snapshots").
+  { area: "threat_intel", bodySchema, section: "threat_intel" },
   async ({ auth, body }) => {
     switch (body.action) {
       case "apply": {
@@ -114,7 +116,7 @@ export const POST = route<z.infer<typeof bodySchema>, undefined, TiPostResult>(
       }
       case "confirm": {
         if (!body.ts) throw ApiError.validation("confirm requires ts of the pending apply");
-        const r = await confirmTiApply(body.ts);
+        const r = await confirmTiApply(auth.tenantId, body.ts);
         if (!r.confirmed) throw ApiError.notFound("no pending apply window for this ts (already confirmed or expired)");
         return {
           data: r,
@@ -122,7 +124,7 @@ export const POST = route<z.infer<typeof bodySchema>, undefined, TiPostResult>(
         };
       }
       case "rollback": {
-        const r = await rollbackTi(body.ts);
+        const r = await rollbackTi(auth.tenantId, body.ts);
         return {
           data: r,
           audit: {

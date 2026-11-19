@@ -14,7 +14,7 @@
 import { z } from "zod";
 import { route } from "@/lib/api/handler";
 import { ok, fail } from "@/lib/api/envelope";
-import { hit } from "@/lib/api/rate-limit";
+import { hit, publicClientKey } from "@/lib/api/rate-limit";
 import { redeem } from "@/lib/identity/vouchers";
 import { ulid } from "@/lib/ulid";
 
@@ -29,11 +29,15 @@ const redeemBody = z.object({
 
 export const POST = route(
   { isPublic: true, bodySchema: redeemBody },
-  async ({ body, ip }) => {
+  async ({ body, ip, req }) => {
     const requestId = ulid();
 
-    // guest-facing throttle: 5 redemptions/min per source IP
-    const throttle = hit(`portal-redeem:${ip}`, 5);
+    // guest-facing throttle: 5 redemptions/min per client key — audit fix M8:
+    // publicClientKey() keeps guests behind a non-proxy deployment in separate
+    // buckets instead of one shared "127.0.0.1" bucket (single guest could
+    // starve every other portal user). Spoofing XFF only widens the attacker's
+    // own budget; 80-bit voucher codes make code guessing infeasible.
+    const throttle = hit(`portal-redeem:${publicClientKey(req)}`, 5);
     if (!throttle.allowed) {
       return fail(
         "RATE_LIMITED",

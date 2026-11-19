@@ -22,22 +22,88 @@ export const dlpIncidentStatusSchema = z.enum(["new", "reviewing", "resolved", "
 // ── ReDoS guard (audit fix F-d) ─────────────────────────────────────────────
 
 /**
- * Nested-quantifier heuristic (audit fix F-d): rejects the classic
- * catastrophic-backtracking shapes — a quantified group whose own body
- * carries a quantifier, e.g. `(a+)+`, `(\w*)*`, `(a+){2,}`. The screen is a
- * DOCUMENTED HEURISTIC, not a full regex static analyzer: it matches a
- * `(...)` group with no nested parens whose body contains `+`/`*` and is
- * itself followed by `+`, `*` or `{n,m}`. Honest tradeoffs:
- *   • groups with nested parens are NOT screened (would need a real parser),
- *   • a literal like `(ab+)c*` (outer quantifier on `c`) does NOT match —
- *     the quantifier must directly follow the group.
- * Engine-side chunked execution + the scan deadline (lib/dlp/engine.ts) are
- * the second layer; this screen keeps known-bad shapes out of the DB.
+ * Nested-quantifier screen (audit fixes F-d + M4). The original flat RE only
+ * matched `(...)` groups with no nested parens; M4 replaces the check with a
+ * structural scanner below (the RE is kept as a flat fast-path).
  */
 export const NESTED_QUANTIFIER_RE = /[(][^()]*[+*][^()]*[)][+*{]/;
 
+const UNBOUNDED_QUANT_RE = /^[+*]|^\{\d+,\d*\}/; // +, *, {n,}, {n,m}
+const BOUNDED_EXACT_RE = /^\{\d+\}/; // {n} — no ambiguity, safe
+
+/** True when `s` (a regex fragment) contains an UNBOUNDED quantifier at any
+ *  depth. `?` (bounded 0-1) and `{n}` exact never cause exponential
+ *  partitioning, so they do not trigger the screen — `(https?)+` stays legal
+ *  while `(a+)+` / `(\d{1,10})+` / `((a|b*)+)+` are rejected. */
+function hasUnboundedQuantifier(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "\\") {
+      i++; // escaped char — literal
+      continue;
+    }
+    if (c === "[") {
+      // character class — quantifier chars inside are literals
+      i++;
+      while (i < s.length && (s[i] === "\\" ? (i++, true) : s[i] !== "]")) i++;
+      continue;
+    }
+    if (c === "+" || c === "*") return true;
+    if (c === "{") {
+      if (UNBOUNDED_QUANT_RE.test(s.slice(i))) return true;
+      const exact = BOUNDED_EXACT_RE.exec(s.slice(i));
+      if (exact) i += exact[0].length - 1;
+      continue;
+    }
+  }
+  return false;
+}
+
+/**
+ * Structural nested-quantifier screen (audit fix M4 — closes the F-d gap
+ * where nested-paren shapes like `((a+)+)b` slipped past the flat RE).
+ * Walks the pattern with a paren stack: when a group closes AND an unbounded
+ * quantifier directly follows it, the group body is checked for an unbounded
+ * quantifier at ANY depth (alternations and nested groups included). Escaped
+ * characters and character classes are skipped so literals like `\(+\)+` or
+ * `[(]` cannot desync the scanner. Still a DOCUMENTED HEURISTIC — real
+ * ambiguity analysis would need a full regex parser — but the nested
+ * catastrophic shapes are now covered. Engine-side chunked execution + the
+ * scan deadline (lib/dlp/engine.ts) remain the second layer.
+ */
 export function containsNestedQuantifier(pattern: string): boolean {
-  return NESTED_QUANTIFIER_RE.test(pattern);
+  if (NESTED_QUANTIFIER_RE.test(pattern)) return true; // flat fast-path
+  const groupStart: number[] = [];
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === "\\") {
+      i++; // escaped char — literal
+      continue;
+    }
+    if (c === "[") {
+      i++;
+      while (i < pattern.length && (pattern[i] === "\\" ? (i++, true) : pattern[i] !== "]")) i++;
+      continue;
+    }
+    if (c === "(") {
+      groupStart.push(i + 1);
+      continue;
+    }
+    if (c === ")") {
+      const start = groupStart.pop();
+      if (start === undefined) continue; // unmatched closer — regex compile will reject
+      const body = pattern.slice(start, i);
+      if (UNBOUNDED_QUANT_RE.test(pattern.slice(i + 1)) && hasUnboundedQuantifier(body)) {
+        return true;
+      }
+      continue;
+    }
+    if (c === "{") {
+      const exact = BOUNDED_EXACT_RE.exec(pattern.slice(i));
+      if (exact) i += exact[0].length - 1; // don't confuse {n} bodies with group markers
+    }
+  }
+  return false;
 }
 
 // ── primitive grammars ──────────────────────────────────────────────────────

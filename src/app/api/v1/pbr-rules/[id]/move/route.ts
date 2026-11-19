@@ -16,24 +16,33 @@ export const POST = route(
   { area: "network", bodySchema: pbrMoveBody, section: "routing" },
   async ({ auth, params, body }) => {
     const { id } = idParamSchema.parse(params);
-    const rows = await db.pbrRule.findMany({ where: { tenantId: auth.tenantId }, orderBy: { position: "asc" } });
-    const me = rows.find((r) => r.id === id);
-    if (!me) throw ApiError.notFound(`PBR rule ${id} not found`);
+    // audit fix L1 — TOCTOU: the row scan used to run OUTSIDE the swap
+    // transaction, so two concurrent moves could both read the same occupancy
+    // and swap to conflicting positions (dense 1..N invariant broken). The
+    // read + occupancy decision + swap now run in ONE $transaction (SQLite
+    // write lock serializes concurrent moves).
+    const result = await db.$transaction(async (tx) => {
+      const rows = await tx.pbrRule.findMany({ where: { tenantId: auth.tenantId }, orderBy: { position: "asc" } });
+      const me = rows.find((r) => r.id === id);
+      if (!me) return null;
 
-    const max = rows.reduce((m, r) => Math.max(m, r.position), 0);
-    const target = Math.min(body.position, max);
-    const occupant = rows.find((r) => r.position === target);
+      const max = rows.reduce((m, r) => Math.max(m, r.position), 0);
+      const target = Math.min(body.position, max);
+      const occupant = rows.find((r) => r.position === target);
 
-    let moved = false;
-    let swappedWith: string | null = null;
-    if (occupant && occupant.id !== me.id) {
-      moved = true;
-      swappedWith = occupant.name;
-      await db.$transaction(async (tx) => {
+      let moved = false;
+      let swappedWith: string | null = null;
+      if (occupant && occupant.id !== me.id) {
+        moved = true;
+        swappedWith = occupant.name;
         await tx.pbrRule.update({ where: { id: occupant.id }, data: { position: me.position } });
         await tx.pbrRule.update({ where: { id: me.id }, data: { position: target } });
-      });
-    }
+      }
+      return { me, target, moved, swappedWith };
+    });
+
+    if (!result) throw ApiError.notFound(`PBR rule ${id} not found`);
+    const { me, target, moved, swappedWith } = result;
 
     const updated = await db.pbrRule.findUnique({ where: { id } });
     const rule = moved && updated ? shapePbrRule(updated) : shapePbrRule(me);

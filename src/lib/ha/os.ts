@@ -162,6 +162,18 @@ export function renderKeepalivedConf(cfg: HaKeepalivedInput, ctx: KeepalivedRend
   return L.join("\n") + "\n";
 }
 
+/**
+ * Audit fix M11 — redact the VRRP auth_pass from confText payloads destined
+ * for API RESPONSES. The staged file / rendered conf keep the real secret for
+ * `keepalived -t` and the appliance; only the HTTP-visible copy is masked.
+ * Without this, `ha/validate` and `ha/apply` would let a `network_admin`
+ * (ha:write, below the reveal gate of super_admin/tenant_admin) read the
+ * VRRP authentication password — bypassing the ha/config/reveal policy.
+ */
+export function redactHaConfSecrets(confText: string): string {
+  return confText.replace(/^(\s*)auth_pass .*$/m, "$1auth_pass ********");
+}
+
 function sanitizeRouterId(id: string): string {
   const safe = id.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
   return safe || "UTM-CONSOLE";

@@ -34,6 +34,7 @@ import path from "path";
 import { db } from "@/lib/db";
 import { runTool, hasTool, readServiceStates } from "@/lib/host/tools";
 import { detectSuricataEve } from "@/lib/host/tools";
+import { getDataPlaneMode } from "@/lib/engine";
 import { ipsScopeValid } from "@/lib/validators/ips";
 import type { ExceptionRow, ThresholdRow } from "./catalog";
 
@@ -552,6 +553,24 @@ export async function applyIpsOs(tenantId: number): Promise<IpsApplyOutcome> {
       detail: "OS apply gate is off (CONSOLE_OS_APPLY!=1) — plan-only preview",
     };
   }
+  // audit fix M1 — the env gate alone is not enough: every sibling OS module
+  // also requires host data-plane mode. With CONSOLE_OS_APPLY=1 while the
+  // engine runs simulated, this must stay a plan preview — no file writes,
+  // no engine reload.
+  if (getDataPlaneMode() !== "host") {
+    return {
+      applied: false,
+      rolledBack: false,
+      appliedAt: null,
+      policyId: plan.defaultPolicy?.id ?? null,
+      policyName: plan.defaultPolicy?.name ?? null,
+      backupDir: null,
+      validateOk: false,
+      reloaded: false,
+      warnings,
+      detail: "Data plane is not in host mode — plan-only preview",
+    };
+  }
 
   const ts = tsSlug();
   const backupDir = newBackupDir(ts);
@@ -699,6 +718,11 @@ async function housekeepBackups(): Promise<void> {
 export async function runOsRuleUpdate(): Promise<OsRuleUpdateResult> {
   if (process.env.CONSOLE_OS_APPLY !== "1") {
     return { ranOnOs: false, reloaded: false, note: "OS apply gate off (CONSOLE_OS_APPLY!=1) — schedule kept, engine untouched", outputTail: null };
+  }
+  // audit fix M1 — host data-plane mode required for real engine mutation
+  // (suricata-update + live reload), matching every sibling OS module.
+  if (getDataPlaneMode() !== "host") {
+    return { ranOnOs: false, reloaded: false, note: "Data plane not in host mode — schedule kept, engine untouched", outputTail: null };
   }
   if (!(await hasTool("suricata-update"))) {
     return { ranOnOs: false, reloaded: false, note: "suricata-update not installed on this host — install it to enable live ET refresh", outputTail: null };

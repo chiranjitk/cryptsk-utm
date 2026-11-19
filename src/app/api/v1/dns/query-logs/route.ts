@@ -12,10 +12,15 @@ import { getEngine } from "@/lib/engine";
 
 export const dynamic = "force-dynamic";
 
-export const GET = route({ area: "dns_dhcp", querySchema: dnsQueryLogQuerySchema }, async ({ query }) => {
+export const GET = route({ area: "dns_dhcp", querySchema: dnsQueryLogQuerySchema }, async ({ query, auth }) => {
   const ring = getEngine().dnsRing;
   const q = query.q?.toLowerCase();
+  // audit fix H2 — tenant isolation (mirrors tunnel-service engineRowsInLookback,
+  // audit fix F-d): ring rows are tenant-tagged; serving the raw ring let a
+  // dns_dhcp reader in any tenant see every tenant's queries (domains +
+  // client IPs). Filter to the caller's tenant first.
   const filtered = ring.filter((row) => {
+    if ((row.tenantId ?? 1) !== auth.tenantId) return false;
     if (query.blocked !== undefined && row.blocked !== query.blocked) return false;
     if (q && !row.domain.toLowerCase().includes(q) && !row.clientIp.includes(q)) return false;
     return true;

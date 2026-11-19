@@ -412,8 +412,16 @@ describe("geoip source service", () => {
     fs.writeFileSync(path.join(GEOIP_ROOT, "in-root-fixture.csv"), "DE,203.0.113.0/24\n", "utf8");
     const res = await geoipService.loadSource(1, { name: "tst-inroot", filePath: "in-root-fixture.csv" });
     expect(res.source.status).toBe("loaded");
-    expect(res.source.filePath.startsWith(GEOIP_ROOT + path.sep)).toBe(true);
+    // audit fix L22 — the DTO carries the display-relative path only; the
+    // absolute filesystem path (which leaks the server root) never leaves
+    // the server. The DB row keeps the absolute path for re-reads.
+    expect(res.source.filePath).toBe("in-root-fixture.csv");
     expect(res.source.prefixCount).toBe(1);
+    // the stored absolute path still re-reads correctly (prefixes re-confined)
+    const row = await db.geoipSource.findFirstOrThrow({ where: { tenantId: 1, name: "tst-inroot" } });
+    expect(row.filePath.startsWith(GEOIP_ROOT + path.sep)).toBe(true);
+    const prefixes = await geoipService.readPrefixes(row.filePath);
+    expect(prefixes.prefixes["DE"]).toEqual(["203.0.113.0/24"]);
   });
 
   it("marks the row error when the file has no usable IPv4 prefixes", async () => {

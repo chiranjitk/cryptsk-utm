@@ -518,6 +518,8 @@ export interface ContinuousValidationResult {
   /** how many flipped verdict */
   changed: number;
   results: Array<{ deviceId: string; profileId: number; previousVerdict: PostureVerdict; verdict: PostureVerdict; changed: boolean }>;
+  /** audit fix L24 — set when a parallel validate run holds the in-flight claim */
+  skipped?: "already-running";
 }
 
 /**
@@ -532,6 +534,27 @@ export interface ContinuousValidationResult {
  * GET /posture-checks no longer mutates — reads are side-effect free).
  */
 export async function runContinuousValidation(tenantId: number): Promise<ContinuousValidationResult> {
+  // audit fix L24 — in-flight guard: two concurrent validate POSTs would both
+  // re-evaluate the same stale rows and create duplicate snapshot rows. The
+  // per-tenant claim flips to false only after the run completes; a second
+  // caller inside that window gets an honest "already running" outcome.
+  const inflightKey = `ztna-validate:${tenantId}`;
+  if (ztnaValidateInflight.get(inflightKey)) {
+    return { rechecked: 0, changed: 0, results: [], skipped: "already-running" };
+  }
+  ztnaValidateInflight.set(inflightKey, true);
+  try {
+    return await runContinuousValidationInner(tenantId);
+  } finally {
+    ztnaValidateInflight.delete(inflightKey);
+  }
+}
+
+/** In-process in-flight claims (per process — enough to dedupe the operator
+ *  double-click / parallel POST burst; multi-instance dedupe is future work). */
+const ztnaValidateInflight = new Map<string, true>();
+
+async function runContinuousValidationInner(tenantId: number): Promise<ContinuousValidationResult> {
   const now = new Date();
   // only the LATEST row per (deviceId, profileId) is live state — older
   // snapshots are history and must not spawn duplicate re-checks

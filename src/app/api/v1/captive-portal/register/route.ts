@@ -8,7 +8,7 @@
 
 import { route } from "@/lib/api/handler";
 import { ok, fail } from "@/lib/api/envelope";
-import { hit } from "@/lib/api/rate-limit";
+import { hit, publicClientKey } from "@/lib/api/rate-limit";
 import { writeAudit } from "@/lib/api/audit";
 import { ulid } from "@/lib/ulid";
 import { portalSelfRegisterSchema } from "@/lib/validators/identity";
@@ -18,11 +18,13 @@ export const dynamic = "force-dynamic";
 
 export const POST = route(
   { isPublic: true, bodySchema: portalSelfRegisterSchema },
-  async ({ auth, body, ip }) => {
+  async ({ auth, body, ip, req }) => {
     const requestId = ulid();
 
-    // guest-facing throttle: 5 registrations/min per source IP
-    const throttle = hit(`portal-register:${ip}`, 5);
+    // guest-facing throttle: 5 registrations/min per client key — audit fix
+    // M8: publicClientKey() prevents cross-user bucket collapse on non-proxy
+    // deployments (see redeem/route.ts for the spoofability trade-off).
+    const throttle = hit(`portal-register:${publicClientKey(req)}`, 5);
     if (!throttle.allowed) {
       return fail(
         "RATE_LIMITED",

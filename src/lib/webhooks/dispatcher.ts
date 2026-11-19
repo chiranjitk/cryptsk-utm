@@ -72,12 +72,12 @@ export function isRefusedIp(ip: string): boolean {
 }
 
 /**
- * Pre-delivery SSRF guard (F-e #3): refuse non-http(s) schemes, then resolve
- * the URL hostname via dns.lookup and refuse private/loopback/link-local/
- * metadata addresses. CONSOLE_WEBHOOK_ALLOW_PRIVATE=1 disables the address
- * refusal (sandbox tests against internal targets) — the scheme check always
- * applies. Returns null when the target is acceptable; unresolvable hostnames
- * pass through so fetch surfaces the real DNS error (retry semantics apply).
+ * Pre-delivery SSRF guard (F-e #3 + audit fix L21): https-only (the sandbox
+ * override CONSOLE_WEBHOOK_ALLOW_PRIVATE=1 also relaxes the scheme for
+ * internal test receivers), then resolve the URL hostname via dns.lookup and
+ * refuse private/loopback/link-local/metadata addresses. Returns null when
+ * the target is acceptable; unresolvable hostnames pass through so fetch
+ * surfaces the real DNS error (retry semantics apply).
  */
 export async function ssrfGuard(url: string): Promise<string | null> {
   let parsed: URL;
@@ -86,10 +86,15 @@ export async function ssrfGuard(url: string): Promise<string | null> {
   } catch {
     return `${SSRF_REFUSAL_PREFIX}: not an absolute URL`;
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return `${SSRF_REFUSAL_PREFIX}: only http(s) webhook targets are allowed (got ${parsed.protocol})`;
-  }
+  // sandbox override first: internal test receivers may use plain http with
+  // any scheme — the address refusal is what the override is about.
   if (process.env.CONSOLE_WEBHOOK_ALLOW_PRIVATE === "1") return null;
+  if (parsed.protocol !== "https:") {
+    // audit fix L21 — https-only in production, matching the registration
+    // contract (validators/api-keys.ts enforces https at create/update).
+    // HMAC-signed payloads must never transit cleartext http.
+    return `${SSRF_REFUSAL_PREFIX}: only https webhook targets are allowed (got ${parsed.protocol})`;
+  }
   let host = parsed.hostname;
   if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
   try {

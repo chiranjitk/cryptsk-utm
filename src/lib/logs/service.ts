@@ -609,7 +609,17 @@ export async function runReportSchedule(
   const existing = await db.reportSchedule.findFirst({ where: { tenantId, id } });
   if (!existing) throw ApiError.notFound("Report schedule not found");
   const lastRunAt = new Date();
-  await db.reportSchedule.update({ where: { id }, data: { lastRunAt } });
+  // audit fix L20 — double-run guard: claim the schedule with a conditional
+  // update on the PREVIOUS lastRunAt. Two concurrent run-now calls both read
+  // the same state; only the first claim wins, the second fails the claim and
+  // stops before creating a duplicate ReportRun.
+  const claim = await db.reportSchedule.updateMany({
+    where: { id, tenantId, lastRunAt: existing.lastRunAt },
+    data: { lastRunAt },
+  });
+  if (claim.count === 0) {
+    throw ApiError.conflict("A run for this schedule was just started — try again in a moment");
+  }
 
   let run: { id: number; name: string; status: string } | undefined;
   try {

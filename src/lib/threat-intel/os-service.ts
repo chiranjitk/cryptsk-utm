@@ -38,6 +38,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { db } from "@/lib/db";
+import { ApiError } from "@/lib/api/errors";
 import { hasTool, runTool, readNftRuleset } from "@/lib/host/tools";
 import { probeWanHealth, pbrHealthRegressed, type PbrWanHealth } from "@/lib/network/pbr-os";
 import {
@@ -234,6 +235,20 @@ export interface TiStateFile {
   /** <dir>/backup-<ts>/ruleset.nft — the faithful restore point */
   backupFile: string;
   confirmFile: string;
+  /**
+   * audit fix M2 — owning tenant of the armed apply window. confirm/rollback
+   * from another tenant are refused (mirrors firewall-os assertApplyTenant).
+   * Legacy states carry undefined → treated as 0 (unverifiable → allowed, so
+   * a deploy never bricks an in-flight window).
+   */
+  tenantId: number;
+  /**
+   * audit fix L9 — per-rule hit-counter watermarks (`ti:<ruleId>` → packets).
+   * Kernel counters reset on every apply (table recreate); delta accumulation
+   * against these watermarks keeps hitCount history instead of collapsing it
+   * (same pattern as firewall-os lastHitSync).
+   */
+  lastHitSync?: Record<string, number>;
 }
 
 export interface TiPendingWindow {
@@ -268,6 +283,24 @@ export async function readTiState(): Promise<TiStateSnapshot> {
   } catch {
     return { state: null, pending: null };
   }
+}
+
+/** audit fix M2 — mirror of firewall-os assertApplyTenant: the armed apply
+ *  window belongs to ONE tenant; confirm/rollback from another tenant are
+ *  refused. Legacy states (no stamp) carry 0 → allowed. */
+function assertApplyTenant(callerTenantId: number, stateTenantId: number | undefined): void {
+  const stamped = stateTenantId ?? 0;
+  if (stamped !== 0 && stamped !== callerTenantId) {
+    throw ApiError.forbidden(
+      `pending threat-intel apply belongs to tenant ${stamped} — confirm/rollback must come from the applying tenant`,
+    );
+  }
+}
+
+/** Kernel counter reset detection: packets >= watermark → delta, else the
+ *  counter restarted (apply recreated the table) → take the value as-is. */
+function hitDelta(packets: number, watermark: number): number {
+  return packets >= watermark ? packets - watermark : packets;
 }
 
 function assertOwnPath(p: string, prefix: RegExp): string {
@@ -402,7 +435,7 @@ export async function applyTiToOs(tenantId: number, opts: TiApplyOptions = {}): 
 
   // 1. write + syntax/commit pre-check — never touch the kernel on a broken plan
   await fs.mkdir(TI_DIR, { recursive: true });
-  void housekeepArtefacts();
+  void housekeepArtefacts().catch(() => {}); // audit fix L27 — never an unobserved rejection
   await fs.writeFile(file, plan.file, "utf8");
   const check = await guardedRun(`nft -c -f ${JSON.stringify(file)}`, 10000);
   results.push({ step: "nft -c check", ok: check.ok, detail: check.ok ? undefined : check.stderr });
@@ -424,6 +457,13 @@ export async function applyTiToOs(tenantId: number, opts: TiApplyOptions = {}): 
   await fs.mkdir(backupDir, { recursive: true });
   await fs.writeFile(backupFile, backupContent, "utf8");
   results.push({ step: "backup", ok: true, detail: backupFile });
+
+  // 2b. audit fix L9 — bank the CURRENT kernel hit counters into the DB via
+  // delta-accumulation BEFORE the apply recreates the table and resets them;
+  // the returned watermark map persists into state.json so the next sync
+  // reads the post-apply zero restart as a reset, not a loss.
+  const hitSyncMap = await bankTiHitsFromKernel(live.ruleset, tenantId);
+  results.push({ step: "bank hit counters", ok: true, detail: `${Object.keys(hitSyncMap).length} rule watermark(s) recorded` });
 
   // 3. arm the detached rollback timer (survives console restarts)
   const confirmFile = path.join(TI_DIR, `confirm-${ts}`);
@@ -450,6 +490,8 @@ export async function applyTiToOs(tenantId: number, opts: TiApplyOptions = {}): 
     deadlineAt,
     backupFile,
     confirmFile,
+    tenantId, // audit fix M2 — ownership stamp for confirm/rollback
+    lastHitSync: hitSyncMap,
   });
   outcome.confirmDeadlineAt = deadlineAt;
 
@@ -499,6 +541,8 @@ export async function applyTiToOs(tenantId: number, opts: TiApplyOptions = {}): 
     deadlineAt: outcome.confirmDeadlineAt ?? new Date().toISOString(),
     backupFile,
     confirmFile,
+    tenantId, // audit fix M2 — ownership stamp for confirm/rollback
+    lastHitSync: hitSyncMap,
   });
 
   // 9. auto mode self-confirms on healthy apply; manual mode leaves the
@@ -515,17 +559,19 @@ export async function applyTiToOs(tenantId: number, opts: TiApplyOptions = {}): 
 
 // ── confirm / rollback / counters ───────────────────────────────────────────
 
-export async function confirmTiApply(ts: string): Promise<{ confirmed: boolean; ts: string }> {
+export async function confirmTiApply(callerTenantId: number, ts: string): Promise<{ confirmed: boolean; ts: string }> {
   const snapshot = await readTiState();
   const target = snapshot.pending?.ts === ts ? snapshot.state : null;
   if (!target) return { confirmed: false, ts };
+  assertApplyTenant(callerTenantId, target.tenantId); // audit fix M2
   await fs.writeFile(target.confirmFile, new Date().toISOString(), "utf8");
   await fs.rm(path.join(TI_DIR, `rollback-${ts}.sh`), { force: true }).catch(() => {});
   return { confirmed: true, ts };
 }
 
-export async function rollbackTi(ts?: string): Promise<{ rolledBack: boolean; file: string | null; detail: string }> {
+export async function rollbackTi(callerTenantId: number, ts?: string): Promise<{ rolledBack: boolean; file: string | null; detail: string }> {
   const snapshot = await readTiState();
+  if (snapshot.state) assertApplyTenant(callerTenantId, snapshot.state.tenantId); // audit fix M2
   let backupFile: string | null = snapshot.state?.backupFile ?? null;
   if (!backupFile && ts) {
     // traversal guard on the RAW ts — path.join would silently collapse `..`
@@ -567,10 +613,45 @@ export async function readTiTableDump(): Promise<string | null> {
 }
 
 /**
+ * audit fix L9 — DELTA accumulation helper for apply-time banking: pushes the
+ * CURRENT kernel element counters into AutoBlockRule.hitCount against the
+ * previous watermarks (tenant-scoped, batch-loaded) and returns the updated
+ * watermark map for state.json persistence.
+ */
+async function bankTiHitsFromKernel(liveDump: string, tenantId: number): Promise<Record<string, number>> {
+  const elements = parseTiElements(liveDump);
+  const ids = [...new Set(elements.filter((e) => e.ruleId !== null).map((e) => e.ruleId as number))];
+  if (ids.length === 0) return {};
+  const snapshot = await readTiState();
+  const map: Record<string, number> = { ...(snapshot.state?.lastHitSync ?? {}) };
+  const rows = await db.autoBlockRule
+    .findMany({ where: { id: { in: ids }, tenantId }, select: { id: true, hitCount: true } })
+    .catch(() => [] as Array<{ id: number; hitCount: number }>);
+  const hitById = new Map(rows.map((r) => [r.id, r.hitCount]));
+  for (const e of elements) {
+    if (e.ruleId === null) continue;
+    if (!hitById.has(e.ruleId)) continue; // deleted rule / another tenant's element
+    const key = `ti:${e.ruleId}`;
+    const delta = hitDelta(e.packets, map[key] ?? 0);
+    map[key] = e.packets; // watermark tracks the kernel's actual value
+    if (delta > 0) {
+      await db.autoBlockRule
+        .update({ where: { id: e.ruleId }, data: { hitCount: (hitById.get(e.ruleId) ?? 0) + delta } })
+        .catch(() => null);
+    }
+  }
+  return map;
+}
+
+/**
  * Push kernel counters into AutoBlockRule.hitCount (REAL hits):
  * per-element stateful counters attribute packets to the owning rule via
  * the `ti:<ruleId>:<name>` comments; the chain drop counters are the
- * aggregate reference returned alongside.
+ * aggregate reference returned alongside. audit fix L9 — DELTA accumulation
+ * against the per-rule watermarks in state.json `lastHitSync` (`ti:<id>` →
+ * packets), so a table recreate (counter reset) never collapses the
+ * accumulated history; tenant-scoped, batch-loaded (replaces the per-element
+ * N+1 findFirst).
  */
 export async function syncTiHitsFromKernel(tenantId: number): Promise<{
   updated: number;
@@ -584,13 +665,31 @@ export async function syncTiHitsFromKernel(tenantId: number): Promise<{
   }
   const elements = parseTiElements(dump);
   const drops = parseTiDropCounters(dump);
+  const snapshot = await readTiState();
+  const map: Record<string, number> = { ...(snapshot.state?.lastHitSync ?? {}) };
+  const ids = [...new Set(elements.filter((e) => e.ruleId !== null).map((e) => e.ruleId as number))];
+  const rows = await db.autoBlockRule
+    .findMany({ where: { id: { in: ids }, tenantId }, select: { id: true, hitCount: true } })
+    .catch(() => [] as Array<{ id: number; hitCount: number }>);
+  const hitById = new Map(rows.map((r) => [r.id, r.hitCount]));
   let updated = 0;
   for (const e of elements) {
     if (e.ruleId === null) continue;
-    const row = await db.autoBlockRule.findFirst({ where: { id: e.ruleId, tenantId } }).catch(() => null);
-    if (!row) continue;
-    await db.autoBlockRule.update({ where: { id: e.ruleId }, data: { hitCount: e.packets } }).catch(() => null);
+    if (!hitById.has(e.ruleId)) continue;
+    const key = `ti:${e.ruleId}`;
+    const delta = hitDelta(e.packets, map[key] ?? 0);
+    map[key] = e.packets;
+    if (delta > 0) {
+      await db.autoBlockRule
+        .update({ where: { id: e.ruleId }, data: { hitCount: (hitById.get(e.ruleId) ?? 0) + delta } })
+        .catch(() => null);
+    }
     updated += 1;
+  }
+  // persist the advanced watermarks — only over an EXISTING state file
+  // (writing a synthetic state would fabricate a confirm window)
+  if (snapshot.state) {
+    await writeState({ ...snapshot.state, lastHitSync: map }).catch(() => {});
   }
   return {
     updated,

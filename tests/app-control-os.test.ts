@@ -333,18 +333,27 @@ describe("parseAppctlRuleCounters — comment → DB rule id", () => {
 // ── restore-point guards + whitelist ────────────────────────────────────────
 
 describe("backup restore point", () => {
-  it("composeBackupFile prepends the flush prologue to the FULL live ruleset", () => {
-    const backup = composeBackupFile("table inet console-firewall { }\ntable inet f2b-table { }");
+  // audit fix M3 — backups are TABLE-SCOPED: only utm_appctl is snapshotted
+  // and restored; console-firewall / fail2ban tables survive a rollback.
+  it("composeBackupFile snapshots ONLY the utm_appctl table behind the scoped prologue", () => {
+    const backup = composeBackupFile(
+      `table inet console-firewall { }\ntable inet ${APPCTL_TABLE_NAME} {\n  chain appctl_filter {\n    type filter hook input priority -10;\n  }\n}\ntable inet f2b-table { }`,
+    );
     expect(isRestoreFileContent(backup)).toBe(true);
-    expect(backup).toMatch(/^#!\/usr\/sbin\/nft -f\nflush ruleset\n/);
-    expect(backup).toContain("table inet console-firewall { }");
-    expect(backup).toContain("table inet f2b-table { }");
+    expect(backup.startsWith(`#!/usr/sbin/nft -f\ntable inet ${APPCTL_TABLE_NAME} {}\nflush table inet ${APPCTL_TABLE_NAME}\n`)).toBe(true);
+    expect(backup).toContain("appctl_filter");
+    expect(backup).not.toContain("console-firewall");
+    expect(backup).not.toContain("f2b-table");
+    expect(backup).not.toContain("flush ruleset");
   });
 
-  it("refuses restore files without the flush prologue (would merge, not restore)", () => {
+  it("refuses restore files without the table-scoped prologue (would merge, not restore)", () => {
+    expect(isRestoreFileContent("#!/usr/sbin/nft -f\nflush ruleset\n")).toBe(false);
     expect(isRestoreFileContent("#!/usr/sbin/nft -f\ntable inet utm_appctl { }")).toBe(false);
     expect(isRestoreFileContent("")).toBe(false);
-    expect(isRestoreFileContent(composeBackupFile(""))).toBe(true); // empty-ruleset body is still a valid restore point
+    // absent-table backup is still a valid restore point (empty table after)
+    expect(isRestoreFileContent(composeBackupFile(""))).toBe(true);
+    expect(composeBackupFile("")).toContain(`# ${APPCTL_TABLE_NAME} absent at backup time`);
   });
 });
 

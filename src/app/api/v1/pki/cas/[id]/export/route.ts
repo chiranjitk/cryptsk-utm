@@ -8,6 +8,7 @@
 
 import { route } from "@/lib/api/handler";
 import { ApiError } from "@/lib/api/errors";
+import { writeAudit } from "@/lib/api/audit";
 import { db } from "@/lib/db";
 import { pkiPartQuerySchema } from "@/lib/validators/pki";
 import { caChainPems, pemResponse, requireKeyAdmin, slugFilename } from "@/app/api/v1/pki/shared";
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = route(
   { area: "pki", querySchema: pkiPartQuerySchema, admin: true },
-  async ({ auth, params, query }) => {
+  async ({ auth, params, query, ip }) => {
     const id = Number.parseInt(params.id ?? "", 10);
     if (!Number.isInteger(id) || id <= 0) throw ApiError.notFound("CA not found");
     const ca = await db.certificateAuthority.findFirst({ where: { id, tenantId: auth.tenantId } });
@@ -26,6 +27,26 @@ export const GET = route(
     if (query.part === "key") {
       requireKeyAdmin(auth.role);
       if (!ca.keyPem) throw ApiError.conflict("CA has no private key material");
+      // audit fix M7 — private-key export is the single most sensitive action
+      // in the PKI module and MUST leave an audit trail. This is a GET, so
+      // the shared handler's isMutation audit never fires (matching the
+      // radius/ha reveal convention, which are POSTs for the same reason):
+      // write the audit row explicitly, before the PEM leaves the server.
+      await writeAudit({
+        tenantId: auth.tenantId,
+        userId: auth.userId,
+        username: auth.username,
+        sourceIp: ip,
+        info: {
+          action: "pki_ca.key_export",
+          objectType: "certificate_authority",
+          objectId: ca.id,
+          objectName: ca.name,
+          result: "success",
+        },
+      }).catch((err: unknown) =>
+        console.error(`[pki] CA key export audit write failed (ca ${ca.id}):`, err instanceof Error ? err.message : err),
+      );
       return { data: pemResponse(ca.keyPem, `${slug}.key`) };
     }
 

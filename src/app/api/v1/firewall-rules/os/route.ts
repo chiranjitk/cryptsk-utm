@@ -109,6 +109,19 @@ export const POST = route({ area: "firewall", bodySchema, section: "firewall" },
       return { data: r, audit: { action: "firewall.os-sync-hits", objectType: "firewall_policy" } };
     }
     case "enable-forwarding": {
+      // audit fix H1 — this action writes the HOST KERNEL (sysctl) and a boot
+      // persistence file, so it must respect the SAME double gate as
+      // applyFirewallNft (firewall-os.ts): CONSOLE_OS_APPLY=1 AND host data
+      // plane. Without it, a firewall:write principal could flip a sysctl and
+      // drop a boot-persistence file even with the OS-apply gate OFF or the
+      // data plane simulated.
+      if (process.env.CONSOLE_OS_APPLY !== "1") {
+        throw ApiError.forbidden("OS apply gate is off — enable-forwarding requires CONSOLE_OS_APPLY=1");
+      }
+      const { getDataPlaneMode } = await import("@/lib/engine");
+      if (getDataPlaneMode() !== "host") {
+        throw ApiError.forbidden("enable-forwarding requires host data-plane mode");
+      }
       const res = await runTool("sysctl -w net.ipv4.ip_forward=1", 5000);
       if (!res.ok) throw ApiError.internal(`sysctl failed: ${res.stderr || res.error || "unknown"}`);
       let persisted = false;

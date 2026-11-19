@@ -36,7 +36,16 @@ const isoOrEmpty = z
 export const feedCreateSchema = z.object({
   name: z.string().min(1).max(64),
   provider: feedProviderSchema.default("abusech"),
-  url: z.string().min(1).max(512),
+  // audit fix L6 — feed URLs must be fetchable http(s) locations: file://,
+  // gopher://, or metadata-IP style values were accepted verbatim and would
+  // become a stored SSRF-by-config the moment the appliance fetcher is wired
+  // (feed sync is corpus-simulated on the console today).
+  url: z
+    .string()
+    .min(1)
+    .max(512)
+    .url("Feed URL must be a valid URL")
+    .refine((v) => /^https?:\/\//i.test(v), "Feed URL must be http(s)"),
   format: feedFormatSchema.default("csv"),
   category: threatCategorySchema.default("botnet"),
   /** Poll interval — 5 minutes .. 1 day. */
@@ -52,7 +61,13 @@ export const feedUpdateSchema = z
   .object({
     name: z.string().min(1).max(64),
     provider: feedProviderSchema,
-    url: z.string().min(1).max(512),
+    // audit fix L6 — same http(s) grammar as create
+    url: z
+      .string()
+      .min(1)
+      .max(512)
+      .url("Feed URL must be a valid URL")
+      .refine((v) => /^https?:\/\//i.test(v), "Feed URL must be http(s)"),
     format: feedFormatSchema,
     category: threatCategorySchema,
     intervalMinutes: z.coerce.number().int().min(5).max(1440),

@@ -76,7 +76,9 @@ type AppctlPostResult =
   | Awaited<ReturnType<typeof syncAppctlHitsFromKernel>>;
 
 export const POST = route<z.infer<typeof bodySchema>, undefined, AppctlPostResult>(
-  { area: "app_control", bodySchema },
+  // audit fix L8 — kernel-mutating OS actions snapshot a config version like
+  // every other mutation route.
+  { area: "app_control", bodySchema, section: "app_control" },
   async ({ auth, body }) => {
   switch (body.action) {
     case "apply": {
@@ -100,7 +102,7 @@ export const POST = route<z.infer<typeof bodySchema>, undefined, AppctlPostResul
     }
     case "confirm": {
       if (!body.ts) throw ApiError.validation("confirm requires ts of the pending apply");
-      const r = await confirmAppctlApply(body.ts);
+      const r = await confirmAppctlApply(auth.tenantId, body.ts);
       if (!r.confirmed) throw ApiError.notFound("no pending apply window for this ts (already confirmed or expired)");
       return {
         data: r,
@@ -108,7 +110,7 @@ export const POST = route<z.infer<typeof bodySchema>, undefined, AppctlPostResul
       };
     }
     case "rollback": {
-      const r = await rollbackAppctl(body.ts);
+      const r = await rollbackAppctl(auth.tenantId, body.ts);
       return {
         data: r,
         audit: {

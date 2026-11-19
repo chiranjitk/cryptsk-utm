@@ -217,6 +217,54 @@ function hasSecretRefKey(config: Record<string, unknown>): boolean {
   return false;
 }
 
+/**
+ * audit fix M5 — secret-shaped config keys may only carry secret-STORE
+ * REFERENCES, never plaintext credentials. A key named like a secret
+ * (secret/token/password/credential/apikey/api_key, case-insensitive) must
+ * either end in `Ref` (the documented *SecretRef/*TokenRef convention) or
+ * carry a `scheme://` store-URI value (vault://, sm://, …). Plaintext API
+ * tokens used to be accepted silently AND echoed back in cleartext by every
+ * read — dead-guard removed, enforcement now runs at every write.
+ */
+const SECRET_KEY_RE = /(secret|token|password|credential|apikey|api_key|clientsecret)/i;
+const STORE_URI_RE = /^[a-z][a-z0-9._-]{1,31}:\/\//i;
+
+export function isPlaintextSecretValue(key: string, value: unknown): boolean {
+  if (!SECRET_KEY_RE.test(key)) return false;
+  if (typeof value !== "string" || value.trim().length === 0) return false;
+  if (/ref$/i.test(key)) return false; // *SecretRef/*TokenRef — reference by name
+  if (STORE_URI_RE.test(value)) return false; // store URI — reference by value
+  return true;
+}
+
+/** audit fix M5 — sentinel for masking legacy plaintext secrets in DTOs. */
+export const CASB_SECRET_MASK = "__STORED_SECRET__";
+
+/** Reject config objects carrying plaintext secret values (create + update). */
+function assertNoPlaintextSecrets(config: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(config)) {
+    if (isPlaintextSecretValue(key, value)) {
+      throw ApiError.validation(
+        `Config key "${key}" looks like a plaintext secret — store the credential in the secret store and pass a reference (*SecretRef/*TokenRef or scheme:// URI)`,
+      );
+    }
+  }
+}
+
+/** True when the patch carries the DTO mask back — treated as keep-stored. */
+function containsMaskedSecret(config: Record<string, unknown>): boolean {
+  return Object.values(config).some((v) => v === CASB_SECRET_MASK);
+}
+
+/** Mask legacy plaintext secret values for API responses (values stay intact in the DB). */
+function maskSecretsForDTO(config: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(config)) {
+    out[key] = isPlaintextSecretValue(key, value) ? CASB_SECRET_MASK : value;
+  }
+  return out;
+}
+
 function toConnectorDTO(row: {
   id: number;
   vendor: string;
@@ -232,7 +280,8 @@ function toConnectorDTO(row: {
     vendor,
     vendorLabel: CONNECTOR_VENDOR_LABELS[vendor] ?? vendor,
     status: row.status as ConnectorStatus,
-    config,
+    // audit fix M5 — legacy plaintext secret values never leave the server
+    config: maskSecretsForDTO(config),
     requiredKeys: CONNECTOR_REQUIRED_KEYS[vendor] ?? [],
     missingKeys: missingConfigKeys(vendor, config),
     lastSyncAt: row.lastSyncAt ? row.lastSyncAt.toISOString() : null,
@@ -458,6 +507,11 @@ export async function runScan(tenantId: number, opts?: { windowMinutes?: number;
         ...(watermark > 0 ? { id: { gt: watermark } } : {}),
       },
       orderBy: { createdAt: "asc" },
+      // audit fix M6 — bounded aggregation: select only the grouped columns
+      // and cap the window materialization; a 30-day scan over a huge log
+      // table can no longer pin memory with an unbounded findMany.
+      take: 10_000,
+      select: { id: true, clientIp: true, appName: true, bytes: true, createdAt: true },
     }),
     db.saasAppCatalog.findMany({ where: { tenantId } }),
   ]);
@@ -558,6 +612,7 @@ export async function createConnector(
   tenantId: number,
   input: { vendor: CasbVendor; config: Record<string, unknown> },
 ): Promise<CasbConnectorDTO> {
+  assertNoPlaintextSecrets(input.config); // audit fix M5
   const dup = await db.casbConnector.findFirst({ where: { tenantId, vendor: input.vendor } });
   if (dup) {
     throw ApiError.conflict(
@@ -582,10 +637,29 @@ export async function updateConnector(
 ): Promise<CasbConnectorDTO> {
   const row = await db.casbConnector.findFirst({ where: { id, tenantId } });
   if (!row) throw ApiError.notFound("Connector not found");
+  let configJson: string | undefined;
+  if (input.config !== undefined) {
+    // audit fix M5 — the DTO mask round-trips as "keep the stored value";
+    // plaintext secrets are hard-rejected.
+    if (containsMaskedSecret(input.config)) {
+      const stored = parseConfig(row.configJson);
+      for (const [key, value] of Object.entries(input.config)) {
+        if (value === CASB_SECRET_MASK) {
+          const storedValue = stored[key];
+          if (storedValue === undefined) {
+            throw ApiError.validation(`Config key "${key}" has no stored value to keep — provide a real value`);
+          }
+          input.config[key] = storedValue;
+        }
+      }
+    }
+    assertNoPlaintextSecrets(input.config);
+    configJson = JSON.stringify(input.config);
+  }
   const updated = await db.casbConnector.update({
     where: { id: row.id },
     data: {
-      ...(input.config !== undefined ? { configJson: JSON.stringify(input.config) } : {}),
+      ...(configJson !== undefined ? { configJson } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
     },
   });

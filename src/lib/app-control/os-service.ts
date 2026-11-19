@@ -31,6 +31,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { db } from "@/lib/db";
+import { ApiError } from "@/lib/api/errors";
 import { hasTool, runTool, readNftRuleset } from "@/lib/host/tools";
 import { probeWanHealth, pbrHealthRegressed, type PbrWanHealth } from "@/lib/network/pbr-os";
 import {
@@ -200,6 +201,10 @@ interface ApplyState {
   mode: "manual" | "auto";
   backupFile: string;
   confirmFile: string;
+  /** audit fix M2 — owning tenant of the armed window (0/absent = legacy, allowed) */
+  tenantId: number;
+  /** audit fix L9 — hit-counter watermarks (`appctl:<ruleId>` → packets) */
+  lastHitSync?: Record<string, number>;
 }
 
 async function writeState(state: ApplyState | null): Promise<void> {
@@ -231,6 +236,21 @@ function assertOwnPath(p: string, prefix: RegExp): string {
     throw new Error(`refusing unexpected file name: ${p}`);
   }
   return resolved;
+}
+
+/** audit fix M2 — mirror of firewall-os assertApplyTenant (see threat-intel). */
+function assertApplyTenant(callerTenantId: number, stateTenantId: number | undefined): void {
+  const stamped = stateTenantId ?? 0;
+  if (stamped !== 0 && stamped !== callerTenantId) {
+    throw ApiError.forbidden(
+      `pending app-control apply belongs to tenant ${stamped} — confirm/rollback must come from the applying tenant`,
+    );
+  }
+}
+
+/** audit fix L9 — kernel counter reset detection (see firewall-os hitDelta). */
+function hitDelta(packets: number, watermark: number): number {
+  return packets >= watermark ? packets - watermark : packets;
 }
 
 /** Remove superseded/stale artefacts: armed scripts >60min, files >24h, backups >7d. */
@@ -348,7 +368,7 @@ export async function applyAppctlToOs(tenantId: number, opts: AppctlApplyOptions
   // 1. write + syntax/commit pre-check — never touch the kernel on a broken plan
   const file = path.join(APPCTL_DIR, `appctl-${ts}.nft`);
   await fs.mkdir(APPCTL_DIR, { recursive: true });
-  void housekeepArtefacts();
+  void housekeepArtefacts().catch(() => {}); // audit fix L27 — never an unobserved rejection
   await fs.writeFile(file, plan.file, "utf8");
   const check = await guardedRun(`nft -c -f ${JSON.stringify(file)}`, 10000);
   results.push({ step: "nft -c check", ok: check.ok, detail: check.ok ? undefined : check.stderr });
@@ -372,6 +392,11 @@ export async function applyAppctlToOs(tenantId: number, opts: AppctlApplyOptions
   await fs.writeFile(backupFile, backupContent, "utf8");
   results.push({ step: "backup", ok: true, detail: backupFile });
 
+  // 2b. audit fix L9 — bank current hit counters (delta vs watermarks) before
+  // the apply recreates the table and resets the kernel counters.
+  const hitSyncMap = await bankAppctlHitsFromKernel(live.ruleset, tenantId);
+  results.push({ step: "bank hit counters", ok: true, detail: `${Object.keys(hitSyncMap).length} rule watermark(s) recorded` });
+
   // 3. arm the detached rollback timer (survives console restarts)
   const confirmFile = path.join(APPCTL_DIR, `confirm-${ts}`);
   const rollbackScript = path.join(APPCTL_DIR, `rollback-${ts}.sh`);
@@ -388,7 +413,7 @@ export async function applyAppctlToOs(tenantId: number, opts: AppctlApplyOptions
   // timer so it cannot fire mid-flight and revert the newer policy
   const prior = await readApplyState();
   if (prior) await fs.writeFile(prior.confirmFile, "superseded", "utf8").catch(() => {});
-  await writeState({ ts, armedAt: new Date().toISOString(), deadlineAt, mode, backupFile, confirmFile });
+  await writeState({ ts, armedAt: new Date().toISOString(), deadlineAt, mode, backupFile, confirmFile, tenantId, lastHitSync: hitSyncMap });
   outcome.confirmDeadlineAt = deadlineAt;
 
   // 4. WAN health baseline (the 2026-11-14 outage class guard)
@@ -461,18 +486,20 @@ export async function applyAppctlToOs(tenantId: number, opts: AppctlApplyOptions
 
 // ── confirm / rollback / counters ───────────────────────────────────────────
 
-export async function confirmAppctlApply(ts: string): Promise<{ confirmed: boolean; ts: string }> {
+export async function confirmAppctlApply(callerTenantId: number, ts: string): Promise<{ confirmed: boolean; ts: string }> {
   const state = await readApplyState();
   const target = state?.ts === ts ? state : null;
   if (!target) return { confirmed: false, ts };
+  assertApplyTenant(callerTenantId, target.tenantId); // audit fix M2
   await fs.writeFile(target.confirmFile, new Date().toISOString(), "utf8");
   await writeState(null);
   await fs.rm(path.join(APPCTL_DIR, `rollback-${ts}.sh`), { force: true }).catch(() => {});
   return { confirmed: true, ts };
 }
 
-export async function rollbackAppctl(ts?: string): Promise<{ rolledBack: boolean; file: string | null; health: PbrWanHealth | null; detail: string }> {
+export async function rollbackAppctl(callerTenantId: number, ts?: string): Promise<{ rolledBack: boolean; file: string | null; health: PbrWanHealth | null; detail: string }> {
   const state = await readApplyState();
+  if (state) assertApplyTenant(callerTenantId, state.tenantId); // audit fix M2
   let backupFile: string | null = state?.backupFile ?? null;
   if (!backupFile && ts) {
     backupFile = assertOwnPath(path.join(APPCTL_DIR, `backup-${ts}.nft`), /^backup-[\w.-]+\.nft$/);
@@ -508,17 +535,66 @@ export async function readAppctlTableDump(): Promise<string | null> {
   return res.ok && res.stdout.trim() ? res.stdout : null;
 }
 
-/** Optional: push kernel counters into AppControlRule.hitCount (real hits). */
+/** audit fix L9 — apply-time banking of current kernel counters (delta). */
+async function bankAppctlHitsFromKernel(liveDump: string, tenantId: number): Promise<Record<string, number>> {
+  const counters = parseAppctlRuleCounters(liveDump);
+  if (counters.length === 0) return {};
+  const ids = [...new Set(counters.map((c) => c.ruleId))];
+  const rows = await db.appControlRule
+    .findMany({ where: { id: { in: ids }, tenantId }, select: { id: true, hitCount: true } })
+    .catch(() => [] as Array<{ id: number; hitCount: number }>);
+  const hitById = new Map(rows.map((r) => [r.id, r.hitCount]));
+  const raw = await fs.readFile(APPCTL_STATE_FILE, "utf8").catch(() => null);
+  const prev = raw ? (JSON.parse(raw) as ApplyState) : null;
+  const map: Record<string, number> = { ...(prev?.lastHitSync ?? {}) };
+  for (const c of counters) {
+    if (!hitById.has(c.ruleId)) continue;
+    const key = `appctl:${c.ruleId}`;
+    const delta = hitDelta(c.packets, map[key] ?? 0);
+    map[key] = c.packets;
+    if (delta > 0) {
+      await db.appControlRule
+        .update({ where: { id: c.ruleId }, data: { hitCount: (hitById.get(c.ruleId) ?? 0) + delta } })
+        .catch(() => null);
+    }
+  }
+  return map;
+}
+
+/**
+ * Optional: push kernel counters into AppControlRule.hitCount (real hits).
+ * audit fix L9 — DELTA accumulation against state.json `lastHitSync`
+ * (`appctl:<id>` → packets) so a table recreate (counter reset) never
+ * collapses the accumulated history; tenant-scoped, batch-loaded.
+ */
 export async function syncAppctlHitsFromKernel(tenantId: number): Promise<{ updated: number }> {
   const dump = (await readNftRuleset()).ruleset;
   if (!new RegExp(`table inet ${APPCTL_TABLE_NAME}\\b`).test(dump)) return { updated: 0 };
   const counters: AppctlCounter[] = parseAppctlRuleCounters(dump);
+  const ids = [...new Set(counters.map((c) => c.ruleId))];
+  const rows = await db.appControlRule
+    .findMany({ where: { id: { in: ids }, tenantId }, select: { id: true, hitCount: true } })
+    .catch(() => [] as Array<{ id: number; hitCount: number }>);
+  const hitById = new Map(rows.map((r) => [r.id, r.hitCount]));
+  const raw = await fs.readFile(APPCTL_STATE_FILE, "utf8").catch(() => null);
+  const prev = raw ? (JSON.parse(raw) as ApplyState) : null;
+  const map: Record<string, number> = { ...(prev?.lastHitSync ?? {}) };
   let updated = 0;
   for (const c of counters) {
-    const row = await db.appControlRule.findFirst({ where: { id: c.ruleId, tenantId } }).catch(() => null);
-    if (!row) continue;
-    await db.appControlRule.update({ where: { id: c.ruleId }, data: { hitCount: c.packets } }).catch(() => null);
+    if (!hitById.has(c.ruleId)) continue;
+    const key = `appctl:${c.ruleId}`;
+    const delta = hitDelta(c.packets, map[key] ?? 0);
+    map[key] = c.packets;
+    if (delta > 0) {
+      await db.appControlRule
+        .update({ where: { id: c.ruleId }, data: { hitCount: (hitById.get(c.ruleId) ?? 0) + delta } })
+        .catch(() => null);
+    }
     updated += 1;
+  }
+  // persist watermarks only over an existing state file (never fabricate one)
+  if (prev) {
+    await writeState({ ...prev, lastHitSync: map }).catch(() => {});
   }
   return { updated };
 }

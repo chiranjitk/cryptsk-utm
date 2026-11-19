@@ -26,6 +26,7 @@ import {
   haStepGuarded,
   isHaBackupPath,
   interpretKeepalivedTest,
+  redactHaConfSecrets,
   KEEPALIVED_STAGE,
   KEEPALIVED_CONF,
 } from "@/lib/ha/os";
@@ -53,7 +54,7 @@ export const POST = route({ area: "ha", section: "ha" }, async ({ auth }) => {
 
   if (refusal) {
     return {
-      data: { applied: false, refused: refusal, plan: { steps: plan.steps, confText: plan.confText }, results: [] },
+      data: { applied: false, refused: refusal, plan: { steps: plan.steps, confText: redactHaConfSecrets(plan.confText) }, results: [] },
       audit: { action: "ha.os-apply.refused", objectType: "ha_config", objectName: "ha" },
     };
   }
@@ -62,7 +63,7 @@ export const POST = route({ area: "ha", section: "ha" }, async ({ auth }) => {
       data: {
         applied: false,
         refused: "HA is disabled in the console — apply would only be safe after enabling HA with a virtual IP; the OS conf was left untouched",
-        plan: { steps: plan.steps, confText: plan.confText },
+        plan: { steps: plan.steps, confText: redactHaConfSecrets(plan.confText) },
         results: [],
       },
       audit: { action: gateOn ? "ha.os-apply.exec" : "ha.os-apply.plan", objectType: "ha_config", objectName: "ha" },
@@ -153,7 +154,7 @@ export const POST = route({ area: "ha", section: "ha" }, async ({ auth }) => {
       rolledBack,
       confHash: plan.confHash,
       backupFile: plan.backupFile,
-      plan: { steps: plan.steps, confText: plan.confText },
+      plan: { steps: plan.steps, confText: redactHaConfSecrets(plan.confText) },
       results,
     },
     audit: {

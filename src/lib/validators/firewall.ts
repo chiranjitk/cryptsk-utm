@@ -233,7 +233,14 @@ export const reorderBodySchema = z.object({
 
 export const importBodySchema = z.object({
   format: z.enum(["json", "csv"]),
-  payload: z.string(),
+  // audit fix L5 — bounded bulk input (mirrors url-filter import: 64KB/≤500
+  // rows): an unbounded payload lets one authorized request wedge the SQLite
+  // writer with thousands of rows. 1MB covers the documented 500-rule
+  // CSV/JSON with comments and long FQDN values.
+  payload: z.string().max(1_000_000, "Import payload too large (max 1MB)").refine(
+    (v) => v.split("\n").length <= 2_000,
+    "Import payload has too many lines",
+  ),
 });
 
 export const exportQuerySchema = z.object({ format: z.enum(["json", "csv"]).default("json") });

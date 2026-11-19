@@ -44,6 +44,41 @@ import {
  *  runs to completion before the next reads facts. */
 let convergeChain: Promise<unknown> = Promise.resolve();
 
+/**
+ * Audit fix H3 — WireGuard privateKey / IPSec PSK are SECRET MATERIAL and
+ * must never leave the server in a list/detail response (a `vpn_config.read`
+ * role such as soc_analyst could otherwise lift the hub private key and
+ * impersonate the hub or decrypt tunnel traffic). Responses carry the fixed
+ * MASK literal instead — the same "masked value = keep stored" convention as
+ * RADIUS sharedSecret / directory bindPassword (identity/service.ts).
+ * Server-side consumers (OS renderer, client bundles) read row.config from
+ * the DB and are unaffected.
+ */
+export const VPN_SECRET_MASK = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
+
+/** Replace stored secret material with the MASK literal (DTO shaping only). */
+function redactSecrets(type: VpnType, cfg: VpnConfigPayload): VpnConfigPayload {
+  const out = { ...cfg } as Record<string, unknown>;
+  if (type === "wireguard_s2s" || type === "wireguard_remote") {
+    if (typeof out.privateKey === "string" && out.privateKey.length > 0) out.privateKey = VPN_SECRET_MASK;
+  }
+  if (type === "ipsec_s2s" || type === "ipsec_remote") {
+    if (typeof out.psk === "string" && out.psk.length > 0) out.psk = VPN_SECRET_MASK;
+  }
+  return out as unknown as VpnConfigPayload;
+}
+
+/** True when the request carries the MASK literal back — treated as keep-stored. */
+function isMaskedSecret(type: VpnType, cfg: VpnConfigPayload): "privateKey" | "psk" | null {
+  if (type === "wireguard_s2s" || type === "wireguard_remote") {
+    return (cfg as WgS2sConfig).privateKey === VPN_SECRET_MASK ? "privateKey" : null;
+  }
+  if (type === "ipsec_s2s" || type === "ipsec_remote") {
+    return (cfg as IpsecConfig).psk === VPN_SECRET_MASK ? "psk" : null;
+  }
+  return null;
+}
+
 /** Fire-and-forget OS converge after a config mutation (never blocks, never throws). */
 function convergeAfterMutation(): void {
   convergeChain = convergeChain
@@ -95,7 +130,8 @@ function shapeConfig(row: NonNullable<VpnRow>, sessionCount: number): VpnConfigD
     name: row.name,
     type: row.type as VpnType,
     enabled: row.enabled,
-    config: parseJson<VpnConfigPayload>(row.config, {} as VpnConfigPayload),
+    // audit fix H3 — privateKey/PSK masked with the keep-stored sentinel
+    config: redactSecrets(row.type as VpnType, parseJson<VpnConfigPayload>(row.config, {} as VpnConfigPayload)),
     status: row.status as VpnConfigDto["status"],
     statusMessage: row.statusMessage,
     sessionCount,
@@ -204,6 +240,17 @@ export async function createConfig(tenantId: number, body: VpnConfigCreateInput)
   const dup = await db.vpnConfig.findFirst({ where: { tenantId, name: body.name } });
   if (dup) throw ApiError.conflict(`A tunnel named "${body.name}" already exists`);
 
+  // audit fix H3 — the MASK literal is a keep-stored sentinel and has no
+  // meaning on CREATE: storing it would corrupt the tunnel (dead key).
+  const maskedField = isMaskedSecret(body.type, body.config as VpnConfigPayload);
+  if (maskedField) {
+    throw ApiError.validation(
+      maskedField === "privateKey"
+        ? "Private key is required — generate or paste a real key"
+        : "PSK is required — generate or paste a real key",
+    );
+  }
+
   const config = configOfPayload(body.type, body.config);
   const port = portOf(body.type, config);
   if (port != null) await assertPortFree(tenantId, port);
@@ -242,6 +289,20 @@ export async function updateConfig(tenantId: number, id: number, body: VpnConfig
   let configJson: string | undefined;
   if (body.config !== undefined) {
     const config = configOfPayload(existing.type as VpnType, body.config);
+    // audit fix H3 — a MASK literal submitted back by the editor means "keep
+    // the stored secret": merge the stored value in before persisting so the
+    // sentinel never overwrites real key material.
+    const maskedField = isMaskedSecret(existing.type as VpnType, config);
+    if (maskedField) {
+      const stored = parseJson<VpnConfigPayload>(existing.config, {} as VpnConfigPayload);
+      const storedSecret = maskedField === "privateKey" ? (stored as WgS2sConfig).privateKey : (stored as IpsecConfig).psk;
+      if (typeof storedSecret !== "string" || storedSecret.length === 0) {
+        throw ApiError.validation(
+          maskedField === "privateKey" ? "Stored tunnel has no private key to keep — generate a new one" : "Stored tunnel has no PSK to keep — generate a new one",
+        );
+      }
+      (config as unknown as Record<string, unknown>)[maskedField] = storedSecret;
+    }
     const port = portOf(existing.type as VpnType, config);
     if (port != null) await assertPortFree(tenantId, port, id);
     const pool = poolOf(existing.type as VpnType, config);

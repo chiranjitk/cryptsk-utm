@@ -452,7 +452,7 @@ describe("deliverWebhookTest + listRecentDeliveries", () => {
 
 describe("deliverEvent — SSRF guard (F-e #3)", () => {
   it("refuses delivery to a loopback target with a terminal failure (no fetch, no retry)", async () => {
-    const wh = seedWebhook({ url: "http://127.0.0.1:9999/hook", secret: SECRET });
+    const wh = seedWebhook({ url: "https://127.0.0.1:9999/hook", secret: SECRET });
     fetchMock.mockResolvedValue(httpResponse(200));
 
     await deliverEvent("alerts.new", {}, { tenantId: 1, ...FAST });
@@ -470,17 +470,24 @@ describe("deliverEvent — SSRF guard (F-e #3)", () => {
   });
 
   it("refuses delivery to the cloud-metadata endpoint (169.254.169.254, link-local)", async () => {
-    seedWebhook({ url: "http://169.254.169.254/latest/meta-data/", secret: null });
+    seedWebhook({ url: "https://169.254.169.254/latest/meta-data/", secret: null });
     await deliverEvent("alerts.new", {}, { tenantId: 1 });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(h.deliveries[0].error).toContain("169.254.169.254");
   });
 
-  it("refuses non-http(s) schemes at the guard", async () => {
+  it("refuses non-https schemes at the guard (audit fix L21 — https-only)", async () => {
     seedWebhook({ url: "ftp://hooks.example.test/file", secret: null });
     await deliverEvent("alerts.new", {}, { tenantId: 1 });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(h.deliveries[0].error).toContain("only http(s) webhook targets are allowed");
+    expect(h.deliveries[0].error).toContain("only https webhook targets are allowed");
+  });
+
+  it("refuses plain http webhook targets in production (no sandbox override)", async () => {
+    seedWebhook({ url: "http://hooks.example.test/cleartext", secret: null });
+    await deliverEvent("alerts.new", {}, { tenantId: 1 });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(h.deliveries[0].error).toContain("only https webhook targets are allowed");
   });
 
   it("CONSOLE_WEBHOOK_ALLOW_PRIVATE=1 permits internal targets (sandbox override)", async () => {

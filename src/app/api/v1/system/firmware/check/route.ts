@@ -7,7 +7,8 @@ import { checkFirmware } from "@/lib/system/service";
 export const dynamic = "force-dynamic";
 
 export const POST = route(
-  { area: "firmware", bodySchema: firmwareCheckSchema, section: "system" },
+  // audit fix L4 — firmware mutations are admin-class operations.
+  { area: "firmware", admin: true, bodySchema: firmwareCheckSchema, section: "system" },
   async ({ auth }) => {
     const firmware = await checkFirmware(auth.tenantId);
     return {

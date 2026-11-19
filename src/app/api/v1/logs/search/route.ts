@@ -9,6 +9,7 @@
 import { route } from "@/lib/api/handler";
 import { unifiedSearchQuerySchema } from "@/lib/validators/reporting";
 import { db } from "@/lib/db";
+import { escapeLike } from "@/lib/logs/service";
 import { pageMetaOf } from "@/app/api/v1/reports/engine";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,11 @@ function humanBytes(n: number): string {
 }
 
 export const GET = route({ area: "logs", querySchema: unifiedSearchQuerySchema }, async ({ auth, query }) => {
-  const { dataset, q, severity, action, since, until, page, limit } = query;
+  const { dataset, q: rawQ, severity, action, since, until, page, limit } = query;
+  // audit fix L18 — F-e #18 LIKE-wildcard escaping, same as lib/logs/service:
+  // a raw `%`/`_` in `q` acts as a wildcard (one char matches all rows in-tenant
+  // and drives full scans).
+  const q = rawQ ? escapeLike(rawQ) : rawQ;
   const tsFilter: { gte?: Date; lte?: Date } = {
     ...(since ? { gte: new Date(since) } : {}),
     ...(until ? { lte: new Date(until) } : {}),

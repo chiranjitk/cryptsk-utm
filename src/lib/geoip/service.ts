@@ -222,7 +222,10 @@ function toSourceDTO(row: {
     id: row.id,
     name: row.name,
     kind: row.kind,
-    filePath: row.filePath,
+    // audit fix L22 — the DTO carries the display-relative path only; the
+    // absolute filesystem path (which leaks the server cwd/root, e.g.
+    // /home/z/...) never leaves the server.
+    filePath: displayPath(row.filePath),
     countries: parseCountries(row.countries),
     prefixCount: row.prefixCount,
     status: row.status,

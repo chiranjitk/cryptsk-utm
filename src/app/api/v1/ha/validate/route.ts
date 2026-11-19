@@ -17,6 +17,7 @@ import { getDataPlaneMode } from "@/lib/engine";
 import { getHaConfigRow, toKeepalivedInput, buildHaFacts } from "@/lib/ha/service";
 import {
   renderKeepalivedConf,
+  redactHaConfSecrets,
   haConfHash,
   haStepGuarded,
   interpretKeepalivedTest,
@@ -30,10 +31,15 @@ export const POST = route({ area: "ha", section: "ha" }, async ({ auth }) => {
   const row = await getHaConfigRow(auth.tenantId);
   const hostMode = getDataPlaneMode() === "host";
   const facts = await buildHaFacts(auth.tenantId);
-  const confText = renderKeepalivedConf(toKeepalivedInput(row), {
+  const fullConf = renderKeepalivedConf(toKeepalivedInput(row), {
     routerId: osMod.hostname().toUpperCase().slice(0, 24) || "UTM-CONSOLE",
     localIfaceIp: facts.localIfaceIp,
   });
+  // audit fix M11 — the RESPONSE carries the redacted copy; the staged file
+  // (written below) keeps the real auth_pass so `keepalived -t` validates
+  // the true config. confHash is computed over the REDACTED text so callers
+  // can compare it against the apply endpoint's hash of the same shape.
+  const confText = redactHaConfSecrets(fullConf);
 
   if (!hostMode || !(await hasTool("keepalived"))) {
     return {
@@ -52,7 +58,7 @@ export const POST = route({ area: "ha", section: "ha" }, async ({ auth }) => {
   let r: Awaited<ReturnType<typeof runTool>> | null = null;
   try {
     await mkdir(HA_VALIDATE_DIR, { recursive: true });
-    await writeFile(validateFile, confText, "utf8");
+    await writeFile(validateFile, fullConf, "utf8");
     // the staged conf embeds auth_pass — keep it owner-only
     await chmod(validateFile, 0o600).catch(() => {});
     const cmd = `keepalived -t -f ${validateFile}`;

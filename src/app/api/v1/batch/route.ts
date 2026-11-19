@@ -38,7 +38,10 @@ export const POST = route(
         section: "firewall",
         changeSummary,
         userId: auth.userId,
-      }).catch(() => {});
+        // audit fix L23 — snapshot failures are OBSERVABLE (matches handler.ts)
+      }).catch((err: unknown) =>
+        console.error(`[batch] ${requestId} config snapshot failed:`, err instanceof Error ? err.message : err),
+      );
       scheduleFirewallConverge(auth.tenantId);
     }
 

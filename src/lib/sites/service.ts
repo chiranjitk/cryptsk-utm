@@ -254,11 +254,14 @@ const STUCK_PUSH_RESULT = JSON.stringify({
  * rows older than STUCK_PUSH_MS to failed; failures are swallowed (the list
  * must keep working even if the sweep write loses a race with a live push).
  */
-async function sweepStuckPushes(): Promise<void> {
+async function sweepStuckPushes(tenantId: number): Promise<void> {
   const cutoff = new Date(Date.now() - STUCK_PUSH_MS);
+  // audit fix L19 — tenant-scoped: a GET from tenant A must never mutate
+  // tenant B's deployment rows (the sweep previously ran cross-tenant as a
+  // side effect of listSites, making the read non-idempotent and leaky).
   await db.siteDeployment
     .updateMany({
-      where: { status: "pushing", pushedAt: { lt: cutoff } },
+      where: { tenantId, status: "pushing", pushedAt: { lt: cutoff } },
       data: { status: "failed", result: STUCK_PUSH_RESULT },
     })
     .catch(() => {});
@@ -270,8 +273,9 @@ export async function listSites(
   tenantId: number,
   query: SiteQuery,
 ): Promise<{ data: SiteDTO[]; meta: PageMeta }> {
-  // best-effort sweep of wedged `pushing` deployments (audit fix F-d)
-  await sweepStuckPushes();
+  // best-effort sweep of wedged `pushing` deployments (audit fix F-d; scoped
+  // to the caller's tenant per audit fix L19)
+  await sweepStuckPushes(tenantId);
   const where = {
     tenantId,
     ...(query.status ? { status: query.status } : {}),

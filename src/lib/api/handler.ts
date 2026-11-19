@@ -291,9 +291,15 @@ export { z };
  * Parse an integer path param ([id], [ruleId], …). Invalid values (missing,
  * "null", NaN, ≤0) must fail as 400 VALIDATION_ERROR — letting them reach
  * Prisma renders a 500 "Invalid findFirst invocation" instead.
+ * Audit fix L17 — strict decimal grammar: Number() silently accepts "0x10",
+ * " 12" or "1e2"; the documented contract is a plain base-10 integer.
  */
 export function numericId(params: Record<string, string>, key = "id"): number {
-  const n = Number(params[key]);
+  const raw = params[key];
+  if (!/^\d+$/.test(raw ?? "")) {
+    throw ApiError.validation(`Invalid path parameter '${key}'`);
+  }
+  const n = Number(raw);
   if (!Number.isInteger(n) || n < 1) {
     throw ApiError.validation(`Invalid path parameter '${key}'`);
   }

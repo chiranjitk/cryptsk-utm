@@ -31,7 +31,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { route } from "@/lib/api/handler";
 import { ok, fail } from "@/lib/api/envelope";
-import { hit } from "@/lib/api/rate-limit";
+import { hit, publicClientKey } from "@/lib/api/rate-limit";
 import { writeAudit } from "@/lib/api/audit";
 import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/auth/password";
@@ -132,7 +132,12 @@ export const POST = route(
 
     // #5 — policy-driven lockout check FIRST (a locked account stays locked
     // even for correct credentials; the 5/min throttle below still applies)
-    const policy = await getAuthSettings().catch(() => DEFAULT_AUTH_SETTINGS);
+    // audit fix L10 — a settings read failure must be OBSERVABLE: silently
+    // running on defaults would drop an operator-tightened lockout policy.
+    const policy = await getAuthSettings().catch((err: unknown) => {
+      console.error(`[api] ${requestId} auth settings read failed, using defaults:`, err instanceof Error ? err.message : err);
+      return DEFAULT_AUTH_SETTINGS;
+    });
     const lock = isLocked(usernameKey);
     if (lock.locked) {
       await writeAudit({
@@ -150,8 +155,13 @@ export const POST = route(
       });
     }
 
-    // login throttle: 5 failed attempts/min per (username, source ip)
-    const throttle = hit(`login:${username}:${ip}`, 5);
+    // login throttle: 5 attempts/min per (username-lowercased, best-effort
+    // client key) — audit fix M9: the bucket key uses the case-folded username
+    // so `Admin`/`ADMIN`/`aDmin` share one budget; audit fix M8: the IP
+    // dimension uses publicClientKey() so callers behind no proxy are not all
+    // collapsed into one bucket. The policy lockout (usernameKey, above) is
+    // the hard failure cap; this minute-bucket is defense-in-depth.
+    const throttle = hit(`login:${usernameKey}:${publicClientKey(req)}`, 5);
     if (!throttle.allowed) {
       return fail("RATE_LIMITED", `Too many login attempts, retry after ${throttle.retryAfterSec} seconds`, {
         requestId,
@@ -216,7 +226,12 @@ export const POST = route(
       const totpOk = await verifyTotp(user.totpSecret, totpCode, user.id);
       if (!totpOk) {
         recordLoginFailure(usernameKey, policy.lockout.maxAttempts, policy.lockout.windowMin);
-        return deny("failure", "Invalid TOTP code", user.id, user.tenantId);
+        // audit fix M10 — a wrong TOTP code must return the SAME generic
+        // message as a wrong password: a distinct message would confirm to a
+        // caller that the presented password was correct (password-validity
+        // oracle + account enumeration). The failure distinction lives
+        // server-side only, in the audit trail.
+        return deny("failure", GENERIC_FAILURE, user.id, user.tenantId);
       }
     }
 
@@ -236,7 +251,10 @@ export const POST = route(
     // Registration is load-bearing (revocation registry): a login that cannot
     // register its jti must FAIL CLOSED (500), never hand out an
     // unrevocable/401-ing cookie.
-    await enforceConcurrentSessionCap(user.id, policy.sessionLimits?.maxConcurrentPerUser ?? 4).catch(() => {});
+    await enforceConcurrentSessionCap(user.id, policy.sessionLimits?.maxConcurrentPerUser ?? 4).catch((err: unknown) => {
+      // audit fix L11 — cap enforcement must not silently vanish on DB error
+      console.error(`[api] ${requestId} concurrent session cap enforcement failed:`, err instanceof Error ? err.message : err);
+    });
     await createAuthSession({
       jti,
       userId: user.id,
@@ -278,8 +296,12 @@ export const POST = route(
     // (directly or via a TLS-terminating proxy). Gating on NODE_ENV breaks
     // plain-HTTP deployments: browsers silently drop Secure cookies on non-https
     // origins, so the session never sticks and login appears to do nothing.
+    // audit fix L14 — x-forwarded-proto is spoofable, so it is honored only
+    // under the same CONSOLE_TRUST_PROXY opt-in that gates x-forwarded-for in
+    // handler.ts clientIp(); without it only the real request URL decides.
     const xfProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-    const isHttps = xfProto ? xfProto === "https" : new URL(req.url).protocol === "https:";
+    const trustProto = process.env.CONSOLE_TRUST_PROXY === "1" && xfProto;
+    const isHttps = trustProto ? trustProto === "https" : new URL(req.url).protocol === "https:";
     res.cookies.set(SESSION_COOKIE, token, {
       httpOnly: true,
       sameSite: "lax",

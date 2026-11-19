@@ -161,6 +161,40 @@ const dirNameSchema = z
   .min(1, "Source name is required")
   .max(64, "Source name must be ≤ 64 chars");
 
+/**
+ * audit fix L12 — RFC 4515 hygiene for LDAP user filters. The old guard
+ * (`/^\(.*\)$/`) accepted injection payloads like `(uid=*))(|uid=*`; a real
+ * directory sync binding this filter would let a caller widen the search.
+ * Accepted: standard `(&(obj=a)(uid=b))` / `(objectClass=*)` shapes with
+ * balanced parens and legal escapes; rejected: unbalanced parens, NUL bytes,
+ * dangling or illegal `\` escapes.
+ */
+export function ldapUserFilterSafe(v: string): boolean {
+  if (v === "") return true;
+  if (!v.startsWith("(") || !v.endsWith(")")) return false;
+  if (v.includes("\0")) return false;
+  // every backslash must start a legal RFC 4515 escape (\2a, \(, \\, …)
+  if (/(^|[^\\])\\(?![0-9a-fA-F]{2}|[*()\\])/.test(v)) return false;
+  let depth = 0;
+  let escaped = false;
+  for (const ch of v) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === "(") depth += 1;
+    else if (ch === ")") {
+      depth -= 1;
+      if (depth < 0) return false;
+    }
+  }
+  return depth === 0;
+}
+
 export const directorySourceCreateSchema = z.object({
   name: dirNameSchema,
   type: z.enum(["ldap", "ad"]).default("ldap"),
@@ -171,7 +205,8 @@ export const directorySourceCreateSchema = z.object({
     .transform((v) => (v === "" ? null : v))
     .nullish(),
   bindPassword: z.string().trim().max(128).nullish(),
-  userFilter: z.string().trim().max(255).refine((v) => v === "" || /^\(.*\)$/.test(v), "User filter looks like (memberOf=cn=vpn,ou=groups,dc=corp,dc=local)")
+  userFilter: z.string().trim().max(255)
+    .refine(ldapUserFilterSafe, "User filter looks like (memberOf=cn=vpn,ou=groups,dc=corp,dc=local)")
     .transform((v) => (v === "" ? null : v))
     .nullish(),
   enabled: z.boolean().default(true),

@@ -8,9 +8,11 @@
  * Safety architecture:
  *   • gate          CONSOLE_OS_APPLY=1 required (off → plan preview only)
  *   • pre-check     `nft -c -f` syntax/commit check BEFORE any mutation
- *   • backup        live ruleset dumped to <dir>/backup-<ts>.nft (with a
- *                   `flush ruleset` prologue — a faithful restore point that
- *                   preserves fail2ban tables and their runtime sets)
+ *   • backup        the live console-firewall table dumped to
+ *                   <dir>/backup-<ts>.nft as a TABLE-SCOPED restore point
+ *                   (audit fix M3 — declares the table if missing, flushes
+ *                   ONLY it, merges the pre-apply dump back; other modules'
+ *                   tables and fail2ban are never touched by a rollback)
  *   • commit-confirm a detached rollback timer (nohup sh) restores the
  *                   backup after CONSOLE_NFT_CONFIRM_SEC unless the confirm
  *                   flag file appears. The apply route additionally probes
@@ -44,6 +46,7 @@ import path from "path";
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
 import { hasTool, runTool, applyNftFile, readNftRuleset } from "@/lib/host/tools";
+import { composeTableScopedBackup } from "@/lib/host/nft-restore";
 import { probeWanHealth, pbrHealthRegressed, type PbrWanHealth } from "@/lib/network/pbr-os";
 import { loadExpansionContext, safeStrArr } from "./rule-loader";
 import { isFqdnStale } from "./fqdn-resolver";
@@ -537,7 +540,7 @@ export async function applyFirewallNft(tenantId: number, opts: ApplyOptions = {}
   // 1. syntax/commit pre-check — never touch the kernel on a broken plan
   const file = path.join(NFT_DIR, `ruleset-${ts}.nft`);
   await fs.mkdir(NFT_DIR, { recursive: true });
-  void housekeepArtefacts();
+  void housekeepArtefacts().catch(() => {}); // audit fix L27 — never an unobserved rejection
   await fs.writeFile(file, plan.file, "utf8");
   const check = await runTool(`nft -c -f ${JSON.stringify(file)}`, 10000);
   results.push({ step: "nft -c check", ok: check.ok, detail: check.ok ? undefined : check.stderr || check.error });
@@ -546,15 +549,18 @@ export async function applyFirewallNft(tenantId: number, opts: ApplyOptions = {}
     return outcome;
   }
 
-  // 2. backup — live ruleset + flush prologue = faithful restore point
+  // 2. backup — TABLE-SCOPED restore point (audit fix M3): only the
+  // console-firewall table is snapshotted and restored; a rollback never
+  // replays `flush ruleset`, so utm_ti_block / utm_appctl / fail2ban tables
+  // created after this backup survive intact.
   const live = await readNftRuleset();
   if (!live.available) {
     results.push({ step: "backup", ok: false, detail: "cannot read the live ruleset — refusing to apply without a restore point" });
     return outcome;
   }
   const backupFile = path.join(NFT_DIR, `backup-${ts}.nft`);
-  const backupBody = live.ruleset.trim().length > 0 ? live.ruleset : "# empty ruleset at backup time";
-  await fs.writeFile(backupFile, `#!/usr/sbin/nft -f\nflush ruleset\n\n${backupBody}\n`, "utf8");
+  const backupContent = composeTableScopedBackup(live.ruleset, NFT_TABLE_NAME);
+  await fs.writeFile(backupFile, backupContent, "utf8");
   results.push({ step: "backup", ok: true, detail: backupFile });
 
   // 3. arm the detached rollback timer (survives console restarts)

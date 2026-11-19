@@ -246,9 +246,18 @@ function rankOf(role: string | undefined): number {
  * Guard the ASSIGNMENT of `newRole` (createUser, or updateUser changing role):
  *  - only super_admin may create/assign the super_admin role;
  *  - only super_admin/tenant_admin may assign admin-class roles;
- *  - nobody may assign a role that outranks their own.
+ *  - nobody may assign a role that outranks their own;
+ *  - audit fix L15 — machine principals (api_service key, rank -1) may never
+ *    assign auditor/api_service: rank(newRole) > rank(-1) is true for every
+ *    interactive role, but auditor/api_service ALSO rank -1, so the ladder
+ *    check alone let a write-scoped API key mint an auditor account — a
+ *    read-everything principal. Machine keys are now barred from assigning
+ *    any role outright (write-scope keys manage data, not principals).
  */
 export function assertRoleAssignment(actorRole: string | undefined, newRole: string): void {
+  if (actorRole === "api_service") {
+    throw ApiError.forbidden("Machine principals (API keys) may not create or reassign user roles");
+  }
   if (newRole === "super_admin" && actorRole !== "super_admin") {
     throw ApiError.forbidden("Only super_admin may create or assign the super_admin role");
   }

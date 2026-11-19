@@ -10,7 +10,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import fs from "fs";
 import path from "path";
 import {
-  BACKUP_PROLOGUE,
   TI_DIR_NAME_BACKUP_RE,
   TI_POSTROUTING_CHAIN,
   TI_PREROUTING_CHAIN,
@@ -415,19 +414,30 @@ describe("sanitizeComment", () => {
 });
 
 describe("backup restore point", () => {
-  it("composeBackupFile prepends the flush prologue to the FULL live ruleset", () => {
-    const backup = composeBackupFile("table inet console-firewall { }\ntable ip fail2ban { }");
+  // audit fix M3 — backups are TABLE-SCOPED: only utm_ti_block is snapshotted
+  // and restored; other modules' tables (console-firewall, fail2ban) survive
+  // a rollback untouched.
+  it("composeBackupFile snapshots ONLY the utm_ti_block table behind the scoped prologue", () => {
+    const backup = composeBackupFile(
+      `table inet console-firewall { }\ntable inet ${TI_TABLE_NAME} {\n  set blocklist {\n    type ipv4_addr\n  }\n}\ntable ip fail2ban { }`,
+    );
     expect(isRestoreFileContent(backup)).toBe(true);
-    expect(backup).toMatch(/^#!\/usr\/sbin\/nft -f\nflush ruleset\n/);
-    expect(backup).toContain("table inet console-firewall { }");
-    expect(backup).toContain("table ip fail2ban { }");
+    expect(backup.startsWith(`#!/usr/sbin/nft -f\ntable inet ${TI_TABLE_NAME} {}\nflush table inet ${TI_TABLE_NAME}\n`)).toBe(true);
+    expect(backup).toContain("set blocklist");
+    expect(backup).toContain(`table inet ${TI_TABLE_NAME} {`);
+    // cross-module isolation: no other table leaks into the restore file
+    expect(backup).not.toContain("console-firewall");
+    expect(backup).not.toContain("fail2ban");
+    expect(backup).not.toContain("flush ruleset");
   });
 
-  it("refuses restore files without the flush prologue (would merge, not restore)", () => {
+  it("refuses restore files without the table-scoped prologue (would merge, not restore)", () => {
+    expect(isRestoreFileContent("#!/usr/sbin/nft -f\nflush ruleset\n")).toBe(false);
     expect(isRestoreFileContent(`#!/usr/sbin/nft -f\ntable inet ${TI_TABLE_NAME} { }`)).toBe(false);
     expect(isRestoreFileContent("")).toBe(false);
-    expect(isRestoreFileContent(composeBackupFile(""))).toBe(true); // empty-ruleset body is still a valid restore point
-    expect(BACKUP_PROLOGUE).toBe("#!/usr/sbin/nft -f\nflush ruleset\n");
+    // absent-table backup is still a valid restore point (empty table after)
+    expect(isRestoreFileContent(composeBackupFile(""))).toBe(true);
+    expect(composeBackupFile("")).toContain(`# ${TI_TABLE_NAME} absent at backup time`);
   });
 });
 
@@ -634,7 +644,7 @@ describe("applyTiToOs — green path (stubbed appliance)", () => {
     expect(outcome.gate).toBe("on");
     expect(outcome.applied).toBe(true);
     expect(outcome.rolledBack).toBe(false);
-    expect(outcome.results.map((r) => r.step)).toEqual(["nft -c check", "backup", "rollback timer", "apply"]);
+    expect(outcome.results.map((r) => r.step)).toEqual(["nft -c check", "backup", "bank hit counters", "rollback timer", "apply"]);
 
     // pre-check runs BEFORE any mutation; only whitelisted commands ran
     const checkIdx = h.calls.findIndex((c) => /^nft -c -f "/.test(c));
@@ -648,12 +658,14 @@ describe("applyTiToOs — green path (stubbed appliance)", () => {
     expect(stagedBody).toContain(`destroy table inet ${TI_TABLE_NAME}`);
     expect(stagedBody).not.toContain("flush ruleset");
 
-    // snapshot-first: backup-<ts>/ruleset.nft with the mandatory flush prologue
+    // snapshot-first: backup-<ts>/ruleset.nft as a TABLE-SCOPED restore point
+    // (audit fix M3 — only utm_ti_block inside, never flush ruleset)
     const backupDirs = fs.readdirSync(path.join(TMP, "state")).filter((d) => /^backup-/.test(d));
     expect(backupDirs).toHaveLength(1);
     const backupBody = fs.readFileSync(path.join(path.join(TMP, "state"), backupDirs[0], "ruleset.nft"), "utf8");
-    expect(backupBody.startsWith("#!/usr/sbin/nft -f\nflush ruleset\n")).toBe(true);
-    expect(backupBody).toContain("table inet console-firewall");
+    expect(backupBody.startsWith(`#!/usr/sbin/nft -f\ntable inet ${TI_TABLE_NAME} {}\nflush table inet ${TI_TABLE_NAME}\n`)).toBe(true);
+    expect(backupBody).not.toContain("console-firewall");
+    expect(backupBody).not.toContain("flush ruleset");
 
     // state.json LAST: confHash + appliedAt of the now-live fragment
     const state = JSON.parse(fs.readFileSync(path.join(TMP, "state", "state.json"), "utf8")) as Record<string, unknown>;
@@ -709,7 +721,7 @@ describe("rollbackTi + confirmTiApply", () => {
     await svc.applyTiToOs(1);
     const pending = (await svc.readTiState()).pending;
     expect(pending).not.toBeNull();
-    const r = await svc.confirmTiApply(pending!.ts);
+    const r = await svc.confirmTiApply(1, pending!.ts); // audit M2 — caller tenant now explicit
     expect(r.confirmed).toBe(true);
     const snap = await svc.readTiState();
     expect(snap.pending).toBeNull();
@@ -720,7 +732,7 @@ describe("rollbackTi + confirmTiApply", () => {
   it("restores the newest snapshot on rollback and clears the state record", async () => {
     const { svc } = await freshModules(envFor("on"));
     await svc.applyTiToOs(1);
-    const r = await svc.rollbackTi();
+    const r = await svc.rollbackTi(1);
     expect(r.rolledBack).toBe(true);
     expect(r.file).toContain("backup-");
     expect(r.file?.endsWith("ruleset.nft")).toBe(true);
@@ -729,14 +741,14 @@ describe("rollbackTi + confirmTiApply", () => {
 
   it("refuses when no snapshot exists (honest failure)", async () => {
     const { svc } = await freshModules(envFor("on"));
-    const r = await svc.rollbackTi();
+    const r = await svc.rollbackTi(1);
     expect(r.rolledBack).toBe(false);
     expect(r.detail).toContain("no backup available");
   });
 
   it("refuses paths outside the console threat-intel directory", async () => {
     const { svc } = await freshModules(envFor("on"));
-    await expect(svc.rollbackTi("../../etc")).rejects.toThrow(/outside the console threat-intel directory/);
+    await expect(svc.rollbackTi(1, "../../etc")).rejects.toThrow(/outside the console threat-intel directory/);
   });
 });
 

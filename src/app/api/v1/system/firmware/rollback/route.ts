@@ -7,7 +7,8 @@ import { rollbackFirmware } from "@/lib/system/service";
 export const dynamic = "force-dynamic";
 
 export const POST = route(
-  { area: "firmware", bodySchema: firmwareRollbackSchema, section: "system" },
+  // audit fix L4 — firmware mutations are admin-class operations.
+  { area: "firmware", admin: true, bodySchema: firmwareRollbackSchema, section: "system" },
   async ({ auth }) => {
     const firmware = await rollbackFirmware(auth.tenantId);
     return {

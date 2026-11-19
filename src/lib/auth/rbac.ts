@@ -79,7 +79,7 @@ const MATRIX: Record<CapabilityArea, { read: Role[]; write: Role[]; admin?: Role
   log_forwarding: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "network_admin"] },
   reports: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin", "soc_analyst"] },
   webhooks: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "security_admin"] },
-  firmware: { read: ["super_admin", "tenant_admin", "network_admin"], write: ["super_admin", "tenant_admin"] },
+  firmware: { read: ["super_admin", "tenant_admin", "network_admin"], write: ["super_admin", "tenant_admin"], admin: ["super_admin", "tenant_admin"] },
   audit: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: [] },
   ha: { read: ["super_admin", "tenant_admin", "security_admin", "network_admin", "soc_analyst"], write: ["super_admin", "tenant_admin", "network_admin"] },
   system: { read: ["super_admin", "tenant_admin", "network_admin"], write: ["super_admin", "tenant_admin"], admin: ["super_admin", "tenant_admin"] },
