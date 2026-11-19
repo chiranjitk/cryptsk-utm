@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import { ipsModeSchema, ipsPresetSchema } from "./enums";
+import { ipsModeSchema, ipsPresetSchema, ipsSeveritySchema } from "./enums";
 
 export const IPS_CATEGORIES = [
   "trojan", "worm", "phishing", "botnet", "scan", "dos", "web_attack",
@@ -32,10 +32,16 @@ export const preprocessorMapSchema = z
   })
   .strict();
 
-/** Loose suricata rule check — matches M04 §3 error table (400 with line numbers). */
+/**
+ * Loose suricata rule check — matches M04 §3 error table (400 with line numbers).
+ * SECURITY: rules are written verbatim into the managed rules file — a `\r`
+ * or `\n` inside a rule would inject ADDITIONAL rule lines past the editor's
+ * one-rule-per-line contract, so carriage/newline bytes are rejected outright.
+ */
 export const customRuleSchema = z
   .string()
   .max(512)
+  .refine((line) => !/[\r\n]/.test(line), "must be a single line (no CR/LF)")
   .refine((line) => /^\s*(alert|drop|pass|reject|drop\s|\w)/.test(line), "must start with an action keyword (alert|drop|pass|reject)")
   .refine((line) => /\bsid:\s*\d+\s*;/.test(line), "missing `sid:<number>;`");
 
@@ -46,6 +52,11 @@ export const customRulesSchema = z
     rules.forEach((line, i) => {
       const trimmed = line.trim();
       if (!trimmed) return; // blank lines are skipped silently by the editor
+      if (/[\r\n]/.test(line)) {
+        // defense against rule-injection into the managed rules file
+        ctx.addIssue({ code: "custom", path: [i], message: `line ${i + 1}: CR/LF is not allowed inside a rule (one rule per line)` });
+        return;
+      }
       if (!/^(alert|drop|pass|reject)\b/.test(trimmed)) {
         ctx.addIssue({ code: "custom", path: [i], message: `line ${i + 1}: must start with an action keyword (alert|drop|pass|reject)` });
         return;
@@ -56,10 +67,36 @@ export const customRulesSchema = z
     });
   });
 
+/**
+ * SECURITY grammar for IPS exception scope values (source/dest): both are
+ * interpolated VERBATIM into suricata threshold.config `ip <value>` tokens,
+ * so anything outside the strict IPv4-address/CIDR grammar is an injection
+ * vector. No hostnames, no ranges, no "any" — an exception with no scope is
+ * expressed by omitting the field (the builder treats empty/absent as any).
+ */
+export const IPS_IPV4_CIDR_RE = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}(\/(3[0-2]|[12]?\d))?$/;
+
+/** Absent-or-valid scope check shared by the validator and the OS renderer. */
+export function ipsScopeValid(raw: string | null | undefined): boolean {
+  if (raw == null) return true;
+  const v = raw.trim();
+  return v === "" || IPS_IPV4_CIDR_RE.test(v);
+}
+
 export const exceptionSchema = z.object({
   sid: z.coerce.number().int().min(0).max(99_999_999),
-  source: z.string().max(64).optional().nullable(),
-  dest: z.string().max(64).optional().nullable(),
+  source: z
+    .string()
+    .max(64)
+    .optional()
+    .nullable()
+    .refine((v) => ipsScopeValid(v), "source must be an IPv4 address or CIDR (up to /32)"),
+  dest: z
+    .string()
+    .max(64)
+    .optional()
+    .nullable()
+    .refine((v) => ipsScopeValid(v), "dest must be an IPv4 address or CIDR (up to /32)"),
   comment: z.string().max(256).optional().nullable(),
 });
 
@@ -112,7 +149,21 @@ const isoOrEmpty = z
   .refine((v) => v === "" || !Number.isNaN(Date.parse(v)), "must be an ISO timestamp");
 
 export const ipsEventsQuerySchema = z.object({
-  severity: z.string().optional(), // csv of ipsSeveritySchema values
+  /** csv of locked severity vocab — each token must be an ipsSeverity value. */
+  severity: z
+    .string()
+    .max(64)
+    .optional()
+    .refine(
+      (v) =>
+        v === undefined ||
+        v === "" ||
+        v
+          .split(",")
+          .map((s) => s.trim())
+          .every((s) => (ipsSeveritySchema.options as readonly string[]).includes(s)),
+      "unknown severity value",
+    ),
   sid: z.string().max(32).optional(),
   q: z.string().max(128).optional(),
   since: isoOrEmpty.optional(),

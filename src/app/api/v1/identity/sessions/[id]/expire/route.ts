@@ -15,7 +15,7 @@ export const POST = route({ area: "identity" }, async ({ auth, params }) => {
   const expired = await expireIdentitySession(auth.tenantId, id);
   emitEvent({
     type: "sessions:update",
-    payload: { kind: "identity", diff: [{ id: expired.id, userName: expired.userName, status: "expired" }] },
+    payload: { kind: "identity", diff: [{ id: expired.id, userName: expired.userName, status: "expired" }], tenantId: auth.tenantId },
   });
   return {
     data: expired,

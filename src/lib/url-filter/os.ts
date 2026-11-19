@@ -31,6 +31,7 @@
 
 import { createHash } from "crypto";
 import type { UrlFilterReason } from "@/app/api/v1/url-filter/service";
+import { valueMatchesMatchType } from "@/lib/validators/url-filter";
 import {
   ALWAYS_BLOCKED,
   SAMPLE_DOMAIN_CATEGORIES,
@@ -621,6 +622,28 @@ export interface UfApplyPlan {
   /** true when squid was running before apply — reload vs restart decision */
   wasRunning: boolean;
   guarded: boolean;
+  /** red-line refusal (hardSslRefusal pattern) — executor must not run when set */
+  refused: string | null;
+}
+
+/**
+ * Red-line refusal (hardSslRefusal mirror) — checked before any exec.
+ * Custom-list values are read back from the DB and interpolated into
+ * dstdomain / url_regex ACL tokens; a validator bypass (or a value smuggled
+ * past the create schema by a legacy/import path) must never reach the
+ * renderer — each value is re-validated against the create-time grammar and
+ * shell/squid-token-breaking characters are refused outright.
+ */
+export function hardUfRefusal(input: UfRenderInput): string | null {
+  for (const l of input.customLists) {
+    if (/["'\\\s;$`]/.test(l.value)) {
+      return `refused: custom list #policy ${l.policyId} ${l.listType} ${l.matchType}:"${l.value}" contains characters squid/shell cannot carry safely — fix the list entry first`;
+    }
+    if (!valueMatchesMatchType(l.matchType, l.value)) {
+      return `refused: custom list #policy ${l.policyId} ${l.listType} ${l.matchType}:"${l.value}" no longer matches the ${l.matchType} grammar — fix the list entry before applying`;
+    }
+  }
+  return null;
 }
 
 /**
@@ -690,5 +713,6 @@ export function buildSquidApplyPlan(
     skipped,
     wasRunning: facts.running,
     guarded: steps.every((s) => squidStepGuarded(s.cmd)),
+    refused: hardUfRefusal(input),
   };
 }

@@ -182,7 +182,7 @@ export const logsApi = {
   deleteSchedule: (id: number) =>
     fetchJson<{ ok: boolean }>(`/api/v1/logs/report-schedules/${id}`, { method: "DELETE" }),
   runSchedule: (id: number) =>
-    fetchJson<{ ok: true; lastRunAt: string }>(`/api/v1/logs/report-schedules/${id}/run`, { method: "POST", headers: JSON_HEADERS, body: "{}" }),
+    fetchJson<{ ok: true; lastRunAt: string; run?: { id: number; name: string; status: string } }>(`/api/v1/logs/report-schedules/${id}/run`, { method: "POST", headers: JSON_HEADERS, body: "{}" }),
 
   // ── M04 reuse — suppress an IPS event (endpoint owned by M04, do not duplicate) ──
   suppressIpsEvent: (id: number, duration: "24h" | "7d" | "forever") =>

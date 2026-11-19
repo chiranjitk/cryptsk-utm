@@ -40,6 +40,10 @@ const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "geoip-fqdn-"));
 const DB_PATH = path.join(TMP_DIR, "geoip-fqdn-test.db");
 fs.copyFileSync(path.resolve(process.cwd(), "db/cryptsk.db"), DB_PATH);
 process.env.DATABASE_URL = `file:${DB_PATH}`;
+// managed GeoIP root override — sources MUST live inside it (confinement);
+// the test root lives in this run's tmp area, never the repo working tree
+const GEOIP_ROOT = path.join(TMP_DIR, "geoip-root");
+process.env.CONSOLE_GEOIP_DIR = GEOIP_ROOT;
 
 const { db } = await import("@/lib/db");
 const geoipService = await import("@/lib/geoip/service");
@@ -102,7 +106,9 @@ const baseInput = (over: Partial<NftGenInput> = {}): NftGenInput => ({
 });
 
 function writeTmpFile(content: string): string {
-  const p = path.join(TMP_DIR, `csv-${Math.random().toString(36).slice(2)}.csv`);
+  // fixtures MUST live inside the managed geoip root (confinement contract)
+  fs.mkdirSync(GEOIP_ROOT, { recursive: true });
+  const p = path.join(GEOIP_ROOT, `csv-${Math.random().toString(36).slice(2)}.csv`);
   fs.writeFileSync(p, content, "utf8");
   return p;
 }
@@ -357,12 +363,57 @@ describe("geoip source service", () => {
   });
 
   it("marks the row error and throws on unreadable files", async () => {
-    await expect(geoipService.loadSource(1, { name: "tst-missing", filePath: path.join(TMP_DIR, "does-not-exist.csv") })).rejects.toThrow(
+    await expect(geoipService.loadSource(1, { name: "tst-missing", filePath: path.join(GEOIP_ROOT, "does-not-exist.csv") })).rejects.toThrow(
       /Cannot read/,
     );
     const row = await db.geoipSource.findFirstOrThrow({ where: { tenantId: 1, name: "tst-missing" } });
     expect(row.status).toBe("error");
     expect(row.error).toContain("Cannot read");
+  });
+
+  it("rejects path-traversal filePaths with 400 and never reads or stores them", async () => {
+    // raw `..` segments must be rejected BEFORE path.resolve collapses them
+    await expect(geoipService.loadSource(1, { name: "tst-traversal", filePath: "../../etc/passwd" })).rejects.toThrow(
+      /filePath must point inside the managed geoip directory/,
+    );
+    await expect(geoipService.loadSource(1, { name: "tst-abs-escape", filePath: "/etc/passwd" })).rejects.toThrow(
+      /filePath must point inside the managed geoip directory/,
+    );
+    // no error row is written for a confinement violation (invalid input, not a load failure)
+    expect(await db.geoipSource.count({ where: { tenantId: 1, name: { startsWith: "tst-" } } })).toBe(0);
+    // existing rows are untouched too (no status=error stamp from the violation)
+    const filePath = writeTmpFile("DE,203.0.113.0/24\n");
+    await geoipService.loadSource(1, { name: "tst-traversal-keep", filePath });
+    await expect(geoipService.loadSource(1, { name: "tst-traversal-keep", filePath: "../../../etc/shadow" })).rejects.toThrow(
+      /managed geoip directory/,
+    );
+    const kept = await db.geoipSource.findFirstOrThrow({ where: { tenantId: 1, name: "tst-traversal-keep" } });
+    expect(kept.status).toBe("loaded");
+  });
+
+  it("rejects symlinked sources pointing outside the managed root", async () => {
+    const outside = path.join(TMP_DIR, "outside-secret.csv");
+    fs.writeFileSync(outside, "DE,203.0.113.0/24\n", "utf8");
+    fs.mkdirSync(GEOIP_ROOT, { recursive: true });
+    const link = path.join(GEOIP_ROOT, "sneaky-link.csv");
+    try {
+      fs.symlinkSync(outside, link);
+    } catch {
+      return; // filesystem without symlink support — nothing to prove here
+    }
+    await expect(geoipService.loadSource(1, { name: "tst-symlink", filePath: link })).rejects.toThrow(
+      /filePath must point inside the managed geoip directory/,
+    );
+    await expect(geoipService.readPrefixes(link)).rejects.toThrow(/managed geoip directory/);
+  });
+
+  it("loads a valid relative path inside the managed root (root created on demand)", async () => {
+    fs.mkdirSync(GEOIP_ROOT, { recursive: true });
+    fs.writeFileSync(path.join(GEOIP_ROOT, "in-root-fixture.csv"), "DE,203.0.113.0/24\n", "utf8");
+    const res = await geoipService.loadSource(1, { name: "tst-inroot", filePath: "in-root-fixture.csv" });
+    expect(res.source.status).toBe("loaded");
+    expect(res.source.filePath.startsWith(GEOIP_ROOT + path.sep)).toBe(true);
+    expect(res.source.prefixCount).toBe(1);
   });
 
   it("marks the row error when the file has no usable IPv4 prefixes", async () => {
@@ -385,6 +436,19 @@ describe("geoip source service", () => {
     expect(sets.countries).toEqual(["DE", "FR"]);
     expect(sets.counts).toEqual({ DE: 2, FR: 1 });
     expect(sets.prefixes["DE"].sort()).toEqual(["203.0.113.0/24", "203.0.114.0/24"]);
+  });
+
+  it("getSets degrades a legacy out-of-root row to an honest warning (no arbitrary re-read)", async () => {
+    const ok = await geoipService.loadSource(1, { name: "tst-legacy-ok", filePath: writeTmpFile("DE,203.0.113.0/24\n") });
+    void ok;
+    // simulate a pre-confinement row pointing outside the managed root
+    await db.geoipSource.create({ data: { tenantId: 1, name: "tst-legacy", filePath: "/etc/passwd", status: "loaded" } });
+    const sets = await geoipService.getSets(1);
+    expect(sets.prefixes["DE"]).toEqual(["203.0.113.0/24"]); // the in-root source still renders
+    const w = sets.warnings.find((x) => x.includes("tst-legacy") && x.includes("could not be re-read"));
+    expect(w).toBeTruthy();
+    expect(w).toContain("managed geoip directory"); // sanitized — no fs internals
+    expect(w).not.toContain("/etc/");
   });
 
   it("readPrefixes re-reads the file fresh (DB stores counts, not prefixes)", async () => {

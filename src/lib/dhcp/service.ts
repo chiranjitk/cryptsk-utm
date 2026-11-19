@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
 import { parseJson, stringifyJson } from "@/lib/json";
 import { assertIfacesExist } from "@/lib/network/iface-service";
+import type { Prisma } from "@prisma/client";
 import type {
   DhcpSubnetCreate,
   DhcpSubnetUpdate,
@@ -251,11 +252,19 @@ async function validateSubnetShape(tenantId: number, body: { interfaceName: stri
   }
 }
 
-async function assertNoOverlap(tenantId: number, body: { interfaceName: string; family: string; subnetCidr: string; enabled: boolean }, excludeId?: number): Promise<void> {
+/** Overlap guard runs against the caller's transaction client so the
+ *  check→write gap closes: concurrent subnet creates serialize on SQLite's
+ *  write lock inside the same db.$transaction as the write itself. */
+async function assertNoOverlap(
+  dbi: Prisma.TransactionClient,
+  tenantId: number,
+  body: { interfaceName: string; family: string; subnetCidr: string; enabled: boolean },
+  excludeId?: number,
+): Promise<void> {
   if (!body.enabled) return;
   const me = cidrRange(body.subnetCidr);
   if (!me) return;
-  const others = await db.dhcpSubnet.findMany({
+  const others = await dbi.dhcpSubnet.findMany({
     where: { tenantId, interfaceName: body.interfaceName, family: body.family, enabled: true, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
   });
   for (const other of others) {
@@ -268,21 +277,24 @@ async function assertNoOverlap(tenantId: number, body: { interfaceName: string; 
 
 export async function createSubnet(tenantId: number, body: DhcpSubnetCreate): Promise<DhcpSubnetDTO> {
   await validateSubnetShape(tenantId, body);
-  await assertNoOverlap(tenantId, body);
-  const row = await db.dhcpSubnet.create({
-    data: {
-      tenantId,
-      interfaceName: body.interfaceName,
-      family: body.family,
-      subnetCidr: body.subnetCidr,
-      rangeStart: body.rangeStart,
-      rangeEnd: body.rangeEnd,
-      gateway: body.gateway ?? null,
-      dnsServers: stringifyJson(body.dnsServers),
-      leaseTime: body.leaseTime,
-      options: stringifyJson(body.options),
-      enabled: body.enabled,
-    },
+  // overlap re-check INSIDE the write transaction (M06 §5.3)
+  const row = await db.$transaction(async (tx) => {
+    await assertNoOverlap(tx, tenantId, body);
+    return tx.dhcpSubnet.create({
+      data: {
+        tenantId,
+        interfaceName: body.interfaceName,
+        family: body.family,
+        subnetCidr: body.subnetCidr,
+        rangeStart: body.rangeStart,
+        rangeEnd: body.rangeEnd,
+        gateway: body.gateway ?? null,
+        dnsServers: stringifyJson(body.dnsServers),
+        leaseTime: body.leaseTime,
+        options: stringifyJson(body.options),
+        enabled: body.enabled,
+      },
+    });
   });
   return toSubnetDTO(row, { reservations: 0, leases: 0, activeLeases: 0 });
 }
@@ -300,21 +312,24 @@ export async function updateSubnet(tenantId: number, id: number, body: DhcpSubne
     enabled: body.enabled ?? existing.enabled,
   };
   await validateSubnetShape(tenantId, merged);
-  await assertNoOverlap(tenantId, merged, id);
-  const row = await db.dhcpSubnet.update({
-    where: { id },
-    data: {
-      interfaceName: body.interfaceName ?? undefined,
-      family: body.family ?? undefined,
-      subnetCidr: body.subnetCidr ?? undefined,
-      rangeStart: body.rangeStart ?? undefined,
-      rangeEnd: body.rangeEnd ?? undefined,
-      gateway: body.gateway !== undefined ? body.gateway : undefined,
-      dnsServers: body.dnsServers ? stringifyJson(body.dnsServers) : undefined,
-      leaseTime: body.leaseTime ?? undefined,
-      options: body.options ? stringifyJson(body.options) : undefined,
-      enabled: body.enabled ?? undefined,
-    },
+  // overlap re-check INSIDE the write transaction (M06 §5.3)
+  const row = await db.$transaction(async (tx) => {
+    await assertNoOverlap(tx, tenantId, merged, id);
+    return tx.dhcpSubnet.update({
+      where: { id },
+      data: {
+        interfaceName: body.interfaceName ?? undefined,
+        family: body.family ?? undefined,
+        subnetCidr: body.subnetCidr ?? undefined,
+        rangeStart: body.rangeStart ?? undefined,
+        rangeEnd: body.rangeEnd ?? undefined,
+        gateway: body.gateway !== undefined ? body.gateway : undefined,
+        dnsServers: body.dnsServers ? stringifyJson(body.dnsServers) : undefined,
+        leaseTime: body.leaseTime ?? undefined,
+        options: body.options ? stringifyJson(body.options) : undefined,
+        enabled: body.enabled ?? undefined,
+      },
+    });
   });
   const [resCount, leaseCount, activeCount] = await Promise.all([
     db.dhcpReservation.count({ where: { subnetId: id } }),

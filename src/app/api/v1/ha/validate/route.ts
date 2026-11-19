@@ -3,23 +3,34 @@
  * and run `keepalived -t` on a TEMP file. Nothing on the appliance is
  * modified: no /etc write, no service restart. Sandbox (no keepalived
  * binary) returns honest { available:false } instead of a fake pass.
+ *
+ * The validate conf carries the VRRP auth_pass in plaintext — it is staged
+ * under the console HA state dir (${HA_STATE_DIR}/validate-<ts>.conf, 0600)
+ * and deleted in a finally block, never /tmp.
  */
 
 import osMod from "os";
-import { writeFile, rm } from "fs/promises";
+import { mkdir, writeFile, rm, chmod } from "fs/promises";
 import { route } from "@/lib/api/handler";
 import { runTool, hasTool } from "@/lib/host/tools";
 import { getDataPlaneMode } from "@/lib/engine";
-import { getHaConfig, toKeepalivedInput, buildHaFacts } from "@/lib/ha/service";
-import { renderKeepalivedConf, haConfHash, haStepGuarded, interpretKeepalivedTest, HA_VALIDATE_TMP } from "@/lib/ha/os";
+import { getHaConfigRow, toKeepalivedInput, buildHaFacts } from "@/lib/ha/service";
+import {
+  renderKeepalivedConf,
+  haConfHash,
+  haStepGuarded,
+  interpretKeepalivedTest,
+  haValidateConfPath,
+  HA_VALIDATE_DIR,
+} from "@/lib/ha/os";
 
 export const dynamic = "force-dynamic";
 
 export const POST = route({ area: "ha", section: "ha" }, async ({ auth }) => {
-  const config = await getHaConfig(auth.tenantId);
+  const row = await getHaConfigRow(auth.tenantId);
   const hostMode = getDataPlaneMode() === "host";
   const facts = await buildHaFacts(auth.tenantId);
-  const confText = renderKeepalivedConf(toKeepalivedInput(config), {
+  const confText = renderKeepalivedConf(toKeepalivedInput(row), {
     routerId: osMod.hostname().toUpperCase().slice(0, 24) || "UTM-CONSOLE",
     localIfaceIp: facts.localIfaceIp,
   });
@@ -36,17 +47,26 @@ export const POST = route({ area: "ha", section: "ha" }, async ({ auth }) => {
     };
   }
 
-  await writeFile(HA_VALIDATE_TMP, confText, "utf8");
-  const cmd = `keepalived -t -f ${HA_VALIDATE_TMP}`;
-  if (!haStepGuarded(cmd)) {
-    await rm(HA_VALIDATE_TMP, { force: true }).catch(() => {});
-    return {
-      data: { available: true, ok: false, confText, confHash: haConfHash(confText), detail: "validation command failed the whitelist" },
-    };
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const validateFile = haValidateConfPath(ts);
+  let r: Awaited<ReturnType<typeof runTool>> | null = null;
+  try {
+    await mkdir(HA_VALIDATE_DIR, { recursive: true });
+    await writeFile(validateFile, confText, "utf8");
+    // the staged conf embeds auth_pass — keep it owner-only
+    await chmod(validateFile, 0o600).catch(() => {});
+    const cmd = `keepalived -t -f ${validateFile}`;
+    if (!haStepGuarded(cmd)) {
+      return {
+        data: { available: true, ok: false, confText, confHash: haConfHash(confText), detail: "validation command failed the whitelist" },
+      };
+    }
+    r = await runTool(cmd, 15000);
+  } finally {
+    await rm(validateFile, { force: true }).catch(() => {});
   }
-  const r = await runTool(cmd, 15000);
-  await rm(HA_VALIDATE_TMP, { force: true }).catch(() => {});
-  const verdict = interpretKeepalivedTest(`${r.stderr}${r.stdout}`, r.ok);
+
+  const verdict = interpretKeepalivedTest(`${r!.stderr}${r!.stdout}`, r!.ok);
   return {
     data: {
       available: true,

@@ -2,9 +2,12 @@
  * firewall-converge — debounced real-time OS convergence for firewall changes.
  *
  * Every firewall/NAT/zone/object mutation schedules a full policy re-apply
- * (coalesced). Auto mode self-confirms when the post-apply WAN health check
- * passes and auto-restores the backup when it regresses — a bad rule can
- * never leave the host in a broken state for more than one probe cycle.
+ * (coalesced PER TENANT — each tenant owns its own pending timer and debounce
+ * window; bursts of changes across tenants never collapse into one global
+ * apply of the "last" tenant). Auto mode self-confirms when the post-apply WAN
+ * health check passes and auto-restores the backup when it regresses — a bad
+ * rule can never leave the host in a broken state for more than one probe
+ * cycle.
  *
  * In sandbox/dev (CONSOLE_OS_APPLY unset) this is a silent no-op — the
  * console honestly stays DB-only there.
@@ -13,43 +16,45 @@
 import { applyFirewallNft } from "./firewall-os";
 
 const DEBOUNCE_MS = 1500;
-let timer: ReturnType<typeof setTimeout> | null = null;
-let lastTenantId = 1;
-let converging = false;
+/** per-tenant pending timers — one debounce window per tenant */
+const pendingTimers = new Map<number, ReturnType<typeof setTimeout>>();
+/** tenants with an apply currently in flight (re-arm per tenant on overlap) */
+const convergingTenants = new Set<number>();
 
-export function scheduleFirewallConverge(tenantId = 1, delayMs = DEBOUNCE_MS): void {
+export function scheduleFirewallConverge(tenantId: number, delayMs = DEBOUNCE_MS): void {
   if (process.env.CONSOLE_OS_APPLY !== "1") return;
-  lastTenantId = tenantId;
-  if (timer) clearTimeout(timer);
-  timer = setTimeout(() => {
-    timer = null;
-    void runConverge();
+  const existing = pendingTimers.get(tenantId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    pendingTimers.delete(tenantId);
+    void runConverge(tenantId);
   }, delayMs);
   timer.unref?.();
+  pendingTimers.set(tenantId, timer);
 }
 
-async function runConverge(): Promise<void> {
-  if (converging) {
-    scheduleFirewallConverge(lastTenantId, DEBOUNCE_MS); // re-arm — a change landed mid-apply
+async function runConverge(tenantId: number): Promise<void> {
+  if (convergingTenants.has(tenantId)) {
+    scheduleFirewallConverge(tenantId, DEBOUNCE_MS); // re-arm — a change landed mid-apply
     return;
   }
-  converging = true;
+  convergingTenants.add(tenantId);
   try {
-    const outcome = await applyFirewallNft(lastTenantId, { mode: "auto" });
+    const outcome = await applyFirewallNft(tenantId, { mode: "auto" });
     if (outcome.rolledBack) {
-      console.error(`[fw-converge] apply rolled back automatically: ${outcome.rollbackReason}`);
+      console.error(`[fw-converge] tenant ${tenantId}: apply rolled back automatically: ${outcome.rollbackReason}`);
     } else if (!outcome.applied && outcome.gate === "on") {
-      console.warn(`[fw-converge] apply did not complete: ${outcome.results.filter((r) => !r.ok).map((r) => `${r.step}: ${r.detail ?? "?"}`).join("; ")}`);
+      console.warn(`[fw-converge] tenant ${tenantId}: apply did not complete: ${outcome.results.filter((r) => !r.ok).map((r) => `${r.step}: ${r.detail ?? "?"}`).join("; ")}`);
     }
   } catch (err) {
-    console.error("[fw-converge] convergence error:", err instanceof Error ? err.message : err);
+    console.error(`[fw-converge] tenant ${tenantId}: convergence error:`, err instanceof Error ? err.message : err);
   } finally {
-    converging = false;
+    convergingTenants.delete(tenantId);
   }
 }
 
-/** Test hook — clears the pending timer. */
+/** Test hook — clears ALL pending tenant timers. */
 export function cancelScheduledConverge(): void {
-  if (timer) clearTimeout(timer);
-  timer = null;
+  for (const timer of pendingTimers.values()) clearTimeout(timer);
+  pendingTimers.clear();
 }

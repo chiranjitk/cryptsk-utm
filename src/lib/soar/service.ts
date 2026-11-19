@@ -30,6 +30,7 @@
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
 import type { PageMeta } from "@/lib/api/envelope";
+import type { Prisma } from "@prisma/client";
 import { parseJson } from "@/lib/json";
 import { createRule } from "@/lib/firewall/rule-service";
 import { fromAlert, type IncidentSource } from "@/lib/incidents/service";
@@ -37,8 +38,11 @@ import { deliverEvent } from "@/lib/webhooks/dispatcher";
 import {
   dedupeBlocks,
   evaluateActions,
+  isProtectedSpecialIp,
+  isRfc1918Ip,
   matchesTrigger,
   parseFilter,
+  STALE_RUN_MS,
   DEDUPE_OPEN_STATUSES,
   SOAR_TRIGGER_KINDS,
   type SoarAction,
@@ -101,6 +105,19 @@ export interface SoarStats {
 }
 
 const STEP_DETAIL_MAX = 300;
+
+/**
+ * Auto-block safety valves (audit fix F-d):
+ *   • per-run — at most MAX_BLOCK_IP_PER_RUN block_ip steps execute in one
+ *     playbook run (a runaway playbook cannot mass-fire deny rules);
+ *   • per-tenant per-day — at most MAX_BLOCK_IP_PER_DAY successful block_ip
+ *     runs across every playbook, counted heuristically (see
+ *     dailyAutoBlockRunCount) from run rows started today.
+ */
+const MAX_BLOCK_IP_PER_RUN = 5;
+const MAX_BLOCK_IP_PER_DAY = 50;
+/** Env override that permits auto-blocking RFC1918 (internal) addresses. */
+const ALLOW_PRIVATE_ENV = "CONSOLE_SOAR_ALLOW_PRIVATE";
 
 function clip(text: string): string {
   return text.length > STEP_DETAIL_MAX ? `${text.slice(0, STEP_DETAIL_MAX - 3)}...` : text;
@@ -272,30 +289,44 @@ export async function deletePlaybook(tenantId: number, id: number): Promise<{ ok
  * A non-empty dedupeKey suppresses a fire when an OPEN run (running|success)
  * with the same key + triggerRef exists — across every playbook sharing the
  * key (the key is a coordination token, so the check is NOT scoped to the
- * firing playbook alone). Failed runs never block.
+ * firing playbook alone). Failed runs never block. Stale `running` rows
+ * (older than STALE_RUN_MS) are DEAD (crashed run): they neither block nor
+ * count as the open run — their ids are returned so the caller can reap them.
+ *
+ * Runs inside the caller's transaction (tx client) so the re-check is
+ * serialized with run-row creation (audit fix F-d — dedupe TOCTOU).
  */
-async function dedupeBlocked(tenantId: number, playbookId: number, dedupeKey: string, triggerRef: string): Promise<{
-  blocked: boolean;
-  openRunId: number | null;
-}> {
-  if (!dedupeKey) return { blocked: false, openRunId: null };
-  const siblings = await db.soarPlaybook.findMany({
+async function dedupeBlocked(
+  client: Prisma.TransactionClient,
+  tenantId: number,
+  dedupeKey: string,
+  triggerRef: string,
+): Promise<{ blocked: boolean; openRunId: number | null; staleRunIds: number[] }> {
+  if (!dedupeKey) return { blocked: false, openRunId: null, staleRunIds: [] };
+  const siblings = await client.soarPlaybook.findMany({
     where: { tenantId, dedupeKey },
     select: { id: true },
   });
-  const candidates = await db.soarPlaybookRun.findMany({
+  if (siblings.length === 0) return { blocked: false, openRunId: null, staleRunIds: [] };
+  const candidates = await client.soarPlaybookRun.findMany({
     where: {
       tenantId,
       playbookId: { in: siblings.map((s) => s.id) },
       triggerRef,
       status: { in: [...DEDUPE_OPEN_STATUSES] },
     },
-    select: { id: true, status: true },
+    select: { id: true, status: true, startedAt: true },
     orderBy: { id: "desc" },
   });
+  const staleCutoffMs = Date.now() - STALE_RUN_MS;
+  const staleRunIds = candidates
+    .filter((c) => c.status === "running" && c.startedAt.getTime() < staleCutoffMs)
+    .map((c) => c.id);
+  const live = candidates.filter((c) => !staleRunIds.includes(c.id));
   return {
-    blocked: dedupeBlocks(candidates),
-    openRunId: candidates[0]?.id ?? null,
+    blocked: dedupeBlocks(live, new Date()),
+    openRunId: live[0]?.id ?? null,
+    staleRunIds,
   };
 }
 
@@ -323,6 +354,28 @@ async function runBlockIp(
   const addrName = `soar-block-${ip.replace(/\./g, "-")}`;
   const ruleName = `SOAR auto-block ${ip}`;
 
+  // Automation safety (audit fix F-d): protected ranges are refused —
+  //   • special ranges (0/8, 127/8, 169.254/16, 224/4, 240/4) NEVER, no
+  //     override (also enforced at evaluateActions, so stored playbooks with
+  //     such ips fail validation before anything runs);
+  //   • RFC1918 (10/8, 172.16/12, 192.168/16) by default — legitimate private
+  //     gateways cannot be detected generically and a false positive cuts
+  //     internal users off — unless CONSOLE_SOAR_ALLOW_PRIVATE=1.
+  if (isProtectedSpecialIp(ip)) {
+    return {
+      kind: "block_ip",
+      status: "skipped",
+      detail: `skipped: protected range refused — ${ip} is in 0/8 | 127/8 | 169.254/16 | 224/4 | 240/4 (never auto-blockable)`,
+    };
+  }
+  if (process.env[ALLOW_PRIVATE_ENV] !== "1" && isRfc1918Ip(ip)) {
+    return {
+      kind: "block_ip",
+      status: "skipped",
+      detail: `skipped: RFC1918 private range refused — ${ip} is internal; set ${ALLOW_PRIVATE_ENV}=1 to allow auto-blocking private addresses`,
+    };
+  }
+
   // Idempotent re-runs: reuse the object / recognize the existing rule instead
   // of tripping the unique-name guards (an automated response may re-fire).
   let addr = await db.addressObject.findFirst({ where: { tenantId, name: addrName } });
@@ -340,11 +393,34 @@ async function runBlockIp(
 
   const existingRule = await db.firewallRule.findFirst({ where: { tenantId, name: ruleName } });
   if (existingRule) {
-    return {
-      kind: "block_ip",
-      status: "success",
-      detail: `deny rule already present (#${existingRule.id} '${ruleName}') — object #${addr.id} (${ip}, ${direction})`,
-    };
+    // Fast-path integrity re-check (audit fix F-d): report success ONLY when
+    // the rule still does what this automation created it for (enabled +
+    // deny). If someone disabled it or flipped the action, repair it in place
+    // (keeps rule id + position intact) instead of falsely reporting success.
+    if (existingRule.enabled && existingRule.action === "deny") {
+      return {
+        kind: "block_ip",
+        status: "success",
+        detail: `deny rule already present (#${existingRule.id} '${ruleName}') — object #${addr.id} (${ip}, ${direction})`,
+      };
+    }
+    try {
+      await db.firewallRule.update({
+        where: { id: existingRule.id },
+        data: { enabled: true, action: "deny" },
+      });
+      return {
+        kind: "block_ip",
+        status: "success",
+        detail: `deny rule restored (#${existingRule.id} '${ruleName}' had been disabled/altered) — object #${addr.id} (${ip}, ${direction})`,
+      };
+    } catch (err) {
+      return {
+        kind: "block_ip",
+        status: "failed",
+        detail: clip(`could not restore altered auto-block rule #${existingRule.id} (${ruleName}): ${errMessage(err)}`),
+      };
+    }
   }
 
   // EXISTING rule-service create path (validation, position append) — mirrors
@@ -488,17 +564,75 @@ async function executeAction(
 // ── run execution ───────────────────────────────────────────────────────────
 
 /**
- * Execute ONE playbook for a trigger: dedupe check → run row (`running`) →
- * sequential steps → terminal status + lastRunAt. Dedupe hits create a
- * `skipped` run row (with the blocking run's id) and leave lastRunAt alone.
+ * Per-tenant daily auto-block budget (audit fix F-d). HEURISTIC (documented):
+ * counts RUN ROWS started today whose steps JSON contains BOTH `"block_ip"`
+ * and `"success"` — i.e. runs that recorded a successful block_ip step. It
+ * counts runs, not individual block steps (a run with two successful block
+ * steps adds 1), so the true block count can exceed the counter — bounded by
+ * MAX_BLOCK_IP_PER_RUN per run (≤ 250 blocks/day worst case). Counting the
+ * steps exactly would require fetching + parsing every run row of the day;
+ * the string filter keeps this a single indexed count query. A failed count
+ * check reads as 0 (fail-open — a DB hiccup must not wedge the run; the
+ * block itself would fail on the same DB anyway).
+ */
+async function dailyAutoBlockRunCount(tenantId: number): Promise<number> {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  return db.soarPlaybookRun
+    .count({
+      where: {
+        tenantId,
+        startedAt: { gte: startOfDay },
+        AND: [{ steps: { contains: '"block_ip"' } }, { steps: { contains: '"success"' } }],
+      },
+    })
+    .catch(() => 0);
+}
+
+/** Crash-safe partial ledger (audit fix F-d): persist steps after each step. */
+async function persistSteps(runId: number, steps: SoarStep[]): Promise<void> {
+  await db.soarPlaybookRun
+    .update({ where: { id: runId }, data: { steps: JSON.stringify(steps) } })
+    .catch(() => {});
+}
+
+/**
+ * Execute ONE playbook for a trigger: dedupe re-check INSIDE the same tx that
+ * creates the run row (audit fix F-d — two concurrent fires could otherwise
+ * both pass the pre-check and create two live runs; SQLite serializes writes
+ * so the tx makes check+create one atomic unit) → sequential steps → terminal
+ * status + lastRunAt. Dedupe hits create a `skipped` run row (with the
+ * blocking run's id) and leave lastRunAt alone.
  */
 async function executePlaybook(
   tenantId: number,
   playbook: PlaybookRow,
   trigger: SoarTrigger,
 ): Promise<SoarRunDTO> {
-  const dedupe = await dedupeBlocked(tenantId, playbook.id, playbook.dedupeKey, trigger.triggerRef);
-  if (dedupe.blocked) {
+  const started = await db.$transaction(async (tx) => {
+    const dedupe = await dedupeBlocked(tx, tenantId, playbook.dedupeKey, trigger.triggerRef);
+    if (dedupe.blocked) {
+      return { blocked: true as const, openRunId: dedupe.openRunId, staleRunIds: dedupe.staleRunIds, run: null };
+    }
+    const run = await tx.soarPlaybookRun.create({
+      data: { tenantId, playbookId: playbook.id, triggerRef: trigger.triggerRef, status: "running", steps: "[]" },
+    });
+    return { blocked: false as const, openRunId: null, staleRunIds: dedupe.staleRunIds, run };
+  });
+
+  // Stale-run reaper (audit fix F-d): `running` rows older than 10 minutes
+  // are dead (crashed process) — mark them failed (best-effort) so the
+  // console stops showing phantom in-flight runs and they never block dedupe.
+  if (started.staleRunIds.length > 0) {
+    await db.soarPlaybookRun
+      .updateMany({
+        where: { id: { in: started.staleRunIds }, status: "running" },
+        data: { status: "failed", finishedAt: new Date() },
+      })
+      .catch(() => {});
+  }
+
+  if (started.blocked) {
     const skipped = await db.soarPlaybookRun.create({
       data: {
         tenantId,
@@ -509,7 +643,7 @@ async function executePlaybook(
           {
             kind: "skip",
             status: "skipped",
-            detail: `dedupeKey '${playbook.dedupeKey}' — open run #${dedupe.openRunId ?? "?"} already handled ${trigger.triggerRef}`,
+            detail: `dedupeKey '${playbook.dedupeKey}' — open run #${started.openRunId ?? "?"} already handled ${trigger.triggerRef}`,
           },
         ]),
         finishedAt: new Date(),
@@ -517,13 +651,11 @@ async function executePlaybook(
     });
     return toRunDTO(skipped, playbook.name);
   }
-
-  const run = await db.soarPlaybookRun.create({
-    data: { tenantId, playbookId: playbook.id, triggerRef: trigger.triggerRef, status: "running", steps: "[]" },
-  });
+  const run = started.run;
 
   const steps: SoarStep[] = [];
   let status: "success" | "failed" = "success";
+  let blockIpExecuted = 0;
 
   const evalRes = evaluateActions(parseJson<unknown>(playbook.actions, []));
   if (!evalRes.ok) {
@@ -531,19 +663,43 @@ async function executePlaybook(
     // fail the run with a validation step instead of executing garbage.
     steps.push({ kind: "actions", status: "failed", detail: clip(`invalid stored actions: ${evalRes.errors.join("; ")}`) });
     status = "failed";
+    await persistSteps(run.id, steps);
   } else {
     for (let i = 0; i < evalRes.actions.length; i++) {
       const action = evalRes.actions[i];
+      // Per-run auto-block budget (audit fix F-d): after MAX_BLOCK_IP_PER_RUN
+      // executed block_ip steps, further ones are recorded as skipped.
+      if (action.kind === "block_ip") {
+        if (blockIpExecuted >= MAX_BLOCK_IP_PER_RUN) {
+          steps.push({ kind: "block_ip", status: "skipped", detail: `skipped: auto-block budget per run (${MAX_BLOCK_IP_PER_RUN} block steps max)` });
+          await persistSteps(run.id, steps);
+          continue;
+        }
+        blockIpExecuted += 1;
+        // Per-tenant daily auto-block budget (audit fix F-d) — see
+        // dailyAutoBlockRunCount for the documented heuristic.
+        const used = await dailyAutoBlockRunCount(tenantId);
+        if (used >= MAX_BLOCK_IP_PER_DAY) {
+          steps.push({ kind: "block_ip", status: "skipped", detail: `skipped: tenant daily auto-block budget exhausted (${MAX_BLOCK_IP_PER_DAY}/day)` });
+          await persistSteps(run.id, steps);
+          continue;
+        }
+      }
       try {
-        steps.push(await executeAction(tenantId, run.id, playbook.name, trigger, action));
+        const step = await executeAction(tenantId, run.id, playbook.name, trigger, action);
+        steps.push(step);
       } catch (err) {
         steps.push({ kind: action.kind, status: "failed", detail: clip(errMessage(err)) });
         status = "failed";
         for (const rest of evalRes.actions.slice(i + 1)) {
           steps.push({ kind: rest.kind, status: "skipped", detail: "not executed — previous step failed" });
         }
+        await persistSteps(run.id, steps);
         break;
       }
+      // Incremental ledger (audit fix F-d): each completed step is persisted
+      // immediately — a crash mid-run keeps the partial ledger on the row.
+      await persistSteps(run.id, steps);
     }
   }
 

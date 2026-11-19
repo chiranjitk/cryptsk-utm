@@ -23,7 +23,12 @@ import { RETENTION_HARD_CAPS } from "@/lib/validators/system";
 
 // ── Settings (M10 §5.2) ─────────────────────────────────────────────────────
 
-/** Grouped settings map: { [category]: { [key]: parsedValue } } — all rows. */
+/**
+ * Grouped settings map: { [category]: { [key]: parsedValue } } — all rows.
+ * SNMP community is MASKED on read (F-e #5): the API never returns the stored
+ * secret — clients send the MASK literal back to keep the stored value
+ * (write-only keep semantics in putSettingsBatch).
+ */
 export async function getSettingsGrouped(
   tenantId: number,
 ): Promise<Record<string, Record<string, unknown>>> {
@@ -31,9 +36,23 @@ export async function getSettingsGrouped(
   const out: Record<string, Record<string, unknown>> = {};
   for (const r of rows) {
     out[r.category] ??= {};
-    out[r.category][r.key] = parseJson<unknown>(r.value, null);
+    out[r.category][r.key] =
+      r.category === "advanced" && r.key === "snmp"
+        ? maskSnmpValue(parseJson<unknown>(r.value, null))
+        : parseJson<unknown>(r.value, null);
   }
   return out;
+}
+
+/**
+ * Replace the SNMP community with the fixed MASK literal (read + audit
+ * redaction). Non-object / community-less values pass through untouched.
+ */
+export function maskSnmpValue(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const rec = value as Record<string, unknown>;
+  if (!("community" in rec)) return value;
+  return { ...rec, community: rec.community === undefined ? undefined : MASK };
 }
 
 /**
@@ -234,8 +253,16 @@ export type BackupDTO = {
 
 type BackupFile = BackupDTO & {
   schemaVersion: number;
+  /** Owning tenant — written at create (F-e #1). Files WITHOUT this field are
+   *  legacy tenant-1 backups (single-tenant era) and stay visible to tenant 1 only. */
+  tenantId?: number;
   payload: { config: Record<string, unknown[]>; volatile?: Record<string, unknown[]> };
 };
+
+/** Legacy backups (pre-tenant-tagging) are treated as tenant 1 (F-e #1). */
+function backupTenantId(file: Pick<BackupFile, "tenantId">): number {
+  return typeof file.tenantId === "number" ? file.tenantId : 1;
+}
 
 const BACKUPS_DIR = path.join(process.cwd(), "db", "backups");
 const BACKUP_SCHEMA_VERSION = 1;
@@ -315,6 +342,7 @@ export async function createBackup(tenantId: number, body: BackupCreateInput): P
     type: body.type,
     note: body.note ?? null,
     schemaVersion: BACKUP_SCHEMA_VERSION,
+    tenantId, // envelope-level ownership — list/read/restore filter on it (F-e #1)
     payload: { config, ...(volatile ? { volatile } : {}) },
   };
   const json = JSON.stringify(file);
@@ -332,6 +360,8 @@ export async function listBackups(tenantId: number): Promise<BackupDTO[]> {
     try {
       const raw = await fs.readFile(path.join(BACKUPS_DIR, n), "utf8");
       const parsed = JSON.parse(raw) as BackupFile;
+      // tenant isolation (F-e #1): legacy files without a tenantId are tenant 1
+      if (backupTenantId(parsed) !== tenantId) continue;
       rows.push({
         id: parsed.id,
         createdAt: parsed.createdAt,
@@ -347,14 +377,23 @@ export async function listBackups(tenantId: number): Promise<BackupDTO[]> {
   return rows;
 }
 
-/** Raw backup file — served by the download endpoint. */
+/**
+ * Raw backup file — served by the download endpoint + restore flow. Refuses
+ * backups owned by another tenant (403); files without a tenantId field are
+ * legacy tenant-1 backups (F-e #1).
+ */
 export async function readBackupFile(tenantId: number, id: string): Promise<BackupFile> {
+  let file: BackupFile;
   try {
     const raw = await fs.readFile(backupPath(id), "utf8");
-    return JSON.parse(raw) as BackupFile;
+    file = JSON.parse(raw) as BackupFile;
   } catch {
     throw ApiError.notFound("Backup not found");
   }
+  if (backupTenantId(file) !== tenantId) {
+    throw ApiError.forbidden("Backup belongs to another tenant");
+  }
+  return file;
 }
 
 /** JSON round-trips turn Date columns into ISO strings — revive them for Prisma. */
@@ -401,7 +440,9 @@ export async function restoreBackup(tenantId: number, id: string): Promise<{ saf
       const data: Record<string, unknown> = reviveDates({ ...row, tenantId });
       delete data.id;
       try {
-        const existing = await delegate.findFirst({ where: { id: row.id } });
+        // caller-tenant scoped lookup (F-e #1): a row id owned by another
+        // tenant is never updated by this restore
+        const existing = await delegate.findFirst({ where: { id: row.id, tenantId } });
         if (existing) await delegate.update({ where: { id: row.id }, data });
         else await delegate.create({ data: { ...data, id: row.id } });
         rows += 1;
@@ -452,6 +493,7 @@ export async function restoreBackup(tenantId: number, id: string): Promise<{ saf
         payload: {
           notification: {
             id: n.id,
+            tenantId: n.tenantId,
             type: n.type,
             severity: n.severity,
             title: n.title,
@@ -842,6 +884,7 @@ async function notify(tenantId: number, type: string, severity: string, title: s
         payload: {
           notification: {
             id: n.id,
+            tenantId: n.tenantId,
             type: n.type,
             severity: n.severity,
             title: n.title,

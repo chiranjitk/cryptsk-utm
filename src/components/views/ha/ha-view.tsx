@@ -520,12 +520,16 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
   const queryClient = useQueryClient();
   const [form, setForm] = useState<HaConfigDTO>(config);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
+  // VRRP authPass is write-only: the DTO carries hasAuthPass, the entry field
+  // starts blank and is only sent when the operator types a new password.
+  const [authPassEntry, setAuthPassEntry] = useState("");
 
   // re-seed the form when the server config changes (render-time derived reset)
   const [prevConfig, setPrevConfig] = useState(config);
   if (prevConfig !== config) {
     setPrevConfig(config);
     setForm(config);
+    setAuthPassEntry("");
   }
 
   // client pre-checks mirror the server zod grammar (M10 §5.1) — server stays authoritative
@@ -573,7 +577,9 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
         holdDownSec: form.holdDownSec,
         vrid: form.vrid,
         advertIntSec: form.advertIntSec,
-        authPass: form.authPass?.trim() || null,
+        // write-only authPass — omit the key (keeps the stored password) unless
+        // a new value was typed; explicit null would clear it on the server.
+        ...(authPassEntry.trim() !== "" ? { authPass: authPassEntry.trim() } : {}),
         preempt: form.preempt,
       }),
     onSuccess: () => {
@@ -772,12 +778,17 @@ function HaEditor({ config, ifaces, isAdmin }: { config: HaConfigDTO; ifaces: If
           <div className="space-y-1.5">
             <FieldLabel hint="shared secret, 4-8 alphanumeric chars (VRRPv2 limit)">VRRP auth password</FieldLabel>
             <Input
-              value={form.authPass ?? ""}
-              placeholder="utmha51"
+              type="password"
+              value={authPassEntry}
+              placeholder={config.hasAuthPass ? "configured — leave blank to keep" : "utmha51"}
               maxLength={8}
+              autoComplete="new-password"
               disabled={!isAdmin}
-              onChange={(e) => setForm((f) => ({ ...f, authPass: e.target.value }))}
+              onChange={(e) => setAuthPassEntry(e.target.value)}
             />
+            {config.hasAuthPass ? (
+              <p className="text-[11px] text-zinc-500">An auth password is configured (hidden). Leave blank to keep it; type a new value to replace it.</p>
+            ) : null}
             {err("authPass") ? <p className="text-[11px] text-rose-600">{err("authPass")}</p> : null}
           </div>
           <div className="space-y-1.5">

@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import { boundedJson } from "@/lib/validators/bounded";
 
 // ── locked enums (spec §3.5) ────────────────────────────────────────────────
 
@@ -36,8 +37,9 @@ export const incidentQuerySchema = z.object({
 
 // ── create (manual shape; `fromAlert` shape adds sourceRef + detail JSON) ───
 
-/** Open JSON detail — {description, srcIps[], tags[], …} per schema.prisma. */
-export const incidentDetailSchema = z.record(z.string(), z.unknown());
+/** Open JSON detail — {description, srcIps[], tags[], …} per schema.prisma,
+ * capped at 16 KB of serialized JSON (audit fix F-d — unbounded payload DoS). */
+export const incidentDetailSchema = boundedJson(16384, "incident detail");
 
 export const incidentCreateSchema = z.object({
   title: z.string().min(1).max(200),

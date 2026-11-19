@@ -40,6 +40,12 @@ export interface DnsQueryLogEntry {
   blocked: boolean;
   category: string | null;
   latencyMs: number;
+  /**
+   * Owning tenant of the generating engine (audit fix F-d — the simulation
+   * is the console's tenant 1). Tunnel detection filters ring rows by this
+   * id so tenant A's detection pass can never analyze tenant B's queries.
+   */
+  tenantId: number;
 }
 
 // ── domain pools ────────────────────────────────────────────────────────────
@@ -154,6 +160,7 @@ export class DnsQueryGenerator {
       blocked,
       category: blocked ? matchedCategory : category,
       latencyMs,
+      tenantId: 1, // simulation generates the console tenant's traffic
     };
   }
 }

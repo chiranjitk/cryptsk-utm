@@ -4,6 +4,9 @@
  * service): nacState → "quarantine" with the optional VLAN, persists an
  * IdentityActivityEvent (`vlan_change`, { quarantined: true }) and audits
  * `nac.device.quarantine`.
+ *
+ * Guard area `nac` (audit fix #11 — was `identity`; nac.write includes
+ * network_admin, per the RBAC matrix intent).
  */
 
 import { route, numericId } from "@/lib/api/handler";
@@ -13,7 +16,7 @@ import { quarantineNacDevice, toDeviceDTO } from "@/app/api/v1/identity-advanced
 export const dynamic = "force-dynamic";
 
 export const POST = route(
-  { area: "identity", bodySchema: quarantineSchema, section: "identity" },
+  { area: "nac", bodySchema: quarantineSchema, section: "identity" },
   async ({ auth, body, params }) => {
     const id = numericId(params, "id");
     const { device, audit } = await quarantineNacDevice(auth.tenantId, id, body.vlanId);

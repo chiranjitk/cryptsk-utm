@@ -75,6 +75,11 @@ const TICK_MS = 2000;
 const PERSIST_EVERY = 10; // ticks (20 s)
 const SESSIONS_EMIT_EVERY = 5; // ticks
 const RETENTION_EVERY = 250; // ticks
+/** F-e #10/#15: low-frequency housekeeping (pruneRoutine + schedule sweep). */
+const HOUSEKEEPING_EVERY = 50; // ticks (~100 s)
+
+/** severity rank for the notifications threshold (F-e #12) — info < warning < critical. */
+const SEVERITY_RANK: Record<string, number> = { info: 0, warning: 1, critical: 2 };
 
 
 
@@ -161,6 +166,10 @@ class MockEngine {
   private lastThresholdLoad = 0;
   private openAlerts = new Map<string, { crossedAtTick: number; notifiedCritical: boolean }>();
   private lastNtpCheckTick = 0;
+  /** F-e #11: boot-time single-tenant contract — warn once when tenant 2 exists. */
+  private multiTenantWarned = false;
+  /** F-e #12: notifications severity threshold, cached per tick. */
+  private sevThresholdCache: { tick: number; threshold: "info" | "warning" | "critical" } = { tick: -1, threshold: "info" };
 
   get uptimeSec(): number {
     return 983412 + Math.floor(process.uptime());
@@ -206,8 +215,41 @@ class MockEngine {
     }
   }
 
+  /**
+   * F-e #12 — notifications severity threshold (notifications/severity_threshold
+   * setting, values info|warning|critical). Rows BELOW the threshold are never
+   * stored/broadcast (info < warning < critical). The settings read is cached
+   * per tick so bursts of notifications cost one row read per tick.
+   */
+  private async severityThreshold(): Promise<"info" | "warning" | "critical"> {
+    if (this.sevThresholdCache.tick === this.tickNo) return this.sevThresholdCache.threshold;
+    let threshold: "info" | "warning" | "critical" = "info";
+    try {
+      const row = await db.systemSetting.findUnique({
+        where: { tenantId_category_key: { tenantId: 1, category: "notifications", key: "severity_threshold" } },
+      });
+      const parsed = row ? (JSON.parse(row.value) as { threshold?: string }) : null;
+      if (parsed?.threshold === "warning" || parsed?.threshold === "critical") threshold = parsed.threshold;
+    } catch {
+      // unreadable setting — keep the default (store everything)
+    }
+    this.sevThresholdCache = { tick: this.tickNo, threshold };
+    return threshold;
+  }
+
+  /** True when `severity` clears the configured threshold (unknown severities store). */
+  private async passesSeverityThreshold(severity: string): Promise<boolean> {
+    const threshold = await this.severityThreshold();
+    const rank = SEVERITY_RANK[severity];
+    const floor = SEVERITY_RANK[threshold];
+    if (rank === undefined) return true; // non-standard severity — never silently drop
+    return rank >= floor;
+  }
+
   /** Persist + broadcast one system notification (same path as IPS alerts). */
   private async emitSystemNotification(severity: string, title: string, message: string): Promise<void> {
+    // F-e #12: drop rows below the configured severity threshold BEFORE storing
+    if (!(await this.passesSeverityThreshold(severity))) return;
     const notification = await db.notification
       .create({ data: { tenantId: 1, type: "system", severity, title, message, sourceModule: "system" } })
       .catch(() => null);
@@ -217,6 +259,7 @@ class MockEngine {
       payload: {
         notification: {
           id: notification.id,
+          tenantId: notification.tenantId,
           type: notification.type,
           severity: notification.severity,
           title: notification.title,
@@ -298,7 +341,7 @@ class MockEngine {
     if (!p.enabled) return null;
     // run a few immediate cycles so thresholds can actually cross
     for (let i = 0; i < 3; i++) this.wanMachine.step(p);
-    if (p.state !== "unknown") emitEvent({ type: "wan:status", payload: { iface: p.iface, state: p.state } });
+    if (p.state !== "unknown") emitEvent({ type: "wan:status", payload: { iface: p.iface, state: p.state, tenantId: 1 } });
     return p.state;
   }
 
@@ -315,8 +358,27 @@ class MockEngine {
     void this.tick();
   }
 
+  /**
+   * F-e #11 — boot-time single-tenant contract assertion. The engine's
+   * telemetry/persistence is hardwired to tenant 1; when a second tenant row
+   * exists, warn ONCE so operators know the engine will not target it.
+   */
+  private async assertSingleTenantContract(): Promise<void> {
+    if (this.multiTenantWarned) return;
+    try {
+      const otherTenants = await db.tenant.count({ where: { id: { not: 1 } } });
+      if (otherTenants > 0) {
+        this.multiTenantWarned = true;
+        console.warn("multi-tenant detected: engine telemetry targets tenant 1 only");
+      }
+    } catch {
+      // non-fatal — the contract check must never break bootstrap
+    }
+  }
+
   private async bootstrap(): Promise<void> {
     try {
+      await this.assertSingleTenantContract();
       const [ifaces, wans] = await Promise.all([
         db.networkInterface.findMany({ where: { tenantId: 1 }, select: { name: true, role: true, enabled: true } }),
         db.wanPolicy.findMany({ where: { tenantId: 1 }, include: { interface: { select: { enabled: true } } } }),
@@ -719,7 +781,7 @@ class MockEngine {
       for (const p of this.wanProbes.values()) {
         const next = this.wanMachine.step(p);
         if (next && next !== "unknown") {
-          emitEvent({ type: "wan:status", payload: { iface: p.iface, state: next } });
+          emitEvent({ type: "wan:status", payload: { iface: p.iface, state: next, tenantId: 1 } });
         }
       }
 
@@ -733,7 +795,7 @@ class MockEngine {
               : next === "connecting"
                 ? "IKE/DPD negotiation in progress"
                 : "Tunnel down";
-          emitEvent({ type: "vpn:status", payload: { vpnId: t.id, status: next, statusMessage: msg } });
+          emitEvent({ type: "vpn:status", payload: { vpnId: t.id, status: next, statusMessage: msg, tenantId: 1 } });
           // persist the transition immediately — status reads (list + /status
           // dialogs) come from the DB and must not lag the state machine by
           // up to PERSIST_EVERY ticks (M05 §6: badges refetch on vpn:status)
@@ -788,34 +850,39 @@ class MockEngine {
         }
         if ((ips.severity === "high" || ips.severity === "critical") && this.tickNo - this.lastAlertTick > 10) {
           this.lastAlertTick = this.tickNo;
-          const notification = await db.notification
-            .create({
-              data: {
-                tenantId: 1,
-                type: "threat",
-                severity: ips.severity === "critical" ? "critical" : "warning",
-                title: `IPS ${ips.severity}: ${ips.category ?? "event"} on ${ips.action === "drop" ? "wan0" : "lan"}`,
-                message: ips.message,
-                sourceModule: "ips",
-              },
-            })
-            .catch(() => null);
-          if (notification) {
-            emitEvent({
-              type: "alerts:new",
-              payload: {
-                notification: {
-                  id: notification.id,
-                  type: notification.type,
-                  severity: notification.severity,
-                  title: notification.title,
-                  message: notification.message,
-                  sourceModule: notification.sourceModule,
-                  createdAt: notification.createdAt.toISOString(),
-                  isRead: notification.isRead,
+          const threatSeverity = ips.severity === "critical" ? "critical" : "warning";
+          // F-e #12: the same notifications severity threshold gates threat alerts
+          if (await this.passesSeverityThreshold(threatSeverity)) {
+            const notification = await db.notification
+              .create({
+                data: {
+                  tenantId: 1,
+                  type: "threat",
+                  severity: threatSeverity,
+                  title: `IPS ${ips.severity}: ${ips.category ?? "event"} on ${ips.action === "drop" ? "wan0" : "lan"}`,
+                  message: ips.message,
+                  sourceModule: "ips",
                 },
-              },
-            });
+              })
+              .catch(() => null);
+            if (notification) {
+              emitEvent({
+                type: "alerts:new",
+                payload: {
+                  notification: {
+                    id: notification.id,
+                    tenantId: notification.tenantId,
+                    type: notification.type,
+                    severity: notification.severity,
+                    title: notification.title,
+                    message: notification.message,
+                    sourceModule: notification.sourceModule,
+                    createdAt: notification.createdAt.toISOString(),
+                    isRead: notification.isRead,
+                  },
+                },
+              });
+            }
           }
         }
         emitEvent({ type: "logs:tail", payload: { kind: "ips", entry: ips } });
@@ -838,7 +905,7 @@ class MockEngine {
       }
       this.sessionDiffsBacklog.push(...churnDiffs);
       if (this.tickNo % SESSIONS_EMIT_EVERY === 0 && this.sessionDiffsBacklog.length > 0) {
-        emitEvent({ type: "sessions:update", payload: { kind: "vpn", diff: this.sessionDiffsBacklog.slice(0, 50) } });
+        emitEvent({ type: "sessions:update", payload: { kind: "vpn", diff: this.sessionDiffsBacklog.slice(0, 50), tenantId: 1 } });
         this.sessionDiffsBacklog = [];
       }
 
@@ -859,6 +926,20 @@ class MockEngine {
 
       // 8) retention housekeeping
       if (this.tickNo % RETENTION_EVERY === 0) await this.retention();
+
+      // 9) low-frequency housekeeping (F-e #10 sweeps + F-e #15 schedule sweep)
+      if (this.tickNo % HOUSEKEEPING_EVERY === 0) {
+        try {
+          await this.pruneRoutine();
+        } catch (err) {
+          console.error("[mock-engine] pruneRoutine failed:", err instanceof Error ? err.message : err);
+        }
+        try {
+          await this.reportScheduleSweep();
+        } catch (err) {
+          console.error("[mock-engine] reportScheduleSweep failed:", err instanceof Error ? err.message : err);
+        }
+      }
     } catch (err) {
       console.error("[mock-engine] tick error:", err instanceof Error ? err.message : err);
     }
@@ -947,10 +1028,25 @@ class MockEngine {
       .catch(() => {});
   }
 
+  /**
+   * Retention (DATA_LIFECYCLE §4, F-e #10) — per-table settings rows
+   * (logging/retention.firewall_logs | ips_events | audit_log) with
+   * days/maxRows clamped to RETENTION_HARD_CAPS. Row-cap trims delete the
+   * OLDEST rows beyond maxRows; a configured `days` window also deletes rows
+   * older than that. Unset rows fall back to the hard caps (current behavior).
+   */
   private async retention(): Promise<void> {
-    // firewall_logs cap 50k, ips_events cap 5k (DATA_LIFECYCLE §4)
-    await trim("firewallLog", 50_000);
-    await trim("ipsEvent", 5_000);
+    const caps = RETENTION_HARD_CAPS;
+    const [fw, ips, audit] = await Promise.all([
+      readRetentionSetting("firewall_logs", caps.firewall_logs),
+      readRetentionSetting("ips_events", caps.ips_events),
+      readRetentionSetting("audit_log", caps.audit_log),
+    ]);
+
+    await trim("firewallLog", fw.maxRows, fw.days);
+    await trim("ipsEvent", ips.maxRows, ips.days);
+    await trimAuditLog(audit.maxRows, audit.days);
+
     // dhcp leases: expired/released rows kept 7 days (DATA_LIFECYCLE §4 / M06 §4)
     await db.dhcpLease
       .deleteMany({
@@ -961,6 +1057,57 @@ class MockEngine {
         },
       })
       .catch(() => {});
+  }
+
+  /**
+   * F-e #10 — volatile-row sweeps, same tick cadence as retention() but at a
+   * lower frequency (every HOUSEKEEPING_EVERY-th tick):
+   *   • notifications — read rows older than 7 days, then cap 500 rows total;
+   *   • webhookDelivery — older than 14 days (delivery ledger);
+   *   • reportRun — older than 30 days (content-heavy HTML payloads).
+   */
+  private async pruneRoutine(): Promise<void> {
+    const now = Date.now();
+
+    // notifications: read + older than 7 days …
+    await db.notification
+      .deleteMany({ where: { tenantId: 1, isRead: true, createdAt: { lt: new Date(now - 7 * 86_400_000) } } })
+      .catch(() => {});
+    // … then cap 500 rows total (oldest-first)
+    await trimToCap("notification", 500, "createdAt");
+
+    // webhook delivery ledger: 14 days
+    await db.webhookDelivery
+      .deleteMany({ where: { tenantId: 1, createdAt: { lt: new Date(now - 14 * 86_400_000) } } })
+      .catch(() => {});
+
+    // report runs: 30 days (content-heavy)
+    await db.reportRun
+      .deleteMany({ where: { tenantId: 1, createdAt: { lt: new Date(now - 30 * 86_400_000) } } })
+      .catch(() => {});
+  }
+
+  /**
+   * F-e #15 — minimal report-schedule scheduler. Enabled ReportSchedule rows
+   * whose next due time passed (lastRunAt + interval, derived from `range` —
+   * daily 1440 / weekly 10080 / monthly 43200 minutes; never-run schedules are
+   * due immediately) fire runReportSchedule, which bumps lastRunAt and creates
+   * an actual ReportRun. Guarded by the caller's try/catch.
+   */
+  private async reportScheduleSweep(): Promise<void> {
+    const rows = await db.reportSchedule.findMany({ where: { tenantId: 1, enabled: true } }).catch(() => []);
+    if (rows.length === 0) return;
+    const { runReportSchedule } = await import("@/lib/logs/service");
+    const now = Date.now();
+    const intervalMin = (range: string): number =>
+      range === "weekly" ? 10080 : range === "monthly" ? 43200 : 1440;
+    for (const s of rows) {
+      const due = !s.lastRunAt || now - s.lastRunAt.getTime() >= intervalMin(s.range) * 60_000;
+      if (!due) continue;
+      await runReportSchedule(1, s.id).catch((err: unknown) => {
+        console.error(`[mock-engine] schedule ${s.id} (${s.name}) failed:`, err instanceof Error ? err.message : err);
+      });
+    }
   }
 
   /** M07 §5.5 identity churn: apply the planner's expire/cap/login plan. */
@@ -1036,7 +1183,7 @@ class MockEngine {
     }
 
     if (this.tickNo % SESSIONS_EMIT_EVERY === 0 && this.identityBacklog.length > 0) {
-      emitEvent({ type: "sessions:update", payload: { kind: "identity", diff: this.identityBacklog.slice(0, 50) } });
+      emitEvent({ type: "sessions:update", payload: { kind: "identity", diff: this.identityBacklog.slice(0, 50), tenantId: 1 } });
       this.identityBacklog = [];
     }
   }
@@ -1096,7 +1243,78 @@ class MockEngine {
   }
 }
 
-async function trim(model: "firewallLog" | "ipsEvent", cap: number) {
+/**
+ * Read one logging/retention.<table> settings row (F-e #10) via the system
+ * service's settings read helper (dynamic import — keeps the module graph
+ * cycle-free). days/maxRows are clamped to the validator envelope and the
+ * RETENTION_HARD_CAPS ceiling; absent rows fall back to the hard cap.
+ */
+async function readRetentionSetting(
+  table: "firewall_logs" | "ips_events" | "audit_log",
+  cap: number,
+): Promise<{ days: number | null; maxRows: number }> {
+  let days: number | null = null;
+  let maxRows = cap;
+  try {
+    const { getSetting } = await import("@/lib/system/service");
+    const stored = await getSetting<{ days?: number; maxRows?: number }>(1, "logging", `retention.${table}`, {});
+    if (typeof stored.days === "number" && Number.isFinite(stored.days)) {
+      days = Math.min(Math.max(Math.round(stored.days), 1), 3650); // validator envelope
+    }
+    if (typeof stored.maxRows === "number" && Number.isFinite(stored.maxRows)) {
+      maxRows = Math.min(Math.max(Math.round(stored.maxRows), 500), cap); // validator envelope + hard cap
+    }
+  } catch {
+    // settings read failed — fall back to the hard cap (previous behavior)
+  }
+  return { days, maxRows };
+}
+
+/** Generic oldest-first row-cap trim (F-e #10 — notifications cap 500). */
+async function trimToCap(model: "notification", cap: number, orderField: "createdAt"): Promise<void> {
+  const count = await db[model].count({ where: { tenantId: 1 } }).catch(() => 0);
+  if (count <= cap) return;
+  const excess = count - cap;
+  const oldest = await db[model].findMany({
+    where: { tenantId: 1 },
+    orderBy: { [orderField]: "asc" },
+    take: excess,
+    select: { id: true },
+  });
+  const ids = oldest.map((r) => r.id);
+  if (ids.length) await db[model].deleteMany({ where: { id: { in: ids } } }).catch(() => {});
+}
+
+/** audit_log trim (F-e #10) — delete rows beyond maxRows oldest-first, ordered by createdAt. */
+async function trimAuditLog(maxRows: number, days: number | null): Promise<void> {
+  if (days !== null) {
+    await db.auditLog
+      .deleteMany({ where: { tenantId: 1, createdAt: { lt: new Date(Date.now() - days * 86_400_000) } } })
+      .catch(() => {});
+  }
+  const count = await db.auditLog.count({ where: { tenantId: 1 } }).catch(() => 0);
+  if (count <= maxRows) return;
+  const excess = count - maxRows;
+  const oldest = await db.auditLog.findMany({
+    where: { tenantId: 1 },
+    orderBy: { createdAt: "asc" },
+    take: excess,
+    select: { id: true },
+  });
+  const ids = oldest.map((r) => r.id);
+  if (ids.length) await db.auditLog.deleteMany({ where: { id: { in: ids } } }).catch(() => {});
+}
+
+/** firewallLog / ipsEvent row-cap + optional days-window trim (F-e #10). */
+async function trim(model: "firewallLog" | "ipsEvent", cap: number, days: number | null): Promise<void> {
+  if (days !== null) {
+    const cutoff = new Date(Date.now() - days * 86_400_000);
+    if (model === "firewallLog") {
+      await db.firewallLog.deleteMany({ where: { tenantId: 1, timestamp: { lt: cutoff } } }).catch(() => {});
+    } else {
+      await db.ipsEvent.deleteMany({ where: { tenantId: 1, timestamp: { lt: cutoff } } }).catch(() => {});
+    }
+  }
   const count =
     model === "firewallLog"
       ? await db.firewallLog.count({ where: { tenantId: 1 } })

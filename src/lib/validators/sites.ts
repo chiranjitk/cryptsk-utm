@@ -8,6 +8,7 @@
  */
 
 import { z } from "zod";
+import { boundedJson } from "@/lib/validators/bounded";
 
 // ── locked enums (schema.prisma comments + spec §4.1) ───────────────────────
 
@@ -39,8 +40,9 @@ const endpointSchema = z
   .max(254)
   .refine((v) => v === "" || /^[A-Za-z0-9._-]+:\d{1,5}$/.test(v), "publicEndpoint must look like host:port (e.g. hq.corp.example:8443)");
 
-/** Per-site resource caps — open JSON {maxRules,maxCpuPct,maxTunnelCount,…}. */
-export const siteLimitsSchema = z.record(z.string(), z.unknown());
+/** Per-site resource caps — open JSON {maxRules,maxCpuPct,maxTunnelCount,…}
+ * capped at 4 KB of serialized JSON (audit fix F-d — unbounded payload DoS). */
+export const siteLimitsSchema = boundedJson(4096, "resourceLimits");
 
 export const siteCreateSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -79,7 +81,8 @@ export const sitePushSchema = z
     kind: deploymentKindSchema,
     templateId: z.coerce.number().int().min(1).optional(),
     firmwareVersion: z.string().min(1).max(64).optional(),
-    payload: z.record(z.string(), z.unknown()).optional(),
+    /** free-form policy bundle — capped at 256 KB of JSON (audit fix F-d) */
+    payload: boundedJson(262144).optional(),
   })
   .superRefine((v, ctx) => {
     if (v.kind === "template" && v.templateId === undefined) {
@@ -102,8 +105,9 @@ export const deploymentQuerySchema = z.object({
 
 // ── site templates ──────────────────────────────────────────────────────────
 
-/** Open config bundle — {firewallRules[], natRules[], dnsPolicies[], …}. */
-export const templatePayloadSchema = z.record(z.string(), z.unknown());
+/** Open config bundle — {firewallRules[], natRules[], dnsPolicies[], …}
+ * capped at 256 KB of serialized JSON (audit fix F-d — unbounded payload DoS). */
+export const templatePayloadSchema = boundedJson(262144, "template payload");
 
 export const templateCreateSchema = z.object({
   name: z.string().trim().min(1).max(100),

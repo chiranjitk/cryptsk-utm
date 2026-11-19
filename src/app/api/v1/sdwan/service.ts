@@ -353,9 +353,12 @@ export async function updateSite(tenantId: number, id: number, input: SiteUpdate
 
 export async function deleteSite(tenantId: number, id: number): Promise<{ ok: true }> {
   await requireSite(tenantId, id);
-  // no FK relation on SdwanPath.siteId — cascade manually
-  await db.sdwanPath.deleteMany({ where: { tenantId, siteId: id } });
-  await db.sdwanSite.delete({ where: { id } });
+  // no FK relation on SdwanPath.siteId — cascade manually, atomically with
+  // the site delete so a failure can never orphan paths without their site
+  await db.$transaction(async (tx) => {
+    await tx.sdwanPath.deleteMany({ where: { tenantId, siteId: id } });
+    await tx.sdwanSite.delete({ where: { id } });
+  });
   return { ok: true };
 }
 
@@ -460,11 +463,16 @@ export async function probePaths(tenantId: number, body: ProbeBody): Promise<Pro
   const liveOverlayIds = new Set(overlays.map((o) => o.id));
   const targets = sites.filter((s) => liveOverlayIds.has(s.overlayId));
 
+  // Stable-order contract: SLA selection uses the FIRST attached policy with a
+  // profile — candidates are explicitly sorted by id asc so "first match" is
+  // deterministic regardless of DB iteration order or future query changes.
+  const policyCandidates = [...policies].sort((a, b) => a.id - b.id);
+
   // per-overlay SLA thresholds: first attached policy with a profile, else fallback
   const profileById = new Map(profiles.map((p) => [p.id, p]));
   const slaByOverlay = new Map<number, { latencyMsMax: number; jitterMsMax: number; lossPctMax: number }>();
   for (const overlayId of overlayIds) {
-    const firstWithSla = policies.find((p) => p.overlayId === overlayId && p.slaProfileId !== null);
+    const firstWithSla = policyCandidates.find((p) => p.overlayId === overlayId && p.slaProfileId !== null);
     const profile = firstWithSla ? profileById.get(firstWithSla.slaProfileId ?? -1) : undefined;
     slaByOverlay.set(
       overlayId,
@@ -537,12 +545,24 @@ export async function createPolicy(tenantId: number, input: PolicyCreate): Promi
 }
 
 export async function updatePolicy(tenantId: number, id: number, input: PolicyUpdate): Promise<PolicyDTO> {
-  await db.sdwanPolicy.findFirstOrThrow({ where: { tenantId, id } });
+  const existing = await db.sdwanPolicy.findFirstOrThrow({ where: { tenantId, id } });
   if (input.overlayId !== undefined) await requireOverlay(tenantId, input.overlayId);
   if (input.slaProfileId !== undefined && input.slaProfileId !== null) {
     const sla = await db.slaProfile.findFirst({ where: { tenantId, id: input.slaProfileId } });
     if (!sla) throw ApiError.notFound("SLA profile not found");
   }
+
+  // merge-then-revalidate: a partial PATCH that flips preferredPath to "fixed"
+  // (or drops fixedWanInterface) must be judged against the MERGED state —
+  // the zod patch schema alone can't see the pair spanning patch + row
+  const mergedPreferredPath = input.preferredPath ?? existing.preferredPath;
+  const mergedFixedWan = input.fixedWanInterface !== undefined ? input.fixedWanInterface : existing.fixedWanInterface;
+  if (mergedPreferredPath === "fixed" && !mergedFixedWan) {
+    throw ApiError.validation("SD-WAN policy update failed validation", {
+      fieldErrors: { fixedWanInterface: ["fixedWanInterface is required when preferredPath is fixed"] },
+    });
+  }
+
   const row = await db.sdwanPolicy.update({ where: { id }, data: input });
   let slaProfileName: string | null = null;
   if (row.slaProfileId !== null) {

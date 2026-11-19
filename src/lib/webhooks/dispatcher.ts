@@ -25,6 +25,7 @@
  */
 
 import { createHmac } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
 import { parseJson } from "@/lib/json";
@@ -35,6 +36,75 @@ const BACKOFF_MS = [500, 2000];
 const ERROR_MAX = 300;
 const SIGNATURE_SCHEME = "sha256=";
 const SIGNATURE_PREFIX_CHARS = 16; // ledger column stores the hex prefix only
+
+// ── SSRF guard (F-e #3) ─────────────────────────────────────────────────────
+
+/** Error prefix for guard-refused targets — terminal, never retried. */
+export const SSRF_REFUSAL_PREFIX = "refused by SSRF guard";
+
+/**
+ * Private/loopback/link-local/metadata IP refusal (F-e #3). IPv4: 127/8
+ * loopback, 10/8 + 172.16/12 + 192.168/16 (RFC1918), 169.254/16 link-local
+ * (covers the 169.254.169.254 cloud-metadata endpoint), 0.0.0.0/8 "this
+ * network". IPv6: ::1 loopback, :: unspecified, fe80::/10 link-local,
+ * fc00::/7 unique-local (the v6 RFC1918 analog), v4-mapped ::ffff: delegates.
+ */
+export function isRefusedIp(ip: string): boolean {
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    if (a === 127) return true; // loopback 127/8
+    if (a === 10) return true; // RFC1918 10/8
+    if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918 172.16/12
+    if (a === 192 && b === 168) return true; // RFC1918 192.168/16
+    if (a === 169 && b === 254) return true; // link-local 169.254/16 (incl. metadata 169.254.169.254)
+    if (a === 0) return true; // "this network" 0.0.0.0/8 (incl. 0.0.0.0)
+    return false;
+  }
+  let h = ip.toLowerCase();
+  if (h.includes("%")) h = h.split("%")[0]; // strip IPv6 zone id
+  if (h.startsWith("::ffff:")) return isRefusedIp(h.slice("::ffff:".length)); // v4-mapped
+  if (h === "::1" || h === "::") return true; // loopback / unspecified
+  if (/^f[cd]/.test(h)) return true; // fc00::/7 unique-local
+  if (/^fe[89ab]/.test(h)) return true; // fe80::/10 link-local
+  return false;
+}
+
+/**
+ * Pre-delivery SSRF guard (F-e #3): refuse non-http(s) schemes, then resolve
+ * the URL hostname via dns.lookup and refuse private/loopback/link-local/
+ * metadata addresses. CONSOLE_WEBHOOK_ALLOW_PRIVATE=1 disables the address
+ * refusal (sandbox tests against internal targets) — the scheme check always
+ * applies. Returns null when the target is acceptable; unresolvable hostnames
+ * pass through so fetch surfaces the real DNS error (retry semantics apply).
+ */
+export async function ssrfGuard(url: string): Promise<string | null> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return `${SSRF_REFUSAL_PREFIX}: not an absolute URL`;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return `${SSRF_REFUSAL_PREFIX}: only http(s) webhook targets are allowed (got ${parsed.protocol})`;
+  }
+  if (process.env.CONSOLE_WEBHOOK_ALLOW_PRIVATE === "1") return null;
+  let host = parsed.hostname;
+  if (host.startsWith("[") && host.endsWith("]")) host = host.slice(1, -1);
+  try {
+    const resolved = await lookup(host, { all: true, verbatim: true });
+    for (const { address } of resolved) {
+      if (isRefusedIp(address)) {
+        return `${SSRF_REFUSAL_PREFIX}: ${host} resolves to a private/loopback/link-local address (${address})`;
+      }
+    }
+    return null;
+  } catch {
+    // cannot resolve here — let fetch produce the real DNS error
+    return null;
+  }
+}
 
 export interface DeliverOpts {
   /** Restrict fan-out to webhooks of this tenant (event-side isolation). */
@@ -132,7 +202,9 @@ async function attemptDelivery(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(url, { method: "POST", headers, body, signal: controller.signal });
+      // redirect: "error" (F-e #3) — a redirect must never silently retarget a
+      // validated https endpoint to an unvalidated (possibly internal) URL.
+      const res = await fetch(url, { method: "POST", headers, body, signal: controller.signal, redirect: "error" });
       statusCode = res.status;
       if (res.ok) {
         lastError = null;
@@ -202,7 +274,8 @@ async function recordOutcome(
     data: {
       lastDeliveryAt: new Date(),
       lastStatus,
-      failureCount: outcome.ok ? row.failureCount : row.failureCount + 1,
+      // atomic increment (F-e #13) — concurrent deliveries never clobber each other
+      failureCount: outcome.ok ? 0 : { increment: 1 },
     },
   });
   return {
@@ -227,6 +300,18 @@ async function deliverToTarget(
   const signaturePrefix = signature
     ? signature.slice(SIGNATURE_SCHEME.length, SIGNATURE_SCHEME.length + SIGNATURE_PREFIX_CHARS)
     : null;
+  // SSRF guard (F-e #3): refused targets are a TERMINAL failure — recorded
+  // once in the ledger with a clear error, no fetch, no retries.
+  const refusal = await ssrfGuard(row.url);
+  if (refusal) {
+    return recordOutcome(
+      row,
+      event,
+      body,
+      signaturePrefix,
+      { ok: false, statusCode: null, attempts: 0, error: refusal, durationMs: 0 },
+    );
+  }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Cryptsk-Event": event,

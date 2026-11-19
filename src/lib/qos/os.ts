@@ -530,9 +530,15 @@ export function hardQosRefusal(policies: QosPolicyShape[]): string | null {
 const TC_EXEC_RE = /^tc (qdisc|class|filter) (add|replace|del) dev [\w.:@-]+[\w\s.:/@-]*$/;
 const TC_READ_RE = /^tc -j (qdisc show( dev [\w.:@-]+)?|class show dev [\w.:@-]+|filter show dev [\w.:@-]+ parent 1:)$/;
 const MODPROBE_RE = /^modprobe sch_htb$/;
+/** Exact restore form the auto-rollback re-attaches (renderRestoreQdisc + the
+ *  empty-snapshot fallback) — kept explicit so the snapshot/restore plan steps
+ *  can route through qosStepGuarded like every other exec. */
+const TC_RESTORE_RE = /^tc qdisc add dev [\w.:@-]+ root (fq_codel|[\w-]+)( [\w\s.:/@-]*)?$/;
+/** Exact per-iface delete form used by reset steps + auto-rollback. */
+const TC_DELETE_RE = /^tc qdisc del dev [\w.:@-]+ root$/;
 
 export function qosStepGuarded(cmd: string): boolean {
-  return TC_EXEC_RE.test(cmd) || TC_READ_RE.test(cmd) || MODPROBE_RE.test(cmd);
+  return TC_EXEC_RE.test(cmd) || TC_READ_RE.test(cmd) || TC_RESTORE_RE.test(cmd) || TC_DELETE_RE.test(cmd) || MODPROBE_RE.test(cmd);
 }
 
 /**

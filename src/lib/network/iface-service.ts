@@ -171,7 +171,8 @@ export function shapeIface(
     mtu: row.mtu,
     mssClamp: row.mssClamp,
     enabled: row.enabled,
-    config: cfg,
+    // pppoe.password is write-only — GET/PUT responses + audit payloads carry the mask
+    config: redactPppoeConfig(cfg),
     description: row.description,
     zoneId: row.zoneId,
     zoneName,
@@ -187,6 +188,26 @@ export function liveIfaceRates(): Map<string, IfaceLiveRates> {
   const ring = getEngine().metricsRing;
   const tick = ring.length ? ring[ring.length - 1] : undefined;
   return new Map((tick?.ifaces ?? []).map((i) => [i.name, { rxKbps: i.rxKbps, txKbps: i.txKbps }]));
+}
+
+// ── write-only secrets (pppoe) ───────────────────────────────────────────────
+
+/** Mask literal sent back by clients to mean "keep the stored password".
+ *  Mirrors the dynamic-routing BGP neighbor write-only pattern. */
+export const PPPOE_PASSWORD_MASK = "********";
+
+/** Strip the PPPoE password out of an interface config object (mutates a copy
+ *  first — shapeIface callers must never see the plaintext). */
+function redactPppoeConfig(cfg: Record<string, unknown>): Record<string, unknown> {
+  const pppoe = cfg.pppoe;
+  if (pppoe && typeof pppoe === "object" && !Array.isArray(pppoe)) {
+    const redacted = { ...(pppoe as Record<string, unknown>) };
+    if (typeof redacted.password === "string" && redacted.password.length > 0) {
+      redacted.password = PPPOE_PASSWORD_MASK;
+    }
+    return { ...cfg, pppoe: redacted };
+  }
+  return cfg;
 }
 
 /** Fetch + shape every tenant iface (zones joined once for names). */
@@ -473,10 +494,20 @@ function mergePhysicalConfig(existing: IfaceRow, body: IfaceUpdateBody): Record<
   } else if (wanType === "pppoe") {
     if (body.pppoe) {
       const prev = cfg.pppoe && typeof cfg.pppoe === "object" ? (cfg.pppoe as Record<string, unknown>) : {};
+      // write-only semantics (mirrors the BGP neighbor password pattern): the
+      // mask literal means "keep the stored password" — never persist it.
+      let password = body.pppoe.password;
+      if (password === PPPOE_PASSWORD_MASK) {
+        const stored = typeof prev.password === "string" ? prev.password : "";
+        if (!stored) {
+          throw ApiError.validation("PPPoE password is required", { field: "pppoe.password" });
+        }
+        password = stored;
+      }
       cfg.pppoe = {
         ...prev,
         user: body.pppoe.user,
-        password: body.pppoe.password,
+        password,
         ...(body.pppoe.service ? { service: body.pppoe.service } : {}),
       };
     }

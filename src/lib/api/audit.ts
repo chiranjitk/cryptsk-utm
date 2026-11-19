@@ -50,7 +50,10 @@ export async function writeAudit(opts: {
 
 /**
  * Snapshot a config section after a successful mutation and broadcast
- * `config:updated {section}` (realtime service relays it to clients).
+ * `config:updated {section, tenantId}` (realtime service relays it to clients;
+ * the tenantId scopes the webhook fan-out — F-e #2). The version bump retries
+ * on a P2002 unique violation (concurrent mutations) with version = last+1,
+ * up to 3 attempts (F-e #14).
  */
 export async function snapshotConfigVersion(opts: {
   tenantId: number;
@@ -58,20 +61,31 @@ export async function snapshotConfigVersion(opts: {
   changeSummary: string;
   userId?: number;
 }): Promise<void> {
-  const last = await db.configVersion.findFirst({
-    where: { tenantId: opts.tenantId, section: opts.section },
-    orderBy: { version: "desc" },
-  });
-  const nextVersion = (last?.version ?? 0) + 1;
-  await db.configVersion.create({
-    data: {
-      tenantId: opts.tenantId,
-      version: nextVersion,
-      section: opts.section,
-      configSnapshot: JSON.stringify({ section: opts.section, version: nextVersion }),
-      changeSummary: opts.changeSummary,
-      createdBy: opts.userId ?? null,
-    },
-  });
-  emitEvent({ type: "config:updated", payload: { section: opts.section } });
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const last = await db.configVersion.findFirst({
+      where: { tenantId: opts.tenantId, section: opts.section },
+      orderBy: { version: "desc" },
+    });
+    const nextVersion = (last?.version ?? 0) + 1;
+    try {
+      await db.configVersion.create({
+        data: {
+          tenantId: opts.tenantId,
+          version: nextVersion,
+          section: opts.section,
+          configSnapshot: JSON.stringify({ section: opts.section, version: nextVersion }),
+          changeSummary: opts.changeSummary,
+          createdBy: opts.userId ?? null,
+        },
+      });
+      emitEvent({ type: "config:updated", payload: { section: opts.section, tenantId: opts.tenantId } });
+      return;
+    } catch (err) {
+      const isP2002 =
+        typeof err === "object" && err !== null && "code" in err && String((err as { code: unknown }).code) === "P2002";
+      // unique([tenantId, section, version]) lost a race — re-read last and retry
+      if (!(isP2002 && attempt < MAX_ATTEMPTS)) throw err;
+    }
+  }
 }

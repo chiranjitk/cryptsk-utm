@@ -88,7 +88,7 @@ export class AgentEngine {
       const known = this.wanStates.find((w) => w.iface === iface);
       if (known) known.state = probed;
       if (probed !== "unknown") {
-        emitEvent({ type: "wan:status", payload: { iface, state: probed } });
+        emitEvent({ type: "wan:status", payload: { iface, state: probed, tenantId: 1 } });
       }
     }
     return probed;
@@ -217,7 +217,10 @@ export class AgentEngine {
 
     if (Array.isArray(s.dnsTail)) {
       for (const q of s.dnsTail) {
-        this.dnsRing.push(q);
+        // normalize the tenant tag at ingestion (audit fix F-d): agent
+        // snapshots predate the ring-row tenantId — the agent data plane
+        // serves the console tenant (1) unless the sensor reports otherwise
+        this.dnsRing.push({ ...q, tenantId: typeof q.tenantId === "number" ? q.tenantId : 1 });
         if (q.seq > this.sinceDnsSeq) this.sinceDnsSeq = q.seq;
       }
       if (this.dnsRing.length > DNS_RING_CAP) {
@@ -232,7 +235,7 @@ export class AgentEngine {
       // EngineEvent locks wan:status payloads to up|down|degraded — the agent
       // only ever reports those three verdicts (probeGateway never says unknown)
       if (changed && first && (first.state === "up" || first.state === "down" || first.state === "degraded")) {
-        emitEvent({ type: "wan:status", payload: { iface: first.iface, state: first.state } });
+        emitEvent({ type: "wan:status", payload: { iface: first.iface, state: first.state, tenantId: 1 } });
       }
     }
   }

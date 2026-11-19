@@ -218,11 +218,13 @@ function renderInertFragment(): string {
 }
 
 /**
- * Execute the convergence plan on the appliance (exec gate checked by caller).
- * Snapshot-first; any failure after the install step auto-restores the
- * pre-apply managed file from backup-<ts>/ (or the inert empty fragment when
- * none existed) and restarts rsyslog. The state file is the LAST plan step —
- * only written when every verify passed.
+ * Execute the convergence plan on the appliance (executors SELF-GATE — F-e #19:
+ * the CONSOLE_OS_APPLY check lives here so every caller inherits the gate;
+ * routes additionally pass their own flag, defense in depth). Snapshot-first;
+ * any failure after the install step auto-restores the pre-apply managed file
+ * from backup-<ts>/ (or the inert empty fragment when none existed) and
+ * restarts rsyslog. The state file is the LAST plan step — only written when
+ * every verify passed.
  */
 export async function applyRsyslogToOs(tenantId: number, exec: boolean): Promise<RsyslogApplyOutcome> {
   const [{ getDataPlaneMode }, { runTool }] = await Promise.all([
@@ -230,10 +232,13 @@ export async function applyRsyslogToOs(tenantId: number, exec: boolean): Promise
     import("@/lib/host/tools"),
   ]);
 
+  // F-e #19: executor-side env gate — coherent with the route-side flag, but
+  // the executor no longer trusts the caller alone.
+  const execGated = exec && process.env.CONSOLE_OS_APPLY === "1";
   const shapes = await buildRsyslogShapes(tenantId);
   const refusal = hardRsyslogRefusal(shapes);
   const fileExisted = await managedFileExists();
-  const mode: RsyslogApplyPlan["mode"] = exec && getDataPlaneMode() === "host" ? "exec" : "plan";
+  const mode: RsyslogApplyPlan["mode"] = execGated && getDataPlaneMode() === "host" ? "exec" : "plan";
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
 
   const plan: RsyslogApplyPlan = buildRsyslogApplyPlan({
@@ -247,10 +252,10 @@ export async function applyRsyslogToOs(tenantId: number, exec: boolean): Promise
   if (refusal) {
     return { applied: false, refused: refusal, rolledBack: false, plan: preview(), results: [] };
   }
-  if (!exec || mode !== "exec") {
+  if (!execGated || mode !== "exec") {
     return {
       applied: false,
-      refused: !exec
+      refused: !execGated
         ? "CONSOLE_OS_APPLY is off — plan preview only (rsyslog command sequence attached)"
         : "data plane is not in host mode — OS enforcement is preview-only",
       rolledBack: false,

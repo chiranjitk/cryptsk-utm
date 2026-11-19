@@ -17,6 +17,7 @@ import { parseJson, stringifyJson } from "@/lib/json";
 import { canonicalAppLabel } from "@/lib/firewall/app-catalog";
 import { assertIfacesExist } from "@/lib/network/iface-service";
 import { QOS_TEMPLATES, type QosTemplateName } from "./templates";
+import type { Prisma } from "@prisma/client";
 import type {
   QosPolicyCreate,
   QosPolicyUpdate,
@@ -351,9 +352,13 @@ async function assertMatchersValid(
   }
 
   if (matchers.matchAddresses.length === 0) return;
-  const uniqueAddrIds = [...new Set(matchers.matchAddresses.map((v) => Number(v)))].filter(
-    (n) => Number.isInteger(n) && n > 0,
-  );
+  const addrIds = matchers.matchAddresses.map((v) => Number(v));
+  if (addrIds.some((n) => !Number.isInteger(n) || n <= 0)) {
+    // mirror the matchUsers branch — never silently filter invalid entries
+    const bad = matchers.matchAddresses.filter((_, i) => !Number.isInteger(addrIds[i]) || addrIds[i] <= 0);
+    throw fieldErr("matchAddresses", `Address object ids must be integers: ${bad.join(", ")}`);
+  }
+  const uniqueAddrIds = [...new Set(addrIds)];
   const foundAddrs = await db.addressObject.findMany({ where: { tenantId, id: { in: uniqueAddrIds } }, select: { id: true } });
   const knownAddrs = new Set(foundAddrs.map((a) => a.id));
   const unknownAddrs = uniqueAddrIds.filter((id) => !knownAddrs.has(id));
@@ -371,14 +376,17 @@ function guaranteedSumError(sum: number, budget: number): ApiError {
   });
 }
 
-/** M08 §5.2: sum(guaranteedKbps) of the policy's rules must fit the budget. */
+/** M08 §5.2: sum(guaranteedKbps) of the policy's rules must fit the budget.
+ *  Runs against the caller's transaction client so the read-modify-write is
+ *  serialized with the rule writes on SQLite's write lock (no check gap). */
 async function assertGuaranteedSumFits(
+  dbi: Prisma.TransactionClient,
   tenantId: number,
   policy: { id: number; bandwidthKbps: number },
   extra: { guaranteedKbps?: number | null } | null,
   excludeId?: number,
 ): Promise<void> {
-  const rules = await db.qosRule.findMany({
+  const rules = await dbi.qosRule.findMany({
     where: { tenantId, policyId: policy.id, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
     select: { guaranteedKbps: true },
   });
@@ -425,21 +433,25 @@ export async function createRule(tenantId: number, body: QosRuleCreate): Promise
   assertGuaranteedMax(body.guaranteedKbps ?? null, body.maxKbps ?? null);
   await assertMatchersValid(tenantId, body);
   if (isCatchAll(body)) await assertCatchAllFree(tenantId, policy.id);
-  await assertGuaranteedSumFits(tenantId, { id: policy.id, bandwidthKbps: policy.bandwidthKbps }, body);
 
-  const row = await db.qosRule.create({
-    data: {
-      tenantId,
-      policyId: policy.id,
-      name: body.name,
-      priority: body.priority,
-      guaranteedKbps: body.guaranteedKbps ?? null,
-      maxKbps: body.maxKbps ?? null,
-      dscpMark: body.dscpMark ?? null,
-      matchApps: stringifyJson(body.matchApps),
-      matchUsers: stringifyJson(body.matchUsers),
-      matchAddresses: stringifyJson(body.matchAddresses),
-    },
+  // guaranteed-sum re-check runs INSIDE the write transaction: concurrent
+  // rule creates serialize on SQLite's write lock (M08 §5.2)
+  const row = await db.$transaction(async (tx) => {
+    await assertGuaranteedSumFits(tx, tenantId, { id: policy.id, bandwidthKbps: policy.bandwidthKbps }, body);
+    return tx.qosRule.create({
+      data: {
+        tenantId,
+        policyId: policy.id,
+        name: body.name,
+        priority: body.priority,
+        guaranteedKbps: body.guaranteedKbps ?? null,
+        maxKbps: body.maxKbps ?? null,
+        dscpMark: body.dscpMark ?? null,
+        matchApps: stringifyJson(body.matchApps),
+        matchUsers: stringifyJson(body.matchUsers),
+        matchAddresses: stringifyJson(body.matchAddresses),
+      },
+    });
   });
   return toRuleDTO(row);
 }
@@ -463,20 +475,23 @@ export async function updateRule(tenantId: number, id: number, body: QosRuleUpda
   assertGuaranteedMax(merged.guaranteedKbps, merged.maxKbps);
   await assertMatchersValid(tenantId, merged);
   if (isCatchAll(merged)) await assertCatchAllFree(tenantId, policy.id, id);
-  await assertGuaranteedSumFits(tenantId, { id: policy.id, bandwidthKbps: policy.bandwidthKbps }, merged, id);
 
-  const row = await db.qosRule.update({
-    where: { id },
-    data: {
-      name: body.name !== undefined ? merged.name : undefined,
-      priority: body.priority ?? undefined,
-      guaranteedKbps: body.guaranteedKbps !== undefined ? merged.guaranteedKbps : undefined,
-      maxKbps: body.maxKbps !== undefined ? merged.maxKbps : undefined,
-      dscpMark: body.dscpMark !== undefined ? merged.dscpMark : undefined,
-      matchApps: body.matchApps !== undefined ? stringifyJson(merged.matchApps) : undefined,
-      matchUsers: body.matchUsers !== undefined ? stringifyJson(merged.matchUsers) : undefined,
-      matchAddresses: body.matchAddresses !== undefined ? stringifyJson(merged.matchAddresses) : undefined,
-    },
+  // guaranteed-sum re-check runs INSIDE the write transaction (M08 §5.2)
+  const row = await db.$transaction(async (tx) => {
+    await assertGuaranteedSumFits(tx, tenantId, { id: policy.id, bandwidthKbps: policy.bandwidthKbps }, merged, id);
+    return tx.qosRule.update({
+      where: { id },
+      data: {
+        name: body.name !== undefined ? merged.name : undefined,
+        priority: body.priority ?? undefined,
+        guaranteedKbps: body.guaranteedKbps !== undefined ? merged.guaranteedKbps : undefined,
+        maxKbps: body.maxKbps !== undefined ? merged.maxKbps : undefined,
+        dscpMark: body.dscpMark !== undefined ? merged.dscpMark : undefined,
+        matchApps: body.matchApps !== undefined ? stringifyJson(merged.matchApps) : undefined,
+        matchUsers: body.matchUsers !== undefined ? stringifyJson(merged.matchUsers) : undefined,
+        matchAddresses: body.matchAddresses !== undefined ? stringifyJson(merged.matchAddresses) : undefined,
+      },
+    });
   });
   return toRuleDTO(row);
 }

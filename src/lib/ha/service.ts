@@ -46,7 +46,8 @@ export type HaConfigDTO = {
   holdDownSec: number;
   vrid: number;
   advertIntSec: number;
-  authPass: string | null;
+  /** write-only secret — DTOs carry presence only; reveal via POST /ha/config/reveal */
+  hasAuthPass: boolean;
   preempt: boolean;
   osConfHash: string | null;
   osAppliedAt: string | null;
@@ -97,7 +98,38 @@ export type HaOsStatus = {
 const fieldErr = (field: string, message: string) =>
   ApiError.validation(message, { fieldErrors: { [field]: [message] } });
 
-// ── Config singleton (upsert per tenant) ────────────────────────────────────
+// ── Config singleton (transactional get-or-create per tenant) ──────────────
+
+const HA_CONFIG_DEFAULTS = {
+  enabled: false,
+  role: "disabled",
+  priority: 100,
+  ifaceName: "lan0",
+  trackedInterfaces: "[]",
+  vrid: 51,
+  advertIntSec: 1,
+  preempt: true,
+} as const;
+
+/**
+ * Transactional get-or-create for the per-tenant singleton. Two concurrent
+ * first-touches serialize on SQLite's write lock inside the transaction; a
+ * lost create race (P2002) re-finds and returns the winner's row.
+ */
+export async function getHaConfigRow(tenantId: number) {
+  return db.$transaction(async (tx) => {
+    const existing = await tx.haConfig.findFirst({ where: { tenantId } });
+    if (existing) return existing;
+    try {
+      return await tx.haConfig.create({ data: { tenantId, ...HA_CONFIG_DEFAULTS } });
+    } catch (err) {
+      // P2002 — a concurrent create won the race; re-find inside and return it
+      const raced = await tx.haConfig.findFirst({ where: { tenantId } });
+      if (raced) return raced;
+      throw err;
+    }
+  });
+}
 
 function toConfigDTO(row: {
   id: number;
@@ -134,7 +166,7 @@ function toConfigDTO(row: {
     holdDownSec: row.holdDownSec,
     vrid: row.vrid,
     advertIntSec: row.advertIntSec,
-    authPass: row.authPass,
+    hasAuthPass: row.authPass !== null && row.authPass.length > 0,
     preempt: row.preempt,
     osConfHash: row.osConfHash,
     osAppliedAt: row.osAppliedAt ? row.osAppliedAt.toISOString() : null,
@@ -142,23 +174,8 @@ function toConfigDTO(row: {
 }
 
 export async function getHaConfig(tenantId: number): Promise<HaConfigDTO> {
-  const row = await db.haConfig.findFirst({ where: { tenantId } });
-  if (row) return toConfigDTO(row);
-  // singleton row is seeded — create a default on first touch (defensive)
-  const created = await db.haConfig.create({
-    data: {
-      tenantId,
-      enabled: false,
-      role: "disabled",
-      priority: 100,
-      ifaceName: "lan0",
-      trackedInterfaces: "[]",
-      vrid: 51,
-      advertIntSec: 1,
-      preempt: true,
-    },
-  });
-  return toConfigDTO(created);
+  const row = await getHaConfigRow(tenantId);
+  return toConfigDTO(row);
 }
 
 /** Collect every IPv4 literal found in interface config JSON blobs (peerIp sanity check). */
@@ -218,7 +235,9 @@ export async function putHaConfig(tenantId: number, body: HaConfigInput): Promis
     holdDownSec: body.holdDownSec,
     vrid: body.vrid,
     advertIntSec: body.advertIntSec,
-    authPass: body.authPass ?? null,
+    // authPass is write-only (mirrors the BGP neighbor password pattern):
+    // absent field keeps the stored value, explicit null clears it.
+    ...(body.authPass === undefined ? {} : { authPass: body.authPass ?? null }),
     preempt: body.preempt,
   };
   const row = existing
@@ -240,7 +259,8 @@ export async function putHaConfig(tenantId: number, body: HaConfigInput): Promis
  * mode → lastFailover stays null and hold-down has no countdown to show.
  */
 export async function getHaStatus(tenantId: number): Promise<HaStatusDTO> {
-  const config = await getHaConfig(tenantId);
+  const row = await getHaConfigRow(tenantId);
+  const config = toConfigDTO(row);
   const enabled = config.enabled && config.role !== "disabled";
   const hostMode = getDataPlaneMode() === "host";
 
@@ -306,7 +326,7 @@ export async function getHaStatus(tenantId: number): Promise<HaStatusDTO> {
   const serviceObserved = states !== null;
 
   // drift between console intent and OS reality (pure, from ha/os.ts)
-  const drift = computeHaDrift(toKeepalivedInput(config), facts);
+  const drift = computeHaDrift(toKeepalivedInput(row), facts);
   const osStatus: HaOsStatus = {
     available: facts.available,
     serviceState: facts.serviceState,
@@ -361,8 +381,27 @@ export async function getHaStatus(tenantId: number): Promise<HaStatusDTO> {
 
 // ── host-mode facts + helpers ────────────────────────────────────────────
 
+/** Minimal keepalived-bearing input — the RAW singleton row (authPass included);
+ *  DTOs no longer carry the secret. Accepts either the row (trackedInterfaces
+ *  still a JSON string) or an already-parsed input. */
+type HaKeepalivedSource = {
+  enabled: boolean;
+  role: string;
+  priority: number;
+  virtualIp: string | null;
+  ifaceName: string;
+  peerIp: string | null;
+  trackedInterfaces: string | string[];
+  failAfterSec: number;
+  holdDownSec: number;
+  vrid: number;
+  advertIntSec: number;
+  authPass: string | null;
+  preempt: boolean;
+};
+
 /** Map the DB config row onto the keepalived-bearing slice used by ha/os.ts. */
-export function toKeepalivedInput(cfg: HaConfigDTO): HaKeepalivedInput {
+export function toKeepalivedInput(cfg: HaKeepalivedSource): HaKeepalivedInput {
   return {
     enabled: cfg.enabled,
     role: cfg.role,
@@ -370,7 +409,9 @@ export function toKeepalivedInput(cfg: HaConfigDTO): HaKeepalivedInput {
     virtualIp: cfg.virtualIp,
     ifaceName: cfg.ifaceName,
     peerIp: cfg.peerIp,
-    trackedInterfaces: cfg.trackedInterfaces,
+    trackedInterfaces: Array.isArray(cfg.trackedInterfaces)
+      ? cfg.trackedInterfaces
+      : parseJson<string[]>(cfg.trackedInterfaces, []),
     failAfterSec: cfg.failAfterSec,
     holdDownSec: cfg.holdDownSec,
     vrid: cfg.vrid,

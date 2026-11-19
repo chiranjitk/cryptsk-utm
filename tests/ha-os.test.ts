@@ -26,6 +26,7 @@ import {
   type HaOsFacts,
 } from "@/lib/ha/os";
 import { haConfigSchema } from "@/lib/validators/system";
+import { toKeepalivedInput } from "@/lib/ha/service";
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
@@ -345,13 +346,40 @@ describe("hardRefusal (red lines)", () => {
 });
 
 describe("haStepGuarded (command whitelist)", () => {
+  it("maps the raw singleton row onto the renderer input (trackedInterfaces JSON parsed, authPass kept for OS convergence)", () => {
+    const input = toKeepalivedInput({
+      id: 1,
+      enabled: true,
+      role: "active",
+      priority: 200,
+      virtualIp: "10.99.99.253/32",
+      ifaceName: "lan0",
+      peerIp: "10.99.99.252",
+      syncConfig: true,
+      sessionSync: true,
+      trackedInterfaces: '["lan1","lan2"]',
+      failAfterSec: 10,
+      holdDownSec: 60,
+      vrid: 51,
+      advertIntSec: 1,
+      authPass: "utmha51",
+      preempt: true,
+      osConfHash: null,
+      osAppliedAt: null,
+    });
+    expect(input.trackedInterfaces).toEqual(["lan1", "lan2"]);
+    expect(input.authPass).toBe("utmha51");
+    expect(input.vrid).toBe(51);
+  });
   it("allows the exact plan commands", () => {
     expect(haStepGuarded(`mkdir -p ${HA_STATE_DIR}`)).toBe(true);
     expect(haStepGuarded(`cp ${KEEPALIVED_CONF} ${HA_STATE_DIR}/keepalived.conf.backup-20261116T000000-000000Z`)).toBe(true);
     expect(haStepGuarded(`install -m 0644 /dev/null ${KEEPALIVED_STAGE}`)).toBe(true);
     expect(haStepGuarded(`write-file ${KEEPALIVED_STAGE}`)).toBe(true);
     expect(haStepGuarded(`keepalived -t -f ${KEEPALIVED_STAGE}`)).toBe(true);
-    expect(haStepGuarded(`keepalived -t -f /tmp/console-ha-validate.conf`)).toBe(true);
+    // validate-only confs are staged under the console HA state dir (never /tmp)
+    expect(haStepGuarded(`keepalived -t -f ${HA_STATE_DIR}/validate-20261116T000000-000000Z.conf`)).toBe(true);
+    expect(haStepGuarded(`keepalived -t -f /tmp/console-ha-validate.conf`)).toBe(false);
     expect(haStepGuarded(`install -m 0644 ${KEEPALIVED_STAGE} ${KEEPALIVED_CONF}`)).toBe(true);
     expect(haStepGuarded("systemctl restart keepalived")).toBe(true);
     expect(haStepGuarded("systemctl is-active keepalived")).toBe(true);

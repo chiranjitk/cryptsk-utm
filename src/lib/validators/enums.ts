@@ -37,7 +37,21 @@ export const syslogProtocolSchema = z.enum(["udp", "tcp", "tls"]);
 export const netflowVersionSchema = z.enum(["v5", "v9", "ipfix"]);
 export const reportRangeSchema = z.enum(["daily", "weekly", "monthly"]);
 export const reportFormatSchema = z.enum(["pdf", "html", "csv", "json"]);
-export const webhookEventsSchema = z.enum(["alerts.new", "config.updated", "wan.status", "vpn.status", "sessions.update"]);
+/**
+ * Webhook event enum (PROJECT_MEMORY §6) — F-e #7 adds the pipeline-wide
+ * values: `audit.mutation` (every audited mutation; object type in payload),
+ * `soar.playbook.run`, and `webhook.test` (the Send-test delivery).
+ */
+export const webhookEventsSchema = z.enum([
+  "alerts.new",
+  "config.updated",
+  "wan.status",
+  "vpn.status",
+  "sessions.update",
+  "audit.mutation",
+  "soar.playbook.run",
+  "webhook.test",
+]);
 export const snmpVersionSchema = z.enum(["v2c", "v3"]);
 export const directorySourceTypeSchema = z.enum(["ldap", "ad"]);
 export const ipsPresetSchema = z.enum(["conservative", "balanced", "aggressive"]);

@@ -6,7 +6,7 @@
 import { ApiError } from "@/lib/api/errors";
 import { db } from "@/lib/db";
 import { canonicalAppLabel } from "./app-catalog";
-import { assertNewIdsValid, findEmptyGroupReferences } from "./refs";
+import { assertNewIdsValid, checkIdsAgainstSets, findEmptyGroupReferences, loadNewIdSets, parseIds } from "./refs";
 import { renumberFirewallRules } from "./positions";
 
 export type FirewallRuleBody = {
@@ -67,11 +67,12 @@ export async function createRule(tenantId: number, body: FirewallRuleBody): Prom
   const dup = await db.firewallRule.findFirst({ where: { tenantId, name: body.name } });
   if (dup) throw ApiError.conflict(`Firewall rule '${body.name}' already exists`);
 
-  const max = await db.firewallRule.aggregate({ where: { tenantId }, _max: { position: true } });
-  const appendPos = (max._max.position ?? 0) + 1;
-  const desired = body.position ? Math.min(body.position, appendPos) : appendPos;
-
   const created = await db.$transaction(async (tx) => {
+    // max-position aggregate INSIDE the tx (concurrent creates race the append
+    // position — the read and the write now share the tx snapshot)
+    const max = await tx.firewallRule.aggregate({ where: { tenantId }, _max: { position: true } });
+    const appendPos = (max._max.position ?? 0) + 1;
+    const desired = body.position ? Math.min(body.position, appendPos) : appendPos;
     if (desired < appendPos) {
       await tx.firewallRule.updateMany({
         where: { tenantId, position: { gte: desired } },
@@ -186,18 +187,49 @@ export async function importRules(
   tenantId: number,
   bodies: FirewallRuleBody[],
 ): Promise<Array<{ id: number; name: string; position: number }>> {
-  const names = new Set<string>();
+  // ── pre-flight (all reads BEFORE the tx; the tx is writes only) ──
+  // batch dup-name check: intra-batch duplicates + ONE findMany against the
+  // existing rows (was a findFirst per body)
+  const batchNames = new Set<string>();
   for (const b of bodies) {
-    if (names.has(b.name)) throw ApiError.validation(`Duplicate rule name '${b.name}' inside the import batch`);
-    names.add(b.name);
-    const dup = await db.firewallRule.findFirst({ where: { tenantId, name: b.name } });
-    if (dup) throw ApiError.validation(`Firewall rule '${b.name}' already exists`);
+    if (batchNames.has(b.name)) throw ApiError.validation(`Duplicate rule name '${b.name}' inside the import batch`);
+    batchNames.add(b.name);
+  }
+  const existingRows = bodies.length
+    ? await db.firewallRule.findMany({ where: { tenantId, name: { in: bodies.map((b) => b.name) } }, select: { name: true } })
+    : [];
+  if (existingRows.length > 0) throw ApiError.validation(`Firewall rule '${existingRows[0].name}' already exists`);
+
+  // id-set loading hoisted out of the transaction (ONE pass for the whole batch)
+  const sets = await loadNewIdSets(tenantId);
+  const [addrGroups, svcGroups] = await Promise.all([
+    db.addressGroup.findMany({ where: { tenantId }, select: { id: true, name: true, memberIds: true } }),
+    db.serviceGroup.findMany({ where: { tenantId }, select: { id: true, name: true, memberIds: true } }),
+  ]);
+  for (const body of bodies) {
+    const check = checkIdsAgainstSets(body, sets);
+    if (!check.ok) throw ApiError.validation(check.message, check.details);
+    body.applicationIds = normalizeAppLabels(body.applicationIds);
+    // empty-group guard (match-any prevention) against the pre-loaded groups
+    const addrGroupIds = new Set([...body.srcAddrIds, ...body.dstAddrIds]);
+    const svcGroupIds = new Set(body.serviceIds);
+    const emptyGroups = [
+      ...addrGroups.filter((g) => addrGroupIds.has(g.id) && parseIds(g.memberIds).length === 0)
+        .map((g) => ({ groupId: g.id, groupName: g.name, kind: "address" as const })),
+      ...svcGroups.filter((g) => svcGroupIds.has(g.id) && parseIds(g.memberIds).length === 0)
+        .map((g) => ({ groupId: g.id, groupName: g.name, kind: "service" as const })),
+    ];
+    if (emptyGroups.length > 0) {
+      throw ApiError.validation(
+        `Rule references empty group(s): ${emptyGroups.map((g) => `'${g.groupName}' (${g.kind})`).join(", ")} — add members first (an empty group would match ALL traffic)`,
+        { emptyGroups },
+      );
+    }
   }
 
   const created = await db.$transaction(async (tx) => {
     const out: Array<{ id: number; name: string; position: number; desired: number | null }> = [];
     for (const body of bodies) {
-      await assertRuleIdsValid(tenantId, body);
       const row = await tx.firewallRule.create({
         data: {
           tenantId,
@@ -233,7 +265,7 @@ export async function importRules(
     const sorted = [...out].sort((a, b) => (a.desired ?? Number.MAX_SAFE_INTEGER) - (b.desired ?? Number.MAX_SAFE_INTEGER));
     let p = 1;
     for (const r of sorted) {
-      await tx.firewallRule.update({ where: { id: r.id }, data: { position: p++ } });
+      await tx.firewallRule.update({ where: { id: r.id, tenantId }, data: { position: p++ } });
     }
     return out.map(({ id, name }) => ({ id, name }));
   });

@@ -15,7 +15,7 @@
  * purpose, so the row text is directly visible in the buffer).
  */
 
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -66,7 +66,7 @@ describe("batch whitelist", () => {
     expect(out.results[0].status).toBe(400);
     expect(out.results[0].error).toMatch(/not batch-whitelisted/i);
     expect(out.ok).toBe(false);
-    expect(out.executed).toBe(1);
+    expect(out.executed).toBe(0); // F-e #9 semantics: failed/denied ops are not "executed"
     expect(out.failed).toBe(1);
     expect(await db.zone.count({ where: { name: "evil" } })).toBe(0);
   });
@@ -92,9 +92,10 @@ describe("batch stop-on-first-error", () => {
     expect(out.results.map((r) => r.ok)).toEqual([true, false]);
     expect(out.results[1].status).toBe(409);
     expect(out.results[1].error).toMatch(/already exists/i);
-    expect(out.executed).toBe(2);
+    expect(out.executed).toBe(1); // F-e #9 semantics: SUCCESSFUL ops only
     expect(out.failed).toBe(1);
     expect(out.ok).toBe(false);
+    expect(out.results).toHaveLength(2);
     // the third operation was never attempted
     expect(await db.addressObject.count({ where: { name: `${NAME_PREFIX}third` } })).toBe(0);
     expect(await db.addressObject.count({ where: { name: `${NAME_PREFIX}first` } })).toBe(1);
@@ -150,7 +151,30 @@ describe("batch RBAC mapping", () => {
     expect(out.results[0].ok).toBe(false);
     expect(out.results[0].status).toBe(403);
     expect(out.results[0].error).toMatch(/may not write firewall/i);
+    expect(out.executed).toBe(0); // F-e #9: the route gates the config-version snapshot on this
+    expect(out.failed).toBe(1);
     expect(await db.addressObject.count({ where: { name: `${NAME_PREFIX}denied` } })).toBe(0);
+  });
+
+  it("masks unexpected executor errors (F-e #8) — no internal message leaks into the result", async () => {
+    const leakSpy = vi.spyOn(db.addressObject, "findFirst").mockRejectedValueOnce(new TypeError("E_SECRET_INTERNAL pg://admin:hunter2@db"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await batch.executeBatchOperations(
+        adminAuth,
+        [{ method: "POST", path: "/address-objects", body: ipBody(`${NAME_PREFIX}masked`) }],
+        "req-f-e8", // requestId — echoed into the server-side error log
+      );
+      expect(out.ok).toBe(false);
+      expect(out.results[0].status).toBe(500);
+      expect(out.results[0].error).toBe("Internal error during batch operation");
+      expect(out.results[0].error).not.toContain("hunter2"); // internals never leak
+      // details are logged server-side with the requestId for correlation
+      expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("[batch] req-f-e8"), expect.anything());
+    } finally {
+      leakSpy.mockRestore();
+      errSpy.mockRestore();
+    }
   });
 });
 

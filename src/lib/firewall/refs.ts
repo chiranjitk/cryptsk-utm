@@ -11,6 +11,8 @@
  *    a service object hidden inside a referenced service group is NOT free.
  *  • zoneReferences also reports NAT rules whose outgoingIface sits inside the
  *    zone (NAT references zones through interface names, not zone ids).
+ *  • the rule tables are loaded ONCE per reference scan and via-group chains
+ *    expand in memory (the per-group rescan was an N+1 over fw+nat rules).
  */
 
 import { db } from "@/lib/db";
@@ -29,15 +31,37 @@ export interface RefRow {
   ruleType: "firewall" | "nat";
 }
 
-/** Scan firewall + NAT rules for `id` inside the given JSON column (both directions). */
-async function scanRuleArrays(
-  tenantId: number,
-  id: number,
-  columns: ("addrIds" | "serviceIds" | "zoneIds")[],
-): Promise<RefRow[]> {
+/** One-read rule snapshot — every ref check expands against this in memory. */
+interface LoadedRules {
+  fw: Array<{
+    name: string;
+    srcAddrIds: string;
+    dstAddrIds: string;
+    serviceIds: string;
+    srcZoneIds: string;
+    dstZoneIds: string;
+  }>;
+  nat: Array<{ id: number; name: string | null; srcAddrIds: string; dstAddrIds: string; serviceIds: string }>;
+}
+
+async function loadRulesOnce(tenantId: number): Promise<LoadedRules> {
+  const [fw, nat] = await Promise.all([
+    db.firewallRule.findMany({
+      where: { tenantId },
+      select: { name: true, srcAddrIds: true, dstAddrIds: true, serviceIds: true, srcZoneIds: true, dstZoneIds: true },
+    }),
+    db.natRule.findMany({
+      where: { tenantId },
+      select: { id: true, name: true, srcAddrIds: true, dstAddrIds: true, serviceIds: true },
+    }),
+  ]);
+  return { fw, nat };
+}
+
+/** Scan a loaded rule snapshot for `id` inside the given JSON columns (both directions). */
+function ruleHits(rules: LoadedRules, id: number, columns: ("addrIds" | "serviceIds" | "zoneIds")[]): RefRow[] {
   const refs: RefRow[] = [];
-  const fw = await db.firewallRule.findMany({ where: { tenantId } });
-  for (const r of fw) {
+  for (const r of rules.fw) {
     const hit = columns.some((c) => {
       // NOTE: parse each JSON column SEPARATELY — concatenating two JSON arrays
       // ("[1] [5]") is invalid JSON and silently yields no references.
@@ -51,8 +75,7 @@ async function scanRuleArrays(
     });
     if (hit) refs.push({ ruleName: r.name, ruleType: "firewall" });
   }
-  const nat = await db.natRule.findMany({ where: { tenantId } });
-  for (const r of nat) {
+  for (const r of rules.nat) {
     const hit = columns.some((c) => {
       const ids = c === "serviceIds" ? parseIds(r.serviceIds) : [...parseIds(r.srcAddrIds), ...parseIds(r.dstAddrIds)];
       return ids.includes(id);
@@ -62,40 +85,37 @@ async function scanRuleArrays(
   return refs;
 }
 
+/** One fw+nat read; direct hits + via-group hits expand IN MEMORY (no per-group rescan). */
 export async function addressObjectReferences(tenantId: number, id: number): Promise<RefRow[]> {
-  // referenced directly by rules OR via a group that a rule references
-  const direct = await scanRuleArrays(tenantId, id, ["addrIds"]);
+  const rules = await loadRulesOnce(tenantId);
+  const direct = ruleHits(rules, id, ["addrIds"]);
   const groups = await db.addressGroup.findMany({ where: { tenantId } });
-  const viaGroup = await Promise.all(
-    groups
-      .filter((g) => parseIds(g.memberIds).includes(id))
-      .map(async (g) => {
-        const nested = await scanRuleArrays(tenantId, g.id, ["addrIds"]);
-        return nested.map((n) => ({ ...n, ruleName: `${n.ruleName} (via group ${g.name})` }));
-      }),
-  );
-  return [...direct, ...viaGroup.flat()];
+  const viaGroup = groups
+    .filter((g) => parseIds(g.memberIds).includes(id))
+    .flatMap((g) =>
+      ruleHits(rules, g.id, ["addrIds"]).map((n) => ({ ...n, ruleName: `${n.ruleName} (via group ${g.name})` })),
+    );
+  return [...direct, ...viaGroup];
 }
 
 export function addressGroupReferences(tenantId: number, id: number): Promise<RefRow[]> {
   return scanRuleArrays(tenantId, id, ["addrIds"]);
 }
 
+/** One fw+nat read; direct hits + via-group hits expand IN MEMORY (no per-group rescan). */
 export async function serviceObjectReferences(tenantId: number, id: number): Promise<RefRow[]> {
   // referenced directly by rules OR via a group that a rule references —
   // deleting a member out from under a live group leaves a dangling id that
   // is silently skipped at expansion (a rule quietly loses its service scope)
-  const direct = await scanRuleArrays(tenantId, id, ["serviceIds"]);
+  const rules = await loadRulesOnce(tenantId);
+  const direct = ruleHits(rules, id, ["serviceIds"]);
   const groups = await db.serviceGroup.findMany({ where: { tenantId } });
-  const viaGroup = await Promise.all(
-    groups
-      .filter((g) => parseIds(g.memberIds).includes(id))
-      .map(async (g) => {
-        const nested = await scanRuleArrays(tenantId, g.id, ["serviceIds"]);
-        return nested.map((n) => ({ ...n, ruleName: `${n.ruleName} (via group ${g.name})` }));
-      }),
-  );
-  return [...direct, ...viaGroup.flat()];
+  const viaGroup = groups
+    .filter((g) => parseIds(g.memberIds).includes(id))
+    .flatMap((g) =>
+      ruleHits(rules, g.id, ["serviceIds"]).map((n) => ({ ...n, ruleName: `${n.ruleName} (via group ${g.name})` })),
+    );
+  return [...direct, ...viaGroup];
 }
 
 export function serviceGroupReferences(tenantId: number, id: number): Promise<RefRow[]> {
@@ -124,6 +144,15 @@ function safeJsonStrings(raw: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** Single-scan wrapper for the group-reference / zone-reference helpers. */
+async function scanRuleArrays(
+  tenantId: number,
+  id: number,
+  columns: ("addrIds" | "serviceIds" | "zoneIds")[],
+): Promise<RefRow[]> {
+  return ruleHits(await loadRulesOnce(tenantId), id, columns);
 }
 
 export async function scheduleReferences(tenantId: number, id: number): Promise<RefRow[]> {
@@ -224,40 +253,80 @@ export async function assertNewIdsValid(tenantId: number, body: {
   ipsPolicyId?: number | null;
   qosPolicyId?: number | null;
 }): Promise<{ ok: true } | { ok: false; message: string; details: unknown }> {
-  const [zones, addrs, services, users] = await Promise.all([
+  return checkIdsAgainstSets(body, await loadNewIdSets(tenantId));
+}
+
+/** Pre-loaded id sets (import path: ONE load for the whole batch). */
+export interface NewIdSets {
+  zones: Set<number>;
+  addrs: Set<number>;
+  services: Set<number>;
+  users: Set<number>;
+  schedules: Set<number>;
+  ipsPolicies: Set<number>;
+  qosPolicies: Set<number>;
+}
+
+export async function loadNewIdSets(tenantId: number): Promise<NewIdSets> {
+  const [zones, addrs, services, users, schedules, ipsPolicies, qosPolicies] = await Promise.all([
     loadZoneIdSet(tenantId),
     loadAddressIdSet(tenantId),
     loadServiceIdSet(tenantId),
     loadUserIdSet(tenantId),
+    db.scheduleObject.findMany({ where: { tenantId }, select: { id: true } }),
+    db.ipsPolicy.findMany({ where: { tenantId }, select: { id: true } }),
+    db.qosPolicy.findMany({ where: { tenantId }, select: { id: true } }),
   ]);
+  return {
+    zones,
+    addrs,
+    services,
+    users,
+    schedules: new Set(schedules.map((s) => s.id)),
+    ipsPolicies: new Set(ipsPolicies.map((p) => p.id)),
+    qosPolicies: new Set(qosPolicies.map((p) => p.id)),
+  };
+}
 
-  const zoneCheck = checkIds([...body.srcZoneIds, ...body.dstZoneIds], zones);
+/** In-memory id checks against pre-loaded sets — same messages as assertNewIdsValid. */
+export function checkIdsAgainstSets(
+  body: {
+    srcZoneIds: number[];
+    dstZoneIds: number[];
+    srcAddrIds: number[];
+    dstAddrIds: number[];
+    serviceIds: number[];
+    userIds: number[];
+    scheduleId?: number | null;
+    ipsPolicyId?: number | null;
+    qosPolicyId?: number | null;
+  },
+  sets: NewIdSets,
+): { ok: true } | { ok: false; message: string; details: unknown } {
+  const zoneCheck = checkIds([...body.srcZoneIds, ...body.dstZoneIds], sets.zones);
   if (!zoneCheck.ok)
     return { ok: false, message: "Unknown zone id in srcZoneIds/dstZoneIds", details: { offendingIds: zoneCheck.offending } };
 
-  const addrCheck = checkIds([...body.srcAddrIds, ...body.dstAddrIds], addrs);
+  const addrCheck = checkIds([...body.srcAddrIds, ...body.dstAddrIds], sets.addrs);
   if (!addrCheck.ok)
     return { ok: false, message: "Unknown address object/group id in srcAddrIds/dstAddrIds", details: { offendingIds: addrCheck.offending } };
 
-  const svcCheck = checkIds(body.serviceIds, services);
+  const svcCheck = checkIds(body.serviceIds, sets.services);
   if (!svcCheck.ok)
     return { ok: false, message: "Unknown service object/group id in serviceIds", details: { offendingIds: svcCheck.offending } };
 
-  const userCheck = checkIds(body.userIds, users);
+  const userCheck = checkIds(body.userIds, sets.users);
   if (!userCheck.ok)
     return { ok: false, message: "Unknown user id in userIds", details: { offendingIds: userCheck.offending } };
 
-  if (body.scheduleId != null) {
-    const s = await db.scheduleObject.findFirst({ where: { tenantId, id: body.scheduleId } });
-    if (!s) return { ok: false, message: "Unknown scheduleId", details: { offendingIds: [body.scheduleId] } };
+  if (body.scheduleId != null && !sets.schedules.has(body.scheduleId)) {
+    return { ok: false, message: "Unknown scheduleId", details: { offendingIds: [body.scheduleId] } };
   }
-  if (body.ipsPolicyId != null) {
-    const p = await db.ipsPolicy.findFirst({ where: { tenantId, id: body.ipsPolicyId } });
-    if (!p) return { ok: false, message: "Unknown ipsPolicyId", details: { offendingIds: [body.ipsPolicyId] } };
+  if (body.ipsPolicyId != null && !sets.ipsPolicies.has(body.ipsPolicyId)) {
+    return { ok: false, message: "Unknown ipsPolicyId", details: { offendingIds: [body.ipsPolicyId] } };
   }
-  if (body.qosPolicyId != null) {
-    const q = await db.qosPolicy.findFirst({ where: { tenantId, id: body.qosPolicyId } });
-    if (!q) return { ok: false, message: "Unknown qosPolicyId", details: { offendingIds: [body.qosPolicyId] } };
+  if (body.qosPolicyId != null && !sets.qosPolicies.has(body.qosPolicyId)) {
+    return { ok: false, message: "Unknown qosPolicyId", details: { offendingIds: [body.qosPolicyId] } };
   }
   return { ok: true };
 }

@@ -98,6 +98,9 @@ const LOGS_RING_CAP = 2000;
 const DNS_RING_CAP = 2000;
 const TICK_MS = 2000;
 
+/** severity rank for the notifications threshold (F-e #12) — info < warning < critical. */
+const SEVERITY_RANK: Record<string, number> = { info: 0, warning: 1, critical: 2 };
+
 const WAN_EVERY = 5; // ticks → 10 s gateway probes
 const SOURCES_EVERY = 5; // ticks → suricata / nft / wg / unbound tails
 const SLOW_EVERY = 30; // ticks → kea leases, interface sync, disk, services
@@ -273,7 +276,7 @@ class HostCollector {
       if (prev !== result.state) {
         this.recordWanTransition(iface, prev, result.state, result.latencyMs);
         this.persistWanState(iface, result.state);
-        emitEvent({ type: "wan:status", payload: { iface, state: result.state, latencyMs: result.latencyMs } });
+        emitEvent({ type: "wan:status", payload: { iface, state: result.state, latencyMs: result.latencyMs, tenantId: 1 } });
         this.wanOsReconverge(); // egress decision may have flipped
       }
     }
@@ -308,6 +311,15 @@ class HostCollector {
 
   private async bootstrap(): Promise<void> {
     console.log("[host-collector] real data plane starting (ADR-021) — no simulated data");
+    // F-e #11 — boot-time single-tenant contract assertion (warn once per boot)
+    try {
+      const otherTenants = await db.tenant.count({ where: { id: { not: 1 } } });
+      if (otherTenants > 0) {
+        console.warn("multi-tenant detected: engine telemetry targets tenant 1 only");
+      }
+    } catch {
+      // non-fatal — the contract check must never break bootstrap
+    }
     // seed sampler baselines so the first deltas are sane
     this.lastNetDev = await readNetDev();
     this.lastCpu = await readCpuTimes();
@@ -543,7 +555,7 @@ class HostCollector {
       if (applied.changed) {
         this.recordWanTransition(iface, prevState, applied.state, outcome.latencyMs);
         this.persistWanState(iface, applied.state);
-        emitEvent({ type: "wan:status", payload: { iface, state: applied.state, latencyMs: outcome.latencyMs } });
+        emitEvent({ type: "wan:status", payload: { iface, state: applied.state, latencyMs: outcome.latencyMs, tenantId: 1 } });
         transitioned = true;
       }
     }
@@ -822,7 +834,7 @@ class HostCollector {
 
       if (cfg.status !== status) {
         await db.vpnConfig.update({ where: { id: cfg.id }, data: { status, statusMessage: status === "up" ? `peer handshake ${peer.handshakeAgeSec}s ago` : status === "idle" ? "stale handshake" : "no handshake yet" } }).catch(() => {});
-        emitEvent({ type: "vpn:status", payload: { vpnId: cfg.id, status: status === "up" ? "up" : "down" } });
+        emitEvent({ type: "vpn:status", payload: { vpnId: cfg.id, status: status === "up" ? "up" : "down", tenantId: 1 } });
       }
     }
   }
@@ -874,6 +886,7 @@ class HostCollector {
       blocked: false,
       category: null,
       latencyMs: 0,
+      tenantId: 1, // host data plane serves the console tenant (audit fix F-d)
     };
   }
 
@@ -1131,6 +1144,8 @@ class HostCollector {
   }
 
   private async emitSystemNotification(severity: string, title: string, message: string): Promise<void> {
+    // F-e #12: drop rows below the configured severity threshold BEFORE storing
+    if (!(await this.passesSeverityThreshold(severity))) return;
     const notification = await db.notification
       .create({ data: { tenantId: 1, type: "system", severity, title, message, sourceModule: "system" } })
       .catch(() => null);
@@ -1140,6 +1155,7 @@ class HostCollector {
       payload: {
         notification: {
           id: notification.id,
+          tenantId: notification.tenantId,
           type: notification.type,
           severity: notification.severity,
           title: notification.title,
@@ -1150,6 +1166,29 @@ class HostCollector {
         },
       },
     });
+  }
+
+  /** F-e #12 — notifications severity threshold cache (per tick). */
+  private sevThresholdCache: { tick: number; threshold: "info" | "warning" | "critical" } = { tick: -1, threshold: "info" };
+
+  /** True when `severity` clears the notifications/severity_threshold setting (unknown severities store). */
+  private async passesSeverityThreshold(severity: string): Promise<boolean> {
+    const rank = SEVERITY_RANK[severity];
+    if (rank === undefined) return true; // non-standard severity — never silently drop
+    if (this.sevThresholdCache.tick !== this.tickNo) {
+      let threshold: "info" | "warning" | "critical" = "info";
+      try {
+        const row = await db.systemSetting.findUnique({
+          where: { tenantId_category_key: { tenantId: 1, category: "notifications", key: "severity_threshold" } },
+        });
+        const parsed = row ? (JSON.parse(row.value) as { threshold?: string }) : null;
+        if (parsed?.threshold === "warning" || parsed?.threshold === "critical") threshold = parsed.threshold;
+      } catch {
+        // unreadable setting — keep the default (store everything)
+      }
+      this.sevThresholdCache = { tick: this.tickNo, threshold };
+    }
+    return rank >= SEVERITY_RANK[this.sevThresholdCache.threshold];
   }
 }
 

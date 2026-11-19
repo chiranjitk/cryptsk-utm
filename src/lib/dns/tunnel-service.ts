@@ -27,6 +27,9 @@ import {
 } from "./tunnel-detect";
 import type { TunnelFindingStatus, TunnelFindingsQuery, TunnelRunOptions } from "@/lib/validators/dns-tunnel";
 
+/** Ring/seam row plus the tenant tag carried by engine ring entries. */
+type ScopedQueryInput = TunnelQueryInput & { tenantId?: number };
+
 // ── DTOs ────────────────────────────────────────────────────────────────────
 
 export interface DnsTunnelFindingDetail {
@@ -130,17 +133,20 @@ function toFindingDTO(row: {
   };
 }
 
-/** Engine ring rows (all data-plane modes) inside the lookback, in the pure
- *  engine's input shape. Lazy import — keeps test harnesses engine-free. */
-async function engineRowsInLookback(lookbackMinutes: number): Promise<TunnelQueryInput[]> {
+/** Engine ring rows (all data-plane modes) inside the lookback FOR ONE TENANT,
+ *  in the pure engine's input shape. Ring rows carry tenantId since audit fix
+ *  F-d; rows without the tag (defensive) are treated as tenant 1. Lazy import
+ *  — keeps test harnesses engine-free. */
+async function engineRowsInLookback(lookbackMinutes: number, tenantId: number): Promise<ScopedQueryInput[]> {
   const { getEngine } = await import("@/lib/engine");
   const ring = getEngine().dnsRing;
   const sinceMs = Date.now() - lookbackMinutes * 60_000;
-  const rows: TunnelQueryInput[] = [];
+  const rows: ScopedQueryInput[] = [];
   for (const r of ring) {
+    if ((r.tenantId ?? 1) !== tenantId) continue; // cross-tenant isolation (audit fix F-d)
     const t = Date.parse(r.ts);
     if (!Number.isFinite(t) || t < sinceMs) continue;
-    rows.push({ clientIp: r.clientIp, domain: r.domain, ts: r.ts });
+    rows.push({ clientIp: r.clientIp, domain: r.domain, ts: r.ts, tenantId: r.tenantId });
   }
   return rows;
 }
@@ -162,14 +168,24 @@ function detailFor(rows: TunnelQueryInput[]): string {
  * client+window+verdict). Returns honest counters; with no rows in scope it
  * returns {findings: 0, reason: "no dns query data in window"} and writes
  * nothing.
+ *
+ * tenantId is REQUIRED (audit fix F-d): the engine ring rows are tenant-tagged
+ * and the pass only analyzes its own tenant's rows — the old silent default
+ * to tenant 1 could attribute another tenant's clients to tenant 1.
  */
 export async function runDetection(opts: RunDetectionInput = {}): Promise<RunDetectionResult> {
   const windowMinutes = opts.windowMinutes ?? DEFAULTS.windowMinutes;
   const stepMinutes = opts.stepMinutes ?? DEFAULTS.stepMinutes;
   const lookbackMinutes = opts.lookbackMinutes ?? DEFAULTS.lookbackMinutes;
-  const tenantId = opts.tenantId ?? 1;
+  if (opts.tenantId === undefined) {
+    throw ApiError.validation("tenantId is required for tunnel detection (ring rows are tenant-scoped)");
+  }
+  const tenantId = opts.tenantId;
 
-  const rows = opts.queries ?? (await engineRowsInLookback(lookbackMinutes));
+  const rows: ScopedQueryInput[] =
+    // test/batch seam rows are used verbatim (documented on RunDetectionInput);
+    // production always analyzes the tenant-filtered engine ring
+    opts.queries ?? (await engineRowsInLookback(lookbackMinutes, tenantId));
   const result: RunDetectionResult = {
     findings: 0,
     created: 0,
@@ -193,40 +209,53 @@ export async function runDetection(opts: RunDetectionInput = {}): Promise<RunDet
       if (stat.verdict === "clean") continue; // findings table is suspicious|likely_tunnel only
       const clientRows = rows.filter((r) => r.clientIp === stat.clientIp && inWindow(r, win));
       const detail = detailFor(clientRows);
-      const existing = await db.dnsTunnelFinding.findFirst({
-        where: { tenantId, clientIp: stat.clientIp, windowStart: win.windowStart, verdict: stat.verdict },
+      const match = { tenantId, clientIp: stat.clientIp, windowStart: win.windowStart, verdict: stat.verdict };
+      const payload = {
+        windowEnd: win.windowEnd,
+        queryCount: stat.queryCount,
+        uniqueDomains: stat.uniqueDomains,
+        maxLabelLength: stat.maxLabelLength,
+        entropyScore: stat.avgDomainEntropy,
+        detail,
+      };
+      // Per-window upsert — the old findFirst-then-create raced under two
+      // concurrent runs (both miss → both create → duplicate rows). The
+      // updateMany+create pair runs in one transaction so SQLite's write lock
+      // serializes concurrent scanners: the second run's updateMany sees the
+      // first run's row. A P2002 lost-create race re-finds and updates.
+      // Invariant: a single row per (clientIp, windowStart, verdict).
+      await db.$transaction(async (tx) => {
+        const matched = await tx.dnsTunnelFinding.updateMany({ where: match, data: payload });
+        if (matched.count > 0) {
+          result.updated += 1;
+          return;
+        }
+        try {
+          await tx.dnsTunnelFinding.create({
+            data: {
+              tenantId,
+              clientIp: stat.clientIp,
+              windowStart: win.windowStart,
+              windowEnd: win.windowEnd,
+              queryCount: stat.queryCount,
+              uniqueDomains: stat.uniqueDomains,
+              maxLabelLength: stat.maxLabelLength,
+              entropyScore: stat.avgDomainEntropy,
+              verdict: stat.verdict,
+              status: "open",
+              detail,
+            },
+          });
+          result.created += 1;
+        } catch (err) {
+          if (typeof err === "object" && err !== null && String((err as { code?: unknown }).code) === "P2002") {
+            await tx.dnsTunnelFinding.updateMany({ where: match, data: payload });
+            result.updated += 1;
+            return;
+          }
+          throw err;
+        }
       });
-      if (existing) {
-        await db.dnsTunnelFinding.update({
-          where: { id: existing.id },
-          data: {
-            windowEnd: win.windowEnd,
-            queryCount: stat.queryCount,
-            uniqueDomains: stat.uniqueDomains,
-            maxLabelLength: stat.maxLabelLength,
-            entropyScore: stat.avgDomainEntropy,
-            detail,
-          },
-        });
-        result.updated += 1;
-      } else {
-        await db.dnsTunnelFinding.create({
-          data: {
-            tenantId,
-            clientIp: stat.clientIp,
-            windowStart: win.windowStart,
-            windowEnd: win.windowEnd,
-            queryCount: stat.queryCount,
-            uniqueDomains: stat.uniqueDomains,
-            maxLabelLength: stat.maxLabelLength,
-            entropyScore: stat.avgDomainEntropy,
-            verdict: stat.verdict,
-            status: "open",
-            detail,
-          },
-        });
-        result.created += 1;
-      }
     }
   }
 
@@ -276,7 +305,17 @@ export async function listFindings(
   };
 }
 
+// ── status transitions (closed map, audit fix F-d — mirrors the incidents
+// module: open → acknowledged → resolved, open → resolved direct skip;
+// acknowledged → open and resolved → anything are illegal 400s) ─────────────
+
 const STATUSES: readonly TunnelFindingStatus[] = ["open", "acknowledged", "resolved"] as const;
+
+const FINDING_TRANSITIONS: Record<TunnelFindingStatus, TunnelFindingStatus[]> = {
+  open: ["acknowledged", "resolved"],
+  acknowledged: ["resolved"],
+  resolved: [],
+};
 
 export async function updateFindingStatus(tenantId: number, id: number, status: string): Promise<DnsTunnelFindingDTO> {
   if (!STATUSES.includes(status as TunnelFindingStatus)) {
@@ -284,6 +323,14 @@ export async function updateFindingStatus(tenantId: number, id: number, status: 
   }
   const existing = await db.dnsTunnelFinding.findFirst({ where: { id, tenantId } });
   if (!existing) throw ApiError.notFound("Tunnel finding not found");
+  const current = (STATUSES as readonly string[]).includes(existing.status)
+    ? (existing.status as TunnelFindingStatus)
+    : "open";
+  if (!FINDING_TRANSITIONS[current].includes(status as TunnelFindingStatus)) {
+    throw ApiError.validation(
+      `Illegal transition ${current} → ${status} (allowed from '${current}': ${FINDING_TRANSITIONS[current].join(", ") || "none"})`,
+    );
+  }
   const row = await db.dnsTunnelFinding.update({ where: { id: existing.id }, data: { status } });
   return toFindingDTO(row);
 }

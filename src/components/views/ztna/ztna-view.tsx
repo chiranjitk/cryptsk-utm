@@ -884,6 +884,20 @@ function PostureTab({ profiles }: { profiles: PostureProfileDTO[] }) {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ZTNA_KEY });
 
+  // Explicit continuous-validation sweep (audit fix F-d — GET /posture-checks
+  // no longer mutates; the console advances due re-checks via this button).
+  const runValidation = useMutation({
+    mutationFn: () => ztnaApi.runValidation(),
+    onSuccess: (res) => {
+      toastOk(
+        res.changed > 0 ? "Validation run — verdicts changed" : "Validation run — nothing changed",
+        `${res.rechecked} device${res.rechecked === 1 ? "" : "s"} re-checked, ${res.changed} verdict flip${res.changed === 1 ? "" : "s"}`,
+      );
+      invalidate();
+    },
+    onError: (err) => toastErr(err, "Could not run validation"),
+  });
+
   const removeProfile = useMutation({
     mutationFn: (id: number) => ztnaApi.deleteProfile(id),
     onSuccess: () => {
@@ -925,9 +939,20 @@ function PostureTab({ profiles }: { profiles: PostureProfileDTO[] }) {
               Latest check per device — continuous validation re-runs stored results every 60 min (endpoint agent / WMI / SSH probe transport out of console scope).
             </p>
           </div>
-          <Button size="sm" disabled={profiles.length === 0} onClick={() => setCheckDialog(true)}>
-            <Icons.Stethoscope className="mr-1 h-4 w-4" /> Record check
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={runValidation.isPending}
+              onClick={() => runValidation.mutate()}
+            >
+              <Icons.RefreshCw className={cn("mr-1 h-4 w-4", runValidation.isPending && "animate-spin")} />
+              Run validation
+            </Button>
+            <Button size="sm" disabled={profiles.length === 0} onClick={() => setCheckDialog(true)}>
+              <Icons.Stethoscope className="mr-1 h-4 w-4" /> Record check
+            </Button>
+          </div>
         </div>
         {checksQuery.isLoading ? (
           <TableSkeleton rows={4} cols={5} />

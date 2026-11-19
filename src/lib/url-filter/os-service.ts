@@ -37,6 +37,8 @@ import {
   type UfRenderInput,
 } from "./os";
 
+export { hardUfRefusal } from "./os";
+
 // ── db collectors ───────────────────────────────────────────────────────────
 
 /** Defensive parse of the fileTypesBlocked JSON column — bad payload → []. */
@@ -257,6 +259,7 @@ export interface UfApplyOutcome {
     skipped: Array<{ name: string; reason: string }>;
     confText: string;
     guarded: boolean;
+    refused: string | null;
   };
   results: UfStepResult[];
 }
@@ -371,6 +374,7 @@ export async function execUrlFilterApplyPlan(tenantId: number, gateOn: boolean):
     skipped: plan.skipped,
     confText: plan.confText,
     guarded: plan.guarded,
+    refused: plan.refused,
   });
 
   const preview = (reason: string, refused?: string): UfApplyOutcome => ({
@@ -398,6 +402,10 @@ export async function execUrlFilterApplyPlan(tenantId: number, gateOn: boolean):
   }
   if (!plan.guarded) {
     return { ...preview("plan failed the command whitelist — refusing to execute", "whitelist refusal"), gate: "on" };
+  }
+  if (plan.refused) {
+    // renderer re-validation refusal (hardSslRefusal pattern) — nothing execs
+    return { ...preview("plan refused — custom-list value failed the create-time grammar re-validation", plan.refused), gate: "on" };
   }
 
   const results: UfStepResult[] = await writePlanFiles(plan);
@@ -473,6 +481,7 @@ export async function rollbackUrlFilterOs(tenantId: number, gateOn: boolean): Pr
     skipped: [] as Array<{ name: string; reason: string }>,
     confText: "",
     guarded: true,
+    refused: null as string | null,
   });
 
   if (!backupDir) {

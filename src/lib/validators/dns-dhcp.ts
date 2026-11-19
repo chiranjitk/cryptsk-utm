@@ -84,9 +84,20 @@ export const dnsPolicyUpdateSchema = dnsPolicyCreateSchema
 
 const SRV_VALUE_RE = /^\d{1,5}\s+\d{1,5}\s+[a-zA-Z0-9_]([a-zA-Z0-9_-]{0,61}[a-zA-Z0-9_])?(\.[a-zA-Z0-9_]([a-zA-Z0-9_-]{0,61}[a-zA-Z0-9_])?)+$/;
 
+/** DNS record owner name — per M06 §5.2: a single label or dotted chain of
+ *  letters/digits/hyphens/underscores (SRV owner names keep the "_" prefix),
+ *  max wire length 253. Rejects spaces/quotes/slashes outright so the
+ *  unbound renderer never sees characters it cannot quote safely. */
+const OWNER_NAME_RE = /^[A-Za-z0-9._-]+$/;
+
 const dnsRecordBaseSchema = z.object({
   zone: dnsNameSchema,
-  name: nonEmpty("Record name", 253),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Record name is required")
+    .max(253, "Record name must be ≤ 253 chars")
+    .regex(OWNER_NAME_RE, "Record name must be an owner name (letters, digits, dots, hyphens, underscores)"),
   type: dnsRecordTypeSchema,
   value: nonEmpty("Record value", 1024),
   ttl: ttlSchema.default(3600),
@@ -117,6 +128,12 @@ export const dnsRecordCreateSchema = dnsRecordBaseSchema.superRefine((rec, ctx) 
         break;
       case "TXT":
         if (rec.value.length > 255) ctx.addIssue({ code: "custom", path: ["value"], message: "TXT string must be ≤ 255 chars" });
+        // quotes/backslash break the unbound local-data wrapping: " is escaped
+        // by the renderer but the line is then wrapped in SINGLE quotes, so a
+        // ' (or a bare \\) corrupts the directive — reject outright
+        if (/['"\\]/.test(rec.value)) {
+          ctx.addIssue({ code: "custom", path: ["value"], message: "TXT value must not contain quotes or backslashes" });
+        }
         break;
       case "SRV":
         if (!SRV_VALUE_RE.test(rec.value)) ctx.addIssue({ code: "custom", path: ["value"], message: "SRV value must be 'weight port target' (e.g. 10 60 5060 sip.corp.local)" });
@@ -181,6 +198,20 @@ export const resolverSettingsSchema = z.object({
 
 // ── DHCP subnets ────────────────────────────────────────────────────────────
 
+/** DHCP option codes — 1-254. 0 (pad) and 255 (END) are protocol-level and
+ *  the kea renderer skips anything outside the range (dhcp/os.ts), so reject
+ *  them at the edge instead of silently dropping entries. */
+const dhcpOptionsSchema = z
+  .record(z.string().regex(/^\d{1,3}$/, "Option keys are DHCP option codes (digits)"), z.string().max(255))
+  .refine(
+    (opts) => Object.keys(opts).every((k) => {
+      const n = Number(k);
+      return Number.isInteger(n) && n >= 1 && n <= 254;
+    }),
+    "DHCP option codes must be 1-254 (0 is pad, 255 is END)",
+  )
+  .default({});
+
 export const dhcpSubnetCreateSchema = z.object({
   interfaceName: ifaceNameSchema,
   family: dhcpFamilySchema.default("ipv4"),
@@ -190,7 +221,7 @@ export const dhcpSubnetCreateSchema = z.object({
   gateway: ipAddressSchema.nullish(),
   dnsServers: z.array(ipAddressSchema).max(4, "At most 4 DNS servers").default([]),
   leaseTime: leaseTimeSchema.default(86400),
-  options: z.record(z.string().regex(/^\d{1,3}$/, "Option keys are DHCP option codes (digits)"), z.string().max(255)).default({}),
+  options: dhcpOptionsSchema,
   enabled: z.boolean().default(true),
 });
 

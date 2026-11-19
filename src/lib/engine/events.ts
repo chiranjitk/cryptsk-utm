@@ -51,6 +51,9 @@ export interface IpsEventEntry {
 
 export interface NotificationEntry {
   id: number;
+  /** Owning tenant — emitted alongside the row so webhook fan-out stays
+   *  tenant-scoped (F-e #2). Optional for legacy payloads. */
+  tenantId?: number;
   type: string;
   severity: string;
   title: string;
@@ -69,12 +72,14 @@ export type EngineEvent =
       type: "sessions:update";
       payload: {
         kind: "vpn" | "identity";
+        /** Owning tenant (F-e #2) — engine telemetry targets tenant 1. */
+        tenantId?: number;
         diff: Array<{ id: number; userName?: string | null; status?: string; bytesIn?: number; bytesOut?: number; lastActivity?: string }>;
       };
     }
-  | { seq: number; type: "wan:status"; payload: { iface: string; state: "up" | "down" | "degraded"; latencyMs?: number | null } }
-  | { seq: number; type: "vpn:status"; payload: { vpnId: number; status: "up" | "down" | "connecting" | "error"; statusMessage?: string } }
-  | { seq: number; type: "config:updated"; payload: { section: string } };
+  | { seq: number; type: "wan:status"; payload: { iface: string; state: "up" | "down" | "degraded"; latencyMs?: number | null; tenantId?: number } }
+  | { seq: number; type: "vpn:status"; payload: { vpnId: number; status: "up" | "down" | "connecting" | "error"; statusMessage?: string; tenantId?: number } }
+  | { seq: number; type: "config:updated"; payload: { section: string; tenantId?: number } };
 
 const MAX_EVENTS = 1000;
 

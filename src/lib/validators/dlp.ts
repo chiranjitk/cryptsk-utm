@@ -19,6 +19,27 @@ export const dlpActionSchema = z.enum(["alert", "block", "quarantine"]);
 export const dlpProtocolSchema = z.enum(["http", "https", "smtp", "ftp", "dns"]);
 export const dlpIncidentStatusSchema = z.enum(["new", "reviewing", "resolved", "false_positive"]);
 
+// ── ReDoS guard (audit fix F-d) ─────────────────────────────────────────────
+
+/**
+ * Nested-quantifier heuristic (audit fix F-d): rejects the classic
+ * catastrophic-backtracking shapes — a quantified group whose own body
+ * carries a quantifier, e.g. `(a+)+`, `(\w*)*`, `(a+){2,}`. The screen is a
+ * DOCUMENTED HEURISTIC, not a full regex static analyzer: it matches a
+ * `(...)` group with no nested parens whose body contains `+`/`*` and is
+ * itself followed by `+`, `*` or `{n,m}`. Honest tradeoffs:
+ *   • groups with nested parens are NOT screened (would need a real parser),
+ *   • a literal like `(ab+)c*` (outer quantifier on `c`) does NOT match —
+ *     the quantifier must directly follow the group.
+ * Engine-side chunked execution + the scan deadline (lib/dlp/engine.ts) are
+ * the second layer; this screen keeps known-bad shapes out of the DB.
+ */
+export const NESTED_QUANTIFIER_RE = /[(][^()]*[+*][^()]*[)][+*{]/;
+
+export function containsNestedQuantifier(pattern: string): boolean {
+  return NESTED_QUANTIFIER_RE.test(pattern);
+}
+
 // ── primitive grammars ──────────────────────────────────────────────────────
 
 const nonEmpty = (label: string, max: number) =>
@@ -56,14 +77,21 @@ const sourceIpSchema = z
 
 // ── patterns ────────────────────────────────────────────────────────────────
 
-export const dlpPatternCreateSchema = z.object({
-  name: nonEmpty("Pattern name", 64),
-  kind: dlpKindSchema.default("regex"),
-  value: patternValueSchema,
-  severity: dlpSeveritySchema.default("medium"),
-  category: dlpCategorySchema.default("pii"),
-  enabled: z.boolean().default(true),
-});
+export const dlpPatternCreateSchema = z
+  .object({
+    name: nonEmpty("Pattern name", 64),
+    kind: dlpKindSchema.default("regex"),
+    value: patternValueSchema,
+    severity: dlpSeveritySchema.default("medium"),
+    category: dlpCategorySchema.default("pii"),
+    enabled: z.boolean().default(true),
+  })
+  .superRefine((v, ctx) => {
+    // ReDoS guard (audit fix F-d) — regex kind only (keywords are literals)
+    if (v.kind === "regex" && containsNestedQuantifier(v.value)) {
+      ctx.addIssue({ code: "custom", path: ["value"], message: "nested quantifiers rejected (ReDoS guard)" });
+    }
+  });
 
 /** Partial update without defaults — zod 4 keeps defaults alive through
  * `.partial()`, so field schemas are default-less here (validators/logs note). */
@@ -77,7 +105,15 @@ export const dlpPatternUpdateSchema = z
     enabled: z.boolean(),
   })
   .partial()
-  .refine((v) => Object.keys(v).length > 0, { message: "Empty update" });
+  .refine((v) => Object.keys(v).length > 0, { message: "Empty update" })
+  .superRefine((v, ctx) => {
+    // ReDoS guard (audit fix F-d) — applies when the update keeps/sets the
+    // regex kind and carries a value (kind-only / value-only updates pass
+    // through; the service re-checks the merged row for those)
+    if (v.value !== undefined && (v.kind ?? "regex") === "regex" && containsNestedQuantifier(v.value)) {
+      ctx.addIssue({ code: "custom", path: ["value"], message: "nested quantifiers rejected (ReDoS guard)" });
+    }
+  });
 
 // ── policies ────────────────────────────────────────────────────────────────
 

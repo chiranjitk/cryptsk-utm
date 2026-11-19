@@ -14,6 +14,7 @@
  */
 
 import { z } from "zod";
+import { boundedJson } from "@/lib/validators/bounded";
 
 // ── locked enums (SCHEMA soar_playbooks column comments / SPEC §4.6) ────────
 
@@ -93,8 +94,9 @@ export const soarDelayActionSchema = z.object({
 export const soarWebhookActionSchema = z.object({
   kind: z.literal("webhook"),
   params: z.object({
-    /** open JSON payload fanned out through the Phase 1 webhook dispatcher */
-    payload: z.record(z.string(), z.unknown()),
+    /** open JSON payload fanned out through the Phase 1 webhook dispatcher —
+     * capped at 64 KB of JSON (audit fix F-d — unbounded payload DoS) */
+    payload: boundedJson(65536, "webhook payload"),
   }),
 });
 
@@ -140,8 +142,9 @@ export const soarPlaybookUpdateSchema = z
 export const soarRunSchema = z.object({
   /** "incident:INC-0007" style pointer recorded on the run row */
   triggerRef: nonEmpty("triggerRef", 256),
-  /** trigger payload the filter would have seen (severity/source/kind…) */
-  payload: z.record(z.string(), z.unknown()).default({}),
+  /** trigger payload the filter would have seen (severity/source/kind…) —
+   * capped at 64 KB of JSON (audit fix F-d — unbounded payload DoS) */
+  payload: boundedJson(65536, "trigger payload").default({}),
 });
 
 // ── runs list query (GET /api/v1/soar/runs) ─────────────────────────────────

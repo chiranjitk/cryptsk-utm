@@ -310,7 +310,9 @@ export async function listIncidents(
   const [rows, total] = await Promise.all([
     db.incident.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      // id desc tiebreaker: same-millisecond creates (batch ingest) must keep
+      // a stable page order instead of flipping between requests
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (query.page - 1) * query.limit,
       take: query.limit,
     }),
@@ -403,13 +405,23 @@ export async function deleteIncident(tenantId: number, id: number): Promise<{ ok
 
 // ── manual block action (§3.5 — contain the source) ─────────────────────────
 
+/**
+ * IPv4 grammar for auto-blocking — rejects malformed quads AND the addresses
+ * that are never a meaningful block target:
+ *   • 0.0.0.0 (unspecified) and 255.255.255.255 (limited broadcast) —
+ *     blocking either would wedge the whole data plane,
+ *   • leading-zero octets ("010.1.2.3") — ambiguous parsing across stacks.
+ */
 function isBlockableIp(value: string): boolean {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(value.trim());
   if (!m) return false;
-  return m.slice(1).every((oct) => {
-    const n = Number(oct);
-    return n >= 0 && n <= 255;
-  });
+  const octets = m.slice(1);
+  if (octets.some((oct) => oct.length > 1 && oct.startsWith("0"))) return false;
+  const nums = octets.map((oct) => Number(oct));
+  if (nums.some((n) => n < 0 || n > 255)) return false;
+  const isUnspecified = nums[0] === 0 && nums[1] === 0 && nums[2] === 0 && nums[3] === 0;
+  const isLimitedBroadcast = nums[0] === 255 && nums[1] === 255 && nums[2] === 255 && nums[3] === 255;
+  return !isUnspecified && !isLimitedBroadcast;
 }
 
 /**
@@ -443,6 +455,18 @@ export async function blockSource(
   if (addrDup) {
     throw ApiError.conflict(`Address object '${addrName}' already exists`);
   }
+
+  // ATOMICITY NOTE (audit fix F-d): the previous non-atomic sequence could
+  // WEDGE a re-block — an address object created and then a rule-service
+  // failure (validation drift, dup race) left the object orphaned while the
+  // incident detail stayed un-stamped, so every retry died on the unique
+  // name guard above. The rule service (lib/firewall/rule-service.createRule)
+  // manages its OWN db.$transaction and cannot join an outer tx client, so a
+  // single db.$transaction wrapping all three writes is impossible without
+  // touching that module. Chosen approach: COMPENSATING CLEANUP — create the
+  // address object, create the rule, stamp the detail; ANY failure after a
+  // write deletes everything written so far before rethrowing, leaving the
+  // block fully retryable (no half-materialized artifacts, no wedge).
   const ao = await db.addressObject.create({
     data: {
       tenantId,
@@ -455,34 +479,49 @@ export async function blockSource(
 
   // Reuse the firewall rule-service create path — id validation, duplicate
   // name guard and position append stay in one place (no rule-service edits).
-  const rule = await createRule(tenantId, {
-    name: `INC ${row.ref} auto-block`,
-    description: `Auto-block of ${ip.trim()} — incident ${row.ref}`,
-    enabled: true,
-    srcZoneIds: [],
-    dstZoneIds: [],
-    srcAddrIds: [ao.id],
-    dstAddrIds: [],
-    serviceIds: [],
-    applicationIds: [],
-    userIds: [],
-    srcMacs: [],
-    action: "deny",
-    logging: "detail",
-    synProtection: false,
-    tags: ["incident", "auto-block"],
-    comment: `Created by incident response (${actor}) for ${row.ref}`,
-  });
+  let rule: Awaited<ReturnType<typeof createRule>>;
+  try {
+    rule = await createRule(tenantId, {
+      name: `INC ${row.ref} auto-block`,
+      description: `Auto-block of ${ip.trim()} — incident ${row.ref}`,
+      enabled: true,
+      srcZoneIds: [],
+      dstZoneIds: [],
+      srcAddrIds: [ao.id],
+      dstAddrIds: [],
+      serviceIds: [],
+      applicationIds: [],
+      userIds: [],
+      srcMacs: [],
+      action: "deny",
+      logging: "detail",
+      synProtection: false,
+      tags: ["incident", "auto-block"],
+      comment: `Created by incident response (${actor}) for ${row.ref}`,
+    });
+  } catch (err) {
+    // rule create failed → remove the just-created address object (retryable)
+    await db.addressObject.delete({ where: { id: ao.id } }).catch(() => {});
+    throw err;
+  }
 
   const nextDetail: IncidentDetail = {
     ...detail,
     blockedRuleId: rule.id,
     blockedAddressId: ao.id,
   };
-  const updated = await db.incident.update({
-    where: { id: row.id },
-    data: { detail: JSON.stringify(nextDetail) },
-  });
+  let updated: Awaited<ReturnType<typeof db.incident.update>>;
+  try {
+    updated = await db.incident.update({
+      where: { id: row.id },
+      data: { detail: JSON.stringify(nextDetail) },
+    });
+  } catch (err) {
+    // detail stamp failed → roll back BOTH artifacts so the retry is clean
+    await db.firewallRule.delete({ where: { id: rule.id } }).catch(() => {});
+    await db.addressObject.delete({ where: { id: ao.id } }).catch(() => {});
+    throw err;
+  }
   await addTimelineEntry(
     row.id,
     actor,

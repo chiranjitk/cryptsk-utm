@@ -3,6 +3,12 @@
  * One-time secret rule: the enrollment token (16 hex uppercase, crypto
  * random) is returned ONCE in the POST response and NEVER on GET (lists
  * carry hasToken: true). Expired pending/approved rows read as "expired".
+ *
+ * AT-REST NOTE (audit fix #25 — documented, no crypto this pass): the
+ * enrollment token is stored PLAINTEXT by design (schema locked). The
+ * exposure is controlled in the response layer instead — the raw token
+ * never serializes into any DTO/GET (hasToken flag only) and leaves the
+ * server exactly once on create; only device-approving admins can mint one.
  */
 
 import { randomBytes } from "node:crypto";

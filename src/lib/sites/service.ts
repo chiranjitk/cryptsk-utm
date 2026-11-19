@@ -238,12 +238,40 @@ function isUniqueViolation(err: unknown): boolean {
   return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2002";
 }
 
+/** Deployments wedged in `pushing` longer than this are swept to failed. */
+const STUCK_PUSH_MS = 10 * 60 * 1000;
+
+const STUCK_PUSH_RESULT = JSON.stringify({
+  applied: [],
+  skipped: [],
+  errors: ["stuck in 'pushing' > 10min — marked failed by the console sweep"],
+});
+
+/**
+ * Best-effort stuck-push sweep (audit fix F-d): deployments whose transport
+ * resolution never ran (process crash between create and the terminal
+ * update) would otherwise sit in `pushing` forever. Any listSites pass sweeps
+ * rows older than STUCK_PUSH_MS to failed; failures are swallowed (the list
+ * must keep working even if the sweep write loses a race with a live push).
+ */
+async function sweepStuckPushes(): Promise<void> {
+  const cutoff = new Date(Date.now() - STUCK_PUSH_MS);
+  await db.siteDeployment
+    .updateMany({
+      where: { status: "pushing", pushedAt: { lt: cutoff } },
+      data: { status: "failed", result: STUCK_PUSH_RESULT },
+    })
+    .catch(() => {});
+}
+
 // ── sites ───────────────────────────────────────────────────────────────────
 
 export async function listSites(
   tenantId: number,
   query: SiteQuery,
 ): Promise<{ data: SiteDTO[]; meta: PageMeta }> {
+  // best-effort sweep of wedged `pushing` deployments (audit fix F-d)
+  await sweepStuckPushes();
   const where = {
     tenantId,
     ...(query.status ? { status: query.status } : {}),
@@ -389,48 +417,57 @@ export async function pushToSite(
     payload = { firmwareVersion: release.version, channel: release.channel, sha256: release.sha256 };
   }
 
-  const row = await db.siteDeployment.create({
-    data: {
-      tenantId,
-      siteId,
-      templateId,
-      kind: input.kind,
-      status: "pushing",
-      payload: JSON.stringify(payload),
-      result: JSON.stringify({ applied: [], skipped: [], errors: [] }),
-      pushedAt: new Date(),
-    },
-  });
+  // ATOMICITY (audit fix F-d): deployment create + terminal update + the
+  // firmware version stamp run in ONE transaction — the previous sequence
+  // could persist a `pushing` row (or a stamped version) without its terminal
+  // state on a mid-flight failure. The simulated transport is pure
+  // computation, so the whole push fits a single tx; genuinely long remote
+  // transports would keep the create-then-resolve shape + the stuck sweep.
+  const final = await db.$transaction(async (tx) => {
+    const row = await tx.siteDeployment.create({
+      data: {
+        tenantId,
+        siteId,
+        templateId,
+        kind: input.kind,
+        status: "pushing",
+        payload: JSON.stringify(payload),
+        result: JSON.stringify({ applied: [], skipped: [], errors: [] }),
+        pushedAt: new Date(),
+      },
+    });
 
-  // ── simulated transport (remote push out of scope — module docstring) ──
-  const neverConnected = site.status === "never_seen";
-  const applied: string[] = [];
-  if (!neverConnected) {
-    if (input.kind === "policy") {
-      applied.push("policy bundle");
-    } else if (input.kind === "template") {
-      applied.push(`template bundle ${String(payload.templateName)} v${String(payload.templateVersion)}`);
-    } else {
-      applied.push(`firmware ${input.firmwareVersion}`);
+    // ── simulated transport (remote push out of scope — module docstring) ──
+    const neverConnected = site.status === "never_seen";
+    const applied: string[] = [];
+    if (!neverConnected) {
+      if (input.kind === "policy") {
+        applied.push("policy bundle");
+      } else if (input.kind === "template") {
+        applied.push(`template bundle ${String(payload.templateName)} v${String(payload.templateVersion)}`);
+      } else {
+        applied.push(`firmware ${input.firmwareVersion}`);
+      }
     }
-  }
-  const result: DeploymentResult = neverConnected
-    ? { applied: [], skipped: [], errors: ["site has never connected"] }
-    : { applied, skipped: [], errors: [] };
+    const result: DeploymentResult = neverConnected
+      ? { applied: [], skipped: [], errors: ["site has never connected"] }
+      : { applied, skipped: [], errors: [] };
 
-  const final = await db.siteDeployment.update({
-    where: { id: row.id },
-    data: {
-      status: neverConnected ? "failed" : "applied",
-      result: JSON.stringify(result),
-      ...(neverConnected ? {} : { appliedAt: new Date() }),
-    },
+    const updated = await tx.siteDeployment.update({
+      where: { id: row.id },
+      data: {
+        status: neverConnected ? "failed" : "applied",
+        result: JSON.stringify(result),
+        ...(neverConnected ? {} : { appliedAt: new Date() }),
+      },
+    });
+
+    // Successful firmware upgrade → the site now reports the pushed version.
+    if (input.kind === "firmware" && !neverConnected) {
+      await tx.managedSite.update({ where: { id: site.id }, data: { version: input.firmwareVersion! } });
+    }
+    return updated;
   });
-
-  // Successful firmware upgrade → the site now reports the pushed version.
-  if (input.kind === "firmware" && !neverConnected) {
-    await db.managedSite.update({ where: { id: site.id }, data: { version: input.firmwareVersion! } });
-  }
 
   return toDeploymentDTO(final, site.name);
 }

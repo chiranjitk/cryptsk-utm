@@ -206,46 +206,58 @@ export async function regenerateRib(tenantId: number): Promise<RibRegenResult> {
     });
   }
 
+  // pre-dedupe by `${protocol}|${prefix}` (last wins) — duplicate sources
+  // (e.g. two OSPF ifaces mapping to the same area prefix, or overlapping
+  // static fan-out) must not double-create against the byKey map
+  const deduped = new Map<string, RegenRow>();
+  for (const row of rows) deduped.set(`${row.protocol}|${row.prefix}`, row);
+  const syncedRows = [...deduped.values()];
+
   // ── sync: upsert regenerated rows, drop stale ones ──────────────────────
-  const existing = await db.ribRoute.findMany({ where: { tenantId } });
-  const byKey = new Map<string, RibRoute>();
-  for (const row of existing) byKey.set(`${row.protocol}|${row.prefix}`, row);
+  // one transaction so the RIB snapshot never tears (partial upsert + stale
+  // delete under a concurrent reader), all writes through the same tx
+  const outcome = await db.$transaction(async (tx) => {
+    const existing = await tx.ribRoute.findMany({ where: { tenantId } });
+    const byKey = new Map<string, RibRoute>();
+    for (const row of existing) byKey.set(`${row.protocol}|${row.prefix}`, row);
 
-  let added = 0;
-  let updated = 0;
-  const keptIds: number[] = [];
+    let added = 0;
+    let updated = 0;
+    const keptIds: number[] = [];
 
-  for (const row of rows) {
-    const match = byKey.get(`${row.protocol}|${row.prefix}`);
-    if (match) {
-      await db.ribRoute.update({
-        where: { id: match.id },
-        data: {
-          nextHop: row.nextHop,
-          interfaceName: row.interfaceName,
-          metric: row.metric,
-          localPref: row.localPref,
-          asPath: row.asPath,
-        },
-      });
-      keptIds.push(match.id);
-      updated++;
-    } else {
-      const created = await db.ribRoute.create({ data: { tenantId, ...row } });
-      keptIds.push(created.id);
-      added++;
+    for (const row of syncedRows) {
+      const match = byKey.get(`${row.protocol}|${row.prefix}`);
+      if (match) {
+        await tx.ribRoute.update({
+          where: { id: match.id },
+          data: {
+            nextHop: row.nextHop,
+            interfaceName: row.interfaceName,
+            metric: row.metric,
+            localPref: row.localPref,
+            asPath: row.asPath,
+          },
+        });
+        keptIds.push(match.id);
+        updated++;
+      } else {
+        const created = await tx.ribRoute.create({ data: { tenantId, ...row } });
+        keptIds.push(created.id);
+        added++;
+      }
     }
-  }
 
-  const stale = existing.filter((row) => !keptIds.includes(row.id));
-  if (stale.length > 0) {
-    await db.ribRoute.deleteMany({ where: { id: { in: stale.map((row) => row.id) } } });
-  }
+    const stale = existing.filter((row) => !keptIds.includes(row.id));
+    if (stale.length > 0) {
+      await tx.ribRoute.deleteMany({ where: { id: { in: stale.map((row) => row.id) } } });
+    }
+    return { added, updated, removed: stale.length };
+  });
 
   const byProtocol = { bgp: 0, ospf: 0, static: 0, connected: 0 };
-  for (const row of rows) byProtocol[row.protocol]++;
+  for (const row of syncedRows) byProtocol[row.protocol]++;
 
-  return { added, updated, removed: stale.length, total: rows.length, byProtocol };
+  return { added: outcome.added, updated: outcome.updated, removed: outcome.removed, total: syncedRows.length, byProtocol };
 }
 
 // ── overview aggregate (GET /overview) ───────────────────────────────────────

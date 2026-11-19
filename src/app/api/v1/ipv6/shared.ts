@@ -186,21 +186,32 @@ export function delegatedPrefixFor(tenantId: number, wanInterface: string, prefi
 
 // ── settings singleton ──────────────────────────────────────────────────────
 
-/** First GET auto-creates the tenant row (spec defaults — no unique key, so find+create). */
+/** First GET auto-creates the tenant row (spec defaults). Transactional
+ *  get-or-create: concurrent first-touches serialize on SQLite's write lock;
+ *  a lost create race (P2002) re-finds and returns the winner's row. */
 export async function getOrCreateSettings(tenantId: number): Promise<Ipv6Settings> {
-  const existing = await db.ipv6Settings.findFirst({ where: { tenantId } });
-  if (existing) return existing;
-  return db.ipv6Settings.create({
-    data: {
-      tenantId,
-      enabled: true,
-      dhcpv6Enabled: true,
-      slaacEnabled: true,
-      rdnssEnabled: true,
-      pdWanInterface: "wan0",
-      pdPrefixLength: 56,
-      raMode: "slaac_dhcpv6",
-    },
+  return db.$transaction(async (tx) => {
+    const existing = await tx.ipv6Settings.findFirst({ where: { tenantId } });
+    if (existing) return existing;
+    try {
+      return await tx.ipv6Settings.create({
+        data: {
+          tenantId,
+          enabled: true,
+          dhcpv6Enabled: true,
+          slaacEnabled: true,
+          rdnssEnabled: true,
+          pdWanInterface: "wan0",
+          pdPrefixLength: 56,
+          raMode: "slaac_dhcpv6",
+        },
+      });
+    } catch (err) {
+      // P2002 — a concurrent create won the race; re-find and return it
+      const raced = await tx.ipv6Settings.findFirst({ where: { tenantId } });
+      if (raced) return raced;
+      throw err;
+    }
   });
 }
 

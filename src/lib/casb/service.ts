@@ -11,6 +11,12 @@
  *   • events aggregate per (clientIp, appHint) into SaasDiscovery rows
  *     (upsert accumulates sessions/bytes, tracks first/lastSeen) with the
  *     verdict re-classified on every scan via lib/casb/matcher;
+ *   • a per-tenant scan WATERMARK (audit fix F-d — SystemSetting category
+ *     "casb" key "scan_watermark_<tenantId>") records the max AppControlLog
+ *     id already aggregated, so re-scans count only NEW rows — the previous
+ *     fixed-window re-ingest double-counted sessions/bytes on every run;
+ *     a `{reset: true}` scan body re-aggregates from scratch (watermark
+ *     cleared for that run, then re-stamped);
  *   • appId is a LOGICAL ref to saas_app_catalog (null = unknown/shadow-IT
  *     candidate), mirroring the schema (no FK on SQLite).
  *
@@ -24,6 +30,8 @@
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
 import type { PageMeta } from "@/lib/api/envelope";
+import { getSetting, putSettingsBatch } from "@/lib/system/service";
+import type { SettingsEntry } from "@/lib/validators/system";
 import { ensureSaasCatalog } from "@/lib/casb/catalog";
 import { classifyVerdict, matchHint, type MatchCatalogEntry } from "@/lib/casb/matcher";
 import type {
@@ -402,25 +410,62 @@ export async function listDiscoveries(
 // ── scan (nDPI log aggregation → SaasDiscovery upserts) ─────────────────────
 
 /**
- * Aggregate app-control logs inside `windowMinutes` (default 24h) into
- * SaasDiscovery rows keyed (tenantId, clientIp, appHint): sessions/bytes
- * ACCUMULATE across scans, first/lastSeen track the log timestamps and the
- * verdict is re-classified against the (auto-seeded) catalog. Returns the
- * honest zero summary when the window holds no log rows.
+ * Scan watermark (audit fix F-d): the max AppControlLog id already aggregated
+ * for the tenant, stored under SystemSetting category "casb", key
+ * "scan_watermark_<tenantId>" (the M10 settings category enum predates the
+ * casb category — the DB column is a plain string and putSettingsBatch applies
+ * no per-key runtime schema, so the SASE-module cast convention applies and
+ * ONE settings write path is reused instead of a parallel helper).
  */
-export async function runScan(tenantId: number, opts?: { windowMinutes?: number }): Promise<ScanSummary> {
+const CASB_SETTINGS_CATEGORY = "casb";
+const scanWatermarkKey = (tenantId: number): string => `scan_watermark_${tenantId}`;
+
+async function readScanWatermark(tenantId: number): Promise<number> {
+  const stored = await getSetting<{ maxLogId?: unknown }>(tenantId, CASB_SETTINGS_CATEGORY, scanWatermarkKey(tenantId), {});
+  return typeof stored?.maxLogId === "number" && Number.isFinite(stored.maxLogId) ? stored.maxLogId : 0;
+}
+
+async function writeScanWatermark(tenantId: number, maxLogId: number): Promise<void> {
+  await putSettingsBatch(tenantId, [
+    { category: CASB_SETTINGS_CATEGORY, key: scanWatermarkKey(tenantId), value: { maxLogId } } as unknown as SettingsEntry,
+  ]);
+}
+
+/**
+ * Aggregate app-control logs newer than the per-tenant scan watermark (and
+ * inside `windowMinutes`, default 24h) into SaasDiscovery rows keyed
+ * (tenantId, clientIp, appHint): sessions/bytes ACCUMULATE across scans,
+ * first/lastSeen track the log timestamps and the verdict is re-classified
+ * against the (auto-seeded) catalog. `{reset: true}` clears the watermark for
+ * that run so the whole window is re-aggregated. Returns the honest zero
+ * summary when no NEW log rows are in scope.
+ */
+export async function runScan(tenantId: number, opts?: { windowMinutes?: number; reset?: boolean }): Promise<ScanSummary> {
   const windowMinutes = opts?.windowMinutes ?? 1440;
   const since = new Date(Date.now() - windowMinutes * 60_000);
 
   await ensureSaasCatalog(tenantId);
 
+  // watermark: only rows the tenant has NEVER scanned participate (audit fix
+  // F-d — repeated scans no longer double-count sessions/bytes); reset → 0
+  const watermark = opts?.reset ? 0 : await readScanWatermark(tenantId);
+
   const [logs, catalogRows] = await Promise.all([
     db.appControlLog.findMany({
-      where: { tenantId, createdAt: { gte: since } },
+      where: {
+        tenantId,
+        createdAt: { gte: since },
+        ...(watermark > 0 ? { id: { gt: watermark } } : {}),
+      },
       orderBy: { createdAt: "asc" },
     }),
     db.saasAppCatalog.findMany({ where: { tenantId } }),
   ]);
+
+  // stamp the new high-water id even when nothing new was scanned (cheap
+  // upsert; keeps the watermark monotonic with the log table)
+  const maxScannedId = logs.reduce((max, l) => Math.max(max, l.id), watermark);
+  await writeScanWatermark(tenantId, maxScannedId);
 
   if (logs.length === 0) {
     return { scanned: 0, upserted: 0, sanctioned: 0, shadow: 0, unknown: 0 };
@@ -466,37 +511,37 @@ export async function runScan(tenantId: number, opts?: { windowMinutes?: number 
     summary.upserted += 1;
     summary[verdict] += 1;
 
+    // UPSERT on the @@unique([tenantId, clientIp, appHint]) key (audit fix
+    // F-d): the old findFirst→update/create pair raced under concurrent scans
+    // (two creates → P2002 crash). The read below only feeds the min/max
+    // merge; the WRITE is a single atomic prisma upsert, so a concurrent
+    // scan cannot wedge the row.
     const existing = await db.saasDiscovery.findFirst({
       where: { tenantId, clientIp: g.clientIp, appHint: g.appHint },
     });
-    if (existing) {
-      await db.saasDiscovery.update({
-        where: { id: existing.id },
-        data: {
-          appId,
-          verdict,
-          sessions: { increment: g.sessions },
-          bytesIn: { increment: g.bytes },
-          firstSeenAt: g.first < existing.firstSeenAt ? g.first : existing.firstSeenAt,
-          lastSeenAt: g.last > existing.lastSeenAt ? g.last : existing.lastSeenAt,
-        },
-      });
-    } else {
-      await db.saasDiscovery.create({
-        data: {
-          tenantId,
-          clientIp: g.clientIp,
-          appId,
-          appHint: g.appHint,
-          verdict,
-          sessions: g.sessions,
-          bytesIn: g.bytes,
-          bytesOut: 0,
-          firstSeenAt: g.first,
-          lastSeenAt: g.last,
-        },
-      });
-    }
+    await db.saasDiscovery.upsert({
+      where: { tenantId_clientIp_appHint: { tenantId, clientIp: g.clientIp, appHint: g.appHint } },
+      update: {
+        appId,
+        verdict,
+        sessions: { increment: g.sessions },
+        bytesIn: { increment: g.bytes },
+        ...(existing && g.first < existing.firstSeenAt ? { firstSeenAt: g.first } : {}),
+        lastSeenAt: !existing || g.last > existing.lastSeenAt ? g.last : existing.lastSeenAt,
+      },
+      create: {
+        tenantId,
+        clientIp: g.clientIp,
+        appId,
+        appHint: g.appHint,
+        verdict,
+        sessions: g.sessions,
+        bytesIn: g.bytes,
+        bytesOut: 0,
+        firstSeenAt: g.first,
+        lastSeenAt: g.last,
+      },
+    });
   }
 
   return summary;

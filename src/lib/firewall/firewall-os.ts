@@ -19,6 +19,16 @@
  *                   survive either mechanism.
  *   • isolation     only `inet console-firewall` is touched (atomic destroy +
  *                   recreate; no `flush ruleset` in generated files)
+ *   • tenancy       SINGLE-TABLE SINGLE-TENANT APPLIANCE CONTRACT: there is
+ *                   exactly one `console-firewall` table enforcing ONE
+ *                   tenant's policy at a time (no per-tenant tables). The
+ *                   ApplyState in state.json stamps the owning tenantId and
+ *                   confirm/rollback refuse callers from a different tenant.
+ *   • hit counters  kernel rule counters reset when the table is recreated on
+ *                   every apply — syncHitsFromKernel accumulates DELTAS
+ *                   against per-rule watermarks (state.json lastHitSync) and
+ *                   the pre-apply counters are banked before the recreate, so
+ *                   hit history survives every apply.
  *   • persistence   /etc/console-nft/ruleset.nft + an `include` line appended
  *                   to /etc/nftables.conf (+ best-effort `systemctl enable
  *                   nftables`) so policy survives reboots. Every persistence
@@ -32,6 +42,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { db } from "@/lib/db";
+import { ApiError } from "@/lib/api/errors";
 import { hasTool, runTool, applyNftFile, readNftRuleset } from "@/lib/host/tools";
 import { probeWanHealth, pbrHealthRegressed, type PbrWanHealth } from "@/lib/network/pbr-os";
 import { loadExpansionContext, safeStrArr } from "./rule-loader";
@@ -363,11 +374,59 @@ interface ApplyState {
   mode: "manual" | "auto";
   backupFile: string;
   confirmFile: string;
+  /** owning tenant (single-table appliance contract) — stamped at plan time */
+  tenantId: number;
+}
+
+/**
+ * state.json on-disk shape: the commit-confirm window fields (when armed) plus
+ * the hit-counter watermarks (`lastHitSync`) which must survive every window
+ * open/confirm/rollback/clear.
+ */
+interface NftStateFile extends Partial<ApplyState> {
+  lastHitSync?: Record<string, number>;
+}
+
+const STATE_FILE = path.join(NFT_DIR, "state.json");
+
+/** Read state.json: the armed apply window (if any) + hit-counter watermarks. */
+async function readRawState(): Promise<{ apply: ApplyState | null; lastHitSync: Record<string, number> }> {
+  try {
+    const s = JSON.parse(await fs.readFile(STATE_FILE, "utf8")) as NftStateFile;
+    const lastHitSync = s.lastHitSync && typeof s.lastHitSync === "object" ? { ...s.lastHitSync } : {};
+    const apply: ApplyState | null =
+      typeof s.ts === "string" && typeof s.confirmFile === "string"
+        ? {
+            ts: s.ts,
+            armedAt: s.armedAt ?? s.ts,
+            deadlineAt: s.deadlineAt ?? s.ts,
+            mode: s.mode ?? "manual",
+            backupFile: s.backupFile ?? "",
+            confirmFile: s.confirmFile,
+            // legacy pre-tenancy states carry no stamp (0 = unverifiable → allowed)
+            tenantId: typeof s.tenantId === "number" ? s.tenantId : 0,
+          }
+        : null;
+    return { apply, lastHitSync };
+  } catch {
+    return { apply: null, lastHitSync: {} };
+  }
 }
 
 async function writeState(state: ApplyState | null): Promise<void> {
   await fs.mkdir(NFT_DIR, { recursive: true });
-  await fs.writeFile(path.join(NFT_DIR, "state.json"), JSON.stringify(state, null, 2), "utf8");
+  // watermarks survive every window open/confirm/rollback/clear
+  const { lastHitSync } = await readRawState();
+  const payload: NftStateFile = state ? { ...state, lastHitSync } : { lastHitSync };
+  await fs.writeFile(STATE_FILE, JSON.stringify(payload, null, 2), "utf8");
+}
+
+/** Persist hit-counter watermarks without disturbing the apply window. */
+async function writeHitSyncMap(map: Record<string, number>): Promise<void> {
+  await fs.mkdir(NFT_DIR, { recursive: true });
+  const { apply } = await readRawState();
+  const payload: NftStateFile = apply ? { ...apply, lastHitSync: map } : { lastHitSync: map };
+  await fs.writeFile(STATE_FILE, JSON.stringify(payload, null, 2), "utf8");
 }
 
 /** Remove superseded/stale artefacts: armed scripts >60min, generated rulesets
@@ -386,17 +445,27 @@ function rollbackScriptPath(ts: string): string {
 }
 
 export async function readApplyState(): Promise<ApplyState | null> {
-  try {
-    const raw = await fs.readFile(path.join(NFT_DIR, "state.json"), "utf8");
-    const s = JSON.parse(raw) as ApplyState;
-    const confirmed = await fs
-      .access(s.confirmFile)
-      .then(() => true)
-      .catch(() => false);
-    if (confirmed) return null; // commit confirmed → no pending window
-    return s;
-  } catch {
-    return null;
+  const { apply } = await readRawState();
+  if (!apply) return null;
+  const confirmed = await fs
+    .access(apply.confirmFile)
+    .then(() => true)
+    .catch(() => false);
+  if (confirmed) return null; // commit confirmed → no pending window
+  return apply;
+}
+
+/**
+ * Single-table appliance contract: a pending apply window belongs to ONE
+ * tenant — confirm/rollback from another tenant are refused. Legacy states
+ * written before the stamp carry tenantId 0 (unverifiable → allowed, so a
+ * deploy never bricks an in-flight window).
+ */
+function assertApplyTenant(callerTenantId: number, stateTenantId: number): void {
+  if (stateTenantId !== 0 && stateTenantId !== callerTenantId) {
+    throw ApiError.forbidden(
+      `pending firewall apply belongs to tenant ${stateTenantId} — confirm/rollback must come from the applying tenant`,
+    );
   }
 }
 
@@ -409,6 +478,12 @@ function assertOwnPath(p: string, prefix: RegExp): string {
     throw new Error(`refusing unexpected file name: ${p}`);
   }
   return resolved;
+}
+
+/** Engine data-plane mode — the sibling gate from threat-intel/os-service.ts. */
+async function dataPlaneMode(): Promise<string> {
+  const { getDataPlaneMode } = await import("@/lib/engine");
+  return getDataPlaneMode();
 }
 
 export interface ApplyOptions {
@@ -448,6 +523,10 @@ export async function applyFirewallNft(tenantId: number, opts: ApplyOptions = {}
 
   if (!gateOn) {
     results.push({ step: "gate", ok: false, detail: "OS convergence disabled by platform policy — plan is a preview only" });
+    return outcome;
+  }
+  if ((await dataPlaneMode()) !== "host") {
+    results.push({ step: "mode", ok: false, detail: "data plane is not in host mode — OS enforcement is preview-only" });
     return outcome;
   }
   if (!(await hasTool("nft"))) {
@@ -504,12 +583,26 @@ export async function applyFirewallNft(tenantId: number, opts: ApplyOptions = {}
   // timer so it cannot fire mid-flight and revert the newer policy
   const prior = await readApplyState();
   if (prior) await fs.writeFile(prior.confirmFile, "superseded", "utf8").catch(() => {});
-  await writeState({ ts, armedAt: new Date().toISOString(), deadlineAt, mode, backupFile, confirmFile });
+  await writeState({ ts, armedAt: new Date().toISOString(), deadlineAt, mode, backupFile, confirmFile, tenantId });
   outcome.confirmDeadlineAt = deadlineAt;
 
   // 4. WAN health baseline (the 2026-11-14 outage class guard)
   const baseline = await probeWanHealth();
   outcome.health.baseline = baseline;
+
+  // 4b. bank the PRE-apply hit counters — the destroy+recreate below resets
+  //     kernel counters to zero; pending increments are folded into the DB and
+  //     watermarked first so hit history survives the recreate
+  try {
+    const banked = await bankHitCountersBeforeApply(live.ruleset, tenantId);
+    results.push({ step: "hit-counter bank", ok: true, detail: banked > 0 ? `${banked} rule counter(s) banked before the table recreate` : undefined });
+  } catch (err) {
+    results.push({
+      step: "hit-counter bank",
+      ok: false,
+      detail: err instanceof Error ? err.message : "bank failed (kernel counters reset at recreate — deltas re-sync from the watermark)",
+    });
+  }
 
   // 5. apply — atomic destroy+recreate of the console table only
   const applyRes = await applyNftFile(file);
@@ -588,18 +681,20 @@ export async function applyFirewallNft(tenantId: number, opts: ApplyOptions = {}
 
 // ── confirm / rollback / counters ───────────────────────────────────────────
 
-export async function confirmFirewallApply(ts: string): Promise<{ confirmed: boolean; ts: string }> {
+export async function confirmFirewallApply(tenantId: number, ts: string): Promise<{ confirmed: boolean; ts: string }> {
   const state = await readApplyState();
   const target = state?.ts === ts ? state : null;
   if (!target) return { confirmed: false, ts };
+  assertApplyTenant(tenantId, target.tenantId);
   await fs.writeFile(target.confirmFile, new Date().toISOString(), "utf8");
   await writeState(null);
   await fs.rm(rollbackScriptPath(ts), { force: true }).catch(() => {});
   return { confirmed: true, ts };
 }
 
-export async function rollbackFirewall(ts?: string): Promise<{ rolledBack: boolean; file: string | null; health: PbrWanHealth | null; detail: string }> {
+export async function rollbackFirewall(tenantId: number, ts?: string): Promise<{ rolledBack: boolean; file: string | null; health: PbrWanHealth | null; detail: string }> {
   const state = await readApplyState();
+  if (state) assertApplyTenant(tenantId, state.tenantId);
   let backupFile: string | null = state?.backupFile ?? null;
   if (!backupFile && ts) {
     backupFile = assertOwnPath(path.join(NFT_DIR, `backup-${ts}.nft`), /^backup-[\w.-]+\.nft$/);
@@ -667,30 +762,114 @@ export function parseRuleCounters(liveDump: string): RuleCounter[] {
   return [...byId.values()].sort((a, b) => a.ruleId - b.ruleId);
 }
 
-/** Optional: push kernel counters into the DB hit fields (real hits). */
+// ── hit counters (delta accumulation — kernel counters reset on apply) ──────
+
+interface HitWrite {
+  kind: "firewall" | "nat";
+  id: number;
+  hitCount: number;
+}
+
+/**
+ * Delta semantics: `newHitCount = existing.hitCount + (packets − watermark)`
+ * while the kernel counter is monotonic. When the watermark is AHEAD of the
+ * kernel (the apply's destroy/recreate — or a manual `nft flush` — reset the
+ * counter), the whole current kernel value is new: `delta = packets`. Plain
+ * `max(0, packets − watermark)` would silently drop every post-apply
+ * increment until the kernel re-passed the old watermark.
+ */
+function hitDelta(packets: number, watermark: number): number {
+  return packets >= watermark ? packets - watermark : packets;
+}
+
+/**
+ * Batch-load the rule rows referenced by the parsed counters (ONE findMany per
+ * table, tenant-scoped — replaces the per-counter findFirst N+1) and compute
+ * the delta writes against the watermark map (mutated in place).
+ */
+async function computeHitWrites(
+  counters: RuleCounter[],
+  tenantId: number,
+  map: Record<string, number>,
+): Promise<HitWrite[]> {
+  const fwIds = counters.filter((c) => c.ruleKind === "firewall").map((c) => c.ruleId);
+  const natIds = counters.filter((c) => c.ruleKind === "nat").map((c) => c.ruleId);
+  const [fwRows, natRows] = await Promise.all([
+    fwIds.length
+      ? db.firewallRule.findMany({ where: { id: { in: fwIds }, tenantId }, select: { id: true, hitCount: true } })
+      : Promise.resolve([] as Array<{ id: number; hitCount: number }>),
+    natIds.length
+      ? db.natRule.findMany({ where: { id: { in: natIds }, tenantId }, select: { id: true, hitCount: true } })
+      : Promise.resolve([] as Array<{ id: number; hitCount: number }>),
+  ]);
+  const rows = new Map<string, { id: number; hitCount: number; kind: "firewall" | "nat" }>();
+  for (const r of fwRows) rows.set(`firewall:${r.id}`, { id: r.id, hitCount: r.hitCount, kind: "firewall" });
+  for (const r of natRows) rows.set(`nat:${r.id}`, { id: r.id, hitCount: r.hitCount, kind: "nat" });
+
+  const writes: HitWrite[] = [];
+  for (const c of counters) {
+    const key = `${c.ruleKind}:${c.ruleId}`;
+    const row = rows.get(key);
+    if (!row) continue; // counter for a deleted rule / another tenant's policy — untouched
+    const last = map[key] ?? 0;
+    const delta = hitDelta(c.packets, last);
+    map[key] = c.packets; // watermark tracks the kernel's actual value
+    if (delta > 0) {
+      writes.push({ kind: c.ruleKind, id: c.ruleId, hitCount: row.hitCount + delta });
+    }
+  }
+  return writes;
+}
+
+/** Batched DB write for the delta writes (one transaction, per-row updates). */
+async function persistHitWrites(writes: HitWrite[]): Promise<void> {
+  if (writes.length === 0) return;
+  const now = new Date();
+  await db.$transaction(async (tx) => {
+    for (const w of writes) {
+      if (w.kind === "nat") {
+        await tx.natRule.update({ where: { id: w.id }, data: { hitCount: w.hitCount, lastHitAt: now } });
+      } else {
+        await tx.firewallRule.update({ where: { id: w.id }, data: { hitCount: w.hitCount, lastHitAt: now } });
+      }
+    }
+  });
+}
+
+/**
+ * Bank the PRE-apply kernel counters right before the console table is
+ * destroyed/recreated: increments since the last sync are folded into the DB
+ * hitCount and the watermark stores the final pre-apply value, so the
+ * post-apply sync (kernel reset to 0) detects the reset and nothing is lost.
+ */
+async function bankHitCountersBeforeApply(liveDump: string, tenantId: number): Promise<number> {
+  const counters = parseRuleCounters(liveDump);
+  if (counters.length === 0) return 0;
+  const { lastHitSync } = await readRawState();
+  const map = { ...lastHitSync };
+  const writes = await computeHitWrites(counters, tenantId, map);
+  await persistHitWrites(writes);
+  await writeHitSyncMap(map);
+  return writes.length;
+}
+
+/**
+ * Push kernel counters into the DB hit fields (real hits) — DELTA accumulation
+ * against the per-rule watermarks in state.json `lastHitSync`
+ * (`"fw:<id>"|"nat:<id>" → packets`), so an apply's counter reset never
+ * clobbers the accumulated history.
+ */
 export async function syncHitsFromKernel(tenantId: number): Promise<{ updated: number; natUpdated: number }> {
   const dump = (await readNftRuleset()).ruleset;
   if (!new RegExp(`table inet ${NFT_TABLE_NAME}\\b`).test(dump)) return { updated: 0, natUpdated: 0 };
   const counters = parseRuleCounters(dump);
-  let updated = 0;
-  let natUpdated = 0;
-  for (const c of counters) {
-    if (c.ruleKind === "nat") {
-      const row = await db.natRule.findFirst({ where: { id: c.ruleId, tenantId } }).catch(() => null);
-      if (!row) continue;
-      await db.natRule
-        .update({ where: { id: c.ruleId }, data: { hitCount: c.packets, lastHitAt: c.packets > 0 ? new Date() : row.lastHitAt } })
-        .catch(() => null);
-      natUpdated += 1;
-      continue;
-    }
-    const row = await db.firewallRule.findFirst({ where: { id: c.ruleId, tenantId } }).catch(() => null);
-    if (!row) continue;
-    await db.firewallRule
-      .update({ where: { id: c.ruleId }, data: { hitCount: c.packets, lastHitAt: c.packets > 0 ? new Date() : row.lastHitAt } })
-      .catch(() => null);
-    updated += 1;
-  }
+  const { lastHitSync } = await readRawState();
+  const map = { ...lastHitSync };
+  const writes = await computeHitWrites(counters, tenantId, map);
+  await persistHitWrites(writes);
+  await writeHitSyncMap(map);
+  const updated = writes.filter((w) => w.kind === "firewall").length;
+  const natUpdated = writes.filter((w) => w.kind === "nat").length;
   return { updated, natUpdated };
 }
 

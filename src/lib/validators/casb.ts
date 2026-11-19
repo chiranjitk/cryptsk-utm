@@ -8,6 +8,7 @@
  */
 
 import { z } from "zod";
+import { boundedJson } from "@/lib/validators/bounded";
 
 // ── locked enums (schema.prisma comments + spec §4.3) ───────────────────────
 
@@ -80,6 +81,10 @@ export const discoveryQuerySchema = z.object({
 
 export const casbScanSchema = z.object({
   windowMinutes: z.coerce.number().int().min(1).max(60 * 24 * 30).default(1440),
+  /** re-aggregate from scratch (audit fix F-d — scan watermark): clears the
+   * per-tenant high-water log id so already-accounted rows are re-ingested.
+   * Plain boolean (not coerced) — a "false" STRING must not silently reset. */
+  reset: z.boolean().default(false),
 });
 
 // ── connectors (GET/POST /api/v1/casb/connectors, PATCH/DELETE /[id]) ───────
@@ -87,9 +92,10 @@ export const casbScanSchema = z.object({
 /**
  * Open config record — shape per vendor is validated by the service
  * (testConnector) against a per-vendor required-key map. No network calls:
- * values are secret-store references, not credentials.
+ * values are secret-store references, not credentials. Capped at 8 KB of
+ * serialized JSON (audit fix F-d — unbounded payload DoS).
  */
-export const connectorConfigSchema = z.record(z.string(), z.unknown());
+export const connectorConfigSchema = boundedJson(8192, "connector config");
 
 export const connectorCreateSchema = z.object({
   vendor: casbVendorSchema,

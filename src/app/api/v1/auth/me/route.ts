@@ -27,6 +27,9 @@ export const GET = route({}, async ({ auth }) => {
     select: { id: true, username: true, role: true, email: true, tenantId: true, lastLoginAt: true, isActive: true },
   });
   if (!user || !user.isActive) throw ApiError.unauthorized("Session user no longer active");
+  // audit fix #16 — the cookie's tenant claim must match the DB row (a user
+  // moved across tenants invalidates outstanding sessions for the old tenant)
+  if (user.tenantId !== auth.tenantId) throw ApiError.unauthorized("Session tenant mismatch");
   return {
     data: {
       kind: "user" as const,

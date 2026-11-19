@@ -93,6 +93,10 @@ export interface FeedSyncResult {
   updatedIocs: number;
   autoBlockCreated: number;
   hitsCreated: number;
+  /** auto-block rules DISABLED (not deleted) because their IOC left this feed's corpus */
+  autoBlockDisabled: number;
+  /** names of the disabled rules — carried into the route's audit entry */
+  disabledRuleNames: string[];
   syncedAt: string;
 }
 
@@ -104,6 +108,17 @@ const SAMPLE_HIT_DESTS = ["192.168.1.10", "192.168.1.23", "10.0.0.5"];
  * category (unique tenant+type+value; severity/confidence/lastSeen refreshed
  * on match), optionally auto-block NEW critical IOCs, mint 2-3 sample hits,
  * then stamp lastSyncAt/lastStatus/lastCount on the feed.
+ *
+ * ATOMICITY: the whole replay (upsert loop + hits + reconciliation + feed
+ * stamp) runs in ONE db.$transaction — a mid-loop failure leaves no partial
+ * state and the feed status stamp only lands when the corpus write succeeds.
+ *
+ * FEED RECONCILIATION: after a successful sync, auto-block rules sourced from
+ * this feed (auto-feed, IOC attributed to it) whose value is no longer in the
+ * provider corpus are DISABLED — never deleted (hit history + provenance
+ * stay; a later re-appearance re-enables nothing automatically, that is an
+ * operator decision). The disabled rule names ride the result → the route's
+ * `threat_feed.sync` audit entry records the reconciliation.
  */
 export async function syncFeed(tenantId: number, feedId: number): Promise<FeedSyncResult> {
   const feed = await db.threatFeed.findFirst({ where: { id: feedId, tenantId } });
@@ -111,120 +126,152 @@ export async function syncFeed(tenantId: number, feedId: number): Promise<FeedSy
 
   const entries = SAMPLE_CORPUS[feed.provider] ?? SAMPLE_CORPUS.custom;
   const now = new Date();
-  let newIocs = 0;
-  let updatedIocs = 0;
-  let autoBlockCreated = 0;
 
-  for (const entry of entries) {
-    const existing = await db.ioc.findUnique({
-      where: { tenantId_type_value: { tenantId, type: entry.type, value: entry.value } },
-    });
+  return db.$transaction(async (tx) => {
+    let newIocs = 0;
+    let updatedIocs = 0;
+    let autoBlockCreated = 0;
 
-    let iocId: number;
-    if (existing) {
-      const row = await db.ioc.update({
-        where: { id: existing.id },
-        data: {
-          severity: entry.severity,
-          confidence: entry.confidence,
-          lastSeen: now,
-          feedId: feed.id,
-          source: `feed:${feed.name}`,
-        },
+    for (const entry of entries) {
+      const existing = await tx.ioc.findUnique({
+        where: { tenantId_type_value: { tenantId, type: entry.type, value: entry.value } },
       });
-      iocId = row.id;
-      updatedIocs++;
-    } else {
-      const row = await db.ioc.create({
-        data: {
-          tenantId,
-          feedId: feed.id,
-          type: entry.type,
-          value: entry.value,
-          category: feed.category,
-          severity: entry.severity,
-          confidence: entry.confidence,
-          reputation: reputationFor(entry.severity),
-          source: `feed:${feed.name}`,
-          description: entry.description,
-          lastSeen: now,
-        },
-      });
-      iocId = row.id;
-      newIocs++;
 
-      // feed.autoBlock → drop rule per NEW critical IOC
-      if (feed.autoBlock && entry.severity === "critical") {
-        const ruleExists = await db.autoBlockRule.findUnique({
-          where: { tenantId_matchType_matchValue: { tenantId, matchType: entry.type, matchValue: entry.value } },
+      let iocId: number;
+      if (existing) {
+        const row = await tx.ioc.update({
+          where: { id: existing.id },
+          data: {
+            severity: entry.severity,
+            confidence: entry.confidence,
+            lastSeen: now,
+            feedId: feed.id,
+            source: `feed:${feed.name}`,
+          },
         });
-        if (!ruleExists) {
-          await db.autoBlockRule.create({
-            data: {
-              tenantId,
-              name: `auto:${entry.value}`.slice(0, 64),
-              iocId: row.id,
-              matchType: entry.type,
-              matchValue: entry.value,
-              action: "drop",
-              direction: "both",
-              source: "auto-feed",
-              enabled: true,
-              createdBy: "threat-feed",
-            },
+        iocId = row.id;
+        updatedIocs++;
+      } else {
+        const row = await tx.ioc.create({
+          data: {
+            tenantId,
+            feedId: feed.id,
+            type: entry.type,
+            value: entry.value,
+            category: feed.category,
+            severity: entry.severity,
+            confidence: entry.confidence,
+            reputation: reputationFor(entry.severity),
+            source: `feed:${feed.name}`,
+            description: entry.description,
+            lastSeen: now,
+          },
+        });
+        iocId = row.id;
+        newIocs++;
+
+        // feed.autoBlock → drop rule per NEW critical IOC
+        if (feed.autoBlock && entry.severity === "critical") {
+          const ruleExists = await tx.autoBlockRule.findUnique({
+            where: { tenantId_matchType_matchValue: { tenantId, matchType: entry.type, matchValue: entry.value } },
           });
-          autoBlockCreated++;
+          if (!ruleExists) {
+            await tx.autoBlockRule.create({
+              data: {
+                tenantId,
+                name: `auto:${entry.value}`.slice(0, 64),
+                iocId: row.id,
+                matchType: entry.type,
+                matchValue: entry.value,
+                action: "drop",
+                direction: "both",
+                source: "auto-feed",
+                enabled: true,
+                createdBy: "threat-feed",
+              },
+            });
+            autoBlockCreated++;
+          }
         }
       }
+      void iocId; // retained for future per-IOC sync reporting
     }
-    void iocId; // retained for future per-IOC sync reporting
-  }
 
-  // 2-3 sample hits from existing IOCs — deterministic rotation over the pool
-  const pool = await db.ioc.findMany({
-    where: { tenantId, enabled: true },
-    orderBy: { id: "asc" },
-    take: 50,
-    select: { id: true, value: true, severity: true },
-  });
-  const hitCount = pool.length === 0 ? 0 : 2 + (Math.floor(now.getTime() / 60_000) % 2); // 2|3
-  let hitsCreated = 0;
-  for (let i = 0; i < hitCount; i++) {
-    const pick = pool[(Math.floor(now.getTime() / 60_000) + i * 7) % pool.length];
-    const blocked = pick.severity === "critical" || pick.severity === "warning";
-    await db.iocHit.create({
-      data: {
+    // 2-3 sample hits from existing IOCs — deterministic rotation over the pool.
+    // EXPIRY ENFORCEMENT: IOCs past expiresAt no longer feed the sample-hit
+    // findings (matched live IOCs only).
+    const pool = await tx.ioc.findMany({
+      where: {
         tenantId,
-        iocId: pick.id,
-        sourceIp: SAMPLE_HIT_SOURCES[(i + Math.floor(now.getTime() / 60_000)) % SAMPLE_HIT_SOURCES.length],
-        destIp: SAMPLE_HIT_DESTS[i % SAMPLE_HIT_DESTS.length],
-        action: blocked ? "blocked" : "allowed",
-        createdAt: now,
+        enabled: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
+      orderBy: { id: "asc" },
+      take: 50,
+      select: { id: true, value: true, severity: true },
     });
-    hitsCreated++;
-    await db.ioc.update({ where: { id: pick.id }, data: { hits: { increment: 1 } } });
-    if (blocked) {
-      await db.autoBlockRule.updateMany({
-        where: { tenantId, matchValue: pick.value, enabled: true },
-        data: { hitCount: { increment: 1 } },
+    const hitCount = pool.length === 0 ? 0 : 2 + (Math.floor(now.getTime() / 60_000) % 2); // 2|3
+    let hitsCreated = 0;
+    for (let i = 0; i < hitCount; i++) {
+      const pick = pool[(Math.floor(now.getTime() / 60_000) + i * 7) % pool.length];
+      const blocked = pick.severity === "critical" || pick.severity === "warning";
+      await tx.iocHit.create({
+        data: {
+          tenantId,
+          iocId: pick.id,
+          sourceIp: SAMPLE_HIT_SOURCES[(i + Math.floor(now.getTime() / 60_000)) % SAMPLE_HIT_SOURCES.length],
+          destIp: SAMPLE_HIT_DESTS[i % SAMPLE_HIT_DESTS.length],
+          action: blocked ? "blocked" : "allowed",
+          createdAt: now,
+        },
       });
+      hitsCreated++;
+      await tx.ioc.update({ where: { id: pick.id }, data: { hits: { increment: 1 } } });
+      if (blocked) {
+        await tx.autoBlockRule.updateMany({
+          where: { tenantId, matchValue: pick.value, enabled: true },
+          data: { hitCount: { increment: 1 } },
+        });
+      }
     }
-  }
 
-  await db.threatFeed.update({
-    where: { id: feed.id },
-    data: { lastSyncAt: now, lastStatus: "ok", lastCount: entries.length },
+    // feed reconciliation — auto-feed rules whose IOC is attributed to this
+    // feed but no longer reported by its corpus are disabled (kept, audited)
+    const corpusKeys = new Set(entries.map((e) => `${e.type}|${e.value}`));
+    const feedIocs = await tx.ioc.findMany({
+      where: { tenantId, feedId: feed.id },
+      select: { id: true, type: true, value: true },
+    });
+    const iocById = new Map(feedIocs.map((i) => [i.id, i]));
+    const feedRules = await tx.autoBlockRule.findMany({
+      where: { tenantId, source: "auto-feed", enabled: true },
+      select: { id: true, name: true, iocId: true },
+    });
+    const disabledRuleNames: string[] = [];
+    for (const r of feedRules) {
+      const ioc = r.iocId != null ? iocById.get(r.iocId) : undefined;
+      if (!ioc || corpusKeys.has(`${ioc.type}|${ioc.value}`)) continue;
+      await tx.autoBlockRule.update({ where: { id: r.id }, data: { enabled: false } });
+      disabledRuleNames.push(r.name);
+    }
+
+    // feed status stamp — INSIDE the same tx (a failed replay never reports ok)
+    await tx.threatFeed.update({
+      where: { id: feed.id },
+      data: { lastSyncAt: now, lastStatus: "ok", lastCount: entries.length },
+    });
+
+    return {
+      feedId: feed.id,
+      feedName: feed.name,
+      entriesApplied: entries.length,
+      newIocs,
+      updatedIocs,
+      autoBlockCreated,
+      hitsCreated,
+      autoBlockDisabled: disabledRuleNames.length,
+      disabledRuleNames,
+      syncedAt: now.toISOString(),
+    };
   });
-
-  return {
-    feedId: feed.id,
-    feedName: feed.name,
-    entriesApplied: entries.length,
-    newIocs,
-    updatedIocs,
-    autoBlockCreated,
-    hitsCreated,
-    syncedAt: now.toISOString(),
-  };
 }

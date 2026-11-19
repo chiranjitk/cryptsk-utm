@@ -91,9 +91,10 @@ const neighborBase = z.object({
 });
 
 /** holdtime ≥ 3×keepalive (RFC 4271 recommendation, spec 2.6). Guarded so
- *  partial updates that omit either field still pass. */
-const holdtimeMessage = "holdtime must be at least 3× keepalive";
-const holdtimeOk = (keepaliveSec?: number, holdtimeSec?: number): boolean =>
+ *  partial updates that omit either field still pass. Exported so route files
+ *  can re-run it merge-then-revalidate style on partial PATCHes. */
+export const holdtimeMessage = "holdtime must be at least 3× keepalive";
+export const holdtimeOk = (keepaliveSec?: number, holdtimeSec?: number): boolean =>
   keepaliveSec === undefined || holdtimeSec === undefined || holdtimeSec >= 3 * keepaliveSec;
 
 export const bgpNeighborCreateSchema = neighborBase
@@ -183,8 +184,9 @@ const prefixListBase = z.object({
   entries: z.array(prefixListEntrySchema).max(200),
 });
 
-/** Entries validated as a whole: CIDR matches family, seq unique, ge ≤ le. */
-const refinePrefixList = (data: { family: "ipv4" | "ipv6"; entries: Array<{ seq: number; prefix: string; ge?: number | null; le?: number | null }> }): boolean => {
+/** Entries validated as a whole: CIDR matches family, seq unique, ge ≤ le.
+ *  Exported for merge-then-revalidate in the partial-update route. */
+export const refinePrefixList = (data: { family: "ipv4" | "ipv6"; entries: Array<{ seq: number; prefix: string; ge?: number | null; le?: number | null }> }): boolean => {
   const seqs = new Set<number>();
   for (const e of data.entries) {
     if (seqs.has(e.seq)) return false;
@@ -258,8 +260,9 @@ const communityListBase = z.object({
   entries: z.array(z.string().trim().min(1).max(64)).max(200),
 });
 
-/** standard → strict AS:NN tags; expanded → each entry must compile as a regex. */
-const refineCommunityEntries = (type: "standard" | "expanded", entries: string[]): boolean => {
+/** standard → strict AS:NN tags; expanded → each entry must compile as a regex.
+ *  Exported for merge-then-revalidate in the partial-update route. */
+export const refineCommunityEntries = (type: "standard" | "expanded", entries: string[]): boolean => {
   for (const e of entries) {
     if (type === "standard") {
       if (!/^\d{1,10}:\d{1,10}$/.test(e)) return false;

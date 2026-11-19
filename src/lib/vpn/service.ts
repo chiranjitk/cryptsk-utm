@@ -223,7 +223,7 @@ export async function createConfig(tenantId: number, body: VpnConfigCreateInput)
     },
   });
   if (body.enabled) {
-    emitEvent({ type: "vpn:status", payload: { vpnId: created.id, status: "connecting", statusMessage: "IKE/DPD negotiation in progress" } });
+    emitEvent({ type: "vpn:status", payload: { vpnId: created.id, status: "connecting", statusMessage: "IKE/DPD negotiation in progress", tenantId } });
   }
   convergeAfterMutation();
   return shapeConfig(created, 0);
@@ -263,8 +263,8 @@ export async function updateConfig(tenantId: number, id: number, body: VpnConfig
       ...(disabling ? { status: "down", statusMessage: "Disabled by operator" } : {}),
     },
   });
-  if (enabling) emitEvent({ type: "vpn:status", payload: { vpnId: id, status: "connecting", statusMessage: "IKE/DPD negotiation in progress" } });
-  if (disabling) emitEvent({ type: "vpn:status", payload: { vpnId: id, status: "down", statusMessage: "Disabled by operator" } });
+  if (enabling) emitEvent({ type: "vpn:status", payload: { vpnId: id, status: "connecting", statusMessage: "IKE/DPD negotiation in progress", tenantId } });
+  if (disabling) emitEvent({ type: "vpn:status", payload: { vpnId: id, status: "down", statusMessage: "Disabled by operator", tenantId } });
   convergeAfterMutation();
   const live = await db.vpnSession.count({ where: { vpnId: id, status: { not: "disconnected" } } });
   return shapeConfig(updated, live);

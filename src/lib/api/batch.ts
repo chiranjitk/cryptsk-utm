@@ -68,6 +68,9 @@ export interface BatchOpResult {
 export interface BatchOutcome {
   results: BatchOpResult[];
   ok: boolean;
+  /** Operations that EXECUTED SUCCESSFULLY (denied/failed ops excluded —
+   *  F-e #9: the route gates the config-version snapshot on executed > 0,
+   *  and `denied` audit results key off executed === 0). */
   executed: number;
   failed: number;
 }
@@ -545,9 +548,15 @@ const RESOURCES: Record<BatchResource, ResourceDef> = {
 
 /**
  * Run a validated batch: sequential, stop-on-first-error. Never throws —
- * failures surface as per-op results (ok=false + status + error).
+ * failures surface as per-op results (ok=false + status + error). Unexpected
+ * (non-ApiError/non-Zod) errors are MASKED in the per-op result (F-e #8) and
+ * logged server-side with the requestId for correlation.
  */
-export async function executeBatchOperations(auth: AuthContext, ops: BatchOperation[]): Promise<BatchOutcome> {
+export async function executeBatchOperations(
+  auth: AuthContext,
+  ops: BatchOperation[],
+  requestId?: string,
+): Promise<BatchOutcome> {
   if (ops.length > BATCH_MAX_OPERATIONS) {
     throw ApiError.validation(`Batch exceeds the ${BATCH_MAX_OPERATIONS}-operation cap`);
   }
@@ -597,8 +606,13 @@ export async function executeBatchOperations(auth: AuthContext, ops: BatchOperat
         entry.status = 400;
         entry.error = "Operation body failed validation";
       } else {
+        // F-e #8: unexpected errors never leak internals into the API response
         entry.status = 500;
-        entry.error = err instanceof Error ? err.message : "Internal error during batch operation";
+        entry.error = "Internal error during batch operation";
+        console.error(
+          `[batch] ${requestId ?? "-"} op ${i} (${op.method} ${op.path}) unexpected error:`,
+          err instanceof Error ? err.stack ?? err.message : err,
+        );
       }
       results.push(entry);
       break; // stop-on-first-error
@@ -607,5 +621,8 @@ export async function executeBatchOperations(auth: AuthContext, ops: BatchOperat
   }
 
   const failed = results.filter((r) => !r.ok).length;
-  return { results, ok: failed === 0, executed: results.length, failed };
+  // F-e #9: `executed` counts SUCCESSFUL operations only — a batch whose ops
+  // were denied/failed has executed === 0 so the route skips the config-version
+  // snapshot + config:updated broadcast.
+  return { results, ok: failed === 0, executed: results.length - failed, failed };
 }

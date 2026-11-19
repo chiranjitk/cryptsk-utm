@@ -250,16 +250,21 @@ export async function testWebhookDelivery(tenantId: number, id: number): Promise
 
 /**
  * Simulated-delivery hook for future engine wiring (M11 §5.6): when a
- * matching event fires, enabled registrations subscribed to it get their
- * delivery fields MARKED with seeded outcomes — no real HTTP egress in
- * sandbox (the appliance sender performs real signed POSTs). Deliberately
- * NOT called anywhere in Phase 1 (engine wiring is out of this task's
- * scope); never throws so engine call-sites can stay fire-and-forget.
+ * matching event fires, ENABLED registrations SUBSCRIBED TO THE EVENT IN THE
+ * GIVEN TENANT get their delivery fields MARKED with seeded outcomes — no
+ * real HTTP egress in sandbox (the appliance sender performs real signed
+ * POSTs). The tenantId filter is load-bearing (audit fix #13): without it a
+ * single tenant's event would mark webhooks in every tenant. Never throws so
+ * engine call-sites can stay fire-and-forget.
  */
-export async function markWebhookDelivery(event: WebhookEvent, data: Record<string, unknown> = {}): Promise<void> {
+export async function markWebhookDelivery(
+  tenantId: number,
+  event: WebhookEvent,
+  data: Record<string, unknown> = {},
+): Promise<void> {
   try {
     const rows = await db.webhook.findMany({
-      where: { enabled: true, events: { contains: event } },
+      where: { tenantId, enabled: true, events: { contains: event } },
     });
     const matching = rows.filter((r) => parseJson<string[]>(r.events, []).includes(event));
     if (matching.length === 0) return;

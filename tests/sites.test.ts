@@ -35,6 +35,7 @@ process.env.DATABASE_URL = `file:${DB_PATH}`;
 
 const { db } = await import("@/lib/db");
 const { signSession, SESSION_COOKIE } = await import("@/lib/auth/jwt");
+const sessionStore = await import("@/lib/auth/session-store");
 
 const sitesRoute = await import("@/app/api/v1/sites/route");
 const siteIdRoute = await import("@/app/api/v1/sites/[id]/route");
@@ -45,7 +46,18 @@ const templateIdRoute = await import("@/app/api/v1/sites/templates/[id]/route");
 const firmwareRoute = await import("@/app/api/v1/sites/firmware/route");
 const statsRoute = await import("@/app/api/v1/sites/stats/route");
 
-const TOKEN = await signSession({ sub: "1", username: "sites-admin", role: "tenant_admin", tenantId: 1 });
+// signSession now returns { token, jti, expiresAt } and the authenticate path
+// requires the jti to be registered in the AuthSession registry (audit fix #1)
+const SIGNED = await signSession({ sub: "1", username: "sites-admin", role: "tenant_admin", tenantId: 1 });
+const TOKEN = SIGNED.token;
+await sessionStore.createAuthSession({
+  jti: SIGNED.jti,
+  userId: 1,
+  tenantId: 1,
+  ip: "203.0.113.10",
+  userAgent: "vitest",
+  expiresAt: SIGNED.expiresAt,
+});
 
 type Res = { status: number; body: Record<string, unknown> };
 
@@ -473,5 +485,41 @@ describe("GET /api/v1/sites/deployments (pagination + filters)", () => {
 
     const none = await callDeployments("?kind=firmware");
     expect(none.body.meta).toMatchObject({ total: 0 });
+  });
+});
+
+// ── stuck-push sweep (audit fix F-d) ────────────────────────────────────────
+
+describe("stuck `pushing` sweep (audit fix F-d)", () => {
+  it("sweeps deployments wedged in pushing >10min to failed on listSites", async () => {
+    const site = await createSite({ name: "edge-wedge", status: "online" });
+    // simulate a crashed transport: a deployment stuck in `pushing` since 11 min ago
+    const wedged = await db.siteDeployment.create({
+      data: {
+        tenantId: 1,
+        siteId: site.id as number,
+        kind: "policy",
+        status: "pushing",
+        payload: "{}",
+        result: "{}",
+        pushedAt: new Date(Date.now() - 11 * 60_000),
+      },
+    });
+
+    const res = await callSites("GET", "?limit=100");
+    expect(res.status).toBe(200);
+
+    const after = await db.siteDeployment.findUniqueOrThrow({ where: { id: wedged.id } });
+    expect(after.status).toBe("failed");
+    const result = JSON.parse(after.result) as { errors: string[] };
+    expect(result.errors[0]).toContain("stuck in 'pushing'");
+
+    // and a FRESH `pushing` row is left alone (the sweep is age-gated)
+    const fresh = await db.siteDeployment.create({
+      data: { tenantId: 1, siteId: site.id as number, kind: "policy", status: "pushing", payload: "{}", result: "{}", pushedAt: new Date() },
+    });
+    await callSites("GET", "?limit=100");
+    const freshAfter = await db.siteDeployment.findUniqueOrThrow({ where: { id: fresh.id } });
+    expect(freshAfter.status).toBe("pushing");
   });
 });

@@ -299,19 +299,22 @@ export function renderSslFragment(inputs: SslRenderInput): SslRenderResult {
   L.push(`# policy: "${pname}" (db id ${pid}) — mode ${policy.mode} · minTLS ${policy.minTlsVersion}`);
   L.push(`# chosen as the first ENABLED selective/full policy (simulated-engine parity, id asc).`);
 
-  // (c) generated-CA requirement note — reads policy fields, no schema invention
+  // (c) generated-CA requirement — an apply-REFUSING condition (see
+  // hardSslRefusal): bumping without an ACTIVE generated CA serves certificates
+  // every client rejects. The warning stays in the fragment for honest preview,
+  // but the apply plan is refused until the CA is selected/activated.
   if (policy.signingCaId == null) {
     warnings.push(
       `policy "${pname}" has no signing CA (signingCaId null) — bumping needs a generated CA; ` +
-        `create one in the PKI module and reference it, or connections will fail at runtime`,
+        `create one in the PKI module and reference it — apply is REFUSED until an active signing CA is selected`,
     );
-    L.push("# WARNING: no signing CA configured (PKI module) — bumping will fail at runtime.");
+    L.push("# WARNING: no signing CA configured (PKI module) — apply is refused until fixed.");
   } else {
     const caLabel = policy.signingCaName ? `"${sanitizeComment(policy.signingCaName, 80)}"` : `id ${policy.signingCaId}`;
     if (policy.signingCaStatus && policy.signingCaStatus !== "active") {
       warnings.push(
         `signing CA ${caLabel} is ${policy.signingCaStatus} — squid will serve certificates the clients reject; ` +
-          `activate or replace it in the PKI module`,
+          `activate or replace it in the PKI module — apply is REFUSED until the signing CA is active`,
       );
     }
     warnings.push(
@@ -480,6 +483,12 @@ export interface SslApplyPlan {
 /**
  * Red-line refusals — checked before any exec. Values come from validated
  * columns, but a validator bypass must never reach the fragment or shell.
+ *
+ * SIGNING-CA CHAIN (audit hard-refusal): a needsSslBump policy without a
+ * signing CA (signingCaId null) or with a signing CA that is not "active"
+ * would MITM traffic with certificates every client rejects — that is an
+ * outage, not a config note, so the apply plan is REFUSED (not warned) until
+ * the operator selects an active signing CA in the PKI module.
  */
 export function hardSslRefusal(inputs: SslRenderInput): string | null {
   for (const r of inputs.bypassRules) {
@@ -490,6 +499,16 @@ export function hardSslRefusal(inputs: SslRenderInput): string | null {
   for (const p of inputs.policies) {
     if (/["'\\\r\n;$`]/.test(p.name)) {
       return `refused: policy id ${p.id} name contains characters that would break the fragment comments — rename it`;
+    }
+  }
+  const { policy, needsSslBump } = effectivePolicy(inputs);
+  if (needsSslBump && policy) {
+    if (policy.signingCaId == null) {
+      return `refused: policy "${sanitizeComment(policy.name)}" (db id ${policy.id}) has no signing CA (signingCaId null) — select an active signing CA in the PKI module before applying`;
+    }
+    if (policy.signingCaStatus !== "active") {
+      const caLabel = policy.signingCaName ? `"${sanitizeComment(policy.signingCaName, 80)}"` : `id ${policy.signingCaId}`;
+      return `refused: signing CA ${caLabel} is ${policy.signingCaStatus ?? "unknown"} — select an active signing CA (activate or replace it in the PKI module) before applying`;
     }
   }
   return null;

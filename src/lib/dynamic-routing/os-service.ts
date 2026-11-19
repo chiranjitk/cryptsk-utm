@@ -232,12 +232,23 @@ async function writeDrState(content: string): Promise<void> {
   await writeFile(DR_STATE_FILE, content, "utf8");
 }
 
-/** BgpSettings singleton get-or-create (defaults: localAs 65000, routerId 10.10.0.1). */
+/** BgpSettings singleton get-or-create (defaults: localAs 65000, routerId 10.10.0.1).
+ *  Transactional: concurrent first-touches serialize on SQLite's write lock;
+ *  a lost create race (P2002) re-finds and returns the winner's row. */
 export async function getOrCreateBgpSettings(tenantId: number) {
-  const existing = await db.bgpSettings.findFirst({ where: { tenantId } });
-  if (existing) return existing;
-  return db.bgpSettings.create({
-    data: { tenantId, localAs: 65000, routerId: "10.10.0.1", gracefulRestart: false, enabled: false },
+  return db.$transaction(async (tx) => {
+    const existing = await tx.bgpSettings.findFirst({ where: { tenantId } });
+    if (existing) return existing;
+    try {
+      return await tx.bgpSettings.create({
+        data: { tenantId, localAs: 65000, routerId: "10.10.0.1", gracefulRestart: false, enabled: false },
+      });
+    } catch (err) {
+      // P2002 — a concurrent create won the race; re-find and return it
+      const raced = await tx.bgpSettings.findFirst({ where: { tenantId } });
+      if (raced) return raced;
+      throw err;
+    }
   });
 }
 

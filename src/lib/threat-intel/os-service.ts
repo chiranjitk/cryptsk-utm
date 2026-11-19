@@ -71,7 +71,21 @@ const CONFIRM_SEC = Math.max(15, Number(process.env.CONSOLE_NFT_CONFIRM_SEC || 6
 /** All tenant auto-block rules → deterministic shapes for the pure generator. */
 export async function loadTiBlockShapes(tenantId: number): Promise<TiBlockRuleShape[]> {
   const rows = await db.autoBlockRule.findMany({ where: { tenantId } });
+  // EXPIRY ENFORCEMENT (M13 §2.11): IOCs past their expiresAt no longer feed
+  // the kernel matchers — the linked rule stays in the DB (provenance + hit
+  // history intact) but is NOT rendered into utm_ti_block. Manual rules
+  // (iocId null) always render.
+  const iocIds = [...new Set(rows.map((r) => r.iocId).filter((v): v is number => v != null))];
+  const expired = new Set<number>();
+  if (iocIds.length > 0) {
+    const stale = await db.ioc.findMany({
+      where: { tenantId, id: { in: iocIds }, expiresAt: { lt: new Date() } },
+      select: { id: true },
+    });
+    for (const i of stale) expired.add(i.id);
+  }
   return rows
+    .filter((r) => r.iocId == null || !expired.has(r.iocId))
     .sort((a, b) => a.id - b.id)
     .map((r) => ({
       id: r.id,

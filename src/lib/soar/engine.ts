@@ -16,7 +16,10 @@
  *
  *   3. dedupeBlocks(existing) — the pure half of the dedupe decision: an
  *      "open" run (running | success) with the same dedupeKey + triggerRef
- *      suppresses the fire; failed runs do NOT (they invite a retry).
+ *      suppresses the fire; failed runs do NOT (they invite a retry). A
+ *      `running` row older than STALE_RUN_MS is treated as DEAD (crashed
+ *      process — it can never reach a terminal status again) so it neither
+ *      blocks nor counts as the open run.
  */
 
 // ── locked vocabularies (mirrors validators/soar.ts — module-local on purpose) ──
@@ -39,6 +42,15 @@ export const SOAR_SEVERITIES = ["info", "low", "medium", "high", "critical"] as 
 
 /** Run statuses that count as "open" for the dedupeKey + triggerRef check. */
 export const DEDUPE_OPEN_STATUSES: readonly string[] = ["running", "success"];
+
+/**
+ * Stale-run horizon (audit fix F-d): a `running` row older than this is
+ * DEAD — the executing process crashed before stamping a terminal status.
+ * The service reaps such rows (→ failed) and the dedupe decision ignores
+ * them (10 minutes ≫ any legitimate step duration; actions are in-process
+ * awaits, not jobs).
+ */
+export const STALE_RUN_MS = 10 * 60 * 1000;
 
 // ── shapes ──────────────────────────────────────────────────────────────────
 
@@ -128,6 +140,50 @@ function isIPv4(value: unknown): value is string {
   return m.slice(1).every((oct) => Number(oct) >= 0 && Number(oct) <= 255);
 }
 
+function octetsOf(ip: string): [number, number, number, number] | null {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip.trim());
+  if (!m) return null;
+  const nums = m.slice(1).map((oct) => Number(oct));
+  if (nums.some((n) => n < 0 || n > 255)) return null;
+  return [nums[0]!, nums[1]!, nums[2]!, nums[3]!];
+}
+
+/**
+ * ALWAYS-refused block_ip targets (audit fix F-d — automation safety):
+ * blocking any of these wedges the data plane instead of an attacker:
+ *   0.0.0.0/8 (unspecified), 127/8 (loopback), 169.254/16 (link-local),
+ *   224/4 (multicast), 240/4 (reserved, incl. 255.255.255.255 broadcast).
+ * No override exists — these ranges are never a meaningful block target.
+ * (RFC1918 refusal is a RUN-time, env-overridable policy — see the service.)
+ */
+export function isProtectedSpecialIp(ip: string): boolean {
+  const o = octetsOf(ip);
+  if (!o) return false;
+  const [a, b] = [o[0], o[1]];
+  if (a === 0) return true; // 0.0.0.0/8 — covers 0.0.0.0
+  if (a === 127) return true; // 127.0.0.0/8
+  if (a === 169 && b === 254) return true; // 169.254.0.0/16
+  if (a >= 224 && a <= 239) return true; // 224.0.0.0/4 multicast
+  if (a >= 240) return true; // 240.0.0.0/4 reserved — covers 255.255.255.255
+  return false;
+}
+
+/**
+ * RFC1918 private ranges (10/8, 172.16/12, 192.168/16). Legitimate RFC1918
+ * gateways CANNOT be detected generically, so the auto-block refuses ALL of
+ * them by default (a false positive here cuts internal users off);
+ * CONSOLE_SOAR_ALLOW_PRIVATE=1 permits the block explicitly.
+ */
+export function isRfc1918Ip(ip: string): boolean {
+  const o = octetsOf(ip);
+  if (!o) return false;
+  const [a, b] = [o[0], o[1]];
+  if (a === 10) return true; // 10.0.0.0/8
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16
+  return false;
+}
+
 function isNonEmptyString(value: unknown, max: number): value is string {
   return typeof value === "string" && value.trim().length >= 1 && value.trim().length <= max;
 }
@@ -144,6 +200,9 @@ function validateParams(kind: string, params: unknown): string | null {
   switch (kind) {
     case "block_ip": {
       if (!isIPv4(p.ip)) return `ip must be a valid IPv4 address`;
+      if (isProtectedSpecialIp(String(p.ip))) {
+        return `ip is in a protected range (0/8, 127/8, 169.254/16, 224/4, 240/4) — auto-block refused`;
+      }
       if (p.direction !== undefined && !["in", "out", "both"].includes(String(p.direction))) {
         return `direction must be in | out | both`;
       }
@@ -217,8 +276,22 @@ export function evaluateActions(actions: unknown): EvaluateResult {
 /**
  * True when any candidate run blocks a new fire: a run with the same
  * dedupeKey + triggerRef that is still `running` or already `success`
- * (the trigger was already handled). Failed runs never block.
+ * (the trigger was already handled). Failed runs never block. A `running`
+ * row older than STALE_RUN_MS (relative to `now`) is DEAD (crashed run) —
+ * it neither blocks nor is reported as the open run.
  */
-export function dedupeBlocks(existing: Array<{ status: string }>): boolean {
-  return existing.some((run) => DEDUPE_OPEN_STATUSES.includes(run.status));
+export function dedupeBlocks(
+  existing: Array<{ status: string; startedAt?: Date | string }>,
+  now: Date = new Date(),
+): boolean {
+  return existing.some((run) => {
+    if (!DEDUPE_OPEN_STATUSES.includes(run.status)) return false;
+    if (run.status === "running" && run.startedAt !== undefined) {
+      const started = run.startedAt instanceof Date ? run.startedAt : new Date(run.startedAt);
+      if (Number.isFinite(started.getTime()) && now.getTime() - started.getTime() > STALE_RUN_MS) {
+        return false; // stale running row — dead, not open
+      }
+    }
+    return true;
+  });
 }

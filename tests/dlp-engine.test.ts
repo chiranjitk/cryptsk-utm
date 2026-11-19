@@ -84,6 +84,15 @@ vi.mock("@/lib/db", () => ({
         if (args?.where?.enabled !== undefined) rows = rows.filter((p) => p.enabled === args.where!.enabled);
         return rows;
       },
+      findFirst: async (args?: { where?: { tenantId?: number; name?: string } }) =>
+        h.patterns.find(
+          (p) => inTenant(p, args?.where?.tenantId) && (args?.where?.name === undefined || p.name === args.where!.name),
+        ) ?? null,
+      create: async ({ data }: { data: Omit<FakePattern, "id"> }) => {
+        const row: FakePattern = { ...data, id: ++h.nextId };
+        h.patterns.push(row);
+        return row;
+      },
     },
     dlpPolicy: {
       findMany: async (args?: { where?: { tenantId?: number; enabled?: boolean } }) => {
@@ -126,7 +135,8 @@ import {
   scanPayload,
   splitKeywords,
 } from "@/lib/dlp/engine";
-import { createPolicy, scanTenant } from "@/lib/dlp/service";
+import { createPattern, createPolicy, scanTenant } from "@/lib/dlp/service";
+import { dlpPatternCreateSchema } from "@/lib/validators/dlp";
 
 // ── engine: keyword / Aho-Corasick ──────────────────────────────────────────
 
@@ -188,10 +198,33 @@ describe("scanPayload — keyword matcher (Aho-Corasick, SPEC §3.3)", () => {
     expect(splitKeywords("a, b ,,c")).toEqual(["a", "b", "c"]);
   });
 
+  it("caps keyword hit collection at MAX_MATCHES (100) and stops scanning", () => {
+    const text = Array.from({ length: 150 }, () => "secret").join(" ");
+    const r = scanPayload({ text, patterns: [kw(1, "secret")] });
+    expect(r.matches).toHaveLength(100);
+  });
+
   it("builds a deduplicated automaton (buildKeywordAutomaton)", () => {
     const { automaton, owners } = buildKeywordAutomaton([kw(1, "dup,dup,other")]);
-    expect(owners.map((o) => o.term)).toEqual(["dup", "other"]);
+    expect(owners.map((o) => o[0].term)).toEqual(["dup", "other"]);
     expect(automaton.terms).toEqual(["dup", "other"]);
+  });
+
+  it("keeps ALL owners for a shared term and fans hits out to every owner pattern", () => {
+    // pattern 1 and pattern 2 both declare "secret" — the hit must be
+    // attributed to BOTH (audit fix F-d: previously only the first pattern
+    // was credited, silently starving policies that shared a keyword)
+    const { automaton, owners } = buildKeywordAutomaton([kw(1, "secret,inner"), kw(2, "SECRET,data")]);
+    expect(automaton.terms).toEqual(["secret", "inner", "data"]);
+    expect(owners[0].map((o) => o.patternId)).toEqual([1, 2]); // shared term
+    expect(owners[1].map((o) => o.patternId)).toEqual([1]);
+    expect(owners[2].map((o) => o.patternId)).toEqual([2]);
+
+    const r = scanPayload({ text: "secret data", patterns: [kw(1, "secret,data"), kw(2, "secret,data")] });
+    const ids = r.matches.map((m) => m.patternId).sort((a, b) => a - b);
+    expect(ids).toEqual([1, 1, 2, 2]); // both spans × both owners
+    expect(r.matches.filter((m) => m.patternId === 1)).toHaveLength(2);
+    expect(r.matches.filter((m) => m.patternId === 2)).toHaveLength(2);
   });
 });
 
@@ -226,6 +259,26 @@ describe("scanPayload — regex matcher (guarded build)", () => {
     expect(r.warnings).toHaveLength(1);
     expect(r.warnings[0]).toContain("Pattern #1");
     expect(r.warnings[0]).toContain("invalid regular expression");
+  });
+
+  it("aborts remaining regex work and records the budget warning past the deadline", () => {
+    // drive the wall-clock deadline without a genuinely slow regex: each mock
+    // call advances the clock +5s over the previous one, so scanStart's
+    // (first) call and the per-chunk guard's call are always > 2000ms apart —
+    // independent of any vitest-internal Date.now consumers in between
+    const realNow = Date.now.bind(Date);
+    let calls = 0;
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => {
+      calls += 1;
+      return realNow() + (calls - 1) * 5000;
+    });
+    try {
+      const r = scanPayload({ text: "abcdef", patterns: [rx(1, "abc")] });
+      expect(r.matches).toHaveLength(0);
+      expect(r.warnings.some((w) => w.includes("scan budget exceeded"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("buildRegexMatchers never throws at build or scan time", () => {
@@ -291,6 +344,42 @@ describe("redaction — span masked, length preserved, 16+16 context, 120 cap", 
 });
 
 // ── service: DB harness — patternIds validation + scan orchestration ────────
+
+describe("ReDoS guard — nested quantifiers rejected at create (audit fix F-d)", () => {
+  beforeEach(() => seedIncidentTables());
+
+  it("the zod edge rejects classic catastrophic shapes with the documented message", () => {
+    for (const bad of ["(a+)+", "(\\w*)*", "(?:x+){2,}", "^([a-z]+)*$"]) {
+      const r = dlpPatternCreateSchema.safeParse({ name: "boom", kind: "regex", value: bad });
+      expect(r.success).toBe(false);
+      if (!r.success) {
+        expect(JSON.stringify(r.error.issues)).toContain("nested quantifiers rejected (ReDoS guard)");
+      }
+    }
+    // keywords are literals — the same shape is legal there
+    expect(dlpPatternCreateSchema.safeParse({ name: "kw", kind: "keyword", value: "(a+)+,x" }).success).toBe(true);
+    // and ordinary regexes are unaffected
+    expect(dlpPatternCreateSchema.safeParse({ name: "ok", kind: "regex", value: "\\b\\d{3}-\\d{2}-\\d{4}\\b" }).success).toBe(true);
+  });
+
+  it("the service throws (nothing written) for service callers bypassing zod", async () => {
+    const before = h.patterns.length;
+    const err: unknown = await createPattern(1, {
+      name: "redos-bomb",
+      kind: "regex",
+      value: "(a+)+",
+      severity: "high",
+      category: "pii",
+      enabled: true,
+    }).then(
+      () => null,
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).message).toContain("nested quantifiers rejected (ReDoS guard)");
+    expect(h.patterns.length).toBe(before); // nothing written
+  });
+});
 
 function seedPattern(over: Partial<FakePattern> = {}): FakePattern {
   const row: FakePattern = {

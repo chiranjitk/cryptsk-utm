@@ -40,6 +40,36 @@ process.env.DATABASE_URL = `file:${DB_PATH}`;
 
 const { db } = await import("@/lib/db");
 const service = await import("@/lib/ztna/service");
+const { signSession, SESSION_COOKIE } = await import("@/lib/auth/jwt");
+const sessionStore = await import("@/lib/auth/session-store");
+const { NextRequest } = await import("next/server");
+const postureRoute = await import("@/app/api/v1/ztna/posture-checks/route");
+const validateRoute = await import("@/app/api/v1/ztna/posture-checks/validate/route");
+
+// signSession now returns { token, jti, expiresAt } and the authenticate path
+// requires the jti to be registered in the AuthSession registry (audit fix #1)
+const SIGNED = await signSession({ sub: "1", username: "ztna-admin", role: "tenant_admin", tenantId: 1 });
+const TOKEN = SIGNED.token;
+await sessionStore.createAuthSession({
+  jti: SIGNED.jti,
+  userId: 1,
+  tenantId: 1,
+  ip: "203.0.113.10",
+  userAgent: "vitest",
+  expiresAt: SIGNED.expiresAt,
+});
+
+function ztnaReq(path: string, init?: { method?: string; body?: unknown }): InstanceType<typeof NextRequest> {
+  return new NextRequest(`http://localhost/api/v1/ztna${path}`, {
+    method: init?.method ?? "GET",
+    ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+    headers: {
+      "content-type": "application/json",
+      cookie: `${SESSION_COOKIE}=${TOKEN}`,
+      "x-forwarded-for": "203.0.113.10",
+    },
+  });
+}
 
 beforeAll(async () => {
   // the copied dev schema has no tenant rows — ztna rows FK to tenants
@@ -513,5 +543,49 @@ describe("stats — counts, compliance pie, recent denials", () => {
     expect(stats.staleChecks).toBe(1);
     expect(stats.recentDenials).toHaveLength(1);
     expect(stats.recentDenials[0]).toMatchObject({ user: "mallory", appName: "stats-app", matchedPolicyId: p1.id, reason: "Denied by user policy 'mallory'" });
+  });
+});
+
+// ═════════ Regression: GET no longer mutates + POST validate (audit F-d) ════
+
+describe("posture-checks routes (audit fix F-d)", () => {
+  it("GET /posture-checks is a pure read — due rows are NOT re-evaluated", async () => {
+    const profile = await service.createPostureProfile(1, { name: "route-read", checks: { avRequired: true } });
+    const check = await service.recordPostureCheck(1, { deviceId: "route-dev", profileId: profile.id, results: { av: "pass" } });
+    // make the re-check window elapse — pre-fix, GET would sweep it right here
+    await db.devicePostureCheck.update({ where: { id: check.id }, data: { nextCheckAt: new Date(Date.now() - 1000) } });
+
+    const res = await postureRoute.GET(ztnaReq("/posture-checks?page=1&limit=25"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Array<{ deviceId: string }> };
+    expect(body.data.map((d) => d.deviceId)).toEqual(["route-dev"]);
+
+    // GET created NOTHING: still exactly one row for the device, same verdict
+    const rows = await db.devicePostureCheck.findMany({ where: { tenantId: 1, deviceId: "route-dev" } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].verdict).toBe("compliant");
+    expect(rows[0].checkedAt.toISOString()).toBe(check.checkedAt);
+  });
+
+  it("POST /posture-checks/validate runs the audited sweep (due rows re-checked)", async () => {
+    const profile = await service.createPostureProfile(1, { name: "route-validate", checks: { avRequired: true } });
+    const check = await service.recordPostureCheck(1, { deviceId: "validate-dev", profileId: profile.id, results: { av: "pass" } });
+    await db.devicePostureCheck.update({ where: { id: check.id }, data: { nextCheckAt: new Date(Date.now() - 1000) } });
+
+    const res = await validateRoute.POST(ztnaReq("/posture-checks/validate", { method: "POST" }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { rechecked: number; changed: number } };
+    expect(body.data.rechecked).toBe(1);
+    expect(body.data.changed).toBe(0);
+
+    // the sweep persisted a FRESH snapshot with a forward horizon
+    const rows = await db.devicePostureCheck.findMany({ where: { tenantId: 1, deviceId: "validate-dev" }, orderBy: { id: "asc" } });
+    expect(rows).toHaveLength(2);
+    expect(rows[1].nextCheckAt!.getTime()).toBeGreaterThan(Date.now());
+
+    // post-run the horizon moved forward → an immediate second sweep is a no-op
+    const res2 = await validateRoute.POST(ztnaReq("/posture-checks/validate", { method: "POST" }));
+    const body2 = (await res2.json()) as { data: { rechecked: number } };
+    expect(body2.data.rechecked).toBe(0);
   });
 });

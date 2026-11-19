@@ -8,9 +8,18 @@
  * (the GeoipSource.kind column accepts "mmdb" for a future reader). The
  * console only parses what an operator points it at and records the result.
  *
+ * SECURITY (managed-root confinement): admin-supplied `filePath` values are
+ * the classic arbitrary-file-read vector — a signed-in admin could point the
+ * parser at /etc/passwd or a private key. loadSource()/readPrefixes()
+ * therefore confine every read to GEOIP_ROOT (CONSOLE_GEOIP_DIR override,
+ * default <cwd>/db/geoip): raw `..` segments rejected, the resolved path must
+ * stay inside the root, symlinks (final component AND fully-resolved realpath)
+ * are rejected, and error messages never leak fs path internals beyond the
+ * managed root itself.
+ *
  * Data flow:
  *   POST /geoip/sources {name, filePath}
- *     → loadSource(): read + parseGeoCsv + aggregate per country
+ *     → loadSource(): confine → read + parseGeoCsv + aggregate per country
  *     → GeoipSource row (status loaded, countries JSON, prefixCount)
  *   firewall apply (firewall-os)
  *     → getGeoResolver(): re-reads loaded sources (readPrefixes) and injects
@@ -20,10 +29,79 @@
  */
 
 import fs from "node:fs/promises";
+import path from "node:path";
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
 import { renderGeoSets, GEO_SET_MAX_PREFIXES, type GeoSetInfo } from "./render";
 import { isFqdnStale } from "@/lib/firewall/fqdn-resolver";
+
+// ── managed-root confinement (SECURITY: no arbitrary host file reads) ──────
+
+/**
+ * GeoIP CSV sources may ONLY live inside this managed directory. The default
+ * is `<cwd>/db/geoip`; tests override it with CONSOLE_GEOIP_DIR. The root is
+ * created (recursive) on the first load attempt.
+ */
+export const GEOIP_ROOT = process.env.CONSOLE_GEOIP_DIR
+  ? path.resolve(process.env.CONSOLE_GEOIP_DIR)
+  : path.resolve(process.cwd(), "db", "geoip");
+
+/** Strictly-inside-root check (the root itself is a directory, never a source). */
+function isInsideGeoRoot(p: string): boolean {
+  return p.startsWith(GEOIP_ROOT + path.sep);
+}
+
+/**
+ * Fully-resolved root (parents of the root itself may be symlinks, e.g. /var
+ * → /private/var on macOS) — realpath containment compares against THIS.
+ * Cached; falls back to the logical root when it does not exist yet.
+ */
+let realRootCache: string | null = null;
+async function realGeoRoot(): Promise<string> {
+  if (realRootCache) return realRootCache;
+  realRootCache = await fs.realpath(GEOIP_ROOT).catch(() => GEOIP_ROOT);
+  return realRootCache;
+}
+
+/** Human-safe path for messages: relative to the root, no fs internals. */
+function displayPath(resolved: string): string {
+  const rel = path.relative(GEOIP_ROOT, resolved);
+  return rel.length > 0 ? rel : path.basename(resolved);
+}
+
+/**
+ * Confine an admin-supplied path to GEOIP_ROOT. Returns the resolved path on
+ * success; throws 400 "filePath must point inside the managed geoip directory"
+ * on traversal (`..` segments — checked BEFORE resolve, which would silently
+ * collapse them), absolute paths outside the root, and symlinks (final
+ * component via lstat + isSymbolicLink, fully-resolved realpath for symlinked
+ * parent directories). A MISSING file is not a confinement violation — callers
+ * surface the plain read error.
+ */
+async function confineGeoipPath(input: string): Promise<string> {
+  const raw = input.trim();
+  const violation = (): ApiError =>
+    ApiError.validation("filePath must point inside the managed geoip directory");
+  if (!raw || raw.split(/[\\/]/).includes("..")) throw violation();
+  const resolved = path.resolve(GEOIP_ROOT, raw);
+  if (!isInsideGeoRoot(resolved)) throw violation();
+  const st = await fs.lstat(resolved).catch(() => null);
+  if (st?.isSymbolicLink()) throw violation();
+  if (st) {
+    // parent-symlink defense: the REAL path (all links resolved) must stay
+    // inside the REAL root
+    const real = await fs.realpath(resolved).catch(() => null);
+    const realRoot = await realGeoRoot();
+    if (!real || !real.startsWith(realRoot + path.sep)) throw violation();
+  }
+  return resolved;
+}
+
+/** errno-style reason only — err.message would leak absolute fs paths. */
+function errnoOf(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return typeof code === "string" && code.length > 0 ? code : "read error";
+}
 
 // ── CSV parsing (pure, exported for tests) ──────────────────────────────────
 
@@ -180,7 +258,10 @@ export async function loadSource(
   input: { name: string; filePath: string },
 ): Promise<GeoipLoadResult> {
   const name = input.name.trim();
-  const filePath = input.filePath.trim();
+  // SECURITY: confine FIRST — a traversal/symlink violation is invalid input
+  // (plain 400, no row written); only genuine read/parse failures mark the row.
+  await fs.mkdir(GEOIP_ROOT, { recursive: true });
+  const filePath = await confineGeoipPath(input.filePath);
   const existing = await db.geoipSource.findFirst({ where: { tenantId, name } });
 
   const fail = async (message: string): Promise<never> => {
@@ -201,13 +282,14 @@ export async function loadSource(
   try {
     text = await fs.readFile(filePath, "utf8");
   } catch (err) {
-    await fail(`Cannot read GeoIP source file '${filePath}': ${err instanceof Error ? err.message : "read error"}`);
+    // sanitized: relative path + errno only — never the raw fs error internals
+    await fail(`Cannot read GeoIP source file '${displayPath(filePath)}': ${errnoOf(err)}`);
     return undefined as never; // unreachable — fail always throws
   }
 
   const parsed = parseGeoCsv(text);
   if (parsed.v4Count === 0) {
-    await fail(`GeoIP source '${filePath}' contains no usable IPv4 prefixes (${parsed.badLines} bad line(s), ${parsed.v6Count} IPv6)`);
+    await fail(`GeoIP source '${displayPath(filePath)}' contains no usable IPv4 prefixes (${parsed.badLines} bad line(s), ${parsed.v6Count} IPv6)`);
     return undefined as never;
   }
 
@@ -242,7 +324,11 @@ export async function loadSource(
 export async function readPrefixes(
   filePath: string,
 ): Promise<{ prefixes: Record<string, string[]>; warnings: string[] }> {
-  const text = await fs.readFile(filePath, "utf8");
+  // same managed-root confinement as loadSource — the stored path is trusted
+  // only as far as the root (legacy/foreign rows degrade to an honest warning
+  // in getSets instead of an arbitrary read)
+  const resolved = await confineGeoipPath(filePath);
+  const text = await fs.readFile(resolved, "utf8");
   const parsed = parseGeoCsv(text);
   return { prefixes: parsed.countries, warnings: parsed.warnings };
 }
@@ -283,8 +369,13 @@ export async function getSets(tenantId: number): Promise<GeoipSets> {
       }
     } catch (err) {
       // a source that was loaded once but whose file vanished on disk —
-      // honest warning, the other sources still render
-      warnings.push(`source '${row.name}' (${row.filePath}) could not be re-read: ${err instanceof Error ? err.message : "read error"}`);
+      // honest warning, the other sources still render. Sanitized: ApiError
+      // messages are confinement text; fs errors degrade to an errno code so
+      // no absolute host path leaks into the API response.
+      const reason = err instanceof ApiError ? err.message : errnoOf(err);
+      // sanitized: never echo the stored path (it may be a legacy out-of-root
+      // row) — the source name plus reason is enough for triage
+      warnings.push(`source '${row.name}' (file unavailable) could not be re-read: ${reason}`);
     }
   }
 

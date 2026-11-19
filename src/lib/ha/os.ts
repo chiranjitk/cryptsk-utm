@@ -25,10 +25,20 @@ import { fnv1aHash } from "@/lib/dns/os";
 export const HA_INSTANCE_NAME = "VI_CONSOLE";
 export const KEEPALIVED_CONF = "/etc/keepalived/keepalived.conf";
 export const KEEPALIVED_STAGE = "/etc/keepalived/keepalived.conf.console-staged";
-export const HA_VALIDATE_TMP = "/tmp/console-ha-validate.conf";
 export const HA_STATE_DIR = "/var/lib/console/ha";
 /** Console-owned backups: keepalived.conf.backup-<ts> */
 export const HA_BACKUP_RE = /^keepalived\.conf\.backup-[\w.-]+$/;
+/**
+ * Validate-only confs are staged INSIDE the console state dir (never /tmp):
+ * `${HA_STATE_DIR}/validate-<ts>.conf` — same guarded home as the backups.
+ */
+export const HA_VALIDATE_DIR = HA_STATE_DIR;
+/** Full staged path form — the whitelist checks the whole `-f` argument. */
+export const HA_VALIDATE_RE = new RegExp(`^${HA_STATE_DIR}/validate-[\\w.-]+\\.conf$`);
+export function haValidateConfPath(ts: string): string {
+  return `${HA_STATE_DIR}/validate-${ts}.conf`;
+}
+export const HA_STATE_DIR_GUARDED_CMD = `mkdir -p ${HA_STATE_DIR}`;
 
 /** Interfaces the console must never manage VRRP on (WAN uplink red line). */
 export function haForbiddenIfaces(): string[] {
@@ -401,7 +411,8 @@ export function haStepGuarded(cmd: string): boolean {
   if (c === `install -m 0644 /dev/null ${KEEPALIVED_STAGE}`) return true;
   if (c === `write-file ${KEEPALIVED_STAGE}`) return true;
   if (c === `keepalived -t -f ${KEEPALIVED_STAGE}`) return true;
-  if (c === `keepalived -t -f ${HA_VALIDATE_TMP}`) return true; // validate-only endpoint
+  // validate-only endpoint — timestamped conf staged under the state dir
+  if (c.startsWith("keepalived -t -f ") && HA_VALIDATE_RE.test(c.slice("keepalived -t -f ".length))) return true;
   if (c === `install -m 0644 ${KEEPALIVED_STAGE} ${KEEPALIVED_CONF}`) return true;
   if (c === "systemctl restart keepalived") return true;
   if (c === "systemctl is-active keepalived") return true;

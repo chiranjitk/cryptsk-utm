@@ -2,7 +2,8 @@
  * Profiling rescan (M23, spec 2.9) — SIMULATED endpoint-profiler sweep (the
  * appliance runs the real probe). Every "unknown" device gets a deterministic
  * type from its OUI/vendor fnv-1a hash; some devices get an osGuess refresh;
- * lastSeen is refreshed fleet-wide. Audits `nac.rescan`.
+ * lastSeen is refreshed fleet-wide. Audits `nac.rescan`. Guard area `nac`
+ * (audit fix #11 — was `identity`; nac.write includes network_admin).
  */
 
 import { route } from "@/lib/api/handler";
@@ -23,7 +24,7 @@ const OS_GUESSES: Record<ProfilerType, string> = {
   iot: "embedded Linux",
 };
 
-export const POST = route({ area: "identity", section: "identity" }, async ({ auth }) => {
+export const POST = route({ area: "nac", section: "identity" }, async ({ auth }) => {
   const devices = await db.nacDevice.findMany({ where: { tenantId: auth.tenantId } });
   const unknown = devices.filter((d) => d.deviceType === "unknown");
 

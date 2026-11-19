@@ -56,10 +56,12 @@ export async function createNatRule(
   tenantId: number,
   body: NatRuleBody,
 ): Promise<{ id: number; name: string | null; position: number }> {
-  const max = await db.natRule.aggregate({ where: { tenantId }, _max: { position: true } });
-  const appendPos = (max._max.position ?? 0) + 1;
-  const desired = body.position ? Math.min(body.position, appendPos) : appendPos;
   const created = await db.$transaction(async (tx) => {
+    // max-position aggregate INSIDE the tx (concurrent creates race the append
+    // position — the read and the write share the tx snapshot)
+    const max = await tx.natRule.aggregate({ where: { tenantId }, _max: { position: true } });
+    const appendPos = (max._max.position ?? 0) + 1;
+    const desired = body.position ? Math.min(body.position, appendPos) : appendPos;
     if (desired < appendPos) {
       await tx.natRule.updateMany({ where: { tenantId, position: { gte: desired } }, data: { position: { increment: 1 } } });
     }

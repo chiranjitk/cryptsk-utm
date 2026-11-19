@@ -1,6 +1,7 @@
 /**
  * OSPF interface item (M19 §2.6) — update / delete, audit
- * `ospf_interface.update|delete`.
+ * `ospf_interface.update|delete`. Partial updates merge with the stored row
+ * and re-run the cross-field dead ≥ 2×hello rule (merge-then-revalidate).
  */
 
 import { route, numericId } from "@/lib/api/handler";
@@ -21,6 +22,15 @@ export const PUT = route(
   async ({ auth, body, params }) => {
     const id = numericId(params, "id");
     const existing = await findIface(auth.tenantId, id);
+    // merge-then-revalidate (mirrors ipv6/shared.ts updateNat66Rule): the
+    // zod schema alone can't see cross-field pairs spanning patch + row
+    const mergedHello = body.helloSec ?? existing.helloSec;
+    const mergedDead = body.deadSec ?? existing.deadSec;
+    if (mergedDead < 2 * mergedHello) {
+      throw ApiError.validation("OSPF interface update failed validation", {
+        fieldErrors: { deadSec: ["dead interval must be at least 2× hello"] },
+      });
+    }
     const updated = await db.ospfInterface.update({ where: { id }, data: body });
     return {
       data: updated,

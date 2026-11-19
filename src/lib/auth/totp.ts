@@ -1,9 +1,31 @@
 /**
  * RFC 6238 TOTP verification (Phase 1 MFA gate — AUTH_AND_RBAC §6).
  * Base32 secret, SHA-1, 30 s step, ±1 window tolerance.
+ *
+ * Audit fixes: code comparison is timing-safe (constant-length 6-digit codes
+ * compared via crypto.timingSafeEqual with a length guard), and a best-effort
+ * replay guard tracks the last matched step per userId IN-PROCESS — steps
+ * ≤ the last matched step are rejected. LIMITATION (documented, accepted):
+ * the replay window lives in one Node process — a restart or multi-instance
+ * deployment resets it; durable replay protection needs a per-user
+ * lastTotpStep column (schema change — out of scope this pass).
  */
 
+import { timingSafeEqual } from "crypto";
+
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+/** userId → last matched time step (best-effort replay guard, see header). */
+const lastMatchedStep = new Map<number, number>();
+const REPLAY_MAP_MAX = 5_000;
+
+function rememberStep(userId: number, step: number): void {
+  if (lastMatchedStep.size >= REPLAY_MAP_MAX && !lastMatchedStep.has(userId)) {
+    const oldest = [...lastMatchedStep.entries()].sort((a, b) => a[1] - b[1]).slice(0, lastMatchedStep.size - REPLAY_MAP_MAX + 1);
+    for (const [k] of oldest) lastMatchedStep.delete(k);
+  }
+  lastMatchedStep.set(userId, step);
+}
 
 function base32Decode(input: string): Uint8Array {
   const clean = input.replace(/=+$/g, "").replace(/\s/g, "").toUpperCase();
@@ -53,12 +75,30 @@ export async function generateTotpSecret(): Promise<string> {
   return out;
 }
 
-export async function verifyTotp(secret: string, code: string): Promise<boolean> {
+/** Timing-safe equality over the (fixed-length) 6-digit code bytes. */
+function codeEquals(expected: string, presented: string): boolean {
+  const a = Buffer.from(expected, "utf8");
+  const b = Buffer.from(presented, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/**
+ * Verify a TOTP code. `userId` enables the best-effort replay guard (login
+ * path); omitted (dummy-verify paths) the pure RFC check runs.
+ */
+export async function verifyTotp(secret: string, code: string, userId?: number): Promise<boolean> {
   const key = base32Decode(secret);
   const step = Math.floor(Date.now() / 30_000);
+  const last = userId !== undefined ? lastMatchedStep.get(userId) : undefined;
   for (const w of [0, -1, 1]) {
-    const expected = await hotp(key, step + w);
-    if (expected === code) return true;
+    const candidate = step + w;
+    if (last !== undefined && candidate <= last) continue; // replayed step → reject
+    const expected = await hotp(key, candidate);
+    if (codeEquals(expected, code)) {
+      if (userId !== undefined) rememberStep(userId, candidate);
+      return true;
+    }
   }
   return false;
 }

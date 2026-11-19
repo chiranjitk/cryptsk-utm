@@ -43,6 +43,7 @@ type FakeDelivery = {
 const h = vi.hoisted(() => ({
   webhooks: [] as FakeWebhook[],
   deliveries: [] as FakeDelivery[],
+  notifications: [] as Array<{ id: number; tenantId: number }>,
   nextId: 0,
 }));
 
@@ -57,10 +58,15 @@ vi.mock("@/lib/db", () => ({
         ),
       findFirst: async (args: { where: { id: number; tenantId: number } }) =>
         h.webhooks.find((w) => w.id === args.where.id && w.tenantId === args.where.tenantId) ?? null,
-      update: async (args: { where: { id: number }; data: Partial<FakeWebhook> }) => {
+      update: async (args: { where: { id: number }; data: Partial<FakeWebhook> & { failureCount?: number | { increment: number } } }) => {
         const row = h.webhooks.find((w) => w.id === args.where.id);
         if (!row) throw new Error(`webhook ${args.where.id} not found`);
-        Object.assign(row, args.data);
+        const { failureCount, ...rest } = args.data;
+        Object.assign(row, rest);
+        // F-e #13: atomic increment semantics
+        if (typeof failureCount === "number") row.failureCount = failureCount;
+        else if (failureCount && typeof failureCount === "object" && "increment" in failureCount)
+          row.failureCount += failureCount.increment;
         return row;
       },
     },
@@ -84,6 +90,11 @@ vi.mock("@/lib/db", () => ({
           .sort((a, b) => b.id - a.id); // createdAt desc (ids are monotonic)
         return typeof args?.take === "number" ? rows.slice(0, args.take) : rows;
       },
+    },
+    notification: {
+      // F-e #2: trigger fallback tenant resolution by notification id
+      findUnique: async (args: { where: { id: number } }) =>
+        h.notifications.find((n) => n.id === args.where.id) ?? null,
     },
   },
 }));
@@ -137,8 +148,10 @@ const FAST = { backoffMs: [5, 5] as [number, number] };
 beforeEach(() => {
   h.webhooks.length = 0;
   h.deliveries.length = 0;
+  h.notifications.length = 0;
   h.nextId = 0;
   fetchMock.mockReset();
+  delete process.env.CONSOLE_WEBHOOK_ALLOW_PRIVATE;
 });
 
 // ── pure helpers ────────────────────────────────────────────────────────────
@@ -437,10 +450,65 @@ describe("deliverWebhookTest + listRecentDeliveries", () => {
   });
 });
 
+describe("deliverEvent — SSRF guard (F-e #3)", () => {
+  it("refuses delivery to a loopback target with a terminal failure (no fetch, no retry)", async () => {
+    const wh = seedWebhook({ url: "http://127.0.0.1:9999/hook", secret: SECRET });
+    fetchMock.mockResolvedValue(httpResponse(200));
+
+    await deliverEvent("alerts.new", {}, { tenantId: 1, ...FAST });
+
+    expect(fetchMock).not.toHaveBeenCalled(); // refused BEFORE any attempt
+    expect(h.deliveries).toHaveLength(1); // ONE terminal ledger row
+    const row = h.deliveries[0];
+    expect(row.ok).toBe(false);
+    expect(row.attempts).toBe(0); // no attempt was made
+    expect(row.statusCode).toBeNull();
+    expect(row.error).toContain("refused by SSRF guard");
+    expect(row.error).toContain("127.0.0.1");
+    expect(wh.failureCount).toBe(1); // atomic increment still applied
+    expect(wh.lastStatus).toBe("error");
+  });
+
+  it("refuses delivery to the cloud-metadata endpoint (169.254.169.254, link-local)", async () => {
+    seedWebhook({ url: "http://169.254.169.254/latest/meta-data/", secret: null });
+    await deliverEvent("alerts.new", {}, { tenantId: 1 });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(h.deliveries[0].error).toContain("169.254.169.254");
+  });
+
+  it("refuses non-http(s) schemes at the guard", async () => {
+    seedWebhook({ url: "ftp://hooks.example.test/file", secret: null });
+    await deliverEvent("alerts.new", {}, { tenantId: 1 });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(h.deliveries[0].error).toContain("only http(s) webhook targets are allowed");
+  });
+
+  it("CONSOLE_WEBHOOK_ALLOW_PRIVATE=1 permits internal targets (sandbox override)", async () => {
+    process.env.CONSOLE_WEBHOOK_ALLOW_PRIVATE = "1";
+    seedWebhook({ url: "http://127.0.0.1:9999/hook", secret: null });
+    fetchMock.mockResolvedValue(httpResponse(200));
+
+    await deliverEvent("alerts.new", {}, { tenantId: 1 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(h.deliveries[0].ok).toBe(true);
+  });
+
+  it("pure isRefusedIp covers the audited ranges", async () => {
+    const { isRefusedIp } = await import("@/lib/webhooks/dispatcher");
+    for (const ip of ["127.0.0.1", "127.255.255.254", "10.1.2.3", "172.16.0.1", "172.31.255.254", "192.168.1.1", "169.254.0.1", "169.254.169.254", "0.0.0.0", "::1", "::", "fe80::1", "fc00::1", "::ffff:127.0.0.1"]) {
+      expect(isRefusedIp(ip)).toBe(true);
+    }
+    for (const ip of ["8.8.8.8", "203.0.113.9", "172.32.0.1", "169.255.0.1", "2001:db8::1"]) {
+      expect(isRefusedIp(ip)).toBe(false);
+    }
+  });
+});
+
 // ── trigger bridges (audit pipeline + engine event bus) ─────────────────────
 
 describe("triggers — registerWebhookTriggers / auditTrigger", () => {
-  it("bridges alerts:new engine events to alerts.new webhook deliveries", async () => {
+  it("bridges alerts:new engine events to alerts.new webhook deliveries (tenant from payload)", async () => {
     seedWebhook({ events: JSON.stringify(["alerts.new"]), secret: SECRET });
     fetchMock.mockResolvedValue(httpResponse(200));
 
@@ -450,6 +518,7 @@ describe("triggers — registerWebhookTriggers / auditTrigger", () => {
       payload: {
         notification: {
           id: 9,
+          tenantId: 1, // F-e #2: engine emits the owning tenant on the payload
           type: "system",
           severity: "warning",
           title: "CPU high",
@@ -471,8 +540,65 @@ describe("triggers — registerWebhookTriggers / auditTrigger", () => {
     expect(body.data.title).toBe("CPU high");
   });
 
-  it("auditTrigger fans out audit.<objectType> events, tenant-scoped", async () => {
-    seedWebhook({ events: JSON.stringify(["*"]), secret: SECRET }); // tenant 1
+  it("resolves the tenant from the notification row when the payload lacks tenantId (F-e #2)", async () => {
+    seedWebhook({ tenantId: 3, events: JSON.stringify(["alerts.new"]), secret: SECRET }); // notification's tenant
+    seedWebhook({ tenantId: 1, events: JSON.stringify(["*"]), secret: SECRET }); // must NOT receive it
+    h.notifications.push({ id: 77, tenantId: 3 });
+    fetchMock.mockResolvedValue(httpResponse(200));
+
+    registerWebhookTriggers();
+    emitEvent({
+      type: "alerts:new",
+      payload: {
+        notification: {
+          id: 77, // legacy payload — no tenantId field
+          type: "threat",
+          severity: "critical",
+          title: "IPS",
+          message: null,
+          sourceModule: "ips",
+          createdAt: new Date().toISOString(),
+          isRead: false,
+        },
+      },
+    });
+
+    await vi.waitFor(() => expect(h.deliveries).toHaveLength(1));
+    const body = JSON.parse(h.deliveries[0].payload) as { tenantId: number };
+    expect(body.tenantId).toBe(3); // resolved from the stored row
+    expect(fetchMock).toHaveBeenCalledTimes(1); // tenant-1 webhook excluded
+  });
+
+  it("does NOT fan out when no tenant can be resolved (F-e #2)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      seedWebhook({ events: JSON.stringify(["config.updated"]), secret: SECRET });
+      registerWebhookTriggers();
+      emitEvent({ type: "config:updated", payload: { section: "firewall" } }); // legacy payload, no tenantId
+
+      await new Promise((r) => setTimeout(r, 20));
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(h.deliveries).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("no tenantId resolvable"));
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("scopes config:updated fan-out to the payload tenant (F-e #2)", async () => {
+    seedWebhook({ events: JSON.stringify(["config.updated"]), secret: SECRET }); // tenant 1
+    seedWebhook({ tenantId: 2, events: JSON.stringify(["*"]), secret: SECRET });
+    fetchMock.mockResolvedValue(httpResponse(200));
+
+    registerWebhookTriggers();
+    emitEvent({ type: "config:updated", payload: { section: "nat", tenantId: 1 } });
+
+    await vi.waitFor(() => expect(h.deliveries).toHaveLength(1));
+    expect(fetchMock).toHaveBeenCalledTimes(1); // tenant-2 webhook excluded
+  });
+
+  it("auditTrigger fans out audit.mutation events (object type in payload), tenant-scoped", async () => {
+    seedWebhook({ events: JSON.stringify(["audit.mutation"]), secret: SECRET }); // tenant 1
     seedWebhook({ tenantId: 2, events: JSON.stringify(["*"]), secret: SECRET }); // other tenant
     fetchMock.mockResolvedValue(httpResponse(200));
 
@@ -484,11 +610,12 @@ describe("triggers — registerWebhookTriggers / auditTrigger", () => {
       tenantId: number;
       data: Record<string, unknown>;
     };
-    expect(body.event).toBe("audit.firewall_rule");
+    expect(h.deliveries[0].event).toBe("audit.mutation"); // F-e #7: LOCKED enum value
+    expect(body.event).toBe("audit.mutation");
     expect(body.tenantId).toBe(1);
     expect(body.data).toEqual({
       action: "rule.create",
-      objectType: "firewall_rule",
+      objectType: "firewall_rule", // detail kept in the payload
       objectId: 5,
       objectName: null,
       result: "success",

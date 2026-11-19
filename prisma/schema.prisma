@@ -138,6 +138,7 @@ model Tenant {
   configAnomalyFindings  ConfigAnomalyFinding[]
   soarPlaybooks          SoarPlaybook[]
   soarPlaybookRuns       SoarPlaybookRun[]
+  authSessions           AuthSession[]
 
   @@map("tenants")
 }
@@ -2493,4 +2494,22 @@ model SoarPlaybookRun {
 
   @@index([tenantId, playbookId, startedAt])
   @@map("soar_playbook_runs")
+}
+
+/// Server-side session registry — JWT revocation (jti-backed, enterprise authN lifecycle).
+model AuthSession {
+  id        Int       @id @default(autoincrement())
+  tenantId  Int       @default(1) @map("tenant_id")
+  userId    Int       @map("user_id") // logical ref → users
+  jti       String    @unique
+  ip        String    @default("")
+  userAgent String    @default("") @map("user_agent")
+  createdAt DateTime  @default(now()) @map("created_at")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([userId, revokedAt])
+  @@map("auth_sessions")
 }

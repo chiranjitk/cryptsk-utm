@@ -128,6 +128,18 @@ function toPageMeta(page: number, limit: number, total: number): PageMeta {
   return { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) };
 }
 
+/**
+ * Escape LIKE metacharacters (%, _, \) so a user-supplied `q` can no longer
+ * inject LIKE wildcards into Prisma `contains` filters (F-e #18). Semantics
+ * note (Prisma 6 / SQLite, verified empirically): the generated SQL carries
+ * no `ESCAPE '\'` clause, so escaping closes wildcard injection fail-closed —
+ * a `q` containing % or _ matches nothing instead of matching every row.
+ * Plain substring searches (no %/_/\) behave exactly as before.
+ */
+export function escapeLike(input: string): string {
+  return input.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
 // ── firewall logs ───────────────────────────────────────────────────────────
 
 function firewallWhere(tenantId: number, f: { q?: string; action?: string; src?: string; dst?: string; since?: string; until?: string }) {
@@ -139,7 +151,8 @@ function firewallWhere(tenantId: number, f: { q?: string; action?: string; src?:
   if (ts) where.timestamp = ts;
   if (f.q) {
     // Case-insensitive substring — SQLite LIKE semantics via Prisma `contains`.
-    where.OR = ["srcIp", "dstIp", "userName", "ruleName", "appName"].map((col) => ({ [col]: { contains: f.q } }));
+    const q = escapeLike(f.q); // F-e #18: %, _, \ match literally
+    where.OR = ["srcIp", "dstIp", "userName", "ruleName", "appName"].map((col) => ({ [col]: { contains: q } }));
   }
   return where;
 }
@@ -277,7 +290,8 @@ export async function listIpsEvents(
   const ts = toDateFilter(filters.since, filters.until);
   if (ts) where.timestamp = ts;
   if (filters.q) {
-    where.OR = ["message", "sid", "srcIp", "dstIp", "category"].map((col) => ({ [col]: { contains: filters.q } }));
+    const q = escapeLike(filters.q); // F-e #18
+    where.OR = ["message", "sid", "srcIp", "dstIp", "category"].map((col) => ({ [col]: { contains: q } }));
   }
   const [rows, total] = await Promise.all([
     db.ipsEvent.findMany({
@@ -334,7 +348,8 @@ export async function listAuditLogs(
   const ts = toDateFilter(filters.since, filters.until);
   if (ts) where.createdAt = ts;
   if (filters.q) {
-    where.OR = ["action", "objectName", "username"].map((col) => ({ [col]: { contains: filters.q } }));
+    const q = escapeLike(filters.q); // F-e #18
+    where.OR = ["action", "objectName", "username"].map((col) => ({ [col]: { contains: q } }));
   }
   const [rows, total] = await Promise.all([
     db.auditLog.findMany({
@@ -579,11 +594,71 @@ export async function deleteReportSchedule(tenantId: number, id: number): Promis
   await db.reportSchedule.delete({ where: { id } });
 }
 
-/** Run now (simulated) — bumps lastRunAt only; the payload is the Reports view itself. */
-export async function runReportSchedule(tenantId: number, id: number): Promise<{ ok: true; lastRunAt: string }> {
+/**
+ * Run now — bumps lastRunAt AND creates an actual report run through the
+ * report pipeline (F-e #15): the section rollups + HTML renderer live in
+ * app/api/v1/reports/engine.ts (plain db-backed module, reachable from any
+ * server context), so the schedule no longer stays inert. Failure of the run
+ * creation never fails the lastRunAt bump — it is logged and the run is
+ * simply absent (the audit trail + logs surface it).
+ */
+export async function runReportSchedule(
+  tenantId: number,
+  id: number,
+): Promise<{ ok: true; lastRunAt: string; run?: { id: number; name: string; status: string } }> {
   const existing = await db.reportSchedule.findFirst({ where: { tenantId, id } });
   if (!existing) throw ApiError.notFound("Report schedule not found");
   const lastRunAt = new Date();
   await db.reportSchedule.update({ where: { id }, data: { lastRunAt } });
-  return { ok: true, lastRunAt: lastRunAt.toISOString() };
+
+  let run: { id: number; name: string; status: string } | undefined;
+  try {
+    const { rangeWindow, computeSectionSummary, buildReportHtml } = await import("@/app/api/v1/reports/engine");
+    const sections = parseJson<string[]>(existing.sections, ["traffic", "threats"]);
+    const { since, until } = rangeWindow(existing.range);
+    const sectionSummary = await computeSectionSummary(tenantId, sections, since, until);
+    const summary = {
+      meta: {
+        generatedAt: until.toISOString(),
+        range: existing.range,
+        since: since.toISOString(),
+        until: until.toISOString(),
+        pdfViaPrint: existing.format === "pdf",
+      },
+      ...sectionSummary,
+    };
+    const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+    const contentHtml = buildReportHtml({
+      title: `${existing.name} (${existing.range})`,
+      tenantName: tenant?.name ?? `tenant ${tenantId}`,
+      range: existing.range,
+      generatedAt: until,
+      summary,
+    });
+    const created = await db.reportRun.create({
+      data: {
+        tenantId,
+        name: `${existing.name} (${existing.range})`,
+        source: "schedule",
+        scheduleId: existing.id,
+        range: existing.range,
+        format: existing.format,
+        sections: JSON.stringify(sections),
+        status: "done",
+        summary: JSON.stringify(summary),
+        contentHtml,
+        startedAt: until,
+        finishedAt: new Date(),
+      },
+    });
+    run = { id: created.id, name: created.name, status: created.status };
+  } catch (err) {
+    // honest fallback: the lastRunAt bump stands; the run creation failure is
+    // logged (engine sweeps guard this with try/catch, routes surface 500s)
+    console.error(
+      `[logs] report schedule ${id} (${existing.name}) run creation failed:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+  return { ok: true, lastRunAt: lastRunAt.toISOString(), ...(run ? { run } : {}) };
 }

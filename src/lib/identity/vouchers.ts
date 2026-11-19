@@ -10,9 +10,22 @@
  * route-layer concern — GET returns masked codes, POST is the only response
  * that ever carries the full codes.
  *
- * Redeem marks a voucher `redeemed` and opens a CaptivePortalSession row
- * (spec §7) whose `sessionId` column holds sha256(token) — the plaintext
- * token is returned once to the guest, never stored.
+ * AT-REST NOTE (audit fix F-c #19 — schema.prisma is LOCKED, documented here
+ * instead): voucher codes are stored PLAINTEXT BY DESIGN — admins must be
+ * able to reveal/download the batch (M07 §4) and the portal redeem path must
+ * look the code up by exact value. Disclosure is controlled in the response
+ * layer: list/read DTOs carry codeMasked only (… + last 4), and the full
+ * code leaves the server exactly once, in the POST /vouchers create batch.
+ * This mirrors the portal-session token rule below (sha256 at rest, token
+ * returned once) — tokens are one-time secrets; codes are re-presentable
+ * credentials, hence the weaker (documented) at-rest guarantee.
+ *
+ * Redeem is TRANSACTIONAL (audit fix F-c #2): the voucher claim is a
+ * conditional updateMany({where: {id, tenantId, state: "unused"}}) INSIDE a
+ * db.$transaction that also creates the CaptivePortalSession — two racing
+ * redemptions can never both win and the session row cannot exist without
+ * the claimed voucher (no Promise.all split). A loser sees count === 0 and
+ * returns null (route maps it to 409/400).
  */
 
 import { createHash, randomBytes } from "crypto";
@@ -42,6 +55,11 @@ export type VoucherDTO = Omit<Voucher, "code"> & { codeMasked: string };
 export interface PortalSessionGrant {
   token: string;
   expiresAt: string;
+  /** guest-facing session subset (mirrors /register's envelope — no hashed sessionId) */
+  kind: string;
+  clientIp: string;
+  state: string;
+  startedAt: string;
 }
 
 export interface RedeemResult {
@@ -204,30 +222,43 @@ export async function consumeVoucher(tenantId = 1): Promise<Voucher | null> {
  * to `redeemed` and an ACTIVE CaptivePortalSession opens for (ip, mac), with
  * `expiresAt` = now + the active profile's sessionTimeoutMin. Returns null
  * when the code is unknown, expired, revoked or already redeemed.
+ *
+ * Audit fix F-c #2 — the claim + session creation run in ONE interactive
+ * transaction: a conditional updateMany (state still "unused" AND not
+ * expired) is the atomic claim; count === 0 → null WITHOUT opening a
+ * session. A `portalId` may pin the profile (public /redeem body); when
+ * given but unknown, redemption fails (no profile fallback for pinned ids).
  */
 export async function redeem(
   rawCode: string,
   clientIp: string,
   clientMac?: string,
   tenantId = 1,
+  portalId?: number,
 ): Promise<RedeemResult | null> {
   await expireSweep(tenantId);
   const code = rawCode.trim().toUpperCase();
   const row = await db.captivePortalVoucher.findFirst({ where: { tenantId, code } });
   if (!row || row.state !== "unused") return null;
 
-  const profile = await db.captivePortalProfile.findFirst({ where: { tenantId }, orderBy: { id: "asc" } });
+  const profile = portalId
+    ? await db.captivePortalProfile.findFirst({ where: { tenantId, id: portalId } })
+    : await db.captivePortalProfile.findFirst({ where: { tenantId }, orderBy: { id: "asc" } });
+  if (portalId !== undefined && !profile) return null; // pinned portal unknown → refuse
   const timeoutMin = profile?.sessionTimeoutMin ?? 240;
   const now = new Date();
   const token = newPortalSessionToken();
   const sessionExpiresAt = new Date(now.getTime() + timeoutMin * 60_000);
 
-  const [updated] = await Promise.all([
-    db.captivePortalVoucher.update({
-      where: { id: row.id },
+  const session = await db.$transaction(async (tx) => {
+    // Atomic claim — the WHERE carries the state precondition, so a racing
+    // redemption gets count 0 and never opens a session.
+    const claimed = await tx.captivePortalVoucher.updateMany({
+      where: { id: row.id, tenantId, state: "unused", expiresAt: { gt: now } },
       data: { state: "redeemed", redeemedBy: clientMac ?? null, redeemedIp: clientIp, redeemedAt: now },
-    }),
-    db.captivePortalSession.create({
+    });
+    if (claimed.count === 0) return null;
+    return tx.captivePortalSession.create({
       data: {
         tenantId,
         portalId: profile?.id ?? 0,
@@ -240,10 +271,19 @@ export async function redeem(
         startedAt: now,
         expiresAt: sessionExpiresAt,
       },
-    }),
-  ]);
+    });
+  });
+  if (!session) return null;
+
   return {
-    voucher: toVoucher(updated),
-    session: { token, expiresAt: sessionExpiresAt.toISOString() },
+    voucher: toVoucher({ ...row, state: "redeemed", redeemedAt: now }),
+    session: {
+      token,
+      expiresAt: sessionExpiresAt.toISOString(),
+      kind: session.kind,
+      clientIp: session.clientIp,
+      state: session.state,
+      startedAt: session.startedAt.toISOString(),
+    },
   };
 }

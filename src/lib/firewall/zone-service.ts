@@ -11,6 +11,19 @@ import { ApiError } from "@/lib/api/errors";
 export const PROTECTED_ZONES = ["WAN", "LAN"];
 
 /**
+ * Safe JSON string[] parse for the interfaceNames column — a corrupt/legacy
+ * payload must never 500 the zone sync (parsed → [] instead).
+ */
+function safeIfaces(raw: string): string[] {
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Protected zones are matched CASE-INSENSITIVELY: appliances name them
  * wan/lan (lowercase) as often as WAN/LAN — protection by exact name left
  * lowercase variants exposed to delete/rename.
@@ -35,7 +48,7 @@ export async function syncZoneMembers(
   client: DbClient = db,
 ): Promise<void> {
   const zone = await client.zone.findFirst({ where: { id: zoneId, tenantId } });
-  const prevNames = zone ? (JSON.parse(zone.interfaceNames) as string[]) : [];
+  const prevNames = zone ? safeIfaces(zone.interfaceNames) : [];
   const allIfaces = await client.networkInterface.findMany({ where: { tenantId } });
 
   const valid = new Set(allIfaces.map((i) => i.name));
@@ -79,7 +92,7 @@ export async function syncZoneMembers(
       where: { tenantId, id: { not: zoneId } },
     });
     for (const z of otherZones) {
-      const names = JSON.parse(z.interfaceNames) as string[];
+      const names = safeIfaces(z.interfaceNames);
       const cleaned = names.filter((n) => !next.has(n));
       if (cleaned.length !== names.length) {
         await client.zone.update({ where: { id: z.id }, data: { interfaceNames: JSON.stringify(cleaned) } });

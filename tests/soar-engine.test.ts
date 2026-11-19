@@ -68,6 +68,21 @@ function withFailingNotify<T>(fn: () => Promise<T>): Promise<T> {
   });
 }
 
+/** Partial injector: the FIRST notify succeeds, every later one throws —
+ * used to observe the incremental step ledger (success → failure → skip). */
+function withNotifyFailingAfterFirst<T>(fn: () => Promise<T>): Promise<T> {
+  const original = db.notification.create.bind(db.notification);
+  let calls = 0;
+  db.notification.create = async (args: Parameters<typeof original>) => {
+    calls += 1;
+    if (calls > 1) throw new Error("simulated notification outage");
+    return original(args);
+  };
+  return fn().finally(() => {
+    db.notification.create = original;
+  });
+}
+
 // ═══════════════════════════ Part 1: pure engine ════════════════════════════
 
 describe("matchesTrigger", () => {
@@ -204,6 +219,21 @@ describe("dedupeBlocks (pure decision)", () => {
     expect(engine.dedupeBlocks([{ status: "running" }])).toBe(true);
     expect(engine.dedupeBlocks([{ status: "success" }])).toBe(true);
     expect(engine.dedupeBlocks([{ status: "failed" }, { status: "success" }])).toBe(true);
+  });
+
+  it("treats running rows older than 10 minutes as DEAD (stale-run reaper, audit fix F-d)", () => {
+    const now = new Date();
+    const fresh = new Date(now.getTime() - 60_000); // 1 min old — live
+    const stale = new Date(now.getTime() - 11 * 60_000); // 11 min old — dead
+    expect(engine.dedupeBlocks([{ status: "running", startedAt: fresh }], now)).toBe(true);
+    expect(engine.dedupeBlocks([{ status: "running", startedAt: stale }], now)).toBe(false);
+    // a fresh run still blocks even alongside a stale one
+    expect(engine.dedupeBlocks([
+      { status: "running", startedAt: stale },
+      { status: "success" },
+    ], now)).toBe(true);
+    // success rows are NEVER stale (terminal status is durable state)
+    expect(engine.dedupeBlocks([{ status: "success", startedAt: stale }], now)).toBe(true);
   });
 });
 
@@ -683,5 +713,171 @@ describe("runs list + stats + CRUD", () => {
     await service.deletePlaybook(1, pb.id);
     expect(await db.soarPlaybook.count({ where: { id: pb.id } })).toBe(0);
     expect(await db.soarPlaybookRun.count({ where: { playbookId: pb.id } })).toBe(0);
+  });
+});
+
+// ═══════════════════ Regression: auto-block safety + run hygiene (F-d) ══════
+
+describe("block_ip automation safety (audit fix F-d)", () => {
+  it("refuses protected special ranges at evaluate time (no override exists)", () => {
+    for (const ip of ["0.0.0.0", "127.0.0.1", "169.254.9.9", "224.0.0.5", "240.0.0.1", "255.255.255.255"]) {
+      const res = engine.evaluateActions([{ kind: "block_ip", params: { ip } }]);
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.errors[0]).toContain("protected range");
+      }
+    }
+    // RFC1918 is deliberately NOT an evaluate-time refusal — the env-overridable
+    // policy lives at run time (private gateways are a legitimate block target)
+    expect(engine.evaluateActions([{ kind: "block_ip", params: { ip: "10.1.2.3" } }]).ok).toBe(true);
+  });
+
+  it("refuses RFC1918 targets at run time unless CONSOLE_SOAR_ALLOW_PRIVATE=1", async () => {
+    const pb = await service.createPlaybook(1, {
+      name: "block-private",
+      enabled: true,
+      triggerKind: "ioc_hit",
+      triggerFilter: {},
+      actions: [{ kind: "block_ip", params: { ip: "192.168.50.4" } }],
+      dedupeKey: "",
+    });
+
+    const envKey = "CONSOLE_SOAR_ALLOW_PRIVATE";
+    const saved = process.env[envKey];
+    delete process.env[envKey];
+    try {
+      const refused = await service.runPlaybookById(1, pb.id, { triggerRef: "ioc:private" });
+      expect(refused.status).toBe("success"); // skip is not a failure
+      expect(refused.steps[0].status).toBe("skipped");
+      expect(refused.steps[0].detail).toContain("RFC1918 private range refused");
+      expect(await db.firewallRule.count({ where: { tenantId: 1, name: "SOAR auto-block 192.168.50.4" } })).toBe(0);
+      expect(await db.addressObject.count({ where: { tenantId: 1, name: "soar-block-192-168-50-4" } })).toBe(0);
+
+      // the documented override permits the block
+      process.env[envKey] = "1";
+      const allowed = await service.runPlaybookById(1, pb.id, { triggerRef: "ioc:private" });
+      expect(allowed.status).toBe("success");
+      expect(allowed.steps[0].status).toBe("success");
+      expect(allowed.steps[0].detail).toMatch(/deny rule #\d+/);
+      expect(await db.firewallRule.count({ where: { tenantId: 1, name: "SOAR auto-block 192.168.50.4" } })).toBe(1);
+    } finally {
+      if (saved === undefined) delete process.env[envKey];
+      else process.env[envKey] = saved;
+    }
+  });
+
+  it("caps block_ip execution at 5 per run and records the rest as budget skips", async () => {
+    const ips = ["198.51.100.31", "198.51.100.32", "198.51.100.33", "198.51.100.34", "198.51.100.35", "198.51.100.36"];
+    const pb = await service.createPlaybook(1, {
+      name: "block-storm",
+      enabled: true,
+      triggerKind: "ioc_hit",
+      triggerFilter: {},
+      actions: ips.map((ip) => ({ kind: "block_ip" as const, params: { ip } })),
+      dedupeKey: "",
+    });
+
+    const run = await service.runPlaybookById(1, pb.id, { triggerRef: "ioc:storm" });
+    expect(run.status).toBe("success");
+    expect(run.steps).toHaveLength(6);
+    expect(run.steps.slice(0, 5).every((s) => s.status === "success")).toBe(true);
+    expect(run.steps[5].status).toBe("skipped");
+    expect(run.steps[5].detail).toContain("skipped: auto-block budget per run");
+    // only the first five rules were created — the sixth never executed
+    for (const ip of ips.slice(0, 5)) {
+      expect(await db.firewallRule.count({ where: { tenantId: 1, name: `SOAR auto-block ${ip}` } })).toBe(1);
+    }
+    expect(await db.firewallRule.count({ where: { tenantId: 1, name: `SOAR auto-block ${ips[5]}` } })).toBe(0);
+  });
+
+  it("re-checks the fast-path rule: an altered rule is repaired, not falsely reported", async () => {
+    const pb = await service.createPlaybook(1, {
+      name: "block-repair",
+      enabled: true,
+      triggerKind: "ioc_hit",
+      triggerFilter: {},
+      actions: [{ kind: "block_ip", params: { ip: "192.0.2.60" } }],
+      dedupeKey: "",
+    });
+    const first = await service.runPlaybookById(1, pb.id, { triggerRef: "ioc:repair" });
+    expect(first.steps[0].status).toBe("success");
+
+    // an operator (or drift) disabled the rule and flipped the action
+    const rule = await db.firewallRule.findFirstOrThrow({ where: { tenantId: 1, name: "SOAR auto-block 192.0.2.60" } });
+    await db.firewallRule.update({ where: { id: rule.id }, data: { enabled: false, action: "allow" } });
+
+    const second = await service.runPlaybookById(1, pb.id, { triggerRef: "ioc:repair-2" });
+    expect(second.steps[0].status).toBe("success");
+    expect(second.steps[0].detail).toContain("deny rule restored");
+    const repaired = await db.firewallRule.findUniqueOrThrow({ where: { id: rule.id } });
+    expect(repaired.enabled).toBe(true);
+    expect(repaired.action).toBe("deny");
+    // same rule id — repaired in place, not recreated
+    expect(repaired.id).toBe(rule.id);
+  });
+});
+
+describe("stale-run reaper (audit fix F-d)", () => {
+  it("does not let a >10min running row block dedupe and reaps it to failed", async () => {
+    const pb = await service.createPlaybook(1, {
+      name: "reap-me",
+      enabled: true,
+      triggerKind: "incident_created",
+      triggerFilter: {},
+      actions: [{ kind: "notify", params: { title: "after crash", message: "retry" } }],
+      dedupeKey: "reap-key",
+    });
+    // a run whose process crashed mid-flight: still `running`, started 11 min ago
+    const crashed = await db.soarPlaybookRun.create({
+      data: {
+        tenantId: 1,
+        playbookId: pb.id,
+        triggerRef: "incident:INC-0444",
+        status: "running",
+        steps: "[]",
+        startedAt: new Date(Date.now() - 11 * 60_000),
+      },
+    });
+
+    // pre-fix this fire was suppressed forever by the phantom open run;
+    // post-fix the stale row is dead, the fire executes
+    const run = await service.runPlaybookById(1, pb.id, { triggerRef: "incident:INC-0444" });
+    expect(run.status).toBe("success");
+
+    // and the reaper marked the crashed row failed (best-effort sweep)
+    const reaped = await db.soarPlaybookRun.findUniqueOrThrow({ where: { id: crashed.id } });
+    expect(reaped.status).toBe("failed");
+    expect(reaped.finishedAt).not.toBeNull();
+
+    // hygiene: a FRESH running row still blocks (dedupe is not broken)
+    const live = await db.soarPlaybookRun.create({
+      data: { tenantId: 1, playbookId: pb.id, triggerRef: "incident:INC-0445", status: "running", steps: "[]" },
+    });
+    const second = await service.runPlaybookById(1, pb.id, { triggerRef: "incident:INC-0445" });
+    expect(second.status).toBe("skipped");
+    expect((await db.soarPlaybookRun.findUniqueOrThrow({ where: { id: live.id } })).status).toBe("running");
+  });
+
+  it("persists the step ledger incrementally (crash keeps partial steps)", async () => {
+    const pb = await service.createPlaybook(1, {
+      name: "ledger",
+      enabled: true,
+      triggerKind: "incident_created",
+      triggerFilter: {},
+      actions: [
+        { kind: "notify", params: { title: "step 1", message: "first" } },
+        { kind: "notify", params: { title: "boom", message: "outage" } },
+        { kind: "delay", params: { seconds: 5 } },
+      ],
+      dedupeKey: "",
+    });
+    const run = await withNotifyFailingAfterFirst(() => service.runPlaybookById(1, pb.id, { triggerRef: "incident:INC-0450" }));
+    expect(run.status).toBe("failed");
+    // step 1 succeeded, step 2 threw, step 3 was skipped — and the row was
+    // additionally updated after EACH step via persistSteps (the terminal
+    // write carries the same ledger)
+    expect(run.steps.map((s) => s.status)).toEqual(["success", "failed", "skipped"]);
+    const row = await db.soarPlaybookRun.findUniqueOrThrow({ where: { id: run.id } });
+    expect(JSON.parse(row.steps)).toHaveLength(3);
   });
 });

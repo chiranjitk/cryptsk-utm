@@ -13,7 +13,8 @@ export const PUT = route(
   { area: "identity", bodySchema: userUpdateSchema, section: "identity" },
   async ({ auth, body, params }) => {
     const id = numericId(params, "id");
-    const updated = await updateUser(auth.tenantId, id, body);
+    // audit fix: actor role flows into the service for the role-hierarchy guard
+    const updated = await updateUser(auth.tenantId, id, body, auth.role);
     const { totpEnrollment, ...dto } = updated;
     return {
       data: dto,
@@ -30,7 +31,8 @@ export const PUT = route(
 
 export const DELETE = route({ area: "identity", section: "identity" }, async ({ auth, params }) => {
   const id = numericId(params, "id");
-  await deleteUser(auth.tenantId, auth.userId, id);
+  // audit fix: actor role flows into the service for the role-hierarchy guard
+  await deleteUser(auth.tenantId, auth.userId, id, auth.role);
   return {
     data: { ok: true },
     audit: { action: "user.delete", objectType: "user", objectId: id },

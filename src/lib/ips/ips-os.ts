@@ -34,6 +34,7 @@ import path from "path";
 import { db } from "@/lib/db";
 import { runTool, hasTool, readServiceStates } from "@/lib/host/tools";
 import { detectSuricataEve } from "@/lib/host/tools";
+import { ipsScopeValid } from "@/lib/validators/ips";
 import type { ExceptionRow, ThresholdRow } from "./catalog";
 
 // ── paths ───────────────────────────────────────────────────────────────────
@@ -192,7 +193,11 @@ export function generateManagedRules(input: IpsGenInput, generatedAt: string): s
 
 /**
  * threshold.config entries from the policy. Returns the managed block body
- * plus warnings for defensive skips (any-SID bypass without scope).
+ * plus warnings for defensive skips (any-SID bypass without scope; scope
+ * values that fail the IPv4/CIDR grammar — the renderer re-asserts the
+ * create-time validator because exception source/dest are interpolated
+ * VERBATIM into `ip <value>` tokens, so a validator bypass must never reach
+ * threshold.config).
  */
 export function buildThresholdEntries(input: IpsGenInput): { lines: string[]; warnings: string[] } {
   const lines: string[] = [];
@@ -204,6 +209,17 @@ export function buildThresholdEntries(input: IpsGenInput): { lines: string[]; wa
     if (ex.sid === 0 && !hasScope) {
       warnings.push(
         `exception sid=0 without source/dest would suppress the ENTIRE ruleset — skipped (scope any-SID bypass by a source/dest CIDR)`,
+      );
+      continue;
+    }
+    // renderer re-validation (defense-in-depth behind validators/ips.ts) —
+    // skip + warn on any scope value outside the IPv4/CIDR grammar
+    const badScopes: string[] = [];
+    if (!ipsScopeValid(ex.source)) badScopes.push(`source '${ex.source}'`);
+    if (!ipsScopeValid(ex.dest)) badScopes.push(`dest '${ex.dest}'`);
+    if (badScopes.length > 0) {
+      warnings.push(
+        `exception sid=${ex.sid} ${badScopes.join(" and ")} failed the IPv4/CIDR grammar — skipped (would inject into threshold.config)`,
       );
       continue;
     }

@@ -18,7 +18,8 @@ export const GET = route({ area: "identity", querySchema: userQuerySchema }, asy
 export const POST = route(
   { area: "identity", bodySchema: userCreateSchema, section: "identity" },
   async ({ auth, body }) => {
-    const created = await createUser(auth.tenantId, body);
+    // audit fix: actor role flows into the service for the role-hierarchy guard
+    const created = await createUser(auth.tenantId, body, auth.role);
     return {
       data: created,
       audit: { action: "user.create", objectType: "user", objectId: created.id, objectName: created.username, after: created },

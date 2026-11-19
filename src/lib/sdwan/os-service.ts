@@ -336,7 +336,10 @@ export async function applySdwanPlan(plan: SdwanPlan, opts: SdwanApplyOptions = 
       .then(() => true)
       .catch(() => false);
     if (existed) {
-      await fs.copyFile(target, path.join(backupDir, `${stem}.conf`)).catch(() => {});
+      const snapshotPath = path.join(backupDir, `${stem}.conf`);
+      await fs.copyFile(target, snapshotPath).catch(() => {});
+      // backups contain private keys — never world-readable (mirror vpn/os.ts)
+      await fs.chmod(snapshotPath, 0o600).catch(() => {});
       updated.push(stem);
       results.push({ step: `snapshot ${stem}`, ok: true, detail: `previous config backed up to ${backupDir}` });
     } else {
@@ -362,7 +365,10 @@ export async function applySdwanPlan(plan: SdwanPlan, opts: SdwanApplyOptions = 
         : file.conf.replace(PRIVATE_KEY_PLACEHOLDER, GENERATED_ON_APPLY);
     const hash = createHash("sha256").update(written, "utf8").digest("hex");
     try {
-      await fs.writeFile(path.join(SDWAN_WG_DIR, `${stem}.conf`), written, "utf8");
+      const confPath = path.join(SDWAN_WG_DIR, `${stem}.conf`);
+      await fs.writeFile(confPath, written, "utf8");
+      // WireGuard confs carry private keys — mirror the vpn/os.ts guarded 0600 pattern
+      await fs.chmod(confPath, 0o600).catch(() => {});
       writtenHashes[`${SDWAN_WG_DIR}/${stem}.conf`] = hash;
       outcome.files.push({ iface: stem, fileName: `${SDWAN_WG_DIR}/${stem}.conf`, confHash: hash, action: updated.includes(stem) ? "updated" : "created", validated: false });
       results.push({
@@ -443,7 +449,10 @@ async function restoreFromManifest(
     let removedCount = 0;
     for (const stem of manifest.updated) {
       assertOwnStem(stem);
-      await fs.copyFile(path.join(backupDir, `${stem}.conf`), path.join(wgDir, `${stem}.conf`));
+      const confPath = path.join(wgDir, `${stem}.conf`);
+      await fs.copyFile(path.join(backupDir, `${stem}.conf`), confPath);
+      // restored confs carry private keys — keep them owner-only
+      await fs.chmod(confPath, 0o600).catch(() => {});
       restoredCount += 1;
     }
     for (const stem of manifest.created) {

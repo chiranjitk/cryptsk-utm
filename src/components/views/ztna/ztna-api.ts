@@ -96,6 +96,19 @@ export interface ZtnaEvaluation {
   evaluatedAt: string;
 }
 
+/** Continuous-validation sweep result (POST /posture-checks/validate). */
+export interface ContinuousValidationDTO {
+  rechecked: number;
+  changed: number;
+  results: Array<{
+    deviceId: string;
+    profileId: number;
+    previousVerdict: PostureVerdict;
+    verdict: PostureVerdict;
+    changed: boolean;
+  }>;
+}
+
 // ── request bodies ───────────────────────────────────────────────────────────
 
 export interface CreateAppBody {
@@ -232,6 +245,8 @@ export const ztnaApi = {
   listChecks: (page: number, limit: number, deviceId?: string) =>
     fetchJsonList<PostureCheckDTO>("/api/v1/ztna/posture-checks", qs({ page, limit, deviceId })),
   recordCheck: (body: RecordCheckBody) => send<PostureCheckDTO>("/api/v1/ztna/posture-checks", "POST", body),
+  /** explicit continuous-validation sweep (audit fix F-d — GET no longer mutates) */
+  runValidation: () => send<ContinuousValidationDTO>("/api/v1/ztna/posture-checks/validate", "POST"),
 
   // access evaluation (simulator)
   evaluate: (body: EvaluateBody) => send<ZtnaEvaluation>("/api/v1/ztna/evaluate", "POST", body),

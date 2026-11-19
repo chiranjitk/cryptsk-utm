@@ -2,18 +2,26 @@
  * Portal persistence tests (T1-d — spec §1.10 + §7 tables):
  *   • vouchers are SQLite rows (no MockEngine global store) — codes survive
  *     restarts, redeem flips the voucher + opens a CaptivePortalSession,
+ *   • redeem is TRANSACTIONAL (audit fix #2): double-redeem (sequential AND
+ *     concurrent) yields exactly one winner and one session row,
  *   • expireSweep ages out unused vouchers and active sessions past expiry,
  *   • revoke is terminal (code refuses redemption afterwards),
  *   • guest self-registration honors the active portal profile (enabled
- *     check, mode-agnostic, sessionTimeoutMin → expiresAt),
+ *     check, mode-agnostic, sessionTimeoutMin → expiresAt) with a 3-session
+ *     concurrent cap per client IP (audit fix #23) and control-char/bidi
+ *     sanitization of the guest name,
  *   • the PUBLIC /register endpoint is rate limited per source IP (429
- *     envelope shape) and never leaks the hashed sessionId.
+ *     envelope shape) and never leaks the hashed sessionId,
+ *   • the PUBLIC /redeem endpoint (audit fix #12) mirrors the register
+ *     subset, refuses reuse with a uniform 400 and rate limits per IP.
  *
  * Harness (mirrors the repo's service-test pattern — no DB test had existed,
  * so this file establishes it): the pushed dev schema (db/cryptsk.db) is
  * copied into a per-run temp sqlite file and DATABASE_URL points at the COPY,
  * so the dev DB is never written. The identity modules are imported AFTER the
  * env override — static imports would resolve the Prisma datasource too early.
+ * CONSOLE_TRUST_PROXY=1 mirrors a proxied deployment so the tests' per-IP
+ * x-forwarded-for headers are honored by the shared handler (audit fix #6).
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
@@ -26,11 +34,13 @@ const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "portal-persistence-"));
 const DB_PATH = path.join(TMP_DIR, "portal-test.db");
 fs.copyFileSync(path.resolve(process.cwd(), "db/cryptsk.db"), DB_PATH);
 process.env.DATABASE_URL = `file:${DB_PATH}`;
+process.env.CONSOLE_TRUST_PROXY = "1"; // tests assert per-IP behavior via XFF
 
 const { db } = await import("@/lib/db");
 const vouchers = await import("@/lib/identity/vouchers");
 const service = await import("@/lib/identity/service");
 const registerRoute = await import("@/app/api/v1/captive-portal/register/route");
+const redeemRoute = await import("@/app/api/v1/captive-portal/redeem/route");
 
 type ProfileInput = Parameters<typeof service.putCaptivePortal>[1];
 
@@ -96,6 +106,8 @@ describe("voucher store (Prisma-backed)", () => {
     expect(res!.voucher.usedAt).toBeTruthy();
     expect(res!.session.token.length).toBeGreaterThan(20);
     expect(res!.session.expiresAt > new Date().toISOString()).toBe(true);
+    expect(res!.session.kind).toBe("voucher");
+    expect(res!.session.clientIp).toBe("192.168.50.77");
 
     const row = await db.captivePortalSession.findFirst({ where: { tenantId: 1, kind: "voucher" } });
     expect(row).not.toBeNull();
@@ -110,10 +122,25 @@ describe("voucher store (Prisma-backed)", () => {
     expect(rowAgain!.redeemedIp).toBe("192.168.50.77");
     expect(rowAgain!.redeemedBy).toBe("aa:bb:cc:dd:ee:ff");
 
-    // a second redemption of the same code is refused
+    // a second (sequential) redemption of the same code is refused
     expect(await vouchers.redeem(v.code, "192.168.50.77")).toBeNull();
     // unknown code is refused
     expect(await vouchers.redeem("AAAA-BBBB-CCCC-DDDD", "192.168.50.77")).toBeNull();
+  });
+
+  it("double-redeem race (audit fix #2): exactly one of two concurrent claims wins", async () => {
+    await service.putCaptivePortal(1, profile());
+    const [v] = await vouchers.generateVouchers(1, 24);
+    const results = await Promise.allSettled([
+      vouchers.redeem(v.code, "192.168.50.90"),
+      vouchers.redeem(v.code, "192.168.50.91"),
+    ]);
+    const winners = results.filter((r) => r.status === "fulfilled" && r.value !== null);
+    expect(winners).toHaveLength(1);
+    // exactly ONE session row exists — no orphaned session without a claim
+    expect(await db.captivePortalSession.count({ where: { kind: "voucher" } })).toBe(1);
+    const row = await db.captivePortalVoucher.findUnique({ where: { tenantId_code: { tenantId: 1, code: v.code } } });
+    expect(row!.state).toBe("redeemed");
   });
 
   it("redeem inherits the portal profile sessionTimeoutMin", async () => {
@@ -272,10 +299,17 @@ describe("POST /api/v1/captive-portal/register (public route)", () => {
   it("registers without an auth cookie, returns the token subset (no hashed sessionId), and rate limits per IP", async () => {
     await service.putCaptivePortal(1, profile());
 
-    // calls 1..5 pass; call 6 trips the 5/min per-IP guest throttle
+    // calls 1..5 pass — each session is terminated right after its call so the
+    // per-IP 3-concurrent cap (#23) never masks the 5/min throttle; call 6
+    // trips the per-IP guest throttle
     let last: Response | undefined;
     for (let i = 0; i < 6; i++) {
       last = await call("203.0.113.44", { name: `guest-${i}`, agree: true });
+      if (i < 5 && last.status === 200) {
+        const row = await db.captivePortalSession.findFirst({ where: { userName: `guest-${i}` } });
+        expect(row).not.toBeNull();
+        await service.terminatePortalSession(1, row!.id);
+      }
     }
     expect(last).toBeDefined();
 
@@ -309,5 +343,101 @@ describe("POST /api/v1/captive-portal/register (public route)", () => {
     expect(body.error.code).toBe("VALIDATION_ERROR");
     expect(JSON.stringify(body.error.details)).toContain("agree");
     expect(await db.captivePortalSession.count({ where: { userName: "no-consent" } })).toBe(0);
+  });
+
+  it("strips C0/C1 control chars and bidi overrides from the guest name (audit fix #23)", async () => {
+    await service.putCaptivePortal(1, profile());
+    const res = await call("203.0.113.47", { name: "bad\u0007\u202Ename\uFEFF", agree: true });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.userName).toBe("badname");
+    // fully-control-char name is rejected (refines to empty)
+    const empty = await call("203.0.113.48", { name: "\u0000\u202E\u0007", agree: true });
+    expect(empty.status).toBe(400);
+    expect(JSON.stringify((await empty.json()).error.details)).toContain("Name is required");
+  });
+
+  it("caps concurrent self-registration sessions per client IP at 3 (audit fix #23)", async () => {
+    await service.putCaptivePortal(1, profile());
+    for (let i = 0; i < 3; i++) {
+      const res = await call("203.0.113.50", { name: `cap-guest-${i}`, agree: true });
+      expect(res.status).toBe(200);
+    }
+    const fourth = await call("203.0.113.50", { name: "cap-guest-3", agree: true });
+    expect(fourth.status).toBe(429);
+    const body = await fourth.json();
+    expect(body.error.code).toBe("RATE_LIMITED");
+    expect(body.error.message).toContain("Too many active guest sessions");
+    expect(await db.captivePortalSession.count({ where: { clientIp: "203.0.113.50", state: "active" } })).toBe(3);
+  });
+});
+
+// ── PUBLIC /redeem route (audit fix #12): envelope + reuse + rate limit ──────
+
+describe("POST /api/v1/captive-portal/redeem (public route)", () => {
+  const POST = redeemRoute.POST;
+
+  const call = (ip: string, body: Record<string, unknown>) =>
+    POST(
+      new NextRequest("http://localhost/api/v1/captive-portal/redeem", {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: { "content-type": "application/json", "x-forwarded-for": ip },
+      }),
+    );
+
+  it("redeems without auth, mirrors the register subset (no hashed sessionId), refuses reuse", async () => {
+    await service.putCaptivePortal(1, profile());
+    const [v] = await vouchers.generateVouchers(1, 24);
+
+    // lowercase input — the code is normalized (trim + uppercase) in redeem
+    const res = await call("198.51.100.10", { code: v.code.toLowerCase() });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.token).toBeTruthy();
+    expect(body.data.kind).toBe("voucher");
+    expect(body.data.state).toBe("active");
+    expect(body.data.clientIp).toBe("198.51.100.10");
+    expect(body.data.expiresAt).toBeTruthy();
+    expect(JSON.stringify(body.data)).not.toContain("sessionId");
+
+    const row = await db.captivePortalSession.findFirst({ where: { kind: "voucher", clientIp: "198.51.100.10" } });
+    expect(row).not.toBeNull();
+    expect(row!.sessionId).toHaveLength(64); // sha256 at rest, token never stored
+
+    // reuse → uniform 400 (no code-state oracle); unknown code → same shape
+    const again = await call("198.51.100.10", { code: v.code });
+    expect(again.status).toBe(400);
+    expect((await again.json()).error.code).toBe("VALIDATION_ERROR");
+    const unknown = await call("198.51.100.11", { code: "AAAA-BBBB-CCCC-DDDD" });
+    expect(unknown.status).toBe(400);
+  });
+
+  it("rate limits redemption attempts per source IP (5/min)", async () => {
+    let last: Response | undefined;
+    for (let i = 0; i < 6; i++) {
+      last = await call("198.51.100.12", { code: `ZZZZ-YYYY-XXXX-WWW${i}` }); // unknown codes
+    }
+    expect(last).toBeDefined();
+    expect(last!.status).toBe(429);
+    const body = await last!.json();
+    expect(body.error.code).toBe("RATE_LIMITED");
+    expect(last!.headers.get("retry-after")).toBeTruthy();
+  });
+
+  it("honors a pinned portalId and refuses an unknown one", async () => {
+    await service.putCaptivePortal(1, profile());
+    const portal = await db.captivePortalProfile.findFirst({ where: { tenantId: 1 } });
+    expect(portal).not.toBeNull();
+    const [v] = await vouchers.generateVouchers(1, 24);
+    const res = await call("198.51.100.13", { code: v.code, portalId: portal!.id });
+    expect(res.status).toBe(200);
+
+    const [v2] = await vouchers.generateVouchers(1, 24);
+    const bad = await call("198.51.100.14", { code: v2.code, portalId: 424_242 });
+    expect(bad.status).toBe(400);
+    // the pinned-portal refusal consumed nothing — code stays redeemable
+    const retry = await call("198.51.100.15", { code: v2.code });
+    expect(retry.status).toBe(200);
   });
 });

@@ -245,10 +245,13 @@ export async function applyRadiusToOs(tenantId: number, exec: boolean): Promise<
     import("@/lib/host/tools"),
   ]);
 
+  // F-e #19: executor-side env gate — coherent with the route-side flag, but
+  // the executor no longer trusts the caller alone.
+  const execGated = exec && process.env.CONSOLE_OS_APPLY === "1";
   const shapes = await buildRadiusShapes(tenantId);
   const refusal = hardRadiusRefusal(shapes);
   const fileExisted = await managedFileExists();
-  const mode: RadiusApplyPlan["mode"] = exec && getDataPlaneMode() === "host" ? "exec" : "plan";
+  const mode: RadiusApplyPlan["mode"] = execGated && getDataPlaneMode() === "host" ? "exec" : "plan";
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
 
   const plan: RadiusApplyPlan = buildRadiusApplyPlan({
@@ -262,10 +265,10 @@ export async function applyRadiusToOs(tenantId: number, exec: boolean): Promise<
   if (refusal) {
     return { applied: false, refused: refusal, rolledBack: false, plan: preview(), results: [] };
   }
-  if (!exec || mode !== "exec") {
+  if (!execGated || mode !== "exec") {
     return {
       applied: false,
-      refused: !exec
+      refused: !execGated
         ? "CONSOLE_OS_APPLY is off — plan preview only (freeradius command sequence attached)"
         : "data plane is not in host mode — OS enforcement is preview-only",
       rolledBack: false,

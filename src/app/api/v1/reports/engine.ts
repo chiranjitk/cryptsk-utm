@@ -188,18 +188,26 @@ export async function buildChecklist(tenantId: number, framework: string): Promi
   const now = Date.now();
   switch (framework) {
     case "PCI": {
-      const [totalFw, recentFw, auditCount, ips24h] = await Promise.all([
+      // F-e #17: the retention control measures ACTUAL retention — the oldest
+      // retained firewall-log row must be ≥ 90 days old (i.e. a full 90-day
+      // window exists). Row counts alone prove nothing (fresh tables with a
+      // burst of rows would have passed the old ratio check).
+      const [totalFw, oldestAgg, auditCount, ips24h] = await Promise.all([
         db.firewallLog.count({ where: { tenantId } }),
-        db.firewallLog.count({ where: { tenantId, timestamp: { gte: new Date(now - 90 * DAY) } } }),
+        db.firewallLog.aggregate({ where: { tenantId }, _min: { timestamp: true } }),
         db.auditLog.count({ where: { tenantId } }),
         db.ipsEvent.count({ where: { tenantId, timestamp: { gte: new Date(now - DAY) } } }),
       ]);
-      const pct = totalFw === 0 ? 0 : Math.round((recentFw / totalFw) * 100);
+      const oldestTs = oldestAgg._min.timestamp ? oldestAgg._min.timestamp.getTime() : null;
+      const retentionDays = oldestTs === null ? 0 : Math.floor((now - oldestTs) / DAY);
       return [
         {
           control: "Log retention ≥ 90 days",
-          pass: totalFw > 0 && pct >= 95,
-          detail: `${pct}% of ${totalFw} firewall events fall within the last 90 days`,
+          pass: totalFw > 0 && oldestTs !== null && oldestTs <= now - 90 * DAY,
+          detail:
+            oldestTs === null
+              ? "no firewall logs retained"
+              : `oldest retained firewall log is ${retentionDays} days old (${totalFw} rows)`,
         },
         { control: "Audit trail enabled", pass: auditCount > 0, detail: `${auditCount} audit entries recorded` },
         { control: "IPS monitoring active", pass: ips24h > 0, detail: `${ips24h} IPS events in the last 24h` },

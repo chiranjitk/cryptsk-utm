@@ -117,7 +117,8 @@ export const systemApi = {
   restoreBackup: (id: string) =>
     fetchJson<{ ok: boolean; restored: string; safetyBackupId: string; rows: number; skipped: number }>(
       `/api/v1/system/backups/${id}/restore`,
-      { method: "POST", headers: JSON_HEADERS, body: "{}" },
+      // destructive-action confirm token (F-e #1) — body must echo the backup id
+      { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ confirm: id }) },
     ),
   backupDownloadUrl: (id: string) => `/api/v1/system/backups/${id}/download`,
 

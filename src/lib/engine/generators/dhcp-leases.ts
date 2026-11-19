@@ -3,11 +3,12 @@
  * in the engine (same generator↔engine split as the IPS/FW generators).
  *
  * Per 2 s tick it plans: expiry (endsAt reached → expired, kept 7 d), renewals
- * (active lease nearing its endsAt renews), occasional releases (keeps the
- * released state visible), and new dynamic leases from enabled IPv4 subnets'
- * pool ranges MINUS reservation IPs (reserved IPs are excluded; a dynamic
- * lease holding a newly reserved IP is released — the client reassigns on
- * next renew, M06 §5.3). @@unique([subnetId, ip]) is honored by the used-set;
+ * (active lease inside its T1 window — remaining < 50% of lease time — renews
+ * and extends endsAt), occasional releases (keeps the released state visible,
+ * only outside the renewal window), and new dynamic leases from enabled IPv4
+ * subnets' pool ranges MINUS reservation IPs (reserved IPs are excluded; a
+ * dynamic lease holding a newly reserved IP is released — the client
+ * reassigns on next renew, M06 §5.3). @@unique([subnetId, ip]) is honored by the used-set;
  * engine prunes stale non-active rows whose IP gets re-picked (release frees
  * the IP for reuse, M06 §3).
  */
@@ -98,16 +99,28 @@ export class DhcpLeaseMachine {
         continue;
       }
       const remaining = lease.endsAtMs - nowMs;
-      const renewWindow = Math.min(60_000, (lease.leaseTimeSec * 1000) / 10);
-      if (remaining < renewWindow && this.rand() < 0.7) {
+      // proper T1 semantics (RFC 2131): the client renews at 50% of the
+      // lease time — no synthetic 60 s cap
+      const renewWindowMs = lease.leaseTimeSec * 1000 * 0.5;
+      if (remaining < renewWindowMs && this.rand() < 0.7) {
         plan.renewIds.push(lease.id);
+        // extend immediately in the runtime copy (the engine mirrors this in
+        // the DB) — a renewed lease must not re-renew on the next tick
+        lease.endsAtMs = nowMs + lease.leaseTimeSec * 1000;
       }
     }
 
-    // 2) occasional visible release
+    // 2) occasional visible release — only OUTSIDE the T1 renewal window
+    // (a client inside its renewal window is renewing, not churning out)
     if (runtime.leases.length > 3 && this.rand() < 0.06) {
       const victim = runtime.leases[Math.floor(this.rand() * runtime.leases.length)];
-      if (victim && !plan.expireIds.includes(victim.id) && !plan.releaseIds.includes(victim.id)) {
+      if (
+        victim &&
+        !plan.expireIds.includes(victim.id) &&
+        !plan.renewIds.includes(victim.id) &&
+        !plan.releaseIds.includes(victim.id) &&
+        victim.endsAtMs - nowMs >= victim.leaseTimeSec * 1000 * 0.5
+      ) {
         plan.releaseIds.push(victim.id);
       }
     }

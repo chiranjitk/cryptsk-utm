@@ -15,10 +15,67 @@ import {
   reportRangeSchema,
   syslogProtocolSchema,
 } from "./enums";
+import { isLoopbackHost } from "@/lib/logs/os";
 
 const isoOrEmpty = z
   .string()
   .refine((v) => v === "" || !Number.isNaN(Date.parse(v)), "must be an ISO timestamp");
+
+// ── shared grammars (F-e #16/#20) ─────────────────────────────────────────
+
+/** Plain email entry — used for the comma-separated report recipients list. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/** Comma-separated list of email addresses (empty string allowed — cleared). */
+const recipientsSchema = z
+  .string()
+  .max(512)
+  .refine(
+    (v) =>
+      v.trim() === "" ||
+      v
+        .split(",")
+        .map((s) => s.trim())
+        .every((s) => EMAIL_RE.test(s)),
+    "recipients must be a comma-separated list of valid email addresses",
+  );
+
+/** RFC-1123-ish hostname (no underscores/spaces/quotes — rsyslog omfwd-safe). */
+const HOSTNAME_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+
+const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+
+/** IPv6 including the :: compression forms (matches logs/os.ts refusals). */
+const IPV6_RE =
+  /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/;
+
+/** IPv6 link-local block fe80::/10 (fe8x, fe9x, feax, febx). */
+function isLinkLocalHost(host: string): boolean {
+  const h = host.trim().toLowerCase();
+  if (/^fe[89ab]/.test(h)) return true; // fe80::/10
+  return /^169\.254\./.test(h); // IPv4 link-local 169.254/16
+}
+
+/**
+ * Syslog/NetFlow target host grammar (F-e #20): hostname | IPv4 | IPv6 —
+ * loopback (localhost, 127/8, ::1) and link-local (169.254/16, fe80::/10)
+ * targets are refused at create with the same reasoning as logs/os.ts §
+ * "hard refusals" (self-loop / non-routable).
+ */
+const targetHostSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(253)
+  .refine((v) => HOSTNAME_RE.test(v) || IPV4_RE.test(v) || IPV6_RE.test(v), "Must be a hostname, IPv4 or IPv6 address")
+  .refine(
+    (v) => !isLoopbackHost(v),
+    "loopback targets are refused — forwarding to this appliance would feed the collector its own output (self-loop)",
+  )
+  .refine(
+    (v) => !isLinkLocalHost(v),
+    "link-local targets are refused — 169.254/16 and fe80::/10 are not routable forwarding destinations",
+  );
 
 /** `?until=` earlier than `?since=` → 400 VALIDATION_ERROR (M09 §3). */
 const sinceBeforeUntil = <T extends { since?: string; until?: string }>(data: T) =>
@@ -119,7 +176,7 @@ export const reportExportQuerySchema = z.object({
 
 export const syslogTargetCreateSchema = z.object({
   name: z.string().min(1).max(64),
-  host: z.string().min(1).max(253),
+  host: targetHostSchema,
   port: z.coerce.number().int().min(1).max(65535).default(514),
   protocol: syslogProtocolSchema.default("udp"),
   minSeverity: ipsSeveritySchema.default("info"),
@@ -142,7 +199,7 @@ export const syslogTargetUpdateSchema = z
 
 export const netflowTargetCreateSchema = z.object({
   name: z.string().min(1).max(64),
-  host: z.string().min(1).max(253),
+  host: targetHostSchema,
   port: z.coerce.number().int().min(1).max(65535).default(2055),
   version: netflowVersionSchema.default("ipfix"),
   samplingRate: z.coerce.number().int().min(1).max(65536).default(100),
@@ -170,7 +227,7 @@ export const reportScheduleCreateSchema = z.object({
   range: reportRangeSchema.default("daily"),
   format: reportFormatSchema.default("pdf"),
   sections: reportSectionsSchema.default(["traffic", "threats"]),
-  recipients: z.string().max(512).optional().nullable(), // comma-separated emails, display-only in sandbox
+  recipients: recipientsSchema.optional().nullable(), // comma-separated emails (F-e #16)
   enabled: z.boolean().default(true),
 });
 
@@ -181,7 +238,7 @@ export const reportScheduleUpdateSchema = z
     range: reportRangeSchema,
     format: reportFormatSchema,
     sections: reportSectionsSchema,
-    recipients: z.string().max(512).nullable(),
+    recipients: recipientsSchema.nullable(),
     enabled: z.boolean(),
   })
   .partial()

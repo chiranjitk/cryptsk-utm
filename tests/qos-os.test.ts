@@ -256,6 +256,18 @@ describe("qosStepGuarded", () => {
     // chained commands fail the regex (no spaces around ';' matched)
     expect(qosStepGuarded("tc qdisc del dev ens34 root && reboot")).toBe(false);
   });
+
+  it("allows the exact snapshot / reset / restore step forms (they route through the whitelist too)", () => {
+    // snapshot + verify reads
+    expect(qosStepGuarded("tc -j qdisc show dev ens34")).toBe(true);
+    // reset / auto-rollback delete
+    expect(qosStepGuarded("tc qdisc del dev ens34 root")).toBe(true);
+    // restore: empty-snapshot fallback + renderRestoreQdisc fq_codel with options
+    expect(qosStepGuarded("tc qdisc add dev ens34 root fq_codel")).toBe(true);
+    expect(qosStepGuarded("tc qdisc add dev ens34 root fq_codel limit 10240 flows 2048 quantum 1514 target 5ms interval 100ms memory_limit 32mb noecn")).toBe(true);
+    // non-tc injection still rejected
+    expect(qosStepGuarded("tc qdisc add dev ens34 root fq_codel; reboot")).toBe(false);
+  });
 });
 
 describe("hardQosRefusal", () => {

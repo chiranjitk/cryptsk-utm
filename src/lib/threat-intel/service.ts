@@ -320,6 +320,12 @@ export async function createAutoBlockRule(
     where: { tenantId_matchType_matchValue: { tenantId, matchType: body.matchType, matchValue: body.matchValue } },
   });
   if (dup) throw ApiError.conflict(`A rule for ${body.matchType}:${body.matchValue} already exists`);
+  // the logical IOC ref must belong to THIS tenant — a cross-tenant iocId must
+  // never anchor a rule (module error style: notFound for missing resources)
+  if (body.iocId != null) {
+    const ioc = await db.ioc.findFirst({ where: { id: body.iocId, tenantId } });
+    if (!ioc) throw ApiError.notFound("IOC not found");
+  }
   const row = await db.autoBlockRule.create({
     data: {
       tenantId,
@@ -382,7 +388,8 @@ export async function listHits(tenantId: number, query: HitsQuery): Promise<IocH
   const iocIds = [...new Set(hits.map((h) => h.iocId))];
   const iocs = iocIds.length
     ? await db.ioc.findMany({
-        where: { id: { in: iocIds } },
+        // tenant-scoped — a hit row's logical iocId can never reach across tenants
+        where: { id: { in: iocIds }, tenantId },
         select: { id: true, value: true, type: true, severity: true },
       })
     : [];

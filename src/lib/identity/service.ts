@@ -8,6 +8,25 @@
  * an explicit, audited, role-gated endpoint (routes layer). Password strength
  * is checked against the stored auth policy here (DB state, not a zod grammar).
  * Vouchers are persistent rows (spec §1.10, T1-d) — see ./vouchers.ts.
+ *
+ * Audit fixes (F-c):
+ *  - #3 role-hierarchy guard: create/update/delete take the actor's role from
+ *    the routes (auth context) — no principal may be created/modified by an
+ *    actor it outranks, and admin-class roles need admin-class actors. Callers
+ *    that omit the actor role (legacy service-level tests) bypass the guard.
+ *  - #1 user lifecycle changes (disable / role change / password change /
+ *    delete) revoke all of that user's AuthSessions (JWT revocation registry).
+ *  - #18 createUser runs user.create + memberships in one transaction.
+ *  - #20 the last-admin guard re-counts INSIDE the same transaction as the
+ *    guarded role/isActive mutation, which is applied as a conditional
+ *    updateMany (lost-update safe — concurrent flips → 409).
+ *  - #24 password expiry (policy.password.expiryDays) is INERT in the
+ *    console: enforced only by the simulated engine; console login does not
+ *    expire passwords yet — kept as stored policy state, no enforcement here.
+ *  - #25 BYOD enrollment tokens (identity-advanced/byod) and IdP
+ *    clientSecrets (identity-advanced/idps) are stored PLAINTEXT AT REST by
+ *    design (schema locked) — redaction-in-response is enforced instead
+ *    (tokens/secret never serialized; one-time reveal on create only).
  */
 
 import { db } from "@/lib/db";
@@ -15,6 +34,7 @@ import { ApiError } from "@/lib/api/errors";
 import { parseJson, stringifyJson } from "@/lib/json";
 import { hashPassword } from "@/lib/auth/password";
 import { generateTotpSecret } from "@/lib/auth/totp";
+import { revokeAllUserSessions } from "@/lib/auth/session-store";
 import type {
   AuthSettings,
   CaptivePortalUpdate,
@@ -191,35 +211,88 @@ async function groupRefsFor(tenantId: number, groupIds: number[]): Promise<UserG
   return groups.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function applyMemberships(userId: number, groupIds: number[]): Promise<void> {
-  await db.$transaction([
-    db.userGroupMember.deleteMany({ where: { userId, groupId: { notIn: groupIds } } }),
-    ...groupIds.map((groupId) =>
-      db.userGroupMember.upsert({
-        where: { groupId_userId: { groupId, userId } },
-        update: {},
-        create: { groupId, userId },
-      }),
-    ),
-  ]);
+async function applyMemberships(client: Pick<typeof db, "userGroupMember">, userId: number, groupIds: number[]): Promise<void> {
+  await client.userGroupMember.deleteMany({ where: { userId, groupId: { notIn: groupIds } } });
+  for (const groupId of groupIds) {
+    await client.userGroupMember.upsert({
+      where: { groupId_userId: { groupId, userId } },
+      update: {},
+      create: { groupId, userId },
+    });
+  }
 }
 
-export async function createUser(tenantId: number, body: UserCreate): Promise<UserDTO> {
+// ── role-hierarchy guard (audit fix #3 — privilege-escalation prevention) ────
+
+/** super_admin > tenant_admin > security_admin > network_admin > soc_analyst > helpdesk.
+ *  auditor/api_service sit BELOW the ladder (rank -1) — they can never create
+ *  or modify privileged principals (the identity.write matrix already keeps
+ *  them out of the area entirely). */
+const ROLE_RANK: Record<string, number> = {
+  super_admin: 60,
+  tenant_admin: 50,
+  security_admin: 40,
+  network_admin: 30,
+  soc_analyst: 20,
+  helpdesk: 10,
+};
+const ADMIN_CLASS_ROLES = ["super_admin", "tenant_admin"];
+
+function rankOf(role: string | undefined): number {
+  return ROLE_RANK[role ?? ""] ?? -1;
+}
+
+/**
+ * Guard the ASSIGNMENT of `newRole` (createUser, or updateUser changing role):
+ *  - only super_admin may create/assign the super_admin role;
+ *  - only super_admin/tenant_admin may assign admin-class roles;
+ *  - nobody may assign a role that outranks their own.
+ */
+export function assertRoleAssignment(actorRole: string | undefined, newRole: string): void {
+  if (newRole === "super_admin" && actorRole !== "super_admin") {
+    throw ApiError.forbidden("Only super_admin may create or assign the super_admin role");
+  }
+  if (ADMIN_CLASS_ROLES.includes(newRole) && rankOf(actorRole) < ROLE_RANK.tenant_admin) {
+    throw ApiError.forbidden("Only super_admin or tenant_admin may assign admin-class roles");
+  }
+  if (rankOf(newRole) > rankOf(actorRole)) {
+    throw ApiError.forbidden(`Role '${actorRole ?? "unknown"}' may not assign the higher-ranked '${newRole}' role`);
+  }
+}
+
+/**
+ * Guard MODIFYING an existing principal (update/delete/password reset):
+ * the target's role must not outrank the actor's.
+ */
+export function assertTargetNotOutranking(actorRole: string | undefined, targetRole: string): void {
+  if (rankOf(targetRole) > rankOf(actorRole)) {
+    throw ApiError.forbidden(`Role '${actorRole ?? "unknown"}' may not modify a '${targetRole}' principal — target outranks the actor`);
+  }
+}
+
+export async function createUser(tenantId: number, body: UserCreate, actorRole?: string): Promise<UserDTO> {
+  // role-hierarchy guard (audit fix #3) — wired from the route's auth context
+  assertRoleAssignment(actorRole, body.role);
   await assertPasswordPolicy(body.password);
   const dup = await db.user.findFirst({ where: { tenantId, username: body.username } });
   if (dup) throw ApiError.conflict(`A user named "${body.username}" already exists`);
   const refs = await groupRefsFor(tenantId, body.groupIds);
-  const row = await db.user.create({
-    data: {
-      tenantId,
-      username: body.username,
-      email: body.email ?? null,
-      role: body.role,
-      isActive: body.isActive,
-      passwordHash: await hashPassword(body.password),
-    },
+  // audit fix #18 — user + memberships land atomically (no orphan user when a
+  // membership insert fails)
+  const row = await db.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: {
+        tenantId,
+        username: body.username,
+        email: body.email ?? null,
+        role: body.role,
+        isActive: body.isActive,
+        passwordHash: await hashPassword(body.password),
+      },
+    });
+    if (body.groupIds.length > 0) await applyMemberships(tx, created.id, body.groupIds);
+    return created;
   });
-  if (body.groupIds.length > 0) await applyMemberships(row.id, body.groupIds);
   return toUserDTO(row, refs);
 }
 
@@ -236,20 +309,57 @@ export async function updateUser(
   tenantId: number,
   id: number,
   body: UserUpdate,
+  actorRole?: string,
 ): Promise<UserDTO & { totpEnrollment?: TotpEnrollResult }> {
   const existing = await db.user.findFirst({ where: { tenantId, id } });
   if (!existing) throw ApiError.notFound("User not found");
 
+  // role-hierarchy guard (audit fix #3): no password reset / role change /
+  // disable / edit against a principal that outranks the actor, and the NEW
+  // role must be assignable by the actor
+  assertTargetNotOutranking(actorRole, existing.role);
+  if (body.role !== undefined && body.role !== existing.role) {
+    assertRoleAssignment(actorRole, body.role);
+  }
+
   if (body.password !== undefined) await assertPasswordPolicy(body.password);
 
-  // guard: keep at least one enabled super_admin/tenant_admin
+  // audit fix #20 — the last-admin guard re-counts INSIDE the same transaction
+  // as the guarded role/isActive mutation; the mutation is a conditional
+  // updateMany (preconditions role+isActive) so concurrent edits 409 instead
+  // of silently racing past the guard.
   const ADMIN_ROLES = ["super_admin", "tenant_admin"];
-  if (body.role && body.role !== existing.role && ADMIN_ROLES.includes(existing.role)) {
-    await assertNotLastAdmin(tenantId, existing.id);
+  let roleActiveApplied = false;
+  if (body.role !== undefined || body.isActive !== undefined) {
+    await db.$transaction(async (tx) => {
+      const current = await tx.user.findFirst({ where: { tenantId, id } });
+      if (!current) throw ApiError.notFound("User not found");
+      const demotingAdmin =
+        (body.role !== undefined && body.role !== current.role && ADMIN_ROLES.includes(current.role)) ||
+        (body.isActive === false && current.isActive && ADMIN_ROLES.includes(current.role));
+      if (demotingAdmin) {
+        const remaining = await tx.user.count({
+          where: { tenantId, id: { not: id }, isActive: true, role: { in: ADMIN_ROLES } },
+        });
+        if (remaining === 0) throw ApiError.conflict("Cannot remove the last enabled super_admin/tenant_admin");
+      }
+      const flip = await tx.user.updateMany({
+        where: { id, tenantId, role: current.role, isActive: current.isActive },
+        data: { role: body.role ?? undefined, isActive: body.isActive ?? undefined },
+      });
+      if (flip.count === 0) {
+        throw ApiError.conflict("User was modified concurrently — retry the update");
+      }
+      roleActiveApplied = true;
+    });
   }
-  if (body.isActive === false && existing.isActive && ADMIN_ROLES.includes(existing.role)) {
-    await assertNotLastAdmin(tenantId, existing.id);
-  }
+
+  // audit fix #1 — lifecycle changes kill the user's live JWT sessions
+  const lifecycleChange =
+    (body.isActive === false && existing.isActive) ||
+    (body.role !== undefined && body.role !== existing.role) ||
+    body.password !== undefined;
+  if (lifecycleChange) await revokeAllUserSessions(id);
 
   let totpEnrollment: TotpEnrollResult | undefined;
   if (body.totpEnroll === true) {
@@ -269,15 +379,16 @@ export async function updateUser(
   let refs: UserGroupRef[] | null = null;
   if (body.groupIds !== undefined) {
     refs = await groupRefsFor(tenantId, body.groupIds);
-    await applyMemberships(id, body.groupIds);
+    await applyMemberships(db, id, body.groupIds);
   }
 
   const row = await db.user.update({
     where: { id },
     data: {
       email: body.email !== undefined ? (body.email ?? null) : undefined,
-      role: body.role ?? undefined,
-      isActive: body.isActive ?? undefined,
+      // role/isActive were applied by the guarded conditional update above
+      role: roleActiveApplied ? undefined : (body.role ?? undefined),
+      isActive: roleActiveApplied ? undefined : (body.isActive ?? undefined),
       passwordHash: body.password !== undefined ? await hashPassword(body.password) : undefined,
     },
     include: { groupMembers: { include: { group: { select: { id: true, name: true } } } } },
@@ -289,31 +400,29 @@ export async function updateUser(
   return totpEnrollment ? { ...dto, totpEnrollment } : dto;
 }
 
-/** 409 when the mutation would remove the last enabled admin (M07 §5.1). */
-async function assertNotLastAdmin(tenantId: number, excludeUserId: number): Promise<void> {
-  const remaining = await db.user.count({
-    where: {
-      tenantId,
-      id: { not: excludeUserId },
-      isActive: true,
-      role: { in: ["super_admin", "tenant_admin"] },
-    },
-  });
-  if (remaining === 0) {
-    throw ApiError.conflict("Cannot remove the last enabled super_admin/tenant_admin");
-  }
-}
-
-export async function deleteUser(tenantId: number, actorId: number | undefined, id: number): Promise<void> {
+export async function deleteUser(tenantId: number, actorId: number | undefined, id: number, actorRole?: string): Promise<void> {
   const existing = await db.user.findFirst({ where: { tenantId, id } });
   if (!existing) throw ApiError.notFound("User not found");
+  // role-hierarchy guard (audit fix #3) — cannot delete an outranking principal
+  assertTargetNotOutranking(actorRole, existing.role);
   if (actorId !== undefined && actorId === id) {
     throw ApiError.conflict("You cannot delete your own account");
   }
-  if (["super_admin", "tenant_admin"].includes(existing.role)) {
-    await assertNotLastAdmin(tenantId, id);
-  }
-  await db.user.delete({ where: { id } });
+  // audit fix #1 — the deleted principal's JWT sessions die with the account
+  await revokeAllUserSessions(id);
+  // audit fix #20 — last-admin re-count + conditional delete in ONE tx: the
+  // deleteMany where carries the role precondition, so a concurrent demotion
+  // makes the delete a no-op (409) instead of racing past the guard.
+  await db.$transaction(async (tx) => {
+    if (ADMIN_CLASS_ROLES.includes(existing.role)) {
+      const remaining = await tx.user.count({
+        where: { tenantId, id: { not: id }, isActive: true, role: { in: ADMIN_CLASS_ROLES } },
+      });
+      if (remaining === 0) throw ApiError.conflict("Cannot remove the last enabled super_admin/tenant_admin");
+    }
+    const del = await tx.user.deleteMany({ where: { id, role: existing.role } }); // memberships cascade (FK)
+    if (del.count === 0) throw ApiError.conflict("User was modified concurrently — retry the delete");
+  });
 }
 
 // ── user groups ─────────────────────────────────────────────────────────────
@@ -410,9 +519,15 @@ export async function deleteGroup(tenantId: number, id: number): Promise<void> {
   await db.userGroup.delete({ where: { id } }); // memberships cascade; users untouched
 }
 
-// ── auth settings (SystemSetting category "auth" — M07 §5.2) ────────────────
+// ── auth settings (SystemSetting category "auth" — M07 §5.2) ─────────────────
 
 export const DEFAULT_AUTH_SETTINGS: AuthSettings = {
+  /**
+   * password.expiryDays is INERT in the console (audit fix #24, documented
+   * not implemented): it is enforced only by the simulated engine; console
+   * login does not expire passwords yet. Stored as policy state so a future
+   * enforcement pass can read it.
+   */
   password: { minLength: 8, requireComplexity: true, expiryDays: 90 },
   lockout: { maxAttempts: 5, windowMin: 15 },
   sessionLifetimeHours: 8,
@@ -836,6 +951,9 @@ export async function terminatePortalSession(tenantId: number, id: number): Prom
  * Opens an active CaptivePortalSession (kind "self-registration") lasting
  * sessionTimeoutMin; the session token is returned ONCE — only sha256(token)
  * is stored (captive_portal_sessions.session_id).
+ *
+ * Audit fix #23 — abuse cap: at most 3 CONCURRENT active self-registration
+ * sessions per source IP (state "active" and not past expiresAt) → 429.
  */
 export async function selfRegister(
   tenantId: number,
@@ -851,6 +969,13 @@ export async function selfRegister(
   if (!profile.enabled) throw ApiError.forbidden("Captive portal is disabled — guest self-registration is unavailable");
 
   const now = new Date();
+  const activeSelfRegs = await db.captivePortalSession.count({
+    where: { tenantId, kind: "self-registration", clientIp: input.clientIp, state: "active", expiresAt: { gt: now } },
+  });
+  if (activeSelfRegs >= 3) {
+    throw ApiError.rateLimited("Too many active guest sessions from this address — try again later");
+  }
+
   const token = newPortalSessionToken();
   const row = await db.captivePortalSession.create({
     data: {

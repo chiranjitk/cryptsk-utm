@@ -397,15 +397,15 @@ describe("updateFindingStatus / listFindings / statsFindings", () => {
     return { suspiciousId, likelyId };
   }
 
-  it("walks open → acknowledged → resolved and rejects invalid statuses / unknown ids", async () => {
+  it("walks open → acknowledged → resolved and rejects invalid statuses / illegal transitions / unknown ids", async () => {
     const { suspiciousId } = await seedTwoClients();
 
     const ack = await service.updateFindingStatus(1, suspiciousId, "acknowledged");
     expect(ack.status).toBe("acknowledged");
     const resolved = await service.updateFindingStatus(1, suspiciousId, "resolved");
     expect(resolved.status).toBe("resolved");
-    const reopened = await service.updateFindingStatus(1, suspiciousId, "open");
-    expect(reopened.status).toBe("open");
+    // resolved is terminal — reopening is an illegal transition (400)
+    await expect(service.updateFindingStatus(1, suspiciousId, "open")).rejects.toThrow(/Illegal transition resolved → open/);
 
     await expect(service.updateFindingStatus(1, suspiciousId, "bogus")).rejects.toThrow(/status must be one of/);
     await expect(service.updateFindingStatus(1, 999_999, "open")).rejects.toThrow(/not found/i);
@@ -454,5 +454,65 @@ describe("updateFindingStatus / listFindings / statsFindings", () => {
     expect(after.openByVerdict.suspicious).toBe(0);
     expect(after.resolvedTotal).toBe(1);
     expect(after.total).toBe(2);
+  });
+});
+
+// ═════════ Regression: tenant-scoped detection ring (audit fix F-d) ═════════
+
+describe("runDetection tenant scoping (audit fix F-d)", () => {
+  it("requires tenantId (no silent default to tenant 1)", async () => {
+    await expect(
+      service.runDetection({ queries: [{ clientIp: "10.0.0.1", domain: "a.example.com" }] }),
+    ).rejects.toThrow(/tenantId is required/);
+  });
+
+  it("filters engine ring rows by the tagged tenantId (cross-tenant isolation)", async () => {
+    // findings FK to tenants — the copied dev schema only has tenant 1
+    await db.tenant.upsert({ where: { id: 2 }, update: {}, create: { id: 2, name: "dns-tunnel-t2" } });
+    const { getEngine } = await import("@/lib/engine");
+    const ring = getEngine().dnsRing;
+    const ts = new Date().toISOString();
+    // one suspicious burst per tenant — only the requested tenant's rows may
+    // be analyzed (ring rows carry tenantId since audit fix F-d)
+    const tenant1Rows = lowEntropyDomains(25).map((domain, i) => ({
+      seq: 9000 + i,
+      ts,
+      clientIp: "192.168.77.1",
+      domain,
+      qtype: "A",
+      action: "allowed" as const,
+      blocked: false,
+      category: null,
+      latencyMs: 5,
+      tenantId: 1,
+    }));
+    const tenant2Rows = lowEntropyDomains(25).map((domain, i) => ({
+      seq: 9100 + i,
+      ts,
+      clientIp: "192.168.77.1", // same client IP — isolation must come from the tag
+      domain,
+      qtype: "A",
+      action: "allowed" as const,
+      blocked: false,
+      category: null,
+      latencyMs: 5,
+      tenantId: 2,
+    }));
+    ring.push(...tenant1Rows, ...tenant2Rows);
+
+    try {
+      const run1 = await service.runDetection({ tenantId: 1, lookbackMinutes: 60, windowMinutes: 15, stepMinutes: 15 });
+      expect(run1.queriesScanned).toBe(25); // only tenant 1's burst
+      expect(run1.findings).toBe(1);
+      expect(await db.dnsTunnelFinding.count({ where: { tenantId: 1, clientIp: "192.168.77.1" } })).toBe(1);
+
+      const run2 = await service.runDetection({ tenantId: 2, lookbackMinutes: 60, windowMinutes: 15, stepMinutes: 15 });
+      expect(run2.queriesScanned).toBe(25); // only tenant 2's burst
+      expect(run2.findings).toBe(1);
+      expect(await db.dnsTunnelFinding.count({ where: { tenantId: 2, clientIp: "192.168.77.1" } })).toBe(1);
+    } finally {
+      // keep the shared ring clean for other suites in this process
+      ring.splice(0, ring.length, ...ring.filter((r) => r.seq < 9000 || r.seq > 9199));
+    }
   });
 });

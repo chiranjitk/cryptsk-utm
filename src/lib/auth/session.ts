@@ -1,21 +1,34 @@
 /**
  * Session extraction — resolves the caller (JWT cookie or Bearer API key)
  * into an AuthContext. docs/07-SECURITY/AUTH_AND_RBAC.md §1–§3.
+ *
+ * JWT cookie path: after signature verification the jti is checked against
+ * the AuthSession registry (./session-store.ts) — revoked/expired/missing
+ * sessions fail closed (401) with the same opaque result as a bad signature.
  */
 
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { parseJson } from "@/lib/json";
 import { SESSION_COOKIE, verifySession } from "./jwt";
+import { isSessionActive } from "./session-store";
 import { ApiError } from "@/lib/api/errors";
-import { createHash } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 import type { AuthContext } from "./rbac";
 
 function cookieFromHeader(header: string | null, name: string): string | undefined {
   if (!header) return undefined;
   for (const part of header.split(";")) {
     const [k, ...rest] = part.trim().split("=");
-    if (k === name) return decodeURIComponent(rest.join("="));
+    if (k === name) {
+      // Malformed percent-encoding must not 500 the request (audit fix):
+      // treat undecodable cookie values as absent.
+      try {
+        return decodeURIComponent(rest.join("="));
+      } catch {
+        return undefined;
+      }
+    }
   }
   return undefined;
 }
@@ -38,15 +51,27 @@ function sha256(s: string): string {
 }
 
 /**
+ * Timing-safe hex digest comparison (audit fix): sha256 output is a fixed 64
+ * chars, but the length guard keeps timingSafeEqual contract-safe for any
+ * future digest shape.
+ */
+function safeEqualHex(a: string, b: string): boolean {
+  const ab = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  if (ab.length === 0 || ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
+/**
  * Authenticate the request. Throws UNAUTHORIZED (401) when no valid principal.
  * Successful API-key auth touches `lastUsedAt` (max once per minute per key).
  */
 export async function authenticate(req: NextRequest): Promise<AuthContext> {
-  // 1) Browser session (httpOnly cookie)
+  // 1) Browser session (httpOnly cookie) — signature + registry check
   const token = getCookie(req, SESSION_COOKIE);
   if (token) {
     const claims = await verifySession(token);
-    if (claims) {
+    if (claims && (await isSessionActive(claims.jti))) {
       return {
         kind: "user",
         userId: Number(claims.sub),
@@ -55,6 +80,9 @@ export async function authenticate(req: NextRequest): Promise<AuthContext> {
         tenantId: claims.tenantId,
       };
     }
+    // signature valid but session revoked/missing → this cookie authenticates
+    // nothing; fall through (Bearer branch / final 401) with the same opaque
+    // result as a bad signature.
   }
 
   // 2) Machine access (Authorization: Bearer ck_<prefix8>_<secret32>)
@@ -66,7 +94,7 @@ export async function authenticate(req: NextRequest): Promise<AuthContext> {
       const prefix = presented.slice(0, 11); // "ck_" + 8 chars — matches ApiKey.prefix
       const key = await db.apiKey.findUnique({ where: { prefix } });
       if (key && !key.revoked && !(key.expiresAt && key.expiresAt.getTime() < Date.now())) {
-        if (key.hashedKey === sha256(presented)) {
+        if (safeEqualHex(key.hashedKey, sha256(presented))) {
           const last = key.lastUsedAt?.getTime() ?? 0;
           if (Date.now() - last > 60_000) {
             await db.apiKey.update({ where: { id: key.id }, data: { lastUsedAt: new Date() } }).catch(() => {});

@@ -260,7 +260,7 @@ describe("runScan (nDPI log aggregation)", () => {
     expect(gw.firstSeenAt.getTime()).toBeLessThanOrEqual(gw.lastSeenAt.getTime());
   });
 
-  it("accumulates sessions/bytes across scans without duplicating rows", async () => {
+  it("is idempotent via the scan watermark (only NEW rows re-ingested)", async () => {
     await seedLogs();
     const first = await service.runScan(1, { windowMinutes: 1440 });
     expect(first).toEqual({ scanned: 11, upserted: 4, sanctioned: 2, shadow: 1, unknown: 1 });
@@ -270,18 +270,45 @@ describe("runScan (nDPI log aggregation)", () => {
       data: { tenantId: 1, clientIp: "192.168.20.10", appName: "docs.google.com", action: "allowed", bytes: 2000 },
     });
 
-    // a scan INGESTS the logs inside its window into the cumulative discovery
-    // counters — the 24h window still contains the earlier logs, so they are
-    // counted again (schedule non-overlapping windows to avoid re-ingest);
-    // the row count is what must never grow
+    // the scan WATERMARK (audit fix F-d) makes scans idempotent: only log rows
+    // newer than the high-water id are aggregated — the earlier 11 rows are
+    // NOT re-ingested, so the counters grow by exactly the new row
     const second = await service.runScan(1, { windowMinutes: 1440 });
-    expect(second).toEqual({ scanned: 12, upserted: 4, sanctioned: 2, shadow: 1, unknown: 1 });
+    expect(second).toEqual({ scanned: 1, upserted: 1, sanctioned: 1, shadow: 0, unknown: 0 });
 
     const rows = await db.saasDiscovery.findMany({ where: { tenantId: 1 } });
     expect(rows).toHaveLength(4); // same (clientIp, appHint) keys — updated, never duplicated
     const gw = rows.find((r) => r.appHint === "docs.google.com")!;
-    expect(gw.sessions).toBe(7); // 3 + (3 re-ingested + 1 new)
-    expect(gw.bytesIn).toBe(8000); // 3000 + (3000 re-ingested + 2000 new)
+    expect(gw.sessions).toBe(4); // 3 + 1 new (no double-count of the first scan)
+    expect(gw.bytesIn).toBe(5000); // 3000 + 2000 new
+
+    // a third scan with NOTHING new is an honest zero (and does not move rows)
+    const third = await service.runScan(1, { windowMinutes: 1440 });
+    expect(third).toEqual({ scanned: 0, upserted: 0, sanctioned: 0, shadow: 0, unknown: 0 });
+    const afterThird = await db.saasDiscovery.findMany({ where: { tenantId: 1 } });
+    expect(afterThird.find((r) => r.appHint === "docs.google.com")!.sessions).toBe(4);
+  });
+
+  it("{reset: true} clears the watermark and re-aggregates the window", async () => {
+    await seedLogs();
+    const first = await service.runScan(1, { windowMinutes: 1440 });
+    expect(first.scanned).toBe(11);
+
+    // no-op scan — watermark says everything is accounted
+    const noop = await service.runScan(1, { windowMinutes: 1440 });
+    expect(noop.scanned).toBe(0);
+
+    // reset re-aggregates from scratch (sessions double — that is the point)
+    const reset = await service.runScan(1, { windowMinutes: 1440, reset: true });
+    expect(reset).toEqual({ scanned: 11, upserted: 4, sanctioned: 2, shadow: 1, unknown: 1 });
+    const rows = await db.saasDiscovery.findMany({ where: { tenantId: 1 } });
+    expect(rows).toHaveLength(4); // rows never duplicate, counters re-accumulate
+    const gw = rows.find((r) => r.appHint === "docs.google.com")!;
+    expect(gw.sessions).toBe(6); // 3 + 3 re-ingested
+
+    // and the watermark is re-stamped: the next scan is a no-op again
+    const after = await service.runScan(1, { windowMinutes: 1440 });
+    expect(after.scanned).toBe(0);
   });
 
   it("returns the honest zero summary when the window has no log rows", async () => {

@@ -38,6 +38,9 @@ export const urlLogActionSchema = z.enum(["allowed", "blocked", "warned"]);
 /** Bare hostname with at least two labels (example.com) — no wildcard, no scheme. */
 export const DOMAIN_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,63}$/;
 
+/** Absolute http(s) URL — the `url` matchType grammar (exported for the OS renderer re-validation). */
+export const ABS_URL_RE = /^https?:\/\/\S+$/;
+
 const fileTypeItem = z
   .string()
   .trim()
@@ -49,10 +52,10 @@ const fileTypeList = z
   .max(20, "at most 20 file types")
   .refine((arr) => new Set(arr).size === arr.length, { message: "Duplicate file types" });
 
-/** Per-matchType validation of a custom-list value. */
+/** Per-matchType validation of a custom-list value (reusable — the OS renderer re-asserts it). */
 export function valueMatchesMatchType(matchType: string, raw: string): boolean {
   const v = raw.trim().toLowerCase();
-  if (matchType === "url") return /^https?:\/\/\S+$/.test(v);
+  if (matchType === "url") return ABS_URL_RE.test(v);
   if (matchType === "wildcard") return v.startsWith("*.") && DOMAIN_RE.test(v.slice(2));
   return DOMAIN_RE.test(v);
 }

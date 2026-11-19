@@ -223,12 +223,25 @@ export const portalSessionQuerySchema = z.object({
 });
 
 /**
+ * C0/C1 control characters + Unicode bidi overrides — never belong in a
+ * guest-displayed name (terminal/log spoofing, UI injection). Stripped by a
+ * transform BEFORE the length/refine checks (audit fix #23).
+ */
+const CONTROL_BIDI_RE =
+  /[\u0000-\u001F\u007F-\u009F\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
+
+/**
  * PUBLIC guest self-registration body (POST /api/v1/captive-portal/register).
- * clientIp is server-derived (x-forwarded-for) — never taken from the body;
- * the portal splash page passes the client MAC when it knows it.
+ * clientIp is server-derived (x-forwarded-for behind a trusted proxy) — never
+ * taken from the body; the portal splash page passes the client MAC when it
+ * knows it. `name` is control-char/bidi-override sanitized (#23).
  */
 export const portalSelfRegisterSchema = z.object({
-  name: z.string().trim().min(1, "Name is required").max(64, "Name is 1-64 chars"),
+  name: z
+    .string()
+    .transform((v) => v.replace(CONTROL_BIDI_RE, "").trim())
+    .refine((v) => v.length >= 1, "Name is required")
+    .refine((v) => v.length <= 64, "Name is 1-64 chars"),
   phone: z.string().trim().max(32, "Phone is up to 32 chars").optional(),
   agree: z.boolean().refine((v) => v === true, { message: "Guest must accept the acceptable-use policy" }),
   clientMac: z

@@ -265,11 +265,13 @@ export interface QosApplyOutcome {
 }
 
 /**
- * Execute the convergence plan on the appliance (exec gate checked by caller).
- * Snapshot-first per iface; failed install/verify after a mutation triggers
- * auto-rollback: touched ifaces are reset (`qdisc del`) and their pre-apply
- * root qdisc re-attached from the captured snapshot. The state file is the
- * LAST plan step — only written when every verify passed.
+ * Execute the convergence plan on the appliance (executors SELF-GATE — F-e #19:
+ * the CONSOLE_OS_APPLY check lives here so every caller inherits the gate;
+ * routes additionally pass their own flag, defense in depth). Snapshot-first
+ * per iface; failed install/verify after a mutation triggers auto-rollback:
+ * touched ifaces are reset (`qdisc del`) and their pre-apply root qdisc
+ * re-attached from the captured snapshot. The state file is the LAST plan
+ * step — only written when every verify passed.
  */
 export async function applyQosToOs(tenantId: number, exec: boolean): Promise<QosApplyOutcome> {
   const [{ getDataPlaneMode }, { runTool }] = await Promise.all([
@@ -277,10 +279,12 @@ export async function applyQosToOs(tenantId: number, exec: boolean): Promise<Qos
     import("@/lib/host/tools"),
   ]);
 
+  // F-e #19: executor-side env gate — coherent with the route-side flag.
+  const execGated = exec && process.env.CONSOLE_OS_APPLY === "1";
   const { shapes } = await buildQosShapes(tenantId);
   const refusal = hardQosRefusal(shapes);
   const state = await readQosState();
-  const mode: QosApplyPlan["mode"] = exec && getDataPlaneMode() === "host" ? "exec" : "plan";
+  const mode: QosApplyPlan["mode"] = execGated && getDataPlaneMode() === "host" ? "exec" : "plan";
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
 
   const plan: QosApplyPlan = buildQosApplyPlan({
@@ -294,10 +298,10 @@ export async function applyQosToOs(tenantId: number, exec: boolean): Promise<Qos
   if (refusal) {
     return { applied: false, refused: refusal, rolledBack: false, plan: preview(), results: [] };
   }
-  if (!exec || mode !== "exec") {
+  if (!execGated || mode !== "exec") {
     return {
       applied: false,
-      refused: !exec
+      refused: !execGated
         ? "CONSOLE_OS_APPLY is off — plan preview only (tc command sequence attached)"
         : "data plane is not in host mode — OS enforcement is preview-only",
       rolledBack: false,
@@ -317,6 +321,13 @@ export async function applyQosToOs(tenantId: number, exec: boolean): Promise<Qos
   for (const s of plan.steps) {
     if (s.kind === "snapshot") {
       const iface = s.iface ?? "";
+      // snapshot reads go through the same whitelist as every other exec step
+      if (!qosStepGuarded(s.cmd)) {
+        failed = true;
+        failDetail = `step '${s.step}' failed the tc command whitelist — execution aborted`;
+        results.push({ step: s.step, ok: false, detail: failDetail });
+        break;
+      }
       const r = await runTool(s.cmd, 10000);
       if (!r.ok) {
         failed = true;
@@ -324,8 +335,18 @@ export async function applyQosToOs(tenantId: number, exec: boolean): Promise<Qos
         results.push({ step: s.step, ok: false, detail: failDetail });
         break;
       }
+      let rootRaw: TcQdiscJson | null = null;
+      try {
+        rootRaw = (JSON.parse(r.stdout || "[]") as TcQdiscJson[]).find((q) => q.root === true) ?? null;
+      } catch {
+        // corrupt tc -j output — treat as a failed step (auto-rollback can
+        // still reset the iface; it just has no pre-apply root to re-attach)
+        failed = true;
+        failDetail = `snapshot ${iface} parse failed: tc -j output is not valid JSON (${r.stdout.length} bytes)`;
+        results.push({ step: s.step, ok: false, detail: "snapshot parse failed" });
+        break;
+      }
       const arr = parseTcQdiscShow(r.stdout);
-      const rootRaw = (JSON.parse(r.stdout || "[]") as TcQdiscJson[]).find((q) => q.root === true) ?? null;
       snapshots.set(iface, rootRaw ?? {});
       results.push({ step: s.step, ok: true, detail: `${arr ? "parsed" : "raw"} (${r.stdout.length} bytes)` });
       continue;
@@ -345,6 +366,12 @@ export async function applyQosToOs(tenantId: number, exec: boolean): Promise<Qos
         results.push({ step: s.step, ok: true, detail: "no previous root qdisc to restore" });
         continue;
       }
+      if (!qosStepGuarded(cmd)) {
+        failed = true;
+        failDetail = `step '${s.step}' failed the tc command whitelist — execution aborted`;
+        results.push({ step: s.step, ok: false, detail: failDetail });
+        break;
+      }
       const r = await runTool(cmd, 10000);
       results.push({ step: s.step, ok: r.ok, detail: r.ok ? cmd : (r.stderr || r.error || "").slice(0, 200) });
       if (!r.ok) {
@@ -358,6 +385,12 @@ export async function applyQosToOs(tenantId: number, exec: boolean): Promise<Qos
     if (s.kind === "reset") {
       // best-effort: the root may be empty (fresh apply) — a real failure
       // (missing iface etc.) surfaces at the subsequent install `add`
+      if (!qosStepGuarded(s.cmd)) {
+        failed = true;
+        failDetail = `step '${s.step}' failed the tc command whitelist — execution aborted`;
+        results.push({ step: s.step, ok: false, detail: failDetail });
+        break;
+      }
       const r = await runTool(s.cmd, 10000);
       touchedIfaces.add(s.iface ?? "");
       results.push({ step: s.step, ok: true, detail: r.ok ? "root cleared" : "root already empty" });
@@ -414,10 +447,13 @@ export async function applyQosToOs(tenantId: number, exec: boolean): Promise<Qos
   if (failed && touchedIfaces.size > 0) {
     let allOk = true;
     for (const iface of [...touchedIfaces].filter(Boolean)) {
-      const del = await runTool(`tc qdisc del dev ${iface} root`, 10000);
+      const delCmd = `tc qdisc del dev ${iface} root`;
       const snap = snapshots.get(iface);
       const restoreCmd = (snap && renderRestoreQdisc(iface, snap)) || `tc qdisc add dev ${iface} root fq_codel`;
-      const restore = restoreCmd ? await runTool(restoreCmd, 10000) : { ok: true, stdout: "", stderr: "" };
+      const del = qosStepGuarded(delCmd) ? await runTool(delCmd, 10000) : { ok: false, stdout: "", stderr: "whitelist" };
+      const restore = restoreCmd && qosStepGuarded(restoreCmd)
+        ? await runTool(restoreCmd, 10000)
+        : { ok: false, stdout: "", stderr: "whitelist" };
       if (!del.ok || !restore.ok) allOk = false;
     }
     rolledBack = allOk;

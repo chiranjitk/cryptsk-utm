@@ -2,6 +2,11 @@
  * Federated identity providers (M23, spec 2.9) — GET list + POST create.
  * Area `federation`; mutations snapshot section `identity` and audit
  * `idp.create`. clientSecret is write-only (never returned — hasSecret).
+ *
+ * AT-REST NOTE (audit fix #25 — documented, no crypto this pass): the IdP
+ * clientSecret is stored PLAINTEXT by design (schema locked). Exposure is
+ * controlled in the response layer instead — the secret never serializes
+ * into any DTO/GET (hasSecret flag only) and is only ever SET via POST/PUT.
  */
 
 import { route } from "@/lib/api/handler";

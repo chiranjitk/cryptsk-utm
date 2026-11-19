@@ -85,7 +85,7 @@ export const POST = route({ area: "firewall", bodySchema, section: "firewall" },
     }
     case "confirm": {
       if (!body.ts) throw ApiError.validation("confirm requires ts of the pending apply");
-      const r = await confirmFirewallApply(body.ts);
+      const r = await confirmFirewallApply(auth.tenantId, body.ts);
       if (!r.confirmed) throw ApiError.notFound("no pending apply window for this ts (already confirmed or expired)");
       return {
         data: r,
@@ -93,7 +93,7 @@ export const POST = route({ area: "firewall", bodySchema, section: "firewall" },
       };
     }
     case "rollback": {
-      const r = await rollbackFirewall(body.ts);
+      const r = await rollbackFirewall(auth.tenantId, body.ts);
       return {
         data: r,
         audit: {

@@ -491,8 +491,10 @@ export async function listLatestPostureChecks(
     db.postureProfile.findMany({ where: { tenantId }, select: { id: true, name: true, checks: true } }),
   ]);
   const latestIds = groups.map((g) => g._max.id).filter((v): v is number => typeof v === "number");
+  // tenantId in the follow-up filter (audit fix F-d): ids came from a scoped
+  // groupBy, but the explicit tenantId keeps the read tenant-safe regardless
   const rows = latestIds.length
-    ? await db.devicePostureCheck.findMany({ where: { id: { in: latestIds } } })
+    ? await db.devicePostureCheck.findMany({ where: { tenantId, id: { in: latestIds } } })
     : [];
   rows.sort((a, b) => b.checkedAt.getTime() - a.checkedAt.getTime() || b.id - a.id);
 
@@ -526,8 +528,8 @@ export interface ContinuousValidationResult {
  * NOTE: the real probe transport (endpoint agent / WMI / SSH probe per spec
  * §4.4) is out of console scope — the re-check replays the last known raw
  * results until a new probe result is POSTed to /posture-checks. Triggered
- * lazily from GET /posture-checks so the console advances validation on read
- * (post-run the nextCheckAt horizon moves forward, making repeats no-ops).
+ * EXPLICITLY via POST /api/v1/ztna/posture-checks/validate (audit fix F-d:
+ * GET /posture-checks no longer mutates — reads are side-effect free).
  */
 export async function runContinuousValidation(tenantId: number): Promise<ContinuousValidationResult> {
   const now = new Date();
@@ -657,6 +659,10 @@ export async function evaluateAccess(tenantId: number, input: ZtnaEvaluateBody):
     postureVerdict,
   });
   const matched = policies.find((p) => p.id === decision.matchedPolicyId);
+  // schedule is DISPLAY-ONLY (spec §4.4 — clock evaluation out of console
+  // scope); surface that honestly on the matched policy (audit fix F-d)
+  const reason =
+    matched && matched.schedule.trim() ? `${decision.reason} (schedule not enforced)` : decision.reason;
   return {
     appId: app.id,
     appName: app.name,
@@ -664,7 +670,7 @@ export async function evaluateAccess(tenantId: number, input: ZtnaEvaluateBody):
     matchedPolicyId: decision.matchedPolicyId,
     matchedPolicyRef: matched ? matched.subjectRef : null,
     postureVerdict,
-    reason: decision.reason,
+    reason,
     evaluatedAt: new Date().toISOString(),
   };
 }
@@ -698,8 +704,12 @@ export async function getZtnaStats(tenantId: number): Promise<ZtnaStats> {
   ]);
 
   const latestIds = latestGroups.map((g) => g._max.id).filter((v): v is number => typeof v === "number");
+  // tenantId in the follow-up filter (audit fix F-d — tenant-safe read)
   const latestRows = latestIds.length
-    ? await db.devicePostureCheck.findMany({ where: { id: { in: latestIds } }, select: { id: true, verdict: true, nextCheckAt: true } })
+    ? await db.devicePostureCheck.findMany({
+        where: { tenantId, id: { in: latestIds } },
+        select: { id: true, verdict: true, nextCheckAt: true },
+      })
     : [];
 
   const compliance = { compliant: 0, nonCompliant: 0, unknown: 0 };

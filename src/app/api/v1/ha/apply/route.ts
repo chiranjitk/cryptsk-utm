@@ -19,7 +19,7 @@ import { writeFile, rm } from "fs/promises";
 import { route } from "@/lib/api/handler";
 import { runTool } from "@/lib/host/tools";
 import { getDataPlaneMode } from "@/lib/engine";
-import { getHaConfig, toKeepalivedInput, buildHaFacts } from "@/lib/ha/service";
+import { getHaConfigRow, toKeepalivedInput, buildHaFacts } from "@/lib/ha/service";
 import {
   buildHaApplyPlan,
   hardRefusal,
@@ -36,7 +36,7 @@ export const dynamic = "force-dynamic";
 type StepResult = { step: string; ok: boolean; detail?: string };
 
 export const POST = route({ area: "ha", section: "ha" }, async ({ auth }) => {
-  const config = await getHaConfig(auth.tenantId);
+  const config = await getHaConfigRow(auth.tenantId);
   const gateOn = process.env.CONSOLE_OS_APPLY === "1" && getDataPlaneMode() === "host";
 
   // build plan from the DB row + real host facts (unicast needs the local IP)

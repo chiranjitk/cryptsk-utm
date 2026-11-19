@@ -7,20 +7,41 @@
  *
  * Exactly ONE audit entry is written per batch (`batch.execute`) with the
  * summary counts; firewall-family mutations converge the nftables policy via
- * the shared section hook below (same behavior as the individual routes).
+ * the hook below (same behavior as the individual routes).
+ *
+ * Config-version gating (F-e #9): the section snapshot + `config:updated`
+ * broadcast only fire when at least one operation EXECUTED (executed > 0) —
+ * denied/failed batches must not bump the config version.
  */
 
 import { route } from "@/lib/api/handler";
 import { batchRequestSchema } from "@/lib/validators/batch";
 import { executeBatchOperations } from "@/lib/api/batch";
+import { snapshotConfigVersion } from "@/lib/api/audit";
+import { scheduleFirewallConverge } from "@/lib/firewall/firewall-converge";
 
 export const dynamic = "force-dynamic";
 
 export const POST = route(
-  // no route-level `area` — RBAC is enforced per operation inside the executor
-  { bodySchema: batchRequestSchema, section: "firewall" },
-  async ({ auth, body }) => {
-    const outcome = await executeBatchOperations(auth, body.operations);
+  // no route-level `area` — RBAC is enforced per operation inside the executor;
+  // no route-level `section` — the snapshot is gated on executed > 0 below.
+  { bodySchema: batchRequestSchema },
+  async ({ auth, body, requestId }) => {
+    const outcome = await executeBatchOperations(auth, body.operations, requestId);
+
+    // F-e #9: only executed operations snapshot the firewall config version +
+    // broadcast config:updated + schedule nftables convergence.
+    if (outcome.executed > 0) {
+      const changeSummary = `batch.execute: batch ${outcome.executed}/${body.operations.length}`;
+      await snapshotConfigVersion({
+        tenantId: auth.tenantId,
+        section: "firewall",
+        changeSummary,
+        userId: auth.userId,
+      }).catch(() => {});
+      scheduleFirewallConverge(auth.tenantId);
+    }
+
     return {
       data: outcome,
       audit: {

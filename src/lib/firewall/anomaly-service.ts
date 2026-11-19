@@ -275,8 +275,14 @@ export async function scanConfigAnomalies(tenantId: number, input: ScanInput = {
     else triagedKeys.add(key);
   }
 
+  // ── persistence (BATCHED): dedupe/suppression semantics are unchanged —
+  //    new drafts createMany in one statement, in-place refreshes grouped by
+  //    identical (detail, severity) into one updateMany each, stale open rows
+  //    auto-resolved in a single updateMany.
   let newOpen = 0;
   const detectedKeys = new Set<string>();
+  const toCreate: AnomalyFindingDraft[] = [];
+  const toRefresh: Array<{ id: number; detail: string; severity: string }> = [];
   for (const d of drafts) {
     const key = `${d.kind}|${d.subjectRef}`;
     detectedKeys.add(key);
@@ -284,33 +290,48 @@ export async function scanConfigAnomalies(tenantId: number, input: ScanInput = {
     if (open) {
       // still real → refresh the persisted detail/severity in place, never duplicate
       if (open.detail !== stringifyJson(d.detail) || open.severity !== d.severity) {
-        await db.configAnomalyFinding.update({
-          where: { id: open.id },
-          data: { detail: stringifyJson(d.detail), severity: d.severity },
-        });
+        toRefresh.push({ id: open.id, detail: stringifyJson(d.detail), severity: d.severity });
       }
       continue;
     }
     if (triagedKeys.has(key)) continue; // suppression window — no resurrection
-    await db.configAnomalyFinding.create({
-      data: {
+    toCreate.push(d);
+  }
+
+  if (toCreate.length > 0) {
+    await db.configAnomalyFinding.createMany({
+      data: toCreate.map((d) => ({
         tenantId,
         kind: d.kind,
         severity: d.severity,
         subjectRef: d.subjectRef,
         detail: stringifyJson(d.detail),
         status: "open",
-      },
+      })),
     });
-    newOpen += 1;
+  }
+  newOpen = toCreate.length;
+
+  const refreshGroups = new Map<string, { detail: string; severity: string; ids: number[] }>();
+  for (const r of toRefresh) {
+    const gk = `${r.detail}|${r.severity}`;
+    const g = refreshGroups.get(gk) ?? { detail: r.detail, severity: r.severity, ids: [] };
+    g.ids.push(r.id);
+    refreshGroups.set(gk, g);
+  }
+  for (const g of refreshGroups.values()) {
+    await db.configAnomalyFinding.updateMany({
+      where: { id: { in: g.ids }, tenantId },
+      data: { detail: g.detail, severity: g.severity },
+    });
   }
 
   // open rows the detectors no longer produce → auto-resolve with resolvedAt
   const stale = existing.filter((row) => row.status === "open" && !detectedKeys.has(`${row.kind}|${row.subjectRef}`));
   const now = new Date();
-  for (const row of stale) {
-    await db.configAnomalyFinding.update({
-      where: { id: row.id },
+  if (stale.length > 0) {
+    await db.configAnomalyFinding.updateMany({
+      where: { id: { in: stale.map((row) => row.id) }, tenantId },
       data: { status: "resolved", resolvedAt: now },
     });
   }

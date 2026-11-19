@@ -1,11 +1,12 @@
 /**
  * BGP neighbor item (M19 §2.6) — update / delete, audit
  * `bgp_neighbor.update|delete`. Password stays write-only: absent field keeps
- * the stored value, explicit null clears it.
+ * the stored value, explicit null clears it. Partial updates merge with the
+ * stored row and re-run the holdtime ≥ 3×keepalive cross-field rule.
  */
 
 import { route, numericId } from "@/lib/api/handler";
-import { bgpNeighborUpdateSchema } from "@/lib/validators/dynamic-routing";
+import { bgpNeighborUpdateSchema, holdtimeMessage, holdtimeOk } from "@/lib/validators/dynamic-routing";
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
 import { assertNeighborRefs, toNeighborDTO } from "../../../internal";
@@ -24,6 +25,16 @@ export const PUT = route(
     const id = numericId(params, "id");
     const existing = await findNeighbor(auth.tenantId, id);
     await assertNeighborRefs(auth.tenantId, body);
+
+    // merge-then-revalidate (mirrors ipv6/shared.ts updateNat66Rule): the zod
+    // schema alone can't see a keepalive/holdtime pair spanning patch + row
+    const mergedKeepalive = body.keepaliveSec ?? existing.keepaliveSec;
+    const mergedHoldtime = body.holdtimeSec ?? existing.holdtimeSec;
+    if (!holdtimeOk(mergedKeepalive, mergedHoldtime)) {
+      throw ApiError.validation("BGP neighbor update failed validation", {
+        fieldErrors: { holdtimeSec: [holdtimeMessage] },
+      });
+    }
 
     const { password, ...rest } = body;
     const updated = await db.bgpNeighbor.update({

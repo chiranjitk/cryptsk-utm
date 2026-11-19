@@ -29,6 +29,7 @@ process.env.DATABASE_URL = `file:${DB_PATH}`;
 
 const { db } = await import("@/lib/db");
 const service = await import("@/lib/incidents/service");
+const { createRule } = await import("@/lib/firewall/rule-service");
 
 const ALERT_REF = JSON.stringify({ kind: "ips_event", id: 101, sid: "2050" });
 
@@ -232,6 +233,69 @@ describe("blockSource", () => {
       "tester",
     );
     await expect(service.blockSource(1, badIp.id, "analyst")).rejects.toThrow(/blockable/);
+  });
+
+  it("refuses the never-blockable addresses (0.0.0.0, 255.255.255.255, leading-zero octets)", async () => {
+    for (const ip of ["0.0.0.0", "255.255.255.255", "010.2.3.4", "192.168.01.5"]) {
+      const inc = await service.createIncident(
+        1,
+        { title: `unblockable ${ip}`, source: "manual", detail: { srcIps: [ip] } },
+        "tester",
+      );
+      await expect(service.blockSource(1, inc.id, "analyst")).rejects.toThrow(/blockable/);
+      expect(
+        await db.addressObject.count({ where: { tenantId: 1, name: `inc-${inc.ref}-block` } }),
+      ).toBe(0); // nothing materialized
+    }
+  });
+
+  it("recovers from a rule-service failure: artifacts cleaned up, retry succeeds (no wedge)", async () => {
+    const inc = await service.createIncident(
+      1,
+      { title: "wedge-then-retry", source: "manual", detail: { srcIps: ["203.0.113.55"] } },
+      "tester",
+    );
+
+    // force the rule-service create to FAIL: a rule with the auto-block name
+    // already exists (dup-name guard → conflict) AFTER the address object was
+    // created — the pre-fix behavior left that object orphaned and every
+    // retry wedged on the unique name guard (audit fix F-d)
+    await createRule(1, {
+      name: `INC ${inc.ref} auto-block`,
+      enabled: true,
+      srcZoneIds: [],
+      dstZoneIds: [],
+      srcAddrIds: [],
+      dstAddrIds: [],
+      serviceIds: [],
+      applicationIds: [],
+      userIds: [],
+      srcMacs: [],
+      action: "allow",
+      logging: "none",
+      synProtection: false,
+      tags: [],
+    });
+    await expect(service.blockSource(1, inc.id, "analyst")).rejects.toThrow(/already exists/);
+
+    // COMPENSATION: the just-created address object was deleted before the
+    // rethrow — no orphaned artifacts, no wedge
+    expect(await db.addressObject.count({ where: { tenantId: 1, name: `inc-${inc.ref}-block` } })).toBe(0);
+    const stamped = await service.getIncident(1, inc.id);
+    expect(stamped.detail.blockedRuleId).toBeUndefined();
+    expect(stamped.detail.blockedAddressId).toBeUndefined();
+
+    // retry after removing the obstruction → the block fully succeeds
+    await db.firewallRule.deleteMany({ where: { tenantId: 1, name: `INC ${inc.ref} auto-block` } });
+    const res = await service.blockSource(1, inc.id, "analyst");
+    expect(res.firewallRuleId).toBeGreaterThan(0);
+    expect(res.addressObjectId).toBeGreaterThan(0);
+    const detail = await service.getIncident(1, inc.id);
+    expect(detail.detail.blockedRuleId).toBe(res.firewallRuleId);
+    expect(detail.detail.blockedAddressId).toBe(res.addressObjectId);
+    expect(
+      await db.addressObject.count({ where: { tenantId: 1, name: `inc-${inc.ref}-block` } }),
+    ).toBe(1); // exactly one object — the failed attempt left no residue
   });
 });
 

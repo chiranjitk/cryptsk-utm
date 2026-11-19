@@ -292,6 +292,18 @@ export const backupCreateSchema = z
 
 export type BackupCreateInput = z.infer<typeof backupCreateSchema>;
 
+/**
+ * Destructive-action confirm token (F-e #1): restoring a backup requires the
+ * body {"confirm": "<backupId>"} — strict, so extra fields are rejected too.
+ */
+export const restoreConfirmSchema = z
+  .object({
+    confirm: z.string().min(1),
+  })
+  .strict();
+
+export type RestoreConfirmInput = z.infer<typeof restoreConfirmSchema>;
+
 // ── SSH keys (M10 §5.7) ─────────────────────────────────────────────────────
 
 /** OpenSSH authorized_keys line: <keytype> <base64-blob> [comment]. */

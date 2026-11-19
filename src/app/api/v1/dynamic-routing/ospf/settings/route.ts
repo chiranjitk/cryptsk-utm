@@ -11,17 +11,29 @@ import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+/** Transactional get-or-create for the per-tenant singleton: concurrent
+ *  first-touches serialize on SQLite's write lock; a lost create race
+ *  (P2002) re-finds and returns the winner's row. */
 async function getOrCreateSettings(tenantId: number) {
-  const existing = await db.ospfSettings.findFirst({ where: { tenantId } });
-  if (existing) return existing;
-  return db.ospfSettings.create({
-    data: {
-      tenantId,
-      routerId: "10.10.0.1",
-      referenceBandwidth: 100,
-      gracefulRestart: false,
-      enabled: false,
-    },
+  return db.$transaction(async (tx) => {
+    const existing = await tx.ospfSettings.findFirst({ where: { tenantId } });
+    if (existing) return existing;
+    try {
+      return await tx.ospfSettings.create({
+        data: {
+          tenantId,
+          routerId: "10.10.0.1",
+          referenceBandwidth: 100,
+          gracefulRestart: false,
+          enabled: false,
+        },
+      });
+    } catch (err) {
+      // P2002 — a concurrent create won the race; re-find and return it
+      const raced = await tx.ospfSettings.findFirst({ where: { tenantId } });
+      if (raced) return raced;
+      throw err;
+    }
   });
 }
 

@@ -130,6 +130,22 @@ describe("buildThresholdEntries", () => {
     expect(warnings.some((w) => w.includes("ENTIRE ruleset"))).toBe(true);
   });
 
+  it("skips scope values that fail the IPv4/CIDR grammar with a warning (threshold.config injection guard)", () => {
+    const { lines, warnings } = buildThresholdEntries(
+      policyInput({
+        exceptions: [
+          { sid: 2200010, source: "10.0.0.5; drop" }, // injection attempt
+          { sid: 2200011, dest: "999.1.2.3/8" }, // bad octet
+          { sid: 2200012, source: "10.0.0.0/24" }, // valid — still renders
+        ],
+      }),
+    );
+    expect(lines).toEqual(["suppress gen_id 1, sig_id 2200012, track by_src, ip 10.0.0.0/24"]);
+    expect(warnings.some((w) => w.includes("sid=2200010") && w.includes("IPv4/CIDR grammar"))).toBe(true);
+    expect(warnings.some((w) => w.includes("sid=2200011") && w.includes("IPv4/CIDR grammar"))).toBe(true);
+    expect(warnings.some((w) => w.includes("sid=2200012"))).toBe(false);
+  });
+
   it("converts thresholds into threshold lines with track/count/seconds", () => {
     const { lines } = buildThresholdEntries(policyInput({ thresholds: [{ sid: 2100005, track: "by_src", count: 10, seconds: 60 }] }));
     expect(lines).toContain("threshold gen_id 1, sig_id 2100005, track by_src, count 10, seconds 60");

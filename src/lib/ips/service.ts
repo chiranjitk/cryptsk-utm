@@ -17,6 +17,7 @@ import {
   type PreprocessorMap,
   type ThresholdRow,
 } from "./catalog";
+import { ipsSeveritySchema } from "@/lib/validators/enums";
 import type { IpsEventsQuery, IpsPolicyCreateInput, IpsPolicyUpdateInput } from "@/lib/validators/ips";
 import type { PageMeta } from "@/lib/api/envelope";
 import { normalizeIpsAction, runOsRuleUpdate, type OsRuleUpdateResult } from "./ips-os";
@@ -226,7 +227,18 @@ export async function queryEvents(
     ...(q.sid ? { sid: q.sid } : {}),
     ...(q.category ? { category: q.category } : {}),
     ...(q.severity
-      ? { severity: { in: q.severity.split(",").map((s) => s.trim()).filter(Boolean) } }
+      ? {
+          // validator already rejects non-locked tokens; filter defensively so
+          // the IN clause only ever carries locked severity vocab
+          severity: {
+            in: q.severity
+              .split(",")
+              .map((s) => s.trim())
+              .filter((s): s is IpsEventDto["severity"] =>
+                (ipsSeveritySchema.options as readonly string[]).includes(s),
+              ),
+          },
+        }
       : {}),
     ...(q.since || q.until
       ? {
@@ -332,7 +344,7 @@ export async function getUpdateSettings(tenantId: number): Promise<UpdateSetting
     merged.lastUpdateAt = new Date().toISOString();
     merged.nextUpdateAt = computeNextUpdate(merged);
     await db.systemSetting.update({ where: { id: row!.id }, data: { value: JSON.stringify(merged) } }).catch(() => {});
-    emitEvent({ type: "config:updated", payload: { section: "ips" } });
+    emitEvent({ type: "config:updated", payload: { section: "ips", tenantId } });
   }
   return merged;
 }

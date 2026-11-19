@@ -1,7 +1,9 @@
 /**
  * POST /api/v1/logs/report-schedules/[id]/run — generate the report now
- * (simulated, M09 §3): bumps `lastRunAt`, audits `report.run`, returns
- * `{ ok, lastRunAt }` — the console opens the print view / download itself.
+ * (M09 §3): bumps `lastRunAt` AND creates an actual ReportRun through the
+ * report pipeline (F-e #15 — the schedule is no longer inert), audits
+ * `report.run`, returns `{ ok, lastRunAt, run? }` — the console opens the
+ * print view / download itself (run.id deep-links into the Reports tab).
  */
 
 import { route, numericId } from "@/lib/api/handler";

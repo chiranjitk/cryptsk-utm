@@ -63,6 +63,20 @@ const EXCERPT_CAP = 120;
 /** safety valve — pathological inputs must not flood the result set */
 const MAX_MATCHES = 100;
 
+/**
+ * Scan execution budget (audit fix F-d — ReDoS mitigation):
+ *   • regexes run against CHUNKED slices (SCAN_CHUNK_BYTES stride + overlap)
+ *     so one RegExp.exec call can never consume a pathological input whole —
+ *     backtracking state is bounded by the slice size;
+ *   • a wall-clock deadline (SCAN_DEADLINE_MS from scan start) aborts ALL
+ *     remaining regex work and records "scan budget exceeded" in warnings.
+ */
+export const SCAN_CHUNK_BYTES = 64 * 1024;
+/** overlap so matches spanning a chunk boundary are still found (dedup via seen keys) */
+export const SCAN_CHUNK_OVERLAP = 1024;
+export const SCAN_DEADLINE_MS = 2000;
+export const SCAN_BUDGET_WARNING = "scan budget exceeded — remaining pattern input skipped";
+
 // ── Aho-Corasick (SPEC §3.3: keyword matching via Aho-Corasick) ─────────────
 
 interface AcNode {
@@ -136,23 +150,34 @@ export interface KeywordOwner {
   category: DlpCategory;
 }
 
-/** Compile the keyword automaton for a scan — exported for tests/harnesses. */
+/**
+ * Compile the keyword automaton for a scan — exported for tests/harnesses.
+ * SHARED-TERM ATTRIBUTION (audit fix F-d): identical keywords owned by
+ * MULTIPLE patterns keep ALL owners — `owners[termIdx]` lists every pattern
+ * that owns the term and each hit fans out to every owner (previously only
+ * the FIRST pattern to declare a term was credited, silently starving
+ * policies that shared a keyword).
+ */
 export function buildKeywordAutomaton(patterns: DlpPatternInput[]): {
   automaton: Automaton;
-  owners: KeywordOwner[];
+  /** owners[i] = every pattern owning automaton.terms[i] (≥1 entry each) */
+  owners: KeywordOwner[][];
 } {
-  const owners: KeywordOwner[] = [];
-  const seen = new Set<string>();
+  const byTerm = new Map<string, KeywordOwner[]>();
   for (const p of patterns) {
     for (const term of splitKeywords(p.value)) {
-      // dedupe identical terms — owners[] stays index-aligned with automaton.terms[]
       const key = term.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      owners.push({ term, patternId: p.id, severity: p.severity, category: p.category });
+      const list = byTerm.get(key) ?? [];
+      if (!list.some((o) => o.patternId === p.id)) {
+        list.push({ term, patternId: p.id, severity: p.severity, category: p.category });
+      }
+      byTerm.set(key, list);
     }
   }
-  return { automaton: buildAhoCorasick(owners.map((o) => o.term)), owners };
+  // byTerm keys are unique lower-cased terms → buildAhoCorasick's own dedupe
+  // never triggers, so automaton.terms[i] stays index-aligned with owners[i]
+  const owners: KeywordOwner[][] = [...byTerm.values()];
+  return { automaton: buildAhoCorasick(owners.map((list) => list[0]!.term)), owners };
 }
 
 /** keyword pattern values are comma-separated keyword lists (SCHEMA §3.3). */
@@ -163,10 +188,12 @@ export function splitKeywords(value: string): string[] {
     .filter((k) => k.length > 0);
 }
 
-/** Run the automaton over the (lowered) text — yields [start, end) spans + owning term index. */
+/** Run the automaton over the (lowered) text — yields [start, end) spans + owning term index.
+ * maxHits caps collection (audit fix F-d): once reached, scanning stops. */
 function scanAutomaton(
   automaton: Automaton,
   lowered: string,
+  maxHits: number = MAX_MATCHES,
 ): Array<{ termIdx: number; start: number; end: number }> {
   const hits: Array<{ termIdx: number; start: number; end: number }> = [];
   let cur = 0;
@@ -179,6 +206,7 @@ function scanAutomaton(
       const end = i + 1;
       const start = end - automaton.terms[termIdx].length;
       if (start >= 0) hits.push({ termIdx, start, end });
+      if (hits.length >= maxHits) return hits; // stop collecting at the cap
     }
   }
   return hits;
@@ -247,12 +275,16 @@ export function maxSeverity(severities: Array<DlpSeverity | null | undefined>): 
 }
 
 /**
- * Scan a payload against the given patterns. Pure — no db, no fs, no clock.
- * Duplicate (patternId, span) hits collapse; the result list is severity-
- * ordered and capped at MAX_MATCHES entries.
+ * Scan a payload against the given patterns. Pure — no db, no fs (wall-clock
+ * deadline is the ONE sanctioned clock use — audit fix F-d). Duplicate
+ * (patternId, span) hits collapse; the result list is severity-ordered and
+ * capped at MAX_MATCHES entries. Regex work is chunked + deadline-guarded:
+ * when the budget is spent, remaining pattern input is aborted and
+ * SCAN_BUDGET_WARNING is recorded in warnings.
  */
 export function scanPayload(input: ScanPayloadInput): ScanResult {
   const warnings: string[] = [];
+  const scanStart = Date.now();
   const text = typeof input.text === "string" ? input.text : "";
   const lowered = text.toLowerCase();
   const matches: DlpMatch[] = [];
@@ -263,53 +295,67 @@ export function scanPayload(input: ScanPayloadInput): ScanResult {
 
   if (keywordPatterns.length > 0 && text.length > 0) {
     const { automaton, owners } = buildKeywordAutomaton(keywordPatterns);
-    for (const hit of scanAutomaton(automaton, lowered)) {
-      const owner = owners[hit.termIdx];
-      if (!owner) continue;
-      const key = `k:${owner.patternId}:${hit.start}:${hit.end}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      matches.push({
-        patternId: owner.patternId,
-        severity: owner.severity,
-        category: owner.category,
-        excerpt: redactExcerpt(text, hit.start, hit.end),
-        index: hit.start,
-        end: hit.end,
-        kind: "keyword",
-      });
+    for (const hit of scanAutomaton(automaton, lowered, MAX_MATCHES)) {
+      // shared terms fan out to EVERY owning pattern (audit fix F-d)
+      for (const owner of owners[hit.termIdx] ?? []) {
+        const key = `k:${owner.patternId}:${hit.start}:${hit.end}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        matches.push({
+          patternId: owner.patternId,
+          severity: owner.severity,
+          category: owner.category,
+          excerpt: redactExcerpt(text, hit.start, hit.end),
+          index: hit.start,
+          end: hit.end,
+          kind: "keyword",
+        });
+      }
+      if (matches.length >= MAX_MATCHES) break;
     }
   }
 
   const regexMatchers = buildRegexMatchers(regexPatterns, warnings);
-  for (const m of regexMatchers) {
+  outer: for (const m of regexMatchers) {
     if (matches.length >= MAX_MATCHES) break;
-    m.re.lastIndex = 0;
-    let guard = 0;
-    let res: RegExpExecArray | null;
-    while ((res = m.re.exec(text)) !== null && guard++ < MAX_MATCHES) {
-      const start = res.index;
-      const len = res[0].length;
-      if (len === 0) {
-        // zero-width match — advance one char to keep the global scan moving
-        m.re.lastIndex += 1;
-        if (m.re.lastIndex > text.length) break;
-        continue;
+    // chunked execution — each RegExp.exec sees ≤ SCAN_CHUNK_BYTES (+ overlap)
+    // of input, bounding the backtracking state a single call can consume
+    for (let chunkStart = 0; chunkStart < text.length; chunkStart += SCAN_CHUNK_BYTES) {
+      if (Date.now() - scanStart > SCAN_DEADLINE_MS) {
+        warnings.push(SCAN_BUDGET_WARNING);
+        break outer; // budget spent — abort remaining patterns (audit fix F-d)
       }
-      const end = start + len;
-      const key = `r:${m.patternId}:${start}:${end}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        matches.push({
-          patternId: m.patternId,
-          severity: m.severity,
-          category: m.category,
-          excerpt: redactExcerpt(text, start, end),
-          index: start,
-          end,
-          kind: "regex",
-        });
+      const chunkEnd = Math.min(text.length, chunkStart + SCAN_CHUNK_BYTES + SCAN_CHUNK_OVERLAP);
+      const slice = text.slice(chunkStart, chunkEnd);
+      m.re.lastIndex = 0;
+      let guard = 0;
+      let res: RegExpExecArray | null;
+      while ((res = m.re.exec(slice)) !== null && guard++ < MAX_MATCHES) {
+        const start = chunkStart + res.index;
+        const len = res[0].length;
+        if (len === 0) {
+          // zero-width match — advance one char to keep the global scan moving
+          m.re.lastIndex += 1;
+          if (m.re.lastIndex > slice.length) break;
+          continue;
+        }
+        const end = start + len;
+        const key = `r:${m.patternId}:${start}:${end}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          matches.push({
+            patternId: m.patternId,
+            severity: m.severity,
+            category: m.category,
+            excerpt: redactExcerpt(text, start, end),
+            index: start,
+            end,
+            kind: "regex",
+          });
+        }
+        if (matches.length >= MAX_MATCHES) break;
       }
+      if (matches.length >= MAX_MATCHES) break;
     }
   }
 

@@ -2,6 +2,8 @@
  * NAC devices list (M23, spec 2.9) — paged-lite (max 100 rows, no PageMeta).
  * Filters: ?state= ?deviceType= ?q= (matches mac/ip/hostname). Rows carry the
  * NAC profile name via a logical-ref map (nacProfileId is not a relation).
+ * Guard area is `nac` (audit fix #11 — was `identity`): the RBAC matrix gives
+ * nac.read to super_admin/tenant_admin/security_admin/network_admin.
  */
 
 import { route } from "@/lib/api/handler";
@@ -11,7 +13,7 @@ import { toDeviceDTO } from "@/app/api/v1/identity-advanced/_lib/server";
 
 export const dynamic = "force-dynamic";
 
-export const GET = route({ area: "identity", querySchema: devicesQuerySchema }, async ({ auth, query }) => {
+export const GET = route({ area: "nac", querySchema: devicesQuerySchema }, async ({ auth, query }) => {
   const where = {
     tenantId: auth.tenantId,
     ...(query.state ? { nacState: query.state } : {}),

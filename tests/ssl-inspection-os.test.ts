@@ -308,6 +308,27 @@ describe("hardSslRefusal", () => {
   it("passes a legitimate config", () => {
     expect(hardSslRefusal(input())).toBeNull();
   });
+  it("REFUSES a needsSslBump policy with no signing CA (hard, not warning)", () => {
+    const r = hardSslRefusal(input({ policies: [policy({ signingCaId: null, signingCaName: null })] }));
+    expect(r).toContain("refused");
+    expect(r).toContain("no signing CA");
+    expect(r).toContain("select an active signing CA");
+    // the apply plan carries the refusal → executor must never run
+    const plan = buildSslApplyPlan(input({ policies: [policy({ signingCaId: null, signingCaName: null })] }), facts(), "exec", "t");
+    expect(plan.refused).toContain("select an active signing CA");
+  });
+  it("REFUSES a needsSslBump policy whose signing CA is not active", () => {
+    const r = hardSslRefusal(input({ policies: [policy({ signingCaStatus: "revoked" })] }));
+    expect(r).toContain("refused");
+    expect(r).toContain("revoked");
+    expect(r).toContain("select an active signing CA");
+    const plan = buildSslApplyPlan(input({ policies: [policy({ signingCaStatus: "pending" })] }), facts(), "exec", "t");
+    expect(plan.refused).toContain("pending");
+    expect(plan.refused).toContain("select an active signing CA");
+  });
+  it("mode none (no MITM) does not require a signing CA", () => {
+    expect(hardSslRefusal(input({ policies: [policy({ mode: "none", signingCaId: null })] }))).toBeNull();
+  });
 });
 
 // ── plan: ordering, guard, ssl-crtd refusal ────────────────────────────────

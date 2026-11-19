@@ -399,6 +399,9 @@ export interface IfaceBody {
   wanType?: "static" | "dhcp" | "pppoe";
   gateway?: string | null;
   dns?: string[];
+  /** PPPoE credentials — password is write-only: GET responses carry the
+   *  "********" mask literal and sending it back unchanged keeps the stored
+   *  password. Plaintext is only revealed via POST /interfaces/{id}/pppoe-reveal. */
   pppoe?: { user: string; password: string; service?: string };
   lldp?: boolean;
   // enterprise additions

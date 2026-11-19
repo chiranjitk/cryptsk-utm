@@ -53,11 +53,21 @@ type RouteFn<TBody, TQuery, TResult> = (
 ) => Promise<TResult | HandlerResult<TResult>>;
 
 function clientIp(req: NextRequest): string {
-  return (
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    req.headers.get("x-real-ip") ??
-    "127.0.0.1"
-  );
+  // Audit fix #6 — `x-forwarded-for` is client-controlled and spoofable; it is
+  // honored ONLY when the deployment explicitly opts in with
+  // CONSOLE_TRUST_PROXY=1 (set this behind Caddy/nginx or any TLS-terminating
+  // proxy that OVERWRITES XFF with the real client hop).
+  // Without a trusted proxy, Next.js route handlers cannot read the socket
+  // address (no req.socket in the Request API), so the most truthful value is
+  // "unknown" — represented as the documented "127.0.0.1" bucket: rate
+  // limiting and audit records treat unattributed traffic as one coarse local
+  // source instead of trusting attacker-controlled headers.
+  if (process.env.CONSOLE_TRUST_PROXY === "1") {
+    const xff = req.headers.get("x-forwarded-for");
+    if (xff) return xff.split(",")[0]?.trim() || "127.0.0.1";
+    return req.headers.get("x-real-ip") ?? "127.0.0.1";
+  }
+  return "127.0.0.1";
 }
 
 function zodIssues(err: ZodError): Record<string, string[]> {
@@ -118,7 +128,8 @@ export function route<TBody = undefined, TQuery = undefined, TResult = unknown>(
       if (!opts.isPublic && opts.area) {
         if (!can(effectiveAuth, opts.area, op)) {
           if (isMutation) {
-            // denied mutations are audited (API_STANDARDS §7)
+            // denied mutations are audited (API_STANDARDS §7); fail-open with
+            // observable logging (audit fix #22) — never blocks the 403
             await writeAudit({
               tenantId: effectiveAuth.tenantId,
               userId: effectiveAuth.userId,
@@ -129,7 +140,9 @@ export function route<TBody = undefined, TQuery = undefined, TResult = unknown>(
                 objectType: opts.area,
                 result: "denied",
               },
-            }).catch(() => {});
+            }).catch((err: unknown) =>
+              console.error(`[api] ${requestId} audit write failed (denied ${op} ${opts.area}):`, err instanceof Error ? err.message : err),
+            );
           }
           return fail(
             "FORBIDDEN",
@@ -206,7 +219,10 @@ export function route<TBody = undefined, TQuery = undefined, TResult = unknown>(
             username: effectiveAuth.username,
             sourceIp: ip,
             info: { ...payload.audit, result: payload.audit.result ?? "success" },
-          }).catch(() => {});
+          }).catch((err: unknown) =>
+            // audit fix #22 — fail-open, but the loss is observable (dev.log)
+            console.error(`[api] ${requestId} audit write failed (${payload.audit?.action}):`, err instanceof Error ? err.message : err),
+          );
         }
         res.headers.set("x-request-id", requestId);
         return res;
@@ -221,7 +237,10 @@ export function route<TBody = undefined, TQuery = undefined, TResult = unknown>(
             username: effectiveAuth.username,
             sourceIp: ip,
             info: { ...payload.audit, result: payload.audit.result ?? "success" },
-          }).catch(() => {});
+          }).catch((err: unknown) =>
+            // audit fix #22 — fail-open, but the loss is observable (dev.log)
+            console.error(`[api] ${requestId} audit write failed (${payload.audit?.action}):`, err instanceof Error ? err.message : err),
+          );
         }
         if (opts.section) {
           await snapshotConfigVersion({
@@ -231,7 +250,9 @@ export function route<TBody = undefined, TQuery = undefined, TResult = unknown>(
               ? `${payload.audit.action}${payload.audit.objectName ? `: ${payload.audit.objectName}` : ""}`
               : `${req.method} ${req.nextUrl.pathname}`,
             userId: effectiveAuth.userId,
-          }).catch(() => {});
+          }).catch((err: unknown) =>
+            console.error(`[api] ${requestId} config snapshot failed (section ${opts.section}):`, err instanceof Error ? err.message : err),
+          );
           // Real-time OS convergence: every firewall/NAT policy mutation
           // (rules, NAT, zones, objects) converges the nftables policy a
           // beat later. OS-apply routes (firewall.os-*) already manage the

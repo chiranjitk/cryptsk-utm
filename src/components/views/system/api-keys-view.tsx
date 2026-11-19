@@ -69,7 +69,16 @@ const SCOPE_OPTIONS: Array<{ scopes: string[]; label: string; capability: string
   },
 ];
 
-const WEBHOOK_EVENTS = ["alerts.new", "config.updated", "wan.status", "vpn.status", "sessions.update"] as const;
+const WEBHOOK_EVENTS = [
+  "alerts.new",
+  "config.updated",
+  "wan.status",
+  "vpn.status",
+  "sessions.update",
+  "audit.mutation",
+  "soar.playbook.run",
+  "webhook.test",
+] as const;
 
 const EVENT_HINTS: Record<string, string> = {
   "alerts.new": "Fires with new alerts",
@@ -77,6 +86,9 @@ const EVENT_HINTS: Record<string, string> = {
   "wan.status": "WAN up/degraded/down transitions",
   "vpn.status": "VPN up/down/error transitions",
   "sessions.update": "Session connect/disconnect updates",
+  "audit.mutation": "Fires on every audited mutation (object type in the payload)",
+  "soar.playbook.run": "Fires when a SOAR playbook run starts",
+  "webhook.test": "The Send-test delivery payload",
 };
 
 // ── atoms ───────────────────────────────────────────────────────────────────

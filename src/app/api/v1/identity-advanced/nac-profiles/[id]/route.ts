@@ -1,6 +1,8 @@
 /**
  * NAC profile item (M23, spec 2.9) — update / delete, audit
- * `nac_profile.update|delete`. Deleting a profile leaves its devices with a
+ * `nac_profile.update|delete`. Guard area `nac` (audit fix #11 — was
+ * `identity`; nac.write includes network_admin). Duplicate names 409 (audit
+ * fix #25 — missing pre-check). Deleting a profile leaves its devices with a
  * dangling logical ref (nacProfileId kept — the view renders "—").
  */
 
@@ -13,11 +15,17 @@ import { toNacProfileDTO } from "@/app/api/v1/identity-advanced/_lib/server";
 export const dynamic = "force-dynamic";
 
 export const PUT = route(
-  { area: "identity", bodySchema: nacProfileUpdateSchema, section: "identity" },
+  { area: "nac", bodySchema: nacProfileUpdateSchema, section: "identity" },
   async ({ auth, body, params }) => {
     const id = numericId(params, "id");
     const existing = await db.nacProfile.findFirst({ where: { id, tenantId: auth.tenantId } });
     if (!existing) throw ApiError.notFound("NAC profile not found");
+
+    // audit fix — duplicate-name pre-check (409) when the name changes
+    if (body.name !== undefined && body.name !== existing.name) {
+      const dup = await db.nacProfile.findFirst({ where: { tenantId: auth.tenantId, name: body.name } });
+      if (dup) throw ApiError.conflict(`A NAC profile named "${body.name}" already exists`);
+    }
 
     const updated = await db.nacProfile.update({
       where: { id: existing.id },
@@ -49,7 +57,7 @@ export const PUT = route(
   },
 );
 
-export const DELETE = route({ area: "identity", section: "identity" }, async ({ auth, params }) => {
+export const DELETE = route({ area: "nac", section: "identity" }, async ({ auth, params }) => {
   const id = numericId(params, "id");
   const existing = await db.nacProfile.findFirst({ where: { id, tenantId: auth.tenantId } });
   if (!existing) throw ApiError.notFound("NAC profile not found");

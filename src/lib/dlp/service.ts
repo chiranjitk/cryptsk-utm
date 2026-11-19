@@ -18,6 +18,7 @@
 import { db } from "@/lib/db";
 import { ApiError } from "@/lib/api/errors";
 import { parseJson, stringifyJson } from "@/lib/json";
+import { containsNestedQuantifier } from "@/lib/validators/dlp";
 import { scanPayload, splitKeywords, type DlpMatch, type DlpPatternInput } from "./engine";
 import type {
   DlpAction,
@@ -95,6 +96,20 @@ export interface DlpStats {
 const SEVERITIES: DlpSeverity[] = ["low", "medium", "high", "critical"];
 const STATUSES: DlpIncidentStatus[] = ["new", "reviewing", "resolved", "false_positive"];
 
+/**
+ * Allowed incident status hops (audit fix F-d — mirrors the incidents
+ * module's closed-transition map): new → reviewing → resolved|false_positive;
+ * reviewing → new is NOT allowed; resolved and false_positive are terminal.
+ * A direct new → resolved|false_positive triage decision stays legal (same
+ * philosophy as incidents new → resolved); every other jump is a 400.
+ */
+const INCIDENT_TRANSITIONS: Record<DlpIncidentStatus, DlpIncidentStatus[]> = {
+  new: ["reviewing", "resolved", "false_positive"],
+  reviewing: ["resolved", "false_positive"],
+  resolved: [],
+  false_positive: [],
+};
+
 const fieldErr = (field: string, message: string) =>
   ApiError.validation(message, { fieldErrors: { [field]: [message] } });
 
@@ -148,6 +163,13 @@ export async function listPatterns(tenantId: number): Promise<DlpPatternDTO[]> {
 export async function createPattern(tenantId: number, body: DlpPatternCreate): Promise<DlpPatternDTO> {
   const dup = await db.dlpPattern.findFirst({ where: { tenantId, name: body.name }, select: { id: true } });
   if (dup) throw ApiError.conflict(`DLP pattern '${body.name}' already exists`);
+  // ReDoS guard (audit fix F-d) — defense in depth for service callers that
+  // bypass the zod edge (tests, seeds, future internal paths)
+  if (body.kind === "regex" && containsNestedQuantifier(body.value)) {
+    throw ApiError.validation("nested quantifiers rejected (ReDoS guard)", {
+      fieldErrors: { value: ["nested quantifiers rejected (ReDoS guard)"] },
+    });
+  }
   const row = await db.dlpPattern.create({
     data: {
       tenantId,
@@ -168,6 +190,14 @@ export async function updatePattern(tenantId: number, id: number, body: DlpPatte
   if (body.name && body.name !== existing.name) {
     const dup = await db.dlpPattern.findFirst({ where: { tenantId, name: body.name }, select: { id: true } });
     if (dup) throw ApiError.conflict(`DLP pattern '${body.name}' already exists`);
+  }
+  // ReDoS guard (audit fix F-d) — merged kind/value (update may set only one)
+  const mergedKind = body.kind ?? existing.kind;
+  const mergedValue = body.value ?? existing.value;
+  if (mergedKind === "regex" && containsNestedQuantifier(mergedValue)) {
+    throw ApiError.validation("nested quantifiers rejected (ReDoS guard)", {
+      fieldErrors: { value: ["nested quantifiers rejected (ReDoS guard)"] },
+    });
   }
   const row = await db.dlpPattern.update({
     where: { id },
@@ -403,6 +433,13 @@ export async function updateIncidentStatus(
 ): Promise<DlpIncidentDTO> {
   const existing = await db.dlpIncident.findFirst({ where: { tenantId, id } });
   if (!existing) throw ApiError.notFound("DLP incident not found");
+  // Closed transition map (audit fix F-d) — illegal jumps are a 400
+  const current = (STATUSES as string[]).includes(existing.status) ? (existing.status as DlpIncidentStatus) : "new";
+  if (!INCIDENT_TRANSITIONS[current].includes(status)) {
+    throw ApiError.validation(
+      `Illegal transition ${current} → ${status} (allowed from '${current}': ${INCIDENT_TRANSITIONS[current].join(", ") || "none"})`,
+    );
+  }
   const row = await db.dlpIncident.update({ where: { id }, data: { status } });
   const [dto] = await toIncidentDTOs(tenantId, [row]);
   return dto;
@@ -416,20 +453,28 @@ export interface ScanOutcome {
   matches: Array<DlpMatch & { policyId: number; policyName: string; action: DlpAction }>;
   severity: DlpSeverity | null;
   warnings: string[];
+  /**
+   * Per-policy file-type control decisions (audit fix F-d) — computed for
+   * EVERY scoped policy independent of pattern hits, so an extension-only
+   * violation (zero matches) is still visible to callers. `fileName` is the
+   * caller-supplied fileExtension (the scan API has no full file name).
+   */
+  fileTypeDecisions: Array<{ policyId: number; fileName: string | null; blocked: boolean }>;
 }
 
 /**
  * Protocol-aware scan (SPEC §3.3): only ENABLED policies scoped to the scan
  * protocol participate. A policy with no matching patterns contributes only
- * its fileTypes check; a file-type hit flags `fileTypeBlocked` in the detail
- * of any incident the same policy raises (incidents require a patternId, so
- * extension-only violations surface as policy decisions, not incidents).
+ * its fileTypes check — and since audit fix F-d that decision is reported
+ * per policy in `fileTypeDecisions` and (block/quarantine + notifyUser) also
+ * raises a Notification even with ZERO pattern hits: an extension-only
+ * violation is a real policy decision, not silence.
  */
 export async function scanTenant(tenantId: number, input: DlpScanInput): Promise<ScanOutcome> {
   const policies = await db.dlpPolicy.findMany({ where: { tenantId, enabled: true } });
   const scoped = policies.filter((p) => parseStringArray(p.protocols).includes(input.protocol));
   if (scoped.length === 0) {
-    return { incidents: 0, matches: [], severity: null, warnings: [] };
+    return { incidents: 0, matches: [], severity: null, warnings: [], fileTypeDecisions: [] };
   }
 
   const wantedIds = [...new Set(scoped.flatMap((p) => parseNumberArray(p.patternIds)))];
@@ -458,6 +503,7 @@ export async function scanTenant(tenantId: number, input: DlpScanInput): Promise
 
   let incidentCount = 0;
   const enriched: ScanOutcome["matches"] = [];
+  const fileTypeDecisions: ScanOutcome["fileTypeDecisions"] = [];
 
   for (const policy of scoped) {
     const action = (["alert", "block", "quarantine"] as string[]).includes(policy.action)
@@ -465,8 +511,11 @@ export async function scanTenant(tenantId: number, input: DlpScanInput): Promise
       : "alert";
     const policyPatternIds = parseNumberArray(policy.patternIds);
     const ext = result.fileExtension?.replace(/^\./, "").toLowerCase() ?? null;
+    // file-type control computed per policy INDEPENDENT of pattern hits
+    // (audit fix F-d) — reported even when the scan finds nothing else
     const fileTypeBlocked =
       ext !== null && parseStringArray(policy.fileTypes).some((f) => f.replace(/^\./, "").toLowerCase() === ext);
+    fileTypeDecisions.push({ policyId: policy.id, fileName: input.fileExtension ?? null, blocked: fileTypeBlocked });
 
     const hitPatterns = policyPatternIds.filter((id) => matchesByPattern.has(id));
     for (const patternId of hitPatterns) {
@@ -504,17 +553,20 @@ export async function scanTenant(tenantId: number, input: DlpScanInput): Promise
     }
 
     // notifyUser + a blocking decision → Notification row (direct write,
-    // read-style after lib/notifications/service.ts; excerpt stays redacted)
-    if (policy.notifyUser && (action === "block" || action === "quarantine") && hitPatterns.length > 0) {
+    // read-style after lib/notifications/service.ts; excerpt stays redacted).
+    // Audit fix F-d: a block/quarantine decision fires even with ZERO pattern
+    // hits when the file-type control blocked the extension.
+    if (policy.notifyUser && (action === "block" || action === "quarantine") && (hitPatterns.length > 0 || fileTypeBlocked)) {
+      const patternPart = hitPatterns.length
+        ? `Matched pattern(s): ${hitPatterns.map((id) => byId.get(id)?.name ?? `#${id}`).join(", ")}.`
+        : "No pattern matched — file type blocked by policy.";
       await db.notification.create({
         data: {
           tenantId,
           type: "threat",
           severity: result.severity === "critical" || result.severity === "high" ? "critical" : "warning",
           title: `DLP ${action === "block" ? "block" : "quarantine"}: ${policy.name}`,
-          message: `Sensitive data detected over ${input.protocol} from ${input.sourceIp}${input.userName ? ` (user ${input.userName})` : ""}. Matched pattern(s): ${hitPatterns
-            .map((id) => byId.get(id)?.name ?? `#${id}`)
-            .join(", ")}.`,
+          message: `Sensitive data detected over ${input.protocol} from ${input.sourceIp}${input.userName ? ` (user ${input.userName})` : ""}${fileTypeBlocked && ext ? ` — file type '${ext}' blocked` : ""}. ${patternPart}`,
           sourceModule: "dlp",
           isRead: false,
         },
@@ -527,6 +579,7 @@ export async function scanTenant(tenantId: number, input: DlpScanInput): Promise
     matches: enriched,
     severity: result.severity,
     warnings: result.warnings,
+    fileTypeDecisions,
   };
 }
 
