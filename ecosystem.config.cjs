@@ -19,6 +19,9 @@ module.exports = {
       env: {
         NODE_ENV: "development",
         NODE_OPTIONS: "--max-old-space-size=1400",
+        // Pin the canonical DB — the sandbox platform injects a stub
+        // DATABASE_URL (db/custom.db) into shells, which pm2 inherits.
+        DATABASE_URL: "file:/home/z/my-project/db/cryptsk.db",
       },
       out_file: "/home/z/my-project/dev.log",
       error_file: "/home/z/my-project/dev.log",
